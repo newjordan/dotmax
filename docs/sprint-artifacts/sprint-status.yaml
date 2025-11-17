@@ -40,7 +40,7 @@ development_status:
   epic-1: contexted
   1-1-initialize-cargo-project-with-optimal-structure: done
   1-2-configure-github-actions-cicd-pipeline: done
-  1-3-define-core-dependencies-with-feature-flags: ready-for-dev
+  1-3-define-core-dependencies-with-feature-flags: done
   1-4-set-up-code-quality-tooling-clippy-rustfmt-deny: backlog
   1-5-create-architecture-decision-records-adr-system: backlog
   1-6-set-up-benchmarking-infrastructure-criterionrs: backlog
