@@ -1,0 +1,226 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1</storyId>
+    <title>Initialize Cargo Project with Optimal Structure</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-16</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/1-1-initialize-cargo-project-with-optimal-structure.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Rust library developer</asA>
+    <iWant>a properly initialized Cargo project with clean structure and metadata</iWant>
+    <soThat>the crate is ready for professional development and crates.io publication</soThat>
+    <tasks>
+- Task 1: Initialize Cargo library project (AC: #1, #3)
+  - Run `cargo new --lib dotmax` or `cargo init --lib` in project root
+  - Verify src/lib.rs is created and contains default library template
+  - Verify Cargo.toml is created with basic package metadata
+
+- Task 2: Configure Cargo.toml with complete metadata (AC: #2)
+  - Set package.name = "dotmax"
+  - Set package.version = "0.1.0"
+  - Set package.authors = ["Frosty"]
+  - Set package.edition = "2021"
+  - Set package.rust-version = "1.70" (MSRV)
+  - Set package.description = "High-performance terminal braille rendering for images, animations, and graphics"
+  - Set package.license = "MIT OR Apache-2.0"
+  - Set package.repository = "https://github.com/frosty40/dotmax"
+  - Set package.keywords = ["terminal", "braille", "graphics", "cli", "visualization"]
+  - Set package.categories = ["command-line-interface", "graphics", "rendering"]
+
+- Task 3: Create project directory structure (AC: #5)
+  - Create examples/ directory
+  - Create tests/ directory
+  - Create benches/ directory
+  - Create docs/ directory
+  - Create docs/adr/ directory for Architecture Decision Records
+
+- Task 4: Configure .gitignore for Rust (AC: #4)
+  - Add target/ to .gitignore (build artifacts)
+  - Add Cargo.lock to .gitignore (libraries don't commit lock file)
+  - Add **/*.rs.bk to .gitignore (rustfmt backups)
+  - Add .idea/, .vscode/ to .gitignore (IDE files)
+  - Add *.swp, *.swo to .gitignore (editor swap files)
+
+- Task 5: Create README.md with placeholder content (AC: #6)
+  - Add project title and one-line description
+  - Add Installation section (placeholder: "Coming soon to crates.io")
+  - Add Quick Start section (placeholder code example)
+  - Add Features section (placeholder bullet list)
+  - Add License section (MIT OR Apache-2.0)
+  - Add repository link
+
+- Task 6: Add dual license files (AC: #7)
+  - Create LICENSE-MIT file with standard MIT license text
+  - Create LICENSE-APACHE file with Apache 2.0 license text
+  - Update license headers to reference dual licensing
+
+- Task 7: Initialize CHANGELOG.md (AC: #8)
+  - Create CHANGELOG.md with "Keep a Changelog" format
+  - Add [Unreleased] section
+  - Add v0.1.0 section with "Initial project setup" entry
+
+- Task 8: Validate build and test (AC: #9, #10)
+  - Run `cargo build` and verify success with zero warnings
+  - Run `cargo test` and verify success (empty test suite passes)
+  - Run `cargo check` to verify project metadata is valid</tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. Project initializes with `cargo new --lib dotmax` producing a compilable library crate
+2. `Cargo.toml` contains complete metadata (name, version 0.1.0, authors, edition 2021, rust-version 1.70, description, license, repository, keywords, categories)
+3. `src/lib.rs` exists as entry point with initial module structure documentation
+4. `.gitignore` configured for Rust projects (target/, Cargo.lock exclusion for libraries)
+5. Directory structure created: `src/`, `examples/`, `tests/`, `benches/`, `docs/`
+6. `README.md` exists with placeholder sections (Installation, Quick Start, Features, License)
+7. `LICENSE-MIT` and `LICENSE-APACHE` files present (dual licensing)
+8. `CHANGELOG.md` initialized with v0.1.0 (unreleased) entry
+9. `cargo build` succeeds without warnings on local platform
+10. `cargo test` passes (empty test suite is acceptable)
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>Project Classification</section>
+        <snippet>Brownfield extraction project. Dotmax extracts the battle-tested braille rendering system from crabmusic. Technical Type: Rust Library (Crate) + Developer Tools. Distribution via crates.io.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>Non-Functional Requirements - Licensing</section>
+        <snippet>NFR-L1: Open Source License - MIT or Apache-2.0 dual licensing (NOT AGPLv3). Maximizes adoption potential. Corporate-friendly licensing.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>Success Criteria - Resumable Development</section>
+        <snippet>Documentation quality enables pickup after months/years gap. Clear architecture decision records (ADRs). Modular milestones allowing pause between phases.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Initialization</section>
+        <snippet>Standard cargo new --lib dotmax. No special starter template. Epic 1 stories define optimal structure, quality tooling, and CI/CD pipeline—better than generic template.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Decision Summary</section>
+        <snippet>Rust 2021 edition, MSRV 1.70. Module Structure: Feature-based (grid, render, image, primitives, color, animation). Public API: Minimal surface.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Structure</section>
+        <snippet>Directory layout: src/, benches/, examples/, tests/, docs/adr/. Supports modular feature-based organization. Examples in examples/ with README.md. Documentation in docs/.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-1.md</path>
+        <title>Epic 1 Technical Specification</title>
+        <section>Data Models and Contracts - Cargo.toml Structure</section>
+        <snippet>Complete Cargo.toml with name, version 0.1.0, authors, edition 2021, rust-version 1.70, description, license MIT OR Apache-2.0, repository, keywords, categories. Dual licensing for maximum adoption.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-1.md</path>
+        <title>Epic 1 Technical Specification</title>
+        <section>Implementation Patterns - Naming Conventions</section>
+        <snippet>Files and modules: snake_case. Types: PascalCase. Functions/variables: snake_case. Constants: SCREAMING_SNAKE_CASE. One primary type per file matching filename.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.1: Initialize Cargo Project with Optimal Structure</section>
+        <snippet>First story in Epic 1. Creates Cargo.toml with complete metadata, src/lib.rs entry point, directory structure (examples/, tests/, benches/, docs/), README.md, dual license files, CHANGELOG.md, .gitignore. MSRV 1.70, Edition 2021.</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <!-- No existing code - this is the first story creating the project structure -->
+    </code>
+    <dependencies>
+      <rust>
+        <!-- Core dependencies will be added in Story 1.3 -->
+        <!-- This story only creates the project structure -->
+      </rust>
+      <tooling>
+        <tool name="cargo">Rust package manager (v1.70+)</tool>
+        <tool name="git">Version control for repository initialization</tool>
+        <tool name="rustc">Rust compiler (v1.70+ for MSRV)</tool>
+      </tooling>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- **MSRV 1.70**: Must set rust-version = "1.70" in Cargo.toml for CI validation in Story 1.2
+- **Edition 2021**: Required for latest Rust idioms - don't use older editions
+- **Dual Licensing**: Must include both LICENSE-MIT and LICENSE-APACHE files with exact license text
+- **Cargo.lock Exclusion**: Libraries should NOT commit Cargo.lock to git (add to .gitignore)
+- **Repository URL**: Verify GitHub repository name - using "frosty40/dotmax" as assumed URL
+- **Standard Structure**: Follow Rust API Guidelines for directory layout and file organization
+- **Zero Warnings**: cargo build must complete with zero warnings for clean build
+- **Keep a Changelog Format**: CHANGELOG.md must follow https://keepachangelog.com/ format
+- **No Dependencies Yet**: This story creates structure only; dependencies added in Story 1.3
+  </constraints>
+
+  <interfaces>
+    <!-- No runtime interfaces in this story - infrastructure only -->
+    <buildtime>
+      <interface>
+        <name>cargo build</name>
+        <kind>CLI command</kind>
+        <signature>cargo build</signature>
+        <purpose>Compile the library crate - must succeed with zero warnings</purpose>
+      </interface>
+      <interface>
+        <name>cargo test</name>
+        <kind>CLI command</kind>
+        <signature>cargo test</signature>
+        <purpose>Run test suite - must pass (empty test suite is acceptable)</purpose>
+      </interface>
+      <interface>
+        <name>cargo check</name>
+        <kind>CLI command</kind>
+        <signature>cargo check</signature>
+        <purpose>Verify project metadata is valid without full compilation</purpose>
+      </interface>
+    </buildtime>
+  </interfaces>
+
+  <tests>
+    <standards>
+Epic 1 focuses on infrastructure setup with minimal testing requirements. This story requires:
+- Build test: `cargo build` succeeds with zero warnings
+- Test suite validation: `cargo test` passes (empty test suite is acceptable)
+- Metadata validation: `cargo check` verifies Cargo.toml correctness
+
+Future stories (Epic 2+) will add:
+- Unit tests for core rendering functions (>80% coverage target)
+- Integration tests for public APIs
+- Benchmark tests with Criterion.rs (Story 1.6)
+- Visual regression tests for output validation (Epic 7)
+
+Testing philosophy from Architecture Doc: Follow Rust idioms with tests in same file under #[cfg(test)] modules. Use property-based testing for mathematical correctness (proptest).
+    </standards>
+    <locations>
+- tests/ - Integration tests (future epics)
+- src/**/*.rs - Unit tests under #[cfg(test)] modules (future epics)
+- benches/ - Performance benchmarks (Story 1.6)
+- examples/ - Example code serving as API validation (Story 1.7)
+    </locations>
+    <ideas>
+- AC#9: Validate `cargo build` succeeds without warnings (test command execution, check exit code)
+- AC#10: Validate `cargo test` passes with empty test suite (test command execution)
+- AC#2: Verify Cargo.toml metadata completeness (parse TOML, check all required fields present)
+- AC#4: Verify .gitignore contains required patterns (read file, check for target/, Cargo.lock, etc.)
+- AC#5: Verify directory structure exists (check for examples/, tests/, benches/, docs/, docs/adr/)
+- AC#6: Verify README.md contains required sections (parse markdown, check for Installation, Quick Start, Features, License)
+- AC#7: Verify LICENSE-MIT and LICENSE-APACHE files exist and contain valid license text
+- AC#8: Verify CHANGELOG.md follows Keep a Changelog format (parse markdown, check structure)
+    </ideas>
+  </tests>
+</story-context>

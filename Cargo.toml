@@ -1,0 +1,33 @@
+[package]
+name = "dotmax"
+version = "0.1.0"
+authors = ["Frosty"]
+edition = "2021"
+rust-version = "1.70"
+description = "High-performance terminal braille rendering for images, animations, and graphics"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/frosty40/dotmax"
+keywords = ["terminal", "braille", "graphics", "cli", "visualization"]
+categories = ["command-line-interface", "graphics", "rendering"]
+
+[dependencies]
+# Core dependencies (always included)
+ratatui = "0.29"         # Terminal UI framework
+crossterm = "0.29"       # Cross-platform terminal I/O
+thiserror = "2.0"        # Error handling derive macros
+tracing = "0.1"          # Structured logging
+
+# Optional dependencies (feature-gated)
+image = { version = "0.25", optional = true }
+imageproc = { version = "0.24", optional = true }
+resvg = { version = "0.38", optional = true }
+usvg = { version = "0.38", optional = true }
+
+[features]
+default = []
+image = ["dep:image", "dep:imageproc"]
+svg = ["dep:resvg", "dep:usvg"]
+
+[dev-dependencies]
+criterion = { version = "0.7", features = ["html_reports"] }
+tracing-subscriber = "0.3"

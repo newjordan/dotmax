@@ -1,0 +1,16 @@
+# Rust build artifacts
+target/
+
+# Cargo.lock - libraries don't commit lock file
+Cargo.lock
+
+# Rustfmt backups
+**/*.rs.bk
+
+# IDE files
+.idea/
+.vscode/
+
+# Editor swap files
+*.swp
+*.swo
