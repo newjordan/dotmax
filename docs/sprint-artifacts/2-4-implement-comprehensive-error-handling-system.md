@@ -1,6 +1,6 @@
 # Story 2.4: Implement Comprehensive Error Handling System
 
-Status: ready-for-dev
+Status: ready-for-review
 
 ## Story
 
