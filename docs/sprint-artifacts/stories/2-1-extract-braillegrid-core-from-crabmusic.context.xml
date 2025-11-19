@@ -1,0 +1,194 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>1</storyId>
+    <title>Extract BrailleGrid Core from Crabmusic</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/mnt/e/dotmax/docs/sprint-artifacts/2-1-extract-braillegrid-core-from-crabmusic.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>library developer extracting proven code</asA>
+    <iWant>extract the BrailleGrid core data structure from crabmusic</iWant>
+    <soThat>dotmax has a foundation for 2×4 dot matrix rendering</soThat>
+    <tasks>
+      - Task 1: Review crabmusic code and plan extraction (AC: #11)
+      - Task 2: Create src/grid.rs with BrailleGrid struct (AC: #1, #2)
+      - Task 3: Implement dot manipulation methods (AC: #3, #4, #5, #6, #7, #8)
+      - Task 4: Add Color struct placeholder (AC: #1)
+      - Task 5: Update src/lib.rs to export BrailleGrid (AC: #9)
+      - Task 6: Write comprehensive unit tests (AC: #9, #10)
+      - Task 7: Run quality checks and verify zero panics (AC: #9, #10, #11)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    1. src/grid.rs contains BrailleGrid struct with fields: width: usize, height: usize, dots: Vec&lt;Vec&lt;[bool; 8]&gt;&gt;, colors: Option&lt;Vec&lt;Vec&lt;Color&gt;&gt;&gt;
+    2. BrailleGrid::new(width, height) -&gt; Result&lt;Self, DotmaxError&gt; creates grid with specified dimensions, validates width/height &gt; 0
+    3. BrailleGrid::set_dot(x, y, dot_index, value) -&gt; Result&lt;(), DotmaxError&gt; sets individual dot (0-7 index), validates bounds and dot index
+    4. BrailleGrid::get_dot(x, y, dot_index) -&gt; Result&lt;bool, DotmaxError&gt; reads dot value, validates bounds and dot index
+    5. BrailleGrid::clear() resets all dots to false without reallocation
+    6. BrailleGrid::clear_region(x, y, width, height) -&gt; Result&lt;(), DotmaxError&gt; clears rectangular area, validates bounds
+    7. BrailleGrid::dimensions() -&gt; (usize, usize) returns grid size
+    8. Dot indexing follows Unicode braille standard (0-7 mapping to braille positions)
+    9. All methods return Result&lt;T, DotmaxError&gt; - zero panics in public API
+    10. Unit tests cover: grid creation, dot setting/getting for all 8 positions, clear operations, edge cases (zero dimensions, out-of-bounds, invalid dot index)
+    11. Code is free of crabmusic audio dependencies
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Story 2.1 Design</section>
+        <snippet>Defines BrailleGrid struct with Vec&lt;Vec&lt;[bool; 8]&gt;&gt; storage, dot indexing (0-7 Unicode standard), error handling contract (zero panics), and extraction strategy from crabmusic (copy-refactor-test approach).</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Data Models - BrailleGrid</section>
+        <snippet>Complete API specification: new(), set_dot(), get_dot(), clear(), clear_region(), dimensions(). All methods return Result&lt;T, DotmaxError&gt;. Resource limits: MAX_GRID_WIDTH/HEIGHT = 10,000 to prevent OOM attacks.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Error Handling Contract</section>
+        <snippet>DotmaxError variants needed: InvalidDimensions, OutOfBounds, InvalidDotIndex. Zero panics policy - all public methods must return Result. No .unwrap()/.expect()/panic!() in public API paths.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Unicode Braille Dot Indexing Standard</section>
+        <snippet>Dot positions 0-7 map to braille cell (2×4 matrix). Left column: 0-top, 1-middle, 2-bottom, 6-extended. Right column: 3-top, 4-middle, 5-bottom, 7-extended. Formula: unicode = U+2800 + bitfield where bitfield = dots[0]&lt;&lt;0 | dots[1]&lt;&lt;1 | ... | dots[7]&lt;&lt;7</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Module Structure</section>
+        <snippet>Story 2.1 creates src/grid.rs (BrailleGrid + Color structs) and modifies src/lib.rs to add 'pub mod grid;' and re-export types. Module dependencies: grid.rs depends on error.rs only.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>ADR 0005 - Brownfield Extraction Strategy</section>
+        <snippet>Copy working code from crabmusic, strip audio dependencies (mpg123, cpal, FFT, effects), refactor to dotmax modules, add tests to lock behavior, then optimize in Epic 7. Extraction sources: crabmusic/src/visualization/braille.rs and grid_buffer.rs.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/lib.rs</path>
+        <kind>library root</kind>
+        <symbol>N/A</symbol>
+        <lines>1-25</lines>
+        <reason>Story 2.1 Task 5 will modify this file to add 'pub mod grid;' and 'pub use grid::{BrailleGrid, Color};' to export the new types. Currently contains only placeholder comments and a basic test.</reason>
+      </artifact>
+      <artifact>
+        <path>examples/hello_braille.rs</path>
+        <kind>example</kind>
+        <symbol>main</symbol>
+        <lines>10-36</lines>
+        <reason>Contains a 23-line mock BrailleGrid placeholder. Story 2.1 creates the real BrailleGrid, but does NOT update this example - that happens in a later story. Demonstrates expected API usage pattern.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <package name="thiserror" version="2.0" required="true">For DotmaxError enum with #[derive(Error)] - AC #9 requires all methods return Result&lt;T, DotmaxError&gt;</package>
+        <package name="ratatui" version="0.29" required="false">Not used in Story 2.1 - needed in Story 2.3 for terminal rendering</package>
+        <package name="crossterm" version="0.29" required="false">Not used in Story 2.1 - needed in Story 2.3 for terminal I/O</package>
+        <package name="tracing" version="0.1" required="false">Not used in Story 2.1 - logging added in Story 2.7</package>
+      </rust>
+      <dev_dependencies>
+        <package name="criterion" version="0.7">Benchmarking framework - Story 2.1 does not add benchmarks (Story 2.2 will benchmark Unicode conversion)</package>
+        <package name="tracing-subscriber" version="0.3">Log output in tests - used in Story 2.7</package>
+      </dev_dependencies>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    - Zero panics policy (NFR-S3): All public methods must return Result&lt;T, DotmaxError&gt;, never panic. No .unwrap(), .expect(), or panic!() in public API code paths.
+    - Resource limits (NFR-S2): Validate MAX_GRID_WIDTH = 10,000 and MAX_GRID_HEIGHT = 10,000 in new() to prevent OOM attacks.
+    - MSRV compatibility: Code must compile on Rust 1.70 (minimum supported version). CI enforces this constraint.
+    - Cross-platform: Vec allocation and array operations must work identically on Windows, Linux, macOS. No platform-specific code in grid.rs.
+    - No audio dependencies (AC #11): grep search must find zero occurrences of mpg123, cpal, audio, fft, effects in src/grid.rs.
+    - Correctness over optimization (Epic 2 principle): Use straightforward Vec&lt;Vec&lt;[bool; 8]&gt;&gt; storage. Defer optimization to Epic 7 after benchmarking.
+    - Test coverage requirement: &gt;80% line coverage for src/grid.rs with 100% coverage for critical paths (new, set_dot, get_dot, bounds validation).
+    - Unicode standard compliance (AC #8): Dot indexing 0-7 must match Unicode braille standard positions. Document mapping in code comments.
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>BrailleGrid::new</name>
+      <kind>constructor</kind>
+      <signature>pub fn new(width: usize, height: usize) -&gt; Result&lt;Self, DotmaxError&gt;</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::set_dot</name>
+      <kind>mutator method</kind>
+      <signature>pub fn set_dot(&amp;mut self, x: usize, y: usize, dot_index: u8, value: bool) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::get_dot</name>
+      <kind>accessor method</kind>
+      <signature>pub fn get_dot(&amp;self, x: usize, y: usize, dot_index: u8) -&gt; Result&lt;bool, DotmaxError&gt;</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::clear</name>
+      <kind>mutator method</kind>
+      <signature>pub fn clear(&amp;mut self)</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::clear_region</name>
+      <kind>mutator method</kind>
+      <signature>pub fn clear_region(&amp;mut self, x: usize, y: usize, width: usize, height: usize) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::dimensions</name>
+      <kind>accessor method</kind>
+      <signature>pub fn dimensions(&amp;self) -&gt; (usize, usize)</signature>
+      <path>src/grid.rs (new file in Story 2.1)</path>
+    </interface>
+    <interface>
+      <name>Color::rgb</name>
+      <kind>constructor</kind>
+      <signature>pub fn rgb(r: u8, g: u8, b: u8) -&gt; Self</signature>
+      <path>src/grid.rs (Color struct in Story 2.1 Task 4)</path>
+    </interface>
+    <interface>
+      <name>DotmaxError enum</name>
+      <kind>error type</kind>
+      <signature>Story 2.4 creates full enum, but Story 2.1 needs: InvalidDimensions, OutOfBounds, InvalidDotIndex variants</signature>
+      <path>src/error.rs (created in Story 2.4, minimal version may be needed in grid.rs for Story 2.1)</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Story 2.1 uses standard Rust unit testing with #[cfg(test)] mod tests in src/grid.rs. Framework: built-in #[test] with assert!, assert_eq!, assert!(matches!()). Target &gt;80% line coverage overall, 100% for critical paths (constructors, bounds checks, error returns). All tests must pass with cargo test. AC #10 requires comprehensive test suite covering all 11 acceptance criteria.
+    </standards>
+    <locations>
+      - src/grid.rs (inline #[cfg(test)] mod tests - primary location for Story 2.1 tests)
+      - Future: tests/integration_tests.rs (Story 2.3 will add integration tests for rendering)
+    </locations>
+    <ideas>
+      - AC #2: Test new() with valid dimensions (1×1, 80×24, 200×50), zero dimensions (0×10, 10×0) returns Err(InvalidDimensions), max dimensions (10,000×10,000) succeeds, over-max (10,001×10,001) returns Err(InvalidDimensions)
+      - AC #3/#4: Test set_dot() and get_dot() for all 8 dot positions (0-7), verify set then get returns same value, test invalid dot index (8, 255) returns Err(InvalidDotIndex)
+      - AC #3/#4: Test out-of-bounds coordinates in set_dot() and get_dot() return Err(OutOfBounds) with correct context (x, y, width, height)
+      - AC #5: Test clear() sets all dots to false, verify no reallocation by checking capacity before/after
+      - AC #6: Test clear_region() clears only specified rectangular area, test partial clear (middle of grid), test invalid region bounds return Err
+      - AC #7: Test dimensions() returns correct (width, height) tuple for various grid sizes
+      - AC #8: Document test verifying dot index mapping (0-7) matches Unicode braille standard positions (comment verification, not runtime test)
+      - AC #9: Test zero panics - all error cases return Err, never panic. Search for .unwrap()/.expect()/panic!() in public API code.
+      - AC #10: Edge cases - grid with width=1 or height=1, setting dot at (0,0) and (width-1, height-1), clearing empty grid
+      - AC #11: Code review test - grep for audio dependencies returns zero results: grep -E "mpg123|cpal|audio|fft" src/grid.rs
+      - Color struct tests (Task 4): Test Color::rgb(), Color::black(), Color::white() return correct r/g/b values. Test #[derive(PartialEq, Eq)] works for comparison.
+    </ideas>
+  </tests>
+</story-context>

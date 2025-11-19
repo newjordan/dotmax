@@ -31,3 +31,12 @@ svg = ["dep:resvg", "dep:usvg"]
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
 tracing-subscriber = "0.3"
+
+[[bench]]
+name = "rendering"
+harness = false
+
+[lints.clippy]
+all = "deny"
+pedantic = "warn"
+nursery = "warn"

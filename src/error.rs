@@ -107,8 +107,8 @@ mod tests {
             width: 0,
             height: 10,
         };
-        let msg = format!("{}", err);
-        assert!(msg.contains("0"));
+        let msg = format!("{err}");
+        assert!(msg.contains('0'));
         assert!(msg.contains("10"));
         assert!(msg.contains("width"));
         assert!(msg.contains("height"));
@@ -122,7 +122,7 @@ mod tests {
             width: 80,
             height: 24,
         };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("100"));
         assert!(msg.contains("50"));
         assert!(msg.contains("80"));
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn test_invalid_dot_index_message_includes_index() {
         let err = DotmaxError::InvalidDotIndex { index: 10 };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("10"));
         assert!(msg.contains("0-7"));
     }
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_unicode_conversion_message_includes_coordinates() {
         let err = DotmaxError::UnicodeConversion { x: 15, y: 20 };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("15"));
         assert!(msg.contains("20"));
     }
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn test_terminal_backend_message() {
         let err = DotmaxError::TerminalBackend("Test error".to_string());
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Test error"));
         assert!(msg.contains("Terminal backend error"));
     }

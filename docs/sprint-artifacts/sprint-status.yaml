@@ -54,8 +54,9 @@ development_status:
   2-3-implement-gridbuffer-and-terminal-rendering-abstraction: done
   2-4-implement-comprehensive-error-handling-system: done
   2-5-add-terminal-resize-event-handling: done
-  2-6-implement-color-support-for-braille-cells: backlog
-  2-7-add-debug-logging-and-tracing-support: backlog
+  2-6-implement-color-support-for-braille-cells: done
+  2-7-add-debug-logging-and-tracing-support: done
+  2-8-implement-proper-viewport-detection-and-rendering: ready-for-review  # Visual validation passed on WSL + PowerShell
   epic-2-retrospective: optional
 
   # Epic 3: 2D Image Rendering Pipeline

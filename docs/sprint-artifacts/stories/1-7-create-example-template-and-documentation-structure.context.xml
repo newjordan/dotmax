@@ -1,0 +1,213 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>7</storyId>
+    <title>Create Example Template and Documentation Structure</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/1-7-create-example-template-and-documentation-structure.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating a library with excellent DX</asA>
+    <iWant>example code that demonstrates usage and compiles in CI</iWant>
+    <soThat>users can start using dotmax in <5 minutes</soThat>
+    <tasks>
+      <task id="1" title="Create examples directory and hello_braille.rs placeholder example">
+        <subtask>Create examples/ directory at project root</subtask>
+        <subtask>Create examples/hello_braille.rs file</subtask>
+        <subtask>Write minimal braille rendering example (&lt;50 LOC with inline comments)</subtask>
+        <subtask>Use placeholder/mock BrailleGrid implementation (Epic 2 will add real types)</subtask>
+        <subtask>Example should compile but output may be minimal until Epic 2</subtask>
+      </task>
+      <task id="2" title="Create examples/README.md with example index">
+        <subtask>Create examples/README.md file</subtask>
+        <subtask>Add header: "# dotmax Examples"</subtask>
+        <subtask>Add "Available Examples" section with table (name, description, features, difficulty)</subtask>
+        <subtask>List hello_braille.rs with description</subtask>
+        <subtask>Add "Running Examples" section with cargo run --example instructions</subtask>
+        <subtask>Add note about feature flags</subtask>
+        <subtask>Add "Future Examples" section noting examples to be added in later epics</subtask>
+      </task>
+      <task id="3" title="Create or update root README.md with comprehensive documentation">
+        <subtask>Check if README.md exists (it does - will update)</subtask>
+        <subtask>Update Quick Start section with actual code snippet from hello_braille.rs</subtask>
+        <subtask>Add Feature Flags table (Flag, Description, Dependencies columns)</subtask>
+        <subtask>Add Examples section with link to examples/README.md</subtask>
+        <subtask>Add Documentation section with docs.rs placeholder</subtask>
+        <subtask>Verify License section states MIT OR Apache-2.0</subtask>
+        <subtask>Add Contributing and Acknowledgments sections</subtask>
+      </task>
+      <task id="4" title="Test example execution">
+        <subtask>Run cargo run --example hello_braille locally</subtask>
+        <subtask>Verify command executes without compilation errors</subtask>
+        <subtask>Note: Actual output may be minimal/empty until Epic 2 implements BrailleGrid</subtask>
+      </task>
+      <task id="5" title="Update CI workflow to build examples">
+        <subtask>Open .github/workflows/ci.yml</subtask>
+        <subtask>Add new step in test job after Build step (line 27)</subtask>
+        <subtask>Step name: "Build examples"</subtask>
+        <subtask>Step command: cargo build --examples</subtask>
+        <subtask>Run full CI suite locally to verify</subtask>
+        <subtask>Commit and push to trigger GitHub Actions CI</subtask>
+        <subtask>Verify CI passes all checks including new examples build step</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">examples/ directory exists at project root</criterion>
+    <criterion id="2">examples/hello_braille.rs exists and contains a minimal braille rendering example</criterion>
+    <criterion id="3">hello_braille.rs demonstrates BrailleGrid creation, dot setting, and terminal rendering (placeholder/mock)</criterion>
+    <criterion id="4">hello_braille.rs is under 50 lines of code (excluding comments)</criterion>
+    <criterion id="5">hello_braille.rs includes inline comments explaining each key step</criterion>
+    <criterion id="6">examples/README.md exists with an example index</criterion>
+    <criterion id="7">examples/README.md lists all examples with descriptions</criterion>
+    <criterion id="8">examples/README.md shows how to run examples (cargo run --example hello_braille)</criterion>
+    <criterion id="9">examples/README.md notes which features are required for each example</criterion>
+    <criterion id="10">Root README.md exists with comprehensive project documentation</criterion>
+    <criterion id="11">README.md includes Installation section with cargo add dotmax instruction</criterion>
+    <criterion id="12">README.md includes Quick Start section with code snippet from hello_braille example</criterion>
+    <criterion id="13">README.md includes Features section with table of feature flags (image, svg, video, raytrace)</criterion>
+    <criterion id="14">README.md includes Examples section with link to examples/README.md</criterion>
+    <criterion id="15">README.md includes Documentation section with placeholder for docs.rs link</criterion>
+    <criterion id="16">README.md includes License section stating MIT OR Apache-2.0</criterion>
+    <criterion id="17">cargo run --example hello_braille executes successfully without errors</criterion>
+    <criterion id="18">CI workflow (.github/workflows/ci.yml) includes step to build examples</criterion>
+    <criterion id="19">CI step runs cargo build --examples to ensure examples always compile</criterion>
+    <criterion id="20">All existing CI checks continue to pass (build, test, clippy, fmt, deny, audit, msrv)</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>FR44-FR50: API Design &amp; Integration</section>
+        <snippet>FR44: Developers can integrate dotmax with &lt;100 lines of code for basic use cases. FR48: System provides examples for common integration scenarios. FR66: System provides API documentation via rustdoc with examples. FR67: System includes examples/ directory with runnable demonstrations. FR87: System includes quickstart guide in README.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>NFR-DX1 &amp; NFR-DX2: Developer Experience</section>
+        <snippet>NFR-DX1: API Simplicity - Basic integration requires &lt;100 lines of code. NFR-DX2: Documentation Quality - Every public API has rustdoc with examples. Examples compile and run (tested in CI). Quickstart guide in README (&lt;5 minutes to first render).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Structure</section>
+        <snippet>Examples directory structure: examples/hello_braille.rs (minimal &lt;50 lines), examples/README.md (example index, running instructions). Documentation scaffold includes README.md with Installation, Quick Start, Features, Examples, License sections.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-1.md</path>
+        <title>Epic 1 Technical Specification</title>
+        <section>Story 1.7 Detailed Design</section>
+        <snippet>Story 1.7 creates example infrastructure with placeholder hello_braille.rs (similar to Story 1.6's placeholder benchmarks). Examples use mock BrailleGrid implementation until Epic 2. CI integration: extend .github/workflows/ci.yml with 'cargo build --examples' step. README follows Rust ecosystem best practices (serde, tokio, clap style).</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.7 Acceptance Criteria</section>
+        <snippet>20 acceptance criteria covering: examples/ directory creation, hello_braille.rs (&lt;50 LOC with inline comments), examples/README.md (index, run instructions, feature flags), root README.md (Installation, Quick Start, Features, Examples, Documentation, License sections), example execution (cargo run --example hello_braille), CI workflow update (cargo build --examples).</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/lib.rs</path>
+        <kind>library root</kind>
+        <symbol>N/A</symbol>
+        <lines>1-25</lines>
+        <reason>Library entry point - currently empty with placeholder comment noting Epic 2+ will add modules. Example will reference future BrailleGrid type from this library.</reason>
+      </artifact>
+      <artifact>
+        <path>.github/workflows/ci.yml</path>
+        <kind>CI workflow</kind>
+        <symbol>test job</symbol>
+        <lines>10-30</lines>
+        <reason>Existing CI test job that runs 'cargo build' and 'cargo test' on matrix (ubuntu, windows, macos). Story 1.7 will add 'cargo build --examples' step after line 27 (Build step).</reason>
+      </artifact>
+      <artifact>
+        <path>README.md</path>
+        <kind>documentation</kind>
+        <symbol>N/A</symbol>
+        <lines>1-105</lines>
+        <reason>Existing README with Installation, Quick Start, Features, Development (Code Quality), License, Repository sections. Story 1.7 will update Quick Start section with actual example code and add Examples section.</reason>
+      </artifact>
+      <artifact>
+        <path>benches/rendering.rs</path>
+        <kind>benchmark</kind>
+        <symbol>N/A</symbol>
+        <lines>N/A</lines>
+        <reason>Story 1.6 created placeholder benchmarks. Story 1.7 follows similar pattern: create examples/ with placeholder example that will be replaced in Epic 2.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dependency name="ratatui" version="0.29">Terminal UI framework - used in future BrailleGrid rendering (Epic 2)</dependency>
+          <dependency name="crossterm" version="0.29">Cross-platform terminal I/O - used for terminal control (Epic 2)</dependency>
+          <dependency name="thiserror" version="2.0">Error handling - example may demonstrate error handling patterns</dependency>
+          <dependency name="tracing" version="0.1">Structured logging - not used in examples (dev only)</dependency>
+        </core>
+        <dev>
+          <dependency name="criterion" version="0.7">Benchmarking framework (Story 1.6)</dependency>
+          <dependency name="tracing-subscriber" version="0.3">Logging in tests</dependency>
+        </dev>
+      </rust>
+      <cargo>
+        <manifest>Cargo.toml</manifest>
+        <edition>2021</edition>
+        <msrv>1.70</msrv>
+        <features>
+          <feature name="default">Core only (no optional dependencies)</feature>
+          <feature name="image">Image rendering (Epic 3) - optional</feature>
+          <feature name="svg">SVG rendering (Epic 3) - optional</feature>
+        </features>
+      </cargo>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>hello_braille.rs must be under 50 lines of code (excluding comments) - AC #4</constraint>
+    <constraint>Example must use placeholder/mock BrailleGrid since actual types don't exist until Epic 2</constraint>
+    <constraint>Example must compile and run successfully (AC #17, #19) - use valid Rust code</constraint>
+    <constraint>README.md must follow Rust ecosystem best practices (similar to serde, tokio, clap)</constraint>
+    <constraint>CI step must run after 'cargo build' but before 'cargo test' in .github/workflows/ci.yml</constraint>
+    <constraint>No Cargo.toml changes needed - examples/ directory is auto-detected by Cargo</constraint>
+    <constraint>All created files follow NFR-DX2: Documentation Quality standards</constraint>
+    <constraint>Examples must validate FR44: Integration with &lt;100 lines of code</constraint>
+  </constraints>
+  <interfaces>
+    <interface>
+      <name>cargo run --example</name>
+      <kind>Cargo CLI interface</kind>
+      <signature>cargo run --example hello_braille</signature>
+      <path>examples/hello_braille.rs</path>
+    </interface>
+    <interface>
+      <name>cargo build --examples</name>
+      <kind>CI build step</kind>
+      <signature>cargo build --examples</signature>
+      <path>.github/workflows/ci.yml</path>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>Story 1.7 uses CI build validation as the primary testing mechanism. Examples must compile successfully via 'cargo build --examples' in CI on all platforms (ubuntu, windows, macos). The example execution test ('cargo run --example hello_braille') validates runtime behavior. No unit tests required for documentation/example files. Follow Rust idioms: examples use main() function, handle errors with Result types where appropriate.</standards>
+    <locations>
+      <location>examples/hello_braille.rs - Tested via CI: cargo build --examples</location>
+      <location>examples/README.md - Manual review for completeness</location>
+      <location>README.md - Manual review for sections (Installation, Quick Start, Features, Examples, Documentation, License)</location>
+      <location>.github/workflows/ci.yml - Tested by pushing code and observing CI runs</location>
+    </locations>
+    <ideas>
+      <test ac="AC #1-5" description="Verify examples/ directory structure exists with hello_braille.rs and README.md files">Manual filesystem check: ls -la examples/</test>
+      <test ac="AC #6-9" description="Validate examples/README.md contains all required sections (index, run instructions, feature flags, future examples)">Manual review of examples/README.md content</test>
+      <test ac="AC #10-16" description="Verify root README.md has all required sections with correct content">Manual review: Installation (cargo add), Quick Start (code snippet), Features (table), Examples (link), Documentation (docs.rs placeholder), License (MIT OR Apache-2.0)</test>
+      <test ac="AC #17" description="Example execution test">Run: cargo run --example hello_braille → should compile and run without errors (output may be minimal/placeholder)</test>
+      <test ac="AC #18-19" description="CI builds examples on all platforms">Push code → verify GitHub Actions runs 'cargo build --examples' step successfully on ubuntu, windows, macos</test>
+      <test ac="AC #20" description="All existing CI checks still pass">Verify: build, test, clippy, fmt, audit, msrv, deny all pass after changes</test>
+      <test ac="LOC count" description="Verify hello_braille.rs is under 50 lines (excluding comments)">Run: grep -v '^//' examples/hello_braille.rs | grep -v '^$' | wc -l → result must be &lt;50</test>
+    </ideas>
+  </tests>
+</story-context>

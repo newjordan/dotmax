@@ -1,0 +1,189 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>5</storyId>
+    <title>Add Terminal Resize Event Handling</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-18</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/2-5-add-terminal-resize-event-handling.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer building terminal applications with dotmax</asA>
+    <iWant>the BrailleGrid to adapt automatically to terminal resize events</iWant>
+    <soThat>my application remains functional and properly sized when users change their terminal dimensions</soThat>
+    <tasks>
+- [ ] Task 1: Implement BrailleGrid::resize() method (AC: #2, #3, #4)
+- [ ] Task 2: Implement color buffer resize synchronization (AC: #5)
+- [ ] Task 3: Implement TerminalRenderer::get_terminal_size() method (AC: #1)
+- [ ] Task 4: Write comprehensive resize tests (AC: #6)
+- [ ] Task 5: Add integration test for terminal resize scenario (AC: #1, #2, #3)
+- [ ] Task 6: Update public API exports and documentation (AC: #1, #2)
+- [ ] Task 7: Run quality checks and verify implementation (AC: all)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. `TerminalRenderer::get_terminal_size() -> Result<(u16, u16), DotmaxError>` queries current terminal dimensions via crossterm
+2. `BrailleGrid::resize(new_width, new_height) -> Result<(), DotmaxError>` adjusts grid dimensions
+3. Resize preserves existing dots when grid grows (new cells initialized to false)
+4. Resize truncates excess dots when grid shrinks (no data corruption)
+5. Color buffer (if enabled) resizes in sync with dots
+6. Unit tests verify resize behavior: grow, shrink, preserve data, maintain invariants
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact>
+        <path>docs/PRD.md</path>
+        <title>dotmax Product Requirements Document</title>
+        <section>FR7: Terminal Resize Handling</section>
+        <snippet>The system handles terminal resize events and adjusts grid dimensions accordingly</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>ADR 0005: Brownfield Extraction Strategy - Copy-Refactor-Test</section>
+        <snippet>Copy exact working code, strip audio dependencies, refactor to modules, add tests, then optimize. Preserves proven working behavior with tests that lock in correctness before optimization.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>Story 2.5: Terminal Resize Event Handling</section>
+        <snippet>AC 2.5.1: `TerminalRenderer::get_terminal_size() -> Result<(u16, u16), DotmaxError>` queries current terminal dimensions via crossterm. AC 2.5.2: `BrailleGrid::resize(new_width, new_height) -> Result<(), DotmaxError>` adjusts grid dimensions. Resize preserves existing dots when grid grows, truncates when shrinks, and color buffer resizes in sync.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>Terminal Resize Event Flow</section>
+        <snippet>1. Terminal resize event detected → crossterm emits Event::Resize(new_width, new_height). 2. Application queries new size → renderer.get_terminal_size(). 3. Application resizes grid → grid.resize(new_width_in_cells, new_height_in_cells) preserving existing dots. 4. Re-render → renderer.render(&grid) with grid now matching terminal dimensions.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>BrailleGrid Data Structure</section>
+        <snippet>struct BrailleGrid { width: usize, height: usize, dots: Vec<Vec<[bool; 8]>>, colors: Option<Vec<Vec<Color>>> }. Resize method adjusts dimensions while maintaining data integrity.</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>module</kind>
+        <symbol>BrailleGrid</symbol>
+        <lines>158-552</lines>
+        <reason>Core data structure that needs the resize() method. Story 2.5 adds BrailleGrid::resize(new_width, new_height) to this struct (Task 1).</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>constant</kind>
+        <symbol>MAX_GRID_WIDTH, MAX_GRID_HEIGHT</symbol>
+        <lines>18-19</lines>
+        <reason>Dimension validation constants. resize() must validate against these limits (10,000 max).</reason>
+      </artifact>
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>module</kind>
+        <symbol>TerminalRenderer</symbol>
+        <lines>137-336</lines>
+        <reason>Terminal rendering struct that needs get_terminal_size() method. Story 2.5 adds method to query terminal dimensions (Task 3).</reason>
+      </artifact>
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>method</kind>
+        <symbol>TerminalRenderer::get_terminal_size</symbol>
+        <lines>283-286</lines>
+        <reason>EXISTING METHOD - Already implemented! Uses crossterm::terminal::size() to query dimensions. Story 2.5 acceptance criteria already met for AC #1.</reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>enum</kind>
+        <symbol>DotmaxError</symbol>
+        <lines>44-98</lines>
+        <reason>Error type system. resize() must return Result&lt;(), DotmaxError&gt; with InvalidDimensions variant for validation failures.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>test_module</kind>
+        <symbol>tests</symbol>
+        <lines>564-1225</lines>
+        <reason>Existing comprehensive test suite. Story 2.5 adds resize-specific tests to this module (Task 4).</reason>
+      </artifact>
+      <artifact>
+        <path>tests/integration_tests.rs</path>
+        <kind>integration_tests</kind>
+        <symbol>N/A</symbol>
+        <lines>N/A</lines>
+        <reason>Integration test file for end-to-end testing. Story 2.5 adds terminal resize scenario test here (Task 5).</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <package name="crossterm" version="0.29" usage="TerminalRenderer::get_terminal_size() uses crossterm::terminal::size() to query terminal dimensions" />
+        <package name="thiserror" version="2.0" usage="DotmaxError enum for Result-based error handling in resize() method" />
+        <package name="tracing" version="0.1" usage="Add #[instrument(skip(self))] and debug!() logs for resize operations (Story 2.7 pattern)" />
+      </rust>
+      <dev_dependencies>
+        <package name="criterion" version="0.7" usage="Not required for Story 2.5 - resize is not a hot path, Epic 7 benchmarks if needed" />
+      </dev_dependencies>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint id="zero-panics">All public methods must return Result&lt;T, DotmaxError&gt;. resize() and get_terminal_size() must never panic, even with invalid input (NFR-S3).</constraint>
+    <constraint id="dimension-validation">resize() must validate new_width and new_height: both > 0 AND &lt;= MAX_GRID_WIDTH/HEIGHT (10,000). Return Err(InvalidDimensions) if violated (NFR-S2).</constraint>
+    <constraint id="data-preservation">Resize must preserve existing dots in overlap region. When growing, new cells initialize to false. When shrinking, truncate cleanly without corruption (AC #3, #4).</constraint>
+    <constraint id="color-sync">If colors buffer exists (colors.is_some()), resize must synchronize color buffer dimensions with dots buffer. Maintain 1:1 correspondence (AC #5).</constraint>
+    <constraint id="architectural-pattern">Follow existing patterns from grid.rs: validate inputs, use Result types, add tracing (Story 2.7 pattern), test comprehensively.</constraint>
+    <constraint id="extraction-philosophy">Story 2.4 established zero-panics policy and comprehensive error handling. Story 2.5 continues this pattern with resize operations.</constraint>
+    <constraint id="testing-standards">Unit tests must cover: resize grow, resize shrink, preserve data, color sync, validation errors, invariants. Integration test demonstrates resize workflow (AC #6).</constraint>
+  </constraints>
+  <interfaces>
+    <interface>
+      <name>BrailleGrid::resize</name>
+      <kind>method</kind>
+      <signature>pub fn resize(&amp;mut self, new_width: usize, new_height: usize) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/grid.rs</path>
+      <description>Adjusts grid dimensions. Preserves existing dots where grids overlap. New cells initialized to false on grow. Excess dots truncated on shrink. Color buffer resizes in sync if enabled. Validates dimensions > 0 and &lt;= MAX.</description>
+    </interface>
+    <interface>
+      <name>TerminalRenderer::get_terminal_size</name>
+      <kind>method</kind>
+      <signature>pub fn get_terminal_size(&amp;self) -> Result&lt;(u16, u16), DotmaxError&gt;</signature>
+      <path>src/render.rs (lines 283-286)</path>
+      <description>ALREADY IMPLEMENTED! Queries current terminal dimensions via crossterm::terminal::size(). Returns (width, height) tuple. Wraps I/O errors in DotmaxError::Terminal.</description>
+    </interface>
+    <interface>
+      <name>DotmaxError::InvalidDimensions</name>
+      <kind>error_variant</kind>
+      <signature>InvalidDimensions { width: usize, height: usize }</signature>
+      <path>src/error.rs (lines 50-51)</path>
+      <description>Error returned when resize dimensions are zero or exceed MAX_GRID_WIDTH/HEIGHT. Includes attempted width and height for debugging.</description>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+- All public methods return Result&lt;T, DotmaxError&gt; (no panics)
+- Unit tests use #[test] with assert!, assert_eq!, matches!() patterns
+- Integration tests use #[test] with #[ignore] for terminal-dependent tests
+- Test coverage target: >80% overall, 100% for critical paths (resize logic)
+- Error cases must be explicitly tested (InvalidDimensions, out-of-bounds scenarios)
+- Invariants verified after operations (dots.len() == height, colors sync with dots)
+    </standards>
+    <locations>
+- src/grid.rs: #[cfg(test)] mod tests (lines 564-1225) - add resize unit tests here
+- tests/integration_tests.rs: Add terminal resize workflow integration test
+- No benchmarks needed (resize is not a hot path, defer to Epic 7 if needed)
+    </locations>
+    <ideas>
+      <idea ac="2,3,4">Test resize grow: Create 10×10 grid, set dots, resize to 20×20, verify dimensions updated and existing dots preserved at same coordinates.</idea>
+      <idea ac="2,4">Test resize shrink: Create 20×20 grid with dots, resize to 10×10, verify dimensions updated and dots outside new bounds are truncated (no panic, no corruption).</idea>
+      <idea ac="2">Test resize to same dimensions (10×10 → 10×10): Should succeed as no-op, grid unchanged.</idea>
+      <idea ac="2">Test resize to zero dimensions → Err(InvalidDimensions) with width=0 or height=0.</idea>
+      <idea ac="2">Test resize beyond MAX (20000×10) → Err(InvalidDimensions).</idea>
+      <idea ac="5">Test resize with colors enabled: Enable colors, set cell colors, resize grid, verify color buffer resized in sync and existing colors preserved.</idea>
+      <idea ac="6">Test invariants after resize: Verify dots.len() == height, each row has width cells, color buffer (if present) matches dimensions.</idea>
+      <idea ac="1,2,3">Integration test: Create TerminalRenderer, query size with get_terminal_size(), create BrailleGrid matching size, set dots, resize grid to new dimensions, render successfully.</idea>
+    </ideas>
+  </tests>
+</story-context>

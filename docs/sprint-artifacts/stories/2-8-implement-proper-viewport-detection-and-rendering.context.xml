@@ -1,0 +1,213 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>2.8</storyId>
+    <title>Implement Proper Viewport Detection and Rendering</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-19</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/2-8-implement-proper-viewport-detection-and-rendering.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>library user rendering braille grids to terminals</asA>
+    <iWant>proper viewport detection and conditional offset logic based on terminal capabilities</iWant>
+    <soThat>my rendered output appears correctly positioned across different terminal types (Windows Terminal, PowerShell, WSL, Ubuntu, macOS) without hardcoded workarounds</soThat>
+    <tasks>
+1. Remove hardcoded -12 offset from src/render.rs:364
+2. Research terminal capability detection methods (ANSI queries, environment variables, terminal type detection)
+3. Research how different terminals report dimensions (buffer vs viewport) - Test on Windows Terminal, PowerShell, WSL, Ubuntu native, macOS Terminal.app
+4. Implement terminal capability detection logic (enum or struct to represent terminal type/behavior)
+5. Implement conditional offset logic based on detected terminal capabilities
+6. Create algorithm that adapts rendering to terminal type for maximum quality
+7. Handle edge cases (unknown terminals, fallback behavior)
+8. Document terminal compatibility matrix (markdown table showing buffer vs viewport reporting per terminal)
+9. Document detection methodology
+10. Visual validation on Ubuntu native and PowerShell environments (by Frosty)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**1. Remove Hardcoded Offset**
+   - Locate and remove hardcoded -12 offset from rendering code (src/render.rs:364)
+   - Ensure no other hardcoded dimension adjustments remain
+
+**2. Implement Terminal Capability Detection**
+   - Research how different terminals report dimensions (buffer vs viewport)
+   - Implement detection logic to identify terminal type/capabilities
+   - Create terminal capability enum or struct to represent detection results
+
+**3. Conditional Offset Logic**
+   - Apply offset conditionally based on detected terminal capabilities
+   - Algorithm adapts to terminal type for maximum rendering quality
+   - Handle edge cases (unknown terminals, fallback behavior)
+
+**4. Research & Documentation**
+   - Test and document behavior on: Windows Terminal, PowerShell, WSL, Ubuntu native, macOS Terminal.app
+   - Create terminal compatibility matrix (markdown table)
+   - Document which terminals report buffer vs viewport
+   - Include detection methodology in documentation
+
+**5. Visual Validation**
+   - Visual testing passes on Ubuntu native environment
+   - Visual testing passes on PowerShell environment
+   - Rendering is correct without hardcoded offsets
+   - No visual artifacts or misalignment
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Epic 2 Technical Specification -->
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>Terminal Rendering Abstraction (Story 2.3)</section>
+        <snippet>TerminalRenderer converts BrailleGrid to terminal output via ratatui/crossterm. Terminal Rendering Abstraction (Story 2.3) includes TerminalRenderer struct with methods: new(), render(grid), clear(), get_terminal_size().</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>Terminal Resize Event Flow (Story 2.5)</section>
+        <snippet>Terminal resize events detected via crossterm Event::Resize. Application queries new size via renderer.get_terminal_size(), then resizes grid to match terminal dimensions.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: Core Braille Rendering Engine</title>
+        <section>Terminal Capabilities Detection (TerminalCapabilities struct)</section>
+        <snippet>TerminalCapabilities struct includes: supports_color, supports_truecolor, supports_unicode flags. Story 2.3 implements TerminalCapabilities.supports_unicode flag with detection to warn user if Unicode not supported.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax - Architecture Document</title>
+        <section>ADR 0004: Terminal Backend Abstraction via Trait</section>
+        <snippet>Define minimal TerminalBackend trait. Provide DefaultTerminal using ratatui/crossterm. Users can implement custom backends. Reduces vendor lock-in and enables testing with mock terminals.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <!-- Current hardcoded offset implementation -->
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>module</kind>
+        <symbol>TerminalRenderer::get_terminal_size</symbol>
+        <lines>356-377</lines>
+        <reason>Contains the hardcoded -12 offset that needs to be removed and replaced with proper viewport detection (line 364: adjusted_height = size.height - 12)</reason>
+      </artifact>
+
+      <!-- TerminalBackend trait -->
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>trait</kind>
+        <symbol>TerminalBackend</symbol>
+        <lines>87-117</lines>
+        <reason>Defines terminal abstraction with size(), render(), clear(), capabilities() methods. Will need enhancement for viewport detection.</reason>
+      </artifact>
+
+      <!-- TerminalCapabilities struct -->
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>struct</kind>
+        <symbol>TerminalCapabilities</symbol>
+        <lines>52-75</lines>
+        <reason>Currently tracks supports_color, supports_truecolor, supports_unicode. Needs extension for viewport detection capabilities.</reason>
+      </artifact>
+
+      <!-- TerminalRenderer main implementation -->
+      <artifact>
+        <path>src/render.rs</path>
+        <kind>struct</kind>
+        <symbol>TerminalRenderer</symbol>
+        <lines>140-428</lines>
+        <reason>Core rendering implementation using ratatui/crossterm. Contains the rendering pipeline that will benefit from proper viewport detection.</reason>
+      </artifact>
+
+      <!-- BrailleGrid resize support -->
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>struct</kind>
+        <symbol>BrailleGrid::resize</symbol>
+        <lines>593-688</lines>
+        <reason>Grid resizing logic that works in conjunction with terminal size detection. May need coordination with viewport detection.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <dependency name="ratatui" version="0.29">Terminal UI framework - provides Terminal::size() API that may report buffer instead of viewport</dependency>
+        <dependency name="crossterm" version="0.29">Cross-platform terminal I/O - provides terminal::size() for dimension queries</dependency>
+        <dependency name="thiserror" version="2.0">Error handling - for DotmaxError variants</dependency>
+        <dependency name="tracing" version="0.1">Structured logging - for debug/info logging during detection</dependency>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Zero panics policy (NFR-S3) - All public API methods return Result, never panic</constraint>
+    <constraint>Cross-platform consistency (NFR-R1) - Detection must work correctly on Windows, Linux, macOS</constraint>
+    <constraint>Terminal compatibility (NFR-R3) - Must handle gracefully when terminal detection fails or reports unexpected values</constraint>
+    <constraint>Graceful degradation (NFR-R2) - If viewport detection fails, fall back to safe default behavior</constraint>
+    <constraint>Actionable errors (NFR-O2) - Error messages must include terminal type, detected dimensions, and what was expected</constraint>
+    <constraint>Minimal performance impact - Detection should be O(1) at initialization, cached for lifetime of renderer</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>TerminalRenderer::get_terminal_size</name>
+      <kind>method</kind>
+      <signature>pub fn get_terminal_size(&self) -> Result<(u16, u16), DotmaxError></signature>
+      <path>src/render.rs:356-377</path>
+      <notes>Currently returns size with hardcoded -12 offset. Needs replacement with proper viewport detection logic.</notes>
+    </interface>
+
+    <interface>
+      <name>TerminalBackend::size</name>
+      <kind>trait method</kind>
+      <signature>fn size(&self) -> Result<(u16, u16), DotmaxError></signature>
+      <path>src/render.rs:95</path>
+      <notes>Abstract method for getting terminal size. May need enhancement to distinguish buffer vs viewport reporting.</notes>
+    </interface>
+
+    <interface>
+      <name>TerminalCapabilities</name>
+      <kind>struct</kind>
+      <signature>pub struct TerminalCapabilities { pub supports_color: bool, pub supports_truecolor: bool, pub supports_unicode: bool }</signature>
+      <path>src/render.rs:56-63</path>
+      <notes>Needs extension to track viewport detection capability/behavior. Consider adding: reports_viewport_size, buffer_height_offset, etc.</notes>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use built-in Rust #[test] with assert!, assert_eq!. Coverage target >80% overall, 100% for critical paths. Integration tests in tests/ directory. Benchmarks use criterion. Story 2.7 established tracing infrastructure for test logging. Mock TerminalBackend for unit tests to avoid CI flakiness. Story 2.3 established #[ignore] pattern for tests requiring actual terminal.
+    </standards>
+
+    <locations>
+- Unit tests: src/render.rs #[cfg(test)] mod tests (lines 433-504)
+- Integration tests: tests/integration_tests.rs
+- Benchmarks: benches/rendering.rs
+    </locations>
+
+    <ideas>
+**Unit Tests:**
+1. Test terminal capability detection for known terminal types (Windows Terminal, PowerShell, WSL)
+2. Test viewport vs buffer detection logic with mocked terminal backends
+3. Test fallback behavior when detection fails or returns unexpected values
+4. Test edge cases: tiny terminals, huge terminals, terminal reporting zero dimensions
+5. Test that hardcoded offset is removed (regression test)
+6. Test conditional offset logic applies correct adjustments per terminal type
+7. Test TerminalCapabilities extension compiles and works correctly
+
+**Integration Tests (with actual terminal):**
+1. Test get_terminal_size returns reasonable values on current terminal
+2. Test rendering appears correctly positioned (visual check by developer)
+3. Test resize events trigger correct viewport recalculation
+
+**Benchmark Tests:**
+1. Ensure viewport detection adds <1ms overhead to renderer initialization
+2. Ensure get_terminal_size performance unchanged (should be cached, O(1))
+
+**Visual Validation (Manual - Frosty):**
+1. Render test pattern on Ubuntu native - verify no misalignment
+2. Render test pattern on PowerShell - verify no misalignment
+3. Compare before/after hardcoded offset removal - ensure improvement
+    </ideas>
+  </tests>
+</story-context>

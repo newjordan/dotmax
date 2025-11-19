@@ -1,0 +1,267 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>3</storyId>
+    <title>Implement GridBuffer and Terminal Rendering Abstraction</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/2-3-implement-gridbuffer-and-terminal-rendering-abstraction.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer rendering to diverse terminals</asA>
+    <iWant>a buffer system that abstracts terminal I/O via ratatui/crossterm</iWant>
+    <soThat>dotmax works on Windows, Linux, macOS without modification</soThat>
+    <tasks>
+      <task id="1" status="pending">COPY terminal rendering abstractions from crabmusic (AC: #2, #6)</task>
+      <task id="2" status="pending">Extract and adapt TerminalRenderer from crabmusic (AC: #1, #3)</task>
+      <task id="3" status="pending">Implement rendering pipeline (AC: #4)</task>
+      <task id="4" status="pending">Implement comprehensive error handling (AC: #5)</task>
+      <task id="5" status="pending">Implement terminal capabilities detection (AC: #6)</task>
+      <task id="6" status="pending">Write integration tests (AC: #7)</task>
+      <task id="7" status="pending">Update public API exports</task>
+      <task id="8" status="pending">Run quality checks and verify correctness</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">src/render.rs contains TerminalRenderer struct with methods: new(), render(grid), clear(), get_terminal_size()</criterion>
+    <criterion id="AC2">TerminalBackend trait defined with methods: size(), render(content), clear(), capabilities()</criterion>
+    <criterion id="AC3">Default implementation uses ratatui + crossterm for terminal I/O</criterion>
+    <criterion id="AC4">Rendering pipeline: BrailleGrid → to_unicode_grid() → ratatui Frame → crossterm → terminal output</criterion>
+    <criterion id="AC5">Terminal I/O errors wrapped in DotmaxError::Terminal</criterion>
+    <criterion id="AC6">TerminalCapabilities struct includes: supports_color, supports_truecolor, supports_unicode flags</criterion>
+    <criterion id="AC7">Integration test renders 10×10 grid successfully to terminal</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>Success Criteria - Performance Excellence</section>
+        <snippet>Performance targets: Image rendering &lt;50ms for 80×24 terminals. Core library &lt;5MB memory, &lt;1% CPU idle. Binary size &lt;2MB. These aggressive targets are make-or-break for adoption.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>Project Classification</section>
+        <snippet>Brownfield extraction from crabmusic (~2,000-3,000 lines). Battle-tested braille rendering system with proven superior quality. Distribution via crates.io using ratatui/crossterm for terminal abstraction.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Decision Summary - Terminal I/O</section>
+        <snippet>ratatui + crossterm (0.29.0) - Industry standard for Rust TUIs. Abstracted via TerminalBackend trait to reduce lock-in. Cross-platform (Windows, Linux, macOS).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Structure - src/render.rs</section>
+        <snippet>Terminal rendering module (Epic 2). Contains: trait TerminalBackend, struct DefaultTerminal (ratatui/crossterm), struct TerminalRenderer. Abstraction layer for terminal I/O operations.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Story 2.3: Terminal Rendering Abstraction - Acceptance Criteria</section>
+        <snippet>AC 2.3.1-2.3.7: TerminalRenderer with new(), render(grid), clear(), get_terminal_size(). TerminalBackend trait. Default uses ratatui+crossterm. Pipeline: BrailleGrid → to_unicode_grid() → ratatui Frame → crossterm. Errors wrapped in DotmaxError::Terminal. TerminalCapabilities struct. Integration test renders 10×10 grid.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Data Models - TerminalBackend Trait</section>
+        <snippet>Trait with methods: size() → Result&lt;(u16, u16)&gt;, render(content: &amp;str) → Result&lt;()&gt;, clear() → Result&lt;()&gt;, capabilities() → TerminalCapabilities. TerminalCapabilities has: supports_color, supports_truecolor, supports_unicode bools.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Data Models - TerminalRenderer</section>
+        <snippet>Struct with backend: Box&lt;dyn TerminalBackend&gt;. Methods: new() → Result&lt;Self&gt;, with_backend(backend) → Self, render(grid: &amp;BrailleGrid) → Result&lt;()&gt;, clear() → Result&lt;()&gt;, get_terminal_size() → Result&lt;(u16, u16)&gt;.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Workflows - Rendering Pipeline (Primary Flow)</section>
+        <snippet>6-step flow: (1) Application creates BrailleGrid::new(width, height). (2) Sets dots via set_dot(x, y, dot_index, value). (3) Converts to Unicode via to_unicode_grid() with bitfield formula U+2800 + value. (4) TerminalRenderer::render(&amp;grid) builds ratatui Frame with braille chars. (5) Outputs via crossterm to terminal. (6) User sees braille characters.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>Extraction Mapping from Crabmusic</section>
+        <snippet>crabmusic/src/terminal/renderer.rs (~450 lines) → dotmax/src/render.rs. Extract terminal rendering abstraction, ratatui integration, crossterm backend, frame rendering logic. Total extraction: ~1,150 lines from crabmusic.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>ADR 0004: Terminal Backend Abstraction via Trait</section>
+        <snippet>Story 2.3 implements TerminalBackend trait per ADR-0004. Reduces ratatui lock-in, enables testing with mock backends, allows alternative terminal implementations.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-2.md</path>
+        <title>Epic 2 Technical Specification</title>
+        <section>ADR 0005: Brownfield Extraction Strategy</section>
+        <snippet>CRITICAL: Copy-Refactor-Test approach. MUST copy from crabmusic, not write from scratch. Preserve working behavior, strip audio deps, refactor to modules, lock correctness with tests.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>module</kind>
+        <symbol>BrailleGrid</symbol>
+        <lines>1-700</lines>
+        <reason>Existing BrailleGrid struct with dot manipulation and Unicode conversion methods. Story 2.3 must use grid.to_unicode_grid() to get braille characters - DO NOT reimplement.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>method</kind>
+        <symbol>BrailleGrid::to_unicode_grid</symbol>
+        <lines>512-526</lines>
+        <reason>Converts entire grid to Vec&lt;Vec&lt;char&gt;&gt;. Story 2.3 rendering pipeline MUST call this method to get braille characters for terminal output.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>method</kind>
+        <symbol>BrailleGrid::cell_to_braille_char</symbol>
+        <lines>557-571</lines>
+        <reason>Single-cell Unicode conversion with bounds validation. Can be used for individual cell rendering if needed.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>enum</kind>
+        <symbol>DotmaxError</symbol>
+        <lines>24-39</lines>
+        <reason>Existing error type. Story 2.3 must extend this with Terminal and TerminalBackend variants for terminal I/O error handling.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>struct</kind>
+        <symbol>Color</symbol>
+        <lines>48-79</lines>
+        <reason>RGB color struct with rgb(), black(), white() constructors. Available for Story 2.6 color rendering (not required for Story 2.3 MVP).</reason>
+      </artifact>
+      <artifact>
+        <path>src/lib.rs</path>
+        <kind>module</kind>
+        <symbol>lib</symbol>
+        <lines>1-49</lines>
+        <reason>Public API re-exports. Story 2.3 must add: pub use render::{TerminalBackend, TerminalRenderer, TerminalCapabilities}.</reason>
+      </artifact>
+      <artifact>
+        <path>crabmusic/src/rendering/mod.rs</path>
+        <kind>file</kind>
+        <symbol>TerminalRenderer (crabmusic)</symbol>
+        <lines>1-500</lines>
+        <reason>PRIMARY EXTRACTION SOURCE. Contains terminal rendering with ratatui/crossterm. MUST copy this code (not rewrite). Extract: TerminalRenderer struct, new() init, render() method, terminal size query, capability detection.</reason>
+      </artifact>
+      <artifact>
+        <path>crabmusic/src/rendering/mod.rs</path>
+        <kind>struct</kind>
+        <symbol>TerminalRenderer::new</symbol>
+        <lines>81-110</lines>
+        <reason>Terminal initialization with raw mode, alternate screen, ratatui setup. Copy this pattern for dotmax TerminalRenderer::new().</reason>
+      </artifact>
+      <artifact>
+        <path>Cargo.toml</path>
+        <kind>file</kind>
+        <symbol>dependencies</symbol>
+        <lines>13-18</lines>
+        <reason>Core dependencies already available: ratatui = "0.29", crossterm = "0.29", thiserror = "2.0", tracing = "0.1". No new dependencies needed for Story 2.3.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <crate name="ratatui" version="0.29">Terminal UI framework - used for building terminal frames and widget rendering</crate>
+        <crate name="crossterm" version="0.29">Cross-platform terminal I/O - handles raw mode, alternate screen, terminal queries</crate>
+        <crate name="thiserror" version="2.0">Error handling derive macros - extend DotmaxError with Terminal and TerminalBackend variants</crate>
+        <crate name="tracing" version="0.1">Structured logging - instrument render() and new() methods (Story 2.7)</crate>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>CRITICAL: MUST copy code from crabmusic/src/rendering/mod.rs - DO NOT write from scratch (ADR 0005 Brownfield Extraction Strategy)</constraint>
+    <constraint>Zero panics policy: All public methods must return Result&lt;T, DotmaxError&gt; - no unwrap(), expect(), or panic!() in public API</constraint>
+    <constraint>MUST use grid.to_unicode_grid() for Unicode conversion - DO NOT reimplement braille character conversion</constraint>
+    <constraint>Terminal I/O errors MUST be wrapped in DotmaxError::Terminal variant (using #[from] for std::io::Error)</constraint>
+    <constraint>TerminalBackend trait MUST abstract ratatui/crossterm to enable testing with mock backends</constraint>
+    <constraint>Cross-platform compatibility: Code must work on Windows, Linux, macOS without platform-specific conditionals</constraint>
+    <constraint>Story 2.3 creates src/render.rs (new file) - estimated ~500 lines including trait, struct, methods, tests</constraint>
+    <constraint>MUST document extraction sources with code comments: "// Extracted from crabmusic/src/rendering/mod.rs:LINE_NUMBERS"</constraint>
+    <constraint>Remove all audio dependencies from extracted code - only keep terminal rendering logic</constraint>
+    <constraint>CI must pass: cargo test, cargo clippy -- -D warnings, cargo fmt --check on all platforms</constraint>
+  </constraints>
+  <interfaces>
+    <interface>
+      <name>TerminalBackend (trait)</name>
+      <kind>Rust trait</kind>
+      <signature>
+trait TerminalBackend {
+    fn size(&amp;self) -&gt; Result&lt;(u16, u16), DotmaxError&gt;;
+    fn render(&amp;mut self, content: &amp;str) -&gt; Result&lt;(), DotmaxError&gt;;
+    fn clear(&amp;mut self) -&gt; Result&lt;(), DotmaxError&gt;;
+    fn capabilities(&amp;self) -&gt; TerminalCapabilities;
+}
+      </signature>
+      <path>src/render.rs (to be created)</path>
+    </interface>
+    <interface>
+      <name>TerminalRenderer::new</name>
+      <kind>Constructor</kind>
+      <signature>pub fn new() -&gt; Result&lt;Self, DotmaxError&gt;</signature>
+      <path>src/render.rs</path>
+    </interface>
+    <interface>
+      <name>TerminalRenderer::render</name>
+      <kind>Method</kind>
+      <signature>pub fn render(&amp;mut self, grid: &amp;BrailleGrid) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/render.rs</path>
+    </interface>
+    <interface>
+      <name>TerminalRenderer::clear</name>
+      <kind>Method</kind>
+      <signature>pub fn clear(&amp;mut self) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/render.rs</path>
+    </interface>
+    <interface>
+      <name>TerminalRenderer::get_terminal_size</name>
+      <kind>Method</kind>
+      <signature>pub fn get_terminal_size(&amp;self) -&gt; Result&lt;(u16, u16), DotmaxError&gt;</signature>
+      <path>src/render.rs</path>
+    </interface>
+    <interface>
+      <name>BrailleGrid::to_unicode_grid (EXISTING)</name>
+      <kind>Method</kind>
+      <signature>pub fn to_unicode_grid(&amp;self) -&gt; Vec&lt;Vec&lt;char&gt;&gt;</signature>
+      <path>src/grid.rs:512-526</path>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+Epic 2 established comprehensive testing standards. All code must have:
+- Unit tests in #[cfg(test)] mod tests within each module (src/render.rs will contain unit tests)
+- Integration tests in tests/integration_tests.rs for end-to-end rendering workflow
+- Mock TerminalBackend for deterministic testing without actual terminal I/O (avoids CI flakiness)
+- Framework: Built-in Rust #[test] with assert!, assert_eq!, matches!()
+- Coverage target: &gt;80% overall, 100% for critical paths (TerminalRenderer core methods)
+- Run command: cargo test (all tests), cargo test --test integration_tests (integration only)
+- CI enforcement: All tests must pass on Windows, Linux, macOS before merge
+    </standards>
+    <locations>
+      <location>src/render.rs - Unit tests for TerminalBackend trait, TerminalRenderer methods, TerminalCapabilities</location>
+      <location>tests/integration_tests.rs - Integration test: create grid → set dots → render to mock terminal → verify output</location>
+    </locations>
+    <ideas>
+      <test id="AC1-test" criterion="AC1">Unit test: TerminalRenderer struct has methods new(), render(), clear(), get_terminal_size() callable</test>
+      <test id="AC2-test" criterion="AC2">Unit test: TerminalBackend trait defined with size(), render(), clear(), capabilities() methods</test>
+      <test id="AC3-test" criterion="AC3">Integration test: DefaultTerminal implementation uses ratatui + crossterm (verify types compile)</test>
+      <test id="AC4-test" criterion="AC4">Integration test: End-to-end pipeline - BrailleGrid → to_unicode_grid() → render() → verify braille chars in mock terminal output</test>
+      <test id="AC5-test" criterion="AC5">Unit test: Terminal I/O errors (simulated) wrapped in DotmaxError::Terminal variant</test>
+      <test id="AC6-test" criterion="AC6">Unit test: TerminalCapabilities struct has supports_color, supports_truecolor, supports_unicode fields</test>
+      <test id="AC7-test" criterion="AC7">Integration test: Render 10×10 grid with mock backend - verify no panics, output contains expected braille characters</test>
+      <test id="mock-backend-test">Unit test: Create MockTerminal implementing TerminalBackend - verify render() stores content, size() returns configured dimensions</test>
+      <test id="error-propagation-test">Unit test: TerminalRenderer methods propagate errors correctly (verify Result types)</test>
+      <test id="cross-platform-test">CI test: All tests pass on Windows, Linux, macOS (run via GitHub Actions)</test>
+    </ideas>
+  </tests>
+</story-context>

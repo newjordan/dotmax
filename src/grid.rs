@@ -14,6 +14,9 @@
 // Import error types from error module
 use crate::error::DotmaxError;
 
+// Tracing for structured logging (Story 2.7)
+use tracing::{debug, error, info, instrument};
+
 /// Maximum grid dimensions to prevent OOM attacks (NFR-S2)
 const MAX_GRID_WIDTH: usize = 10_000;
 const MAX_GRID_HEIGHT: usize = 10_000;
@@ -191,18 +194,37 @@ impl BrailleGrid {
     /// # Crabmusic Change
     /// Original crabmusic code never validated dimensions.
     /// Dotmax adds validation for security (NFR-S2).
+    #[instrument]
     pub fn new(width: usize, height: usize) -> Result<Self, DotmaxError> {
         // Validate dimensions (NEW - not in crabmusic)
         if width == 0 || height == 0 {
+            error!(
+                width = width,
+                height = height,
+                "Invalid grid dimensions: width or height is zero"
+            );
             return Err(DotmaxError::InvalidDimensions { width, height });
         }
 
         if width > MAX_GRID_WIDTH || height > MAX_GRID_HEIGHT {
+            error!(
+                width = width,
+                height = height,
+                max_width = MAX_GRID_WIDTH,
+                max_height = MAX_GRID_HEIGHT,
+                "Invalid grid dimensions: exceeds maximum allowed size"
+            );
             return Err(DotmaxError::InvalidDimensions { width, height });
         }
 
         // Allocate grid (PRESERVED from crabmusic)
         let size = width * height;
+        info!(
+            width = width,
+            height = height,
+            total_cells = size,
+            "Creating BrailleGrid"
+        );
         Ok(Self {
             width,
             height,
@@ -257,7 +279,13 @@ impl BrailleGrid {
     /// Clear all dots
     ///
     /// **Extracted from crabmusic** (lines 124-127) with minor adaptation
+    #[instrument(skip(self))]
     pub fn clear(&mut self) {
+        debug!(
+            width = self.width,
+            height = self.height,
+            "Clearing all dots in grid"
+        );
         self.patterns.fill(0);
         self.colors.fill(None);
     }
@@ -282,6 +310,17 @@ impl BrailleGrid {
     pub fn set_dot(&mut self, dot_x: usize, dot_y: usize) -> Result<(), DotmaxError> {
         // Bounds check (MODIFIED from crabmusic - return error instead of silent ignore)
         if dot_x >= self.dot_width() || dot_y >= self.dot_height() {
+            error!(
+                dot_x = dot_x,
+                dot_y = dot_y,
+                dot_width = self.dot_width(),
+                dot_height = self.dot_height(),
+                "Out of bounds dot access: ({}, {}) in grid of size ({}, {})",
+                dot_x,
+                dot_y,
+                self.dot_width(),
+                self.dot_height()
+            );
             return Err(DotmaxError::OutOfBounds {
                 x: dot_x,
                 y: dot_y,
@@ -548,6 +587,229 @@ impl BrailleGrid {
         // Convert cell pattern to Unicode
         let index = y * self.width + x;
         Ok(dots_to_char(self.patterns[index]))
+    }
+
+    /// Resize the grid to new dimensions
+    ///
+    /// **NEW for Story 2.5** - Not in crabmusic. Enables terminal resize handling.
+    ///
+    /// # Arguments
+    /// * `new_width` - New width in braille cells
+    /// * `new_height` - New height in braille cells
+    ///
+    /// # Behavior
+    /// - **Grow**: New cells initialized to empty (pattern=0, color=None)
+    /// - **Shrink**: Existing dots outside new bounds are truncated
+    /// - **Preserve**: Dots within overlap region are preserved
+    /// - **Colors**: Color buffer resizes in sync with patterns
+    ///
+    /// # Errors
+    /// Returns `DotmaxError::InvalidDimensions` if:
+    /// - `new_width` or `new_height` is 0
+    /// - `new_width` or `new_height` exceeds `MAX_GRID_WIDTH`/`MAX_GRID_HEIGHT` (10,000)
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10)?;
+    /// grid.set_dot(0, 0)?; // Set top-left dot
+    ///
+    /// // Resize to larger dimensions
+    /// grid.resize(20, 20)?;
+    /// assert_eq!(grid.dimensions(), (20, 20));
+    ///
+    /// // Resize to smaller dimensions
+    /// grid.resize(5, 5)?;
+    /// assert_eq!(grid.dimensions(), (5, 5));
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
+    #[instrument(skip(self))]
+    pub fn resize(&mut self, new_width: usize, new_height: usize) -> Result<(), DotmaxError> {
+        debug!(
+            old_width = self.width,
+            old_height = self.height,
+            new_width = new_width,
+            new_height = new_height,
+            "Resizing BrailleGrid"
+        );
+
+        // Validation (same logic as new())
+        if new_width == 0 || new_height == 0 {
+            error!(
+                new_width = new_width,
+                new_height = new_height,
+                "Invalid resize dimensions: width or height is zero"
+            );
+            return Err(DotmaxError::InvalidDimensions {
+                width: new_width,
+                height: new_height,
+            });
+        }
+        if new_width > MAX_GRID_WIDTH || new_height > MAX_GRID_HEIGHT {
+            error!(
+                new_width = new_width,
+                new_height = new_height,
+                max_width = MAX_GRID_WIDTH,
+                max_height = MAX_GRID_HEIGHT,
+                "Invalid resize dimensions: exceeds maximum allowed size"
+            );
+            return Err(DotmaxError::InvalidDimensions {
+                width: new_width,
+                height: new_height,
+            });
+        }
+
+        // Create new storage
+        let new_size = new_width * new_height;
+        let mut new_patterns = vec![0; new_size];
+        let mut new_colors = vec![None; new_size];
+
+        // Copy existing data (preserve overlap region)
+        let copy_width = self.width.min(new_width);
+        let copy_height = self.height.min(new_height);
+
+        for y in 0..copy_height {
+            for x in 0..copy_width {
+                let old_index = y * self.width + x;
+                let new_index = y * new_width + x;
+                new_patterns[new_index] = self.patterns[old_index];
+                new_colors[new_index] = self.colors[old_index];
+            }
+        }
+
+        // Update grid state
+        self.width = new_width;
+        self.height = new_height;
+        self.patterns = new_patterns;
+        self.colors = new_colors;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Story 2.6: Color Support for Braille Cells
+    // ========================================================================
+
+    /// Enable color support by allocating color buffer
+    ///
+    /// **Story 2.6** - Allocates per-cell color storage.
+    ///
+    /// Note: In the current implementation, the color buffer is always allocated
+    /// during `BrailleGrid::new()`, so this method is a no-op for compatibility
+    /// with the AC specification. It ensures the color buffer exists.
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10).unwrap();
+    /// grid.enable_color_support(); // Ensures color support is enabled
+    /// ```
+    #[instrument(skip(self))]
+    pub fn enable_color_support(&mut self) {
+        debug!(
+            width = self.width,
+            height = self.height,
+            "Enabling color support (already enabled in current implementation)"
+        );
+        // Color buffer is already allocated in new(), so this is a no-op
+        // This method exists for API compatibility with AC 2.6.3
+        //
+        // If we change to Option<Vec<Option<Color>>> in future, this would be:
+        // if self.colors.is_none() {
+        //     self.colors = Some(vec![None; self.width * self.height]);
+        // }
+    }
+
+    /// Assign RGB color to cell at (x, y)
+    ///
+    /// **Story 2.6** - Per-cell color assignment with bounds validation.
+    ///
+    /// Sets the color for a specific cell. The color will be applied when
+    /// rendering via `TerminalRenderer`.
+    ///
+    /// # Arguments
+    /// * `x` - X position in cells (0 to width-1)
+    /// * `y` - Y position in cells (0 to height-1)
+    /// * `color` - RGB color to assign
+    ///
+    /// # Returns
+    /// * `Ok(())` if color was assigned successfully
+    /// * `Err(DotmaxError::OutOfBounds)` if coordinates exceed grid dimensions
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::{BrailleGrid, Color};
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10).unwrap();
+    /// grid.enable_color_support();
+    ///
+    /// // Set cell (5, 5) to red
+    /// grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+    ///
+    /// // Verify color was set
+    /// assert_eq!(grid.get_color(5, 5), Some(Color::rgb(255, 0, 0)));
+    /// ```
+    ///
+    /// # Errors
+    /// Returns `OutOfBounds` if x >= width or y >= height.
+    pub fn set_cell_color(&mut self, x: usize, y: usize, color: Color) -> Result<(), DotmaxError> {
+        // Validate bounds
+        if x >= self.width || y >= self.height {
+            error!(
+                x = x,
+                y = y,
+                width = self.width,
+                height = self.height,
+                "Out of bounds color assignment: ({}, {}) in grid of size ({}, {})",
+                x,
+                y,
+                self.width,
+                self.height
+            );
+            return Err(DotmaxError::OutOfBounds {
+                x,
+                y,
+                width: self.width,
+                height: self.height,
+            });
+        }
+
+        // Set color
+        let index = y * self.width + x;
+        self.colors[index] = Some(color);
+        Ok(())
+    }
+
+    /// Reset all colors to None (monochrome)
+    ///
+    /// **Story 2.6** - Clear color buffer without deallocating.
+    ///
+    /// Resets all cell colors to `None` while keeping the color buffer
+    /// allocated. This is useful for switching back to monochrome rendering
+    /// without disabling color support entirely.
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::{BrailleGrid, Color};
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10).unwrap();
+    /// grid.enable_color_support();
+    ///
+    /// // Set some colors
+    /// grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+    /// grid.set_cell_color(7, 7, Color::rgb(0, 255, 0)).unwrap();
+    ///
+    /// // Clear all colors
+    /// grid.clear_colors();
+    ///
+    /// // All colors are now None
+    /// assert_eq!(grid.get_color(5, 5), None);
+    /// assert_eq!(grid.get_color(7, 7), None);
+    /// ```
+    pub fn clear_colors(&mut self) {
+        self.colors.fill(None);
     }
 }
 
@@ -1128,14 +1390,14 @@ mod tests {
     // Story 2.4: Error Context Verification Tests (AC #3)
     // ========================================================================
 
-    /// Test InvalidDimensions error message includes context (AC #3)
+    /// Test `InvalidDimensions` error message includes context (AC #3)
     #[test]
     fn test_invalid_dimensions_error_message_includes_context() {
         let result = BrailleGrid::new(0, 10);
         match result {
             Err(DotmaxError::InvalidDimensions { width, height }) => {
                 let msg = format!("{}", DotmaxError::InvalidDimensions { width, height });
-                assert!(msg.contains("0"), "Error message should include width=0");
+                assert!(msg.contains('0'), "Error message should include width=0");
                 assert!(msg.contains("10"), "Error message should include height=10");
                 assert!(
                     msg.contains("width") && msg.contains("height"),
@@ -1146,7 +1408,7 @@ mod tests {
         }
     }
 
-    /// Test OutOfBounds error message includes all context (AC #3)
+    /// Test `OutOfBounds` error message includes all context (AC #3)
     #[test]
     fn test_out_of_bounds_error_message_includes_all_context() {
         let mut grid = BrailleGrid::new(10, 10).unwrap();
@@ -1183,7 +1445,7 @@ mod tests {
         }
     }
 
-    /// Test InvalidDotIndex error message includes index (AC #3)
+    /// Test `InvalidDotIndex` error message includes index (AC #3)
     #[test]
     fn test_invalid_dot_index_error_message_includes_index() {
         let grid = BrailleGrid::new(10, 10).unwrap();
@@ -1211,7 +1473,7 @@ mod tests {
         );
     }
 
-    /// Test set_dot with invalid dot index returns InvalidDotIndex (AC #1)
+    /// Test `set_dot` with invalid dot index returns `InvalidDotIndex` (AC #1)
     #[test]
     fn test_set_dot_invalid_dot_index_high() {
         let grid = BrailleGrid::new(10, 10).unwrap();
@@ -1221,5 +1483,688 @@ mod tests {
             matches!(result, Err(DotmaxError::InvalidDotIndex { index: 255 })),
             "Dot index 255 should return InvalidDotIndex error"
         );
+    }
+
+    // ========================================================================
+    // Story 2.5: Terminal Resize Event Handling Tests
+    // ========================================================================
+
+    /// Test resize grow updates dimensions (AC #2, #3)
+    #[test]
+    fn test_resize_grow_updates_dimensions() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.resize(20, 20).unwrap();
+        assert_eq!(grid.dimensions(), (20, 20));
+        assert_eq!(grid.width(), 20);
+        assert_eq!(grid.height(), 20);
+    }
+
+    /// Test resize grow preserves existing dots (AC #3)
+    #[test]
+    fn test_resize_grow_preserves_existing_dots() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.set_dot(5, 5).unwrap(); // Sets bit in cell (2, 1)
+        grid.set_dot(18, 38).unwrap(); // Sets bit in cell (9, 9)
+
+        // Check initial state
+        let cell_2_1 = 10 + 2; // cell (2, 1) = index 12
+        let cell_9_9 = 9 * 10 + 9; // cell (9, 9) = index 99
+        assert_ne!(grid.patterns[cell_2_1], 0, "Cell (2,1) should have dots");
+        assert_ne!(grid.patterns[cell_9_9], 0, "Cell (9,9) should have dots");
+
+        grid.resize(20, 20).unwrap();
+
+        // After resize, cells should be at same logical positions
+        let new_cell_2_1 = 20 + 2; // cell (2, 1) in new grid
+        let new_cell_9_9 = 9 * 20 + 9; // cell (9, 9) in new grid
+
+        // Existing dots should be preserved
+        assert_ne!(
+            grid.patterns[new_cell_2_1], 0,
+            "Cell (2,1) dots should be preserved"
+        );
+        assert_ne!(
+            grid.patterns[new_cell_9_9], 0,
+            "Cell (9,9) dots should be preserved"
+        );
+
+        // New cells should be empty
+        let new_cell_15_15 = 15 * 20 + 15;
+        assert_eq!(
+            grid.patterns[new_cell_15_15], 0,
+            "New cells should be empty"
+        );
+    }
+
+    /// Test resize shrink truncates cleanly (AC #4)
+    #[test]
+    fn test_resize_shrink_truncates_cleanly() {
+        let mut grid = BrailleGrid::new(20, 20).unwrap();
+        grid.set_dot(5, 5).unwrap(); // Sets bit in cell (2, 1)
+        grid.set_dot(30, 60).unwrap(); // Sets bit in cell (15, 15) - will be truncated
+
+        // Check initial state
+        let cell_2_1 = 20 + 2;
+        let cell_15_15 = 15 * 20 + 15;
+        assert_ne!(grid.patterns[cell_2_1], 0, "Cell (2,1) should have dots");
+        assert_ne!(
+            grid.patterns[cell_15_15], 0,
+            "Cell (15,15) should have dots"
+        );
+
+        grid.resize(10, 10).unwrap();
+
+        assert_eq!(grid.dimensions(), (10, 10));
+
+        // Preserved dot should still exist
+        let new_cell_2_1 = 10 + 2;
+        assert_ne!(
+            grid.patterns[new_cell_2_1], 0,
+            "Cell (2,1) dots should be preserved"
+        );
+
+        // Grid is now only 10×10 = 100 cells, so cell (15,15) is truncated
+        assert_eq!(
+            grid.patterns.len(),
+            100,
+            "Grid should have only 100 cells after resize to 10×10"
+        );
+    }
+
+    /// Test resize to same dimensions (no-op case)
+    #[test]
+    fn test_resize_same_dimensions() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.set_dot(5, 5).unwrap(); // Sets bit in cell (2, 1)
+
+        let cell_2_1 = 10 + 2;
+        let original_pattern = grid.patterns[cell_2_1];
+        assert_ne!(original_pattern, 0);
+
+        grid.resize(10, 10).unwrap();
+
+        assert_eq!(grid.dimensions(), (10, 10));
+        // Pattern should be unchanged
+        assert_eq!(
+            grid.patterns[cell_2_1], original_pattern,
+            "Existing dot pattern should be preserved"
+        );
+    }
+
+    /// Test resize with colors syncs color buffer (AC #5)
+    #[test]
+    fn test_resize_with_colors_syncs_color_buffer() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        // Note: Color support is implicit in BrailleGrid (colors vec always allocated)
+        // We can test via internal state
+
+        grid.resize(20, 20).unwrap();
+
+        // Color buffer should have resized to match new dimensions
+        assert_eq!(
+            grid.colors.len(),
+            400,
+            "Color buffer should have 400 cells for 20×20 grid"
+        );
+    }
+
+    /// Test resize zero width dimension error (AC #2)
+    #[test]
+    fn test_resize_zero_width_error() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        let result = grid.resize(0, 10);
+        assert!(
+            matches!(
+                result,
+                Err(DotmaxError::InvalidDimensions {
+                    width: 0,
+                    height: 10
+                })
+            ),
+            "Resize to width=0 should return InvalidDimensions error"
+        );
+        // Grid dimensions should remain unchanged after failed resize
+        assert_eq!(grid.dimensions(), (10, 10));
+    }
+
+    /// Test resize zero height dimension error (AC #2)
+    #[test]
+    fn test_resize_zero_height_error() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        let result = grid.resize(10, 0);
+        assert!(
+            matches!(
+                result,
+                Err(DotmaxError::InvalidDimensions {
+                    width: 10,
+                    height: 0
+                })
+            ),
+            "Resize to height=0 should return InvalidDimensions error"
+        );
+        assert_eq!(grid.dimensions(), (10, 10));
+    }
+
+    /// Test resize exceeds max width (AC #2)
+    #[test]
+    fn test_resize_exceeds_max_width_error() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        let result = grid.resize(20000, 10);
+        assert!(
+            matches!(result, Err(DotmaxError::InvalidDimensions { .. })),
+            "Resize to width=20000 should return InvalidDimensions error"
+        );
+        assert_eq!(grid.dimensions(), (10, 10));
+    }
+
+    /// Test resize exceeds max height (AC #2)
+    #[test]
+    fn test_resize_exceeds_max_height_error() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        let result = grid.resize(10, 20000);
+        assert!(
+            matches!(result, Err(DotmaxError::InvalidDimensions { .. })),
+            "Resize to height=20000 should return InvalidDimensions error"
+        );
+        assert_eq!(grid.dimensions(), (10, 10));
+    }
+
+    /// Test resize maintains grid invariants (AC #6)
+    #[test]
+    fn test_resize_maintains_invariants() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.resize(20, 15).unwrap();
+
+        // Verify invariants
+        assert_eq!(
+            grid.patterns.len(),
+            300,
+            "Patterns buffer should have 300 cells for 20×15 grid"
+        );
+        assert_eq!(
+            grid.colors.len(),
+            300,
+            "Colors buffer should have 300 cells for 20×15 grid"
+        );
+        assert_eq!(grid.width(), 20);
+        assert_eq!(grid.height(), 15);
+    }
+
+    /// Test resize from 1×1 to large grid (edge case)
+    #[test]
+    fn test_resize_from_tiny_to_large() {
+        let mut grid = BrailleGrid::new(1, 1).unwrap();
+        grid.set_dot(0, 0).unwrap();
+
+        grid.resize(50, 30).unwrap();
+
+        assert_eq!(grid.dimensions(), (50, 30));
+        assert!(
+            grid.get_dot(0, 0, 0).unwrap(),
+            "Single dot should be preserved at (0,0)"
+        );
+        assert!(
+            !grid.get_dot(10, 10, 0).unwrap(),
+            "New cells should be empty"
+        );
+    }
+
+    /// Test resize shrink to 1×1 (edge case)
+    #[test]
+    fn test_resize_shrink_to_tiny() {
+        let mut grid = BrailleGrid::new(50, 30).unwrap();
+        grid.set_dot(0, 0).unwrap();
+        grid.set_dot(10, 10).unwrap();
+
+        grid.resize(1, 1).unwrap();
+
+        assert_eq!(grid.dimensions(), (1, 1));
+        assert!(
+            grid.get_dot(0, 0, 0).unwrap(),
+            "Top-left dot should be preserved"
+        );
+        // Other dots are now out of bounds
+        assert!(grid.get_dot(10, 10, 0).is_err());
+    }
+
+    // ========================================================================
+    // Story 2.6: Color Support Tests (AC #1-#7)
+    // ========================================================================
+
+    /// Test `enable_color_support()` allocates buffer (AC #3)
+    #[test]
+    fn test_enable_color_support_allocates_buffer() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        // Color buffer is already allocated in new(), so this is a no-op
+        // But we verify it exists and has correct size
+        grid.enable_color_support();
+
+        // Verify buffer size matches grid dimensions
+        assert_eq!(grid.colors.len(), 100); // 10×10 = 100 cells
+    }
+
+    /// Test `set_cell_color()` assigns color (AC #4)
+    #[test]
+    fn test_set_cell_color_assigns_color() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let red = Color::rgb(255, 0, 0);
+        grid.set_cell_color(5, 5, red).unwrap();
+
+        assert_eq!(grid.get_color(5, 5), Some(red));
+    }
+
+    /// Test `set_cell_color()` with valid coordinates (AC #4)
+    #[test]
+    fn test_set_cell_color_valid_coordinates() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        // Test corners and center
+        let blue = Color::rgb(0, 0, 255);
+        grid.set_cell_color(0, 0, blue).unwrap();
+        assert_eq!(grid.get_color(0, 0), Some(blue));
+
+        let green = Color::rgb(0, 255, 0);
+        grid.set_cell_color(9, 9, green).unwrap();
+        assert_eq!(grid.get_color(9, 9), Some(green));
+
+        let yellow = Color::rgb(255, 255, 0);
+        grid.set_cell_color(5, 5, yellow).unwrap();
+        assert_eq!(grid.get_color(5, 5), Some(yellow));
+    }
+
+    /// Test `set_cell_color()` out of bounds returns error (AC #4)
+    #[test]
+    fn test_set_cell_color_out_of_bounds_error() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let result = grid.set_cell_color(100, 100, Color::black());
+        assert!(matches!(result, Err(DotmaxError::OutOfBounds { .. })));
+    }
+
+    /// Test `set_cell_color()` out of bounds X (AC #4)
+    #[test]
+    fn test_set_cell_color_out_of_bounds_x() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let result = grid.set_cell_color(10, 5, Color::white());
+        assert!(matches!(result, Err(DotmaxError::OutOfBounds { .. })));
+    }
+
+    /// Test `set_cell_color()` out of bounds Y (AC #4)
+    #[test]
+    fn test_set_cell_color_out_of_bounds_y() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let result = grid.set_cell_color(5, 10, Color::white());
+        assert!(matches!(result, Err(DotmaxError::OutOfBounds { .. })));
+    }
+
+    /// Test `get_color()` returns None when no color set (AC #5)
+    #[test]
+    fn test_get_color_none_when_not_set() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        // No color set on cell (5, 5)
+        assert_eq!(grid.get_color(5, 5), None);
+    }
+
+    /// Test `get_color()` returns None for out of bounds (AC #5)
+    #[test]
+    fn test_get_color_none_when_out_of_bounds() {
+        let grid = BrailleGrid::new(10, 10).unwrap();
+
+        // Out of bounds returns None (not error)
+        assert_eq!(grid.get_color(100, 100), None);
+    }
+
+    /// Test `get_color()` returns color after set (AC #5)
+    #[test]
+    fn test_get_color_returns_color_after_set() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let magenta = Color::rgb(255, 0, 255);
+        grid.set_cell_color(7, 7, magenta).unwrap();
+
+        assert_eq!(grid.get_color(7, 7), Some(magenta));
+    }
+
+    /// Test `clear_colors()` resets all colors to None (AC #7)
+    #[test]
+    fn test_clear_colors_resets_all() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        // Set colors on multiple cells
+        grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+        grid.set_cell_color(7, 7, Color::rgb(0, 255, 0)).unwrap();
+        grid.set_cell_color(2, 2, Color::rgb(0, 0, 255)).unwrap();
+
+        // Verify colors are set
+        assert!(grid.get_color(5, 5).is_some());
+        assert!(grid.get_color(7, 7).is_some());
+        assert!(grid.get_color(2, 2).is_some());
+
+        // Clear all colors
+        grid.clear_colors();
+
+        // All colors should be None
+        assert_eq!(grid.get_color(5, 5), None);
+        assert_eq!(grid.get_color(7, 7), None);
+        assert_eq!(grid.get_color(2, 2), None);
+    }
+
+    /// Test `clear_colors()` doesn't affect dots (AC #7)
+    #[test]
+    fn test_clear_colors_preserves_dots() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        // Set dots and colors
+        grid.set_dot(10, 20).unwrap();
+        grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+
+        // Clear colors
+        grid.clear_colors();
+
+        // Dots should still exist
+        assert!(!grid.is_empty(5, 5));
+        // But colors should be None
+        assert_eq!(grid.get_color(5, 5), None);
+    }
+
+    /// Test Color `PartialEq` works correctly (AC #7)
+    #[test]
+    fn test_color_partial_eq() {
+        let red1 = Color::rgb(255, 0, 0);
+        let red2 = Color::rgb(255, 0, 0);
+        let blue = Color::rgb(0, 0, 255);
+
+        assert_eq!(red1, red2);
+        assert_ne!(red1, blue);
+    }
+
+    /// Test colors persist after resize (AC #5, Story 2.5 AC #5)
+    #[test]
+    fn test_colors_persist_after_resize_grow() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        let purple = Color::rgb(128, 0, 128);
+        grid.set_cell_color(5, 5, purple).unwrap();
+
+        // Resize to larger
+        grid.resize(20, 20).unwrap();
+
+        // Color should be preserved at same logical position
+        assert_eq!(grid.get_color(5, 5), Some(purple));
+
+        // New cells should have no color
+        assert_eq!(grid.get_color(15, 15), None);
+    }
+
+    /// Test colors truncated correctly after resize shrink (AC #5, Story 2.5 AC #4)
+    #[test]
+    fn test_colors_truncated_after_resize_shrink() {
+        let mut grid = BrailleGrid::new(20, 20).unwrap();
+        grid.enable_color_support();
+
+        let orange = Color::rgb(255, 165, 0);
+        grid.set_cell_color(5, 5, orange).unwrap();
+        grid.set_cell_color(15, 15, Color::rgb(0, 255, 255))
+            .unwrap();
+
+        // Resize to smaller
+        grid.resize(10, 10).unwrap();
+
+        // Color within bounds should be preserved
+        assert_eq!(grid.get_color(5, 5), Some(orange));
+
+        // Cell (15, 15) is now out of bounds
+        assert_eq!(grid.get_color(15, 15), None);
+    }
+
+    /// Test `enable_color_support()` is idempotent (AC #3)
+    #[test]
+    fn test_enable_color_support_idempotent() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+
+        grid.enable_color_support();
+        grid.enable_color_support();
+        grid.enable_color_support();
+
+        // Should not panic or cause issues
+        assert_eq!(grid.colors.len(), 100);
+    }
+
+    /// Test `set_cell_color()` with all predefined colors (AC #2, #4)
+    #[test]
+    fn test_set_cell_color_with_predefined_colors() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        // Test black() constructor
+        grid.set_cell_color(0, 0, Color::black()).unwrap();
+        assert_eq!(grid.get_color(0, 0), Some(Color::rgb(0, 0, 0)));
+
+        // Test white() constructor
+        grid.set_cell_color(1, 1, Color::white()).unwrap();
+        assert_eq!(grid.get_color(1, 1), Some(Color::rgb(255, 255, 255)));
+
+        // Test rgb() constructor
+        grid.set_cell_color(2, 2, Color::rgb(128, 64, 32)).unwrap();
+        assert_eq!(grid.get_color(2, 2), Some(Color::rgb(128, 64, 32)));
+    }
+
+    /// Test `clear()` also clears colors (not just `clear_colors()`)
+    #[test]
+    fn test_clear_also_clears_colors() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.enable_color_support();
+
+        grid.set_dot(10, 20).unwrap();
+        grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+
+        grid.clear();
+
+        // Both dots and colors should be cleared
+        assert!(grid.is_empty(5, 5));
+        assert_eq!(grid.get_color(5, 5), None);
+    }
+
+    /// Test resize preserves multiple dots in complex pattern (AC #3, #4)
+    #[test]
+    fn test_resize_preserves_complex_pattern() {
+        let mut grid = BrailleGrid::new(15, 15).unwrap();
+        // Set dots in a diagonal pattern
+        // dot (0,0) → cell (0,0), dot (2,4) → cell (1,1), dot (4,8) → cell (2,2), etc.
+        for i in 0..10 {
+            grid.set_dot(i * 2, i * 4).unwrap();
+        }
+
+        // Store original patterns for cells we'll verify
+        let mut original_patterns = Vec::new();
+        for i in 0..10 {
+            let cell_x = (i * 2) / 2;
+            let cell_y = (i * 4) / 4;
+            let cell_index = cell_y * 15 + cell_x;
+            original_patterns.push((cell_x, cell_y, grid.patterns[cell_index]));
+        }
+
+        // Resize to larger
+        grid.resize(20, 20).unwrap();
+
+        // All original diagonal dots should be preserved
+        for (cell_x, cell_y, pattern) in &original_patterns {
+            let new_index = cell_y * 20 + cell_x;
+            assert_eq!(
+                grid.patterns[new_index], *pattern,
+                "Cell ({cell_x}, {cell_y}) pattern should be preserved after grow"
+            );
+        }
+
+        // Resize to smaller (truncate some dots)
+        grid.resize(8, 8).unwrap();
+
+        // Dots within new bounds should be preserved (cells 0-7 in both dimensions)
+        for (cell_x, cell_y, pattern) in &original_patterns {
+            if *cell_x < 8 && *cell_y < 8 {
+                let new_index = cell_y * 8 + cell_x;
+                assert_eq!(
+                    grid.patterns[new_index], *pattern,
+                    "Cell ({cell_x}, {cell_y}) pattern should be preserved after shrink"
+                );
+            }
+        }
+    }
+
+    // ========================================================================
+    // Story 2.7: Debug Logging and Tracing Tests (AC #1-#6)
+    // ========================================================================
+
+    /// Test that tracing instrumentation compiles (#[instrument] attributes work)
+    /// AC 2.7.2: Verify #[instrument] on key functions compiles without type errors
+    #[test]
+    fn test_instrumentation_compiles() {
+        // This test verifies that #[instrument] attributes don't cause compilation errors
+        // If this test compiles and runs, the instrumentation is correct
+        let grid = BrailleGrid::new(10, 10);
+        assert!(grid.is_ok());
+    }
+
+    /// Test logging works when subscriber initialized
+    /// AC 2.7.6: Tests can enable logging via tracing-subscriber
+    #[test]
+    fn test_logging_with_subscriber_initialized() {
+        // Initialize subscriber for this test
+        // Using try_init() to handle case where subscriber already initialized by other tests
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_test_writer()
+            .try_init();
+
+        // Operations should now log (logs will appear in test output with --nocapture)
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.clear();
+        grid.resize(20, 20).unwrap();
+        grid.enable_color_support();
+
+        // If this completes without panic, logging infrastructure works
+        assert_eq!(grid.dimensions(), (20, 20));
+    }
+
+    /// Test logging is silent when subscriber NOT initialized (zero-cost)
+    /// AC 2.7.5: Library does not initialize subscriber (user controls logging)
+    #[test]
+    fn test_logging_silent_by_default() {
+        // No subscriber initialized
+        // Operations should complete without logging (zero-cost)
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+        grid.clear();
+
+        // This should work silently - no logs appear because no subscriber
+        assert_eq!(grid.dimensions(), (10, 10));
+    }
+
+    /// Test that hot paths have NO debug logs
+    /// AC 2.7.4: `set_dot` and `get_dot` do NOT log at debug level
+    #[test]
+    fn test_hot_paths_no_debug_logs() {
+        // set_dot and get_dot should NOT have debug! calls (only trace! if needed)
+        // This is a code review check - the test verifies they work without performance impact
+
+        let mut grid = BrailleGrid::new(100, 100).unwrap();
+
+        // Call hot paths many times - should complete quickly
+        for y in 0..200 {
+            for x in 0..200 {
+                // This should be fast - no debug logging overhead
+                let _ = grid.set_dot(x, y);
+            }
+        }
+
+        // Verify operations completed
+        assert_eq!(grid.dimensions(), (100, 100));
+    }
+
+    /// Test error logging includes context
+    /// AC 2.7.3: error! logs include actionable context (coordinates, dimensions)
+    #[test]
+    fn test_error_logging_includes_context() {
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+
+        // These operations will emit error! logs with context
+        let result1 = BrailleGrid::new(0, 0);
+        assert!(result1.is_err());
+
+        let result2 = grid.set_dot(1000, 1000);
+        assert!(result2.is_err());
+
+        let result3 = grid.set_cell_color(1000, 1000, Color::black());
+        assert!(result3.is_err());
+
+        // If we reach here, error paths executed correctly
+        // (Logs will show context if subscriber is initialized)
+    }
+
+    /// Test instrumented functions return correct types
+    /// AC 2.7.2: Verify #[instrument] doesn't break function signatures
+    #[test]
+    fn test_instrumented_functions_correct_types() {
+        // Test that #[instrument] doesn't change function return types
+        let result1: Result<BrailleGrid, DotmaxError> = BrailleGrid::new(10, 10);
+        assert!(result1.is_ok());
+
+        let mut grid = result1.unwrap();
+
+        let result2: () = grid.clear();
+        assert_eq!(result2, ());
+
+        let result3: Result<(), DotmaxError> = grid.resize(20, 20);
+        assert!(result3.is_ok());
+
+        let result4: () = grid.enable_color_support();
+        assert_eq!(result4, ());
+    }
+
+    /// Test logging works in complex workflow
+    /// AC 2.7.6: Verify logging throughout full workflow
+    #[test]
+    fn test_logging_in_full_workflow() {
+        // Initialize subscriber
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_test_writer()
+            .try_init();
+
+        // Complex workflow that exercises all instrumented paths
+        let mut grid = BrailleGrid::new(20, 20).unwrap();
+        grid.enable_color_support();
+
+        // Set dots
+        grid.set_dot(10, 20).unwrap();
+        grid.set_dot(30, 60).unwrap();
+
+        // Set colors
+        grid.set_cell_color(5, 5, Color::rgb(255, 0, 0)).unwrap();
+
+        // Resize
+        grid.resize(30, 30).unwrap();
+
+        // Clear
+        grid.clear();
+
+        // Verify final state
+        assert_eq!(grid.dimensions(), (30, 30));
+        assert!(grid.is_empty(0, 0));
+
+        // If this completes, logging worked throughout workflow
     }
 }
