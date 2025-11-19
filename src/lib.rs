@@ -77,6 +77,8 @@ pub use render::{TerminalBackend, TerminalCapabilities, TerminalRenderer, Termin
 pub type Result<T> = std::result::Result<T, DotmaxError>;
 
 // Feature modules (Epic 3+): image, primitives, color, animation
+#[cfg(feature = "image")]
+pub mod image;
 
 #[cfg(test)]
 mod tests {

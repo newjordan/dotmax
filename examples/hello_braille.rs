@@ -1,6 +1,6 @@
 //! Hello Braille - Simple viewport test
 //!
-//! Run with: RUST_LOG=dotmax=debug cargo run --example hello_braille
+//! Run with: `RUST_LOG=dotmax=debug` cargo run --example `hello_braille`
 
 use dotmax::{BrailleGrid, TerminalRenderer};
 use std::thread;
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = TerminalRenderer::new()?;
     let (term_width, term_height) = renderer.get_terminal_size()?;
 
-    println!("Terminal reports: {}×{}", term_width, term_height);
+    println!("Terminal reports: {term_width}×{term_height}");
 
     // Create a grid that matches EXACTLY what terminal reports
     let mut grid = BrailleGrid::new(term_width as usize, term_height as usize)?;

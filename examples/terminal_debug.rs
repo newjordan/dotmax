@@ -1,6 +1,6 @@
 //! Terminal Debug - Check what terminal actually reports
 //!
-//! Run with: cargo run --example terminal_debug
+//! Run with: cargo run --example `terminal_debug`
 
 use crossterm::{
     execute,
@@ -17,18 +17,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check BEFORE entering alternate screen
     let (w1, h1) = size()?;
-    println!("BEFORE alternate screen: {}×{}", w1, h1);
+    println!("BEFORE alternate screen: {w1}×{h1}");
 
     // Check environment variables
     println!("\nEnvironment variables:");
     if let Ok(val) = std::env::var("WT_SESSION") {
-        println!("  WT_SESSION = {}", val);
+        println!("  WT_SESSION = {val}");
     }
     if let Ok(val) = std::env::var("WSL_DISTRO_NAME") {
-        println!("  WSL_DISTRO_NAME = {}", val);
+        println!("  WSL_DISTRO_NAME = {val}");
     }
     if let Ok(val) = std::env::var("TERM") {
-        println!("  TERM = {}", val);
+        println!("  TERM = {val}");
     }
 
     println!("\nPress ENTER to enter alternate screen...");
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write to alternate screen
     write!(stdout, "\r\nIN ALTERNATE SCREEN:\r\n")?;
-    write!(stdout, "Size reported: {}×{}\r\n", w2, h2)?;
+    write!(stdout, "Size reported: {w2}×{h2}\r\n")?;
     write!(stdout, "\r\n")?;
     write!(stdout, "This text is at the TOP of alternate screen\r\n")?;
     write!(stdout, "\r\n")?;
@@ -62,8 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     disable_raw_mode()?;
 
     println!("\nAFTER exiting alternate screen");
-    println!("  Before: {}×{}", w1, h1);
-    println!("  During: {}×{}", w2, h2);
+    println!("  Before: {w1}×{h1}");
+    println!("  During: {w2}×{h2}");
 
     Ok(())
 }

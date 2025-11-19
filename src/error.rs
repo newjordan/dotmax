@@ -95,6 +95,57 @@ pub enum DotmaxError {
     /// well-defined, but may happen if cell data becomes corrupted.
     #[error("Unicode conversion failed for cell ({x}, {y})")]
     UnicodeConversion { x: usize, y: usize },
+
+    /// Image loading failed (file not found, decode error, etc.)
+    ///
+    /// This error wraps the underlying `image::ImageError` using `#[source]`
+    /// to preserve the error chain for debugging.
+    ///
+    /// Common causes:
+    /// - File does not exist or is not readable
+    /// - File format is corrupted or unsupported
+    /// - Memory allocation failure during decode
+    #[cfg(feature = "image")]
+    #[error("Failed to load image from {path:?}: {source}")]
+    ImageLoad {
+        path: std::path::PathBuf,
+        #[source]
+        source: image::ImageError,
+    },
+
+    /// Unsupported image format
+    ///
+    /// The provided file or byte buffer is not in a supported image format.
+    /// See [`crate::image::supported_formats`] for the list of valid formats.
+    #[cfg(feature = "image")]
+    #[error("Unsupported image format: {format}")]
+    UnsupportedFormat { format: String },
+
+    /// Image dimensions exceed maximum limits
+    ///
+    /// Images larger than 10,000×10,000 pixels are rejected to prevent
+    /// memory exhaustion attacks.
+    #[cfg(feature = "image")]
+    #[error("Invalid image dimensions: {width}×{height} exceeds maximum (10,000×10,000)")]
+    InvalidImageDimensions { width: u32, height: u32 },
+
+    /// Invalid parameter value provided to image processing function
+    ///
+    /// This error is returned when a function parameter (brightness, contrast,
+    /// gamma, etc.) is outside its valid range.
+    ///
+    /// The error message includes:
+    /// - Parameter name (e.g., "brightness factor")
+    /// - Provided value
+    /// - Valid range (min-max)
+    #[cfg(feature = "image")]
+    #[error("Invalid {parameter_name}: {value} (valid range: {min}-{max})")]
+    InvalidParameter {
+        parameter_name: String,
+        value: String,
+        min: String,
+        max: String,
+    },
 }
 
 #[cfg(test)]
@@ -172,5 +223,62 @@ mod tests {
             }
             _ => panic!("Expected Terminal variant"),
         }
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn test_image_load_error_includes_path_and_source() {
+        use std::path::PathBuf;
+        let err = DotmaxError::ImageLoad {
+            path: PathBuf::from("/path/to/image.png"),
+            source: image::ImageError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file not found",
+            )),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("image.png"));
+        assert!(msg.contains("Failed to load"));
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn test_unsupported_format_error_includes_format() {
+        let err = DotmaxError::UnsupportedFormat {
+            format: "xyz".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("xyz"));
+        assert!(msg.contains("Unsupported"));
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn test_invalid_image_dimensions_includes_dimensions() {
+        let err = DotmaxError::InvalidImageDimensions {
+            width: 15_000,
+            height: 20_000,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("15000") || msg.contains("15,000"));
+        assert!(msg.contains("20000") || msg.contains("20,000"));
+        assert!(msg.contains("10,000"));
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn test_invalid_parameter_includes_all_context() {
+        let err = DotmaxError::InvalidParameter {
+            parameter_name: "brightness factor".to_string(),
+            value: "3.5".to_string(),
+            min: "0.0".to_string(),
+            max: "2.0".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("brightness factor"));
+        assert!(msg.contains("3.5"));
+        assert!(msg.contains("0.0"));
+        assert!(msg.contains("2.0"));
+        assert!(msg.contains("Invalid"));
     }
 }

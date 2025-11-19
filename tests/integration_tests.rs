@@ -530,7 +530,7 @@ fn test_viewport_offset_calculation() {
     }
 }
 
-/// Test get_terminal_size uses viewport detection (Story 2.8, AC #1, #3)
+/// Test `get_terminal_size` uses viewport detection (Story 2.8, AC #1, #3)
 #[test]
 #[ignore = "Requires actual terminal - run with `cargo test -- --ignored`"]
 fn test_get_terminal_size_uses_viewport_detection() {

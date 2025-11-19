@@ -56,15 +56,15 @@ development_status:
   2-5-add-terminal-resize-event-handling: done
   2-6-implement-color-support-for-braille-cells: done
   2-7-add-debug-logging-and-tracing-support: done
-  2-8-implement-proper-viewport-detection-and-rendering: ready-for-review  # Visual validation passed on WSL + PowerShell
-  epic-2-retrospective: optional
+  2-8-implement-proper-viewport-detection-and-rendering: done  # Review approved: All clippy warnings fixed, tests pass
+  epic-2-retrospective: completed
 
   # Epic 3: 2D Image Rendering Pipeline
-  epic-3: backlog
-  3-1-implement-image-loading-from-file-paths-and-byte-buffers: backlog
-  3-2-implement-image-resize-and-aspect-ratio-preservation: backlog
-  3-3-implement-grayscale-conversion-and-otsu-thresholding: backlog
-  3-4-implement-dithering-algorithms-floyd-steinberg-bayer-atkinson: backlog
+  epic-3: contexted
+  3-1-implement-image-loading-from-file-paths-and-byte-buffers: done  # Review approved: All ACs met, all tasks verified, zero issues
+  3-2-implement-image-resize-and-aspect-ratio-preservation: done  # Review approved: All 9 ACs met, all 67 subtasks verified, zero issues, exceptional quality
+  3-3-implement-grayscale-conversion-and-otsu-thresholding: done  # Review APPROVED: All ACs met, spec updated to BT.709 (modern standard), exceptional quality
+  3-4-implement-dithering-algorithms-floyd-steinberg-bayer-atkinson: in-progress
   3-5-implement-binary-image-to-braillegrid-conversion: backlog
   3-6-add-svg-vector-graphics-support-with-rasterization: backlog
   3-7-implement-color-mode-image-rendering: backlog

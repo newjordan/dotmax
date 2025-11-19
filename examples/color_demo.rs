@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Create rainbow gradient across the width
+            #[allow(clippy::cast_precision_loss)]
             let hue = (x as f32 / 40.0) * 360.0;
             let (r, g, b) = hsv_to_rgb(hue, 1.0, 1.0);
             grid.set_cell_color(x, y, Color::rgb(r, g, b))?;
@@ -128,6 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Convert HSV to RGB
 /// H: 0-360, S: 0-1, V: 0-1
 /// Returns: (r, g, b) in 0-255 range
+#[allow(
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let c = v * s;
     let h_prime = h / 60.0;
