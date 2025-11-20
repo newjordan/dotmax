@@ -146,6 +146,19 @@ pub enum DotmaxError {
         min: String,
         max: String,
     },
+
+    /// SVG rendering error (parsing or rasterization failure)
+    ///
+    /// This error is returned when SVG loading fails due to:
+    /// - Malformed or invalid SVG syntax
+    /// - Unsupported SVG features (complex filters, animations)
+    /// - Rasterization failures (pixmap creation, rendering errors)
+    /// - Font loading issues for text-heavy SVGs
+    ///
+    /// The error message includes descriptive context to aid debugging.
+    #[cfg(feature = "svg")]
+    #[error("SVG rendering error: {0}")]
+    SvgError(String),
 }
 
 #[cfg(test)]

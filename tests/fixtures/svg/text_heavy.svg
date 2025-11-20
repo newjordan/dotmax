@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">
+  <rect width="300" height="100" fill="white"/>
+  <text x="150" y="50" font-family="Arial, sans-serif" font-size="32" text-anchor="middle" fill="black">
+    dotmax
+  </text>
+</svg>

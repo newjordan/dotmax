@@ -1,0 +1,296 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.6</storyId>
+    <title>Add SVG Vector Graphics Support with Rasterization</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-19</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-6-add-svg-vector-graphics-support-with-rasterization.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer using vector graphics in terminals</asA>
+    <iWant>SVG loading and rasterization to braille output</iWant>
+    <soThat>I can render logos, icons, diagrams, and vector art without pixelation</soThat>
+    <tasks>
+- [ ] **Task 1: Configure SVG feature flag and dependencies** (AC: 1)
+- [ ] **Task 2: Create svg.rs module structure** (AC: 1)
+- [ ] **Task 3: Implement load_svg_from_path function** (AC: 2, 3, 5)
+- [ ] **Task 4: Implement load_svg_from_bytes function** (AC: 2, 3, 4, 5)
+- [ ] **Task 5: Implement SVG rasterization to pixel buffer** (AC: 3, 4)
+- [ ] **Task 6: Handle transparent backgrounds** (AC: 4)
+- [ ] **Task 7: Error handling for SVG-specific cases** (AC: 5)
+- [ ] **Task 8: Export SVG API from mod.rs** (AC: 1)
+- [ ] **Task 9: Unit tests for SVG loading** (AC: 8)
+- [ ] **Task 10: Integration tests with image pipeline** (AC: 6, 8)
+- [ ] **Task 11: Visual regression test** (AC: 8)
+- [ ] **Task 12: Performance benchmarks** (AC: 7)
+- [ ] **Task 13: Create svg_demo.rs example** (AC: 9)
+- [ ] **Task 14: Documentation and rustdoc** (AC: 9)
+- [ ] **Task 15: Feature gate compilation validation** (AC: 1, 8)
+- [ ] **Task 16: Validation and cleanup** (AC: All)
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. **SVG Module Structure and Feature Gating**
+   - Module located at `src/image/svg.rs` (matches tech spec naming)
+   - Feature-gated behind `#[cfg(feature = "svg")]` separate from raster image support
+   - Dependencies: `resvg = "0.38"` and `usvg = "0.38"` configured as optional
+   - Public API exported from `src/image/mod.rs` with `#[cfg(feature = "svg")]`
+   - Clear documentation explaining SVG rasterization approach
+
+2. **SVG Loading from Files and Bytes**
+   - Function: `load_svg_from_path(path: &Path, width: u32, height: u32) -> Result<DynamicImage, DotmaxError>`
+   - Function: `load_svg_from_bytes(bytes: &[u8], width: u32, height: u32) -> Result<DynamicImage, DotmaxError>`
+   - Target dimensions specified in pixels (will be converted to terminal cells by existing pipeline)
+   - Returns `DynamicImage` (standard format from `image` crate) for seamless integration
+
+3. **SVG Rasterization Pipeline Integration**
+   - Parse SVG using `usvg` crate (SVG simplification and normalization)
+   - Rasterize to pixel buffer using `resvg` crate (high-quality rendering)
+   - Convert pixel buffer to `DynamicImage` (RGBA8 format)
+   - Output feeds directly into existing image→braille pipeline (resize → grayscale → dither → threshold → map to braille)
+
+4. **Aspect Ratio Preservation and Quality**
+   - SVG rendered at specified dimensions while preserving aspect ratio
+   - Anti-aliasing enabled for smooth edges
+   - High-quality rendering suitable for logos, icons, and diagrams
+   - Transparent backgrounds handled (convert to white for terminal compatibility)
+
+5. **Error Handling for SVG-Specific Issues**
+   - Malformed SVG files return `DotmaxError::SvgError` with descriptive message
+   - Missing fonts handled gracefully (use system font fallback)
+   - Unsupported SVG features handled without panic
+   - Zero panics guarantee maintained for all SVG operations
+
+6. **Integration with Existing Image Pipeline**
+   - SVG output (`DynamicImage`) compatible with ImageRenderer from Story 3.8 (when implemented)
+   - Works with all dithering methods (Floyd-Steinberg, Bayer, Atkinson)
+   - Works with all threshold algorithms (Otsu, manual)
+
+7. **Performance Target**
+   - SVG rasterization completes in <100ms for typical vector graphics
+   - Small SVGs (icons, logos) complete in <50ms
+
+8. **Testing and Quality Validation**
+   - Unit tests for SVG loading (valid SVG, malformed SVG, missing file)
+   - Integration tests: SVG → rasterize → dither → map to braille → verify output
+   - Feature gate compilation test: `cargo test --features svg`
+
+9. **Documentation and Examples**
+   - Rustdoc for all public SVG functions with usage examples
+   - Example program `examples/svg_demo.rs` demonstrating SVG → braille workflow
+   - Document transparent background handling strategy
+   - Performance characteristics documented
+</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-3.md</path>
+        <title>Epic Technical Specification: 2D Image Rendering Pipeline</title>
+        <section>SVG Support (Story 3.6)</section>
+        <snippet>Story 3.6 implements SVG vector graphics loading with rasterization using resvg/usvg crates. SVG files are parsed with usvg, rasterized with resvg to DynamicImage (RGBA8), then fed into existing image→braille pipeline. Feature-gated separately from raster image support. Performance target: &lt;100ms rasterization for typical graphics, &lt;50ms for small icons/logos.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>ADR 0003: Feature Flag Architecture</section>
+        <snippet>SVG support is feature-gated separately from raster images. Users can enable `svg` feature independently. Feature configuration: svg = ["dep:resvg", "dep:usvg"]. This keeps core library lightweight while enabling vector graphics for users who need them.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>ADR 0002: Use thiserror for Error Handling</section>
+        <snippet>All errors use DotmaxError enum with thiserror for type-safe error matching. SVG-specific errors should be added as new variant: SvgError(String) with descriptive context.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/3-6-add-svg-vector-graphics-support-with-rasterization.md</path>
+        <title>Story 3.6 Full Story Document</title>
+        <section>Dev Notes - Learnings from Story 3.5</section>
+        <snippet>Quality standards to maintain: 18 tests (12 unit + 6 integration) from Story 3.5, zero clippy warnings, comprehensive rustdoc with ASCII art diagrams, zero panics guarantee, performance benchmarks with criterion. Story 3.5 achieved exceptional quality - replicate testing rigor and documentation excellence.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/3-6-add-svg-vector-graphics-support-with-rasterization.md</path>
+        <title>Story 3.6 Technical Implementation Pattern</title>
+        <section>Technical Notes - SVG Rasterization Implementation Pattern</section>
+        <snippet>Use usvg::Options::default() for parsing, usvg::Tree::from_data() for SVG tree creation, tiny_skia::Pixmap for pixel buffer, resvg::render() for rasterization with transform for aspect ratio. Convert pixmap RGBA buffer to image::RgbaImage, then DynamicImage::ImageRgba8. Handle transparency by converting alpha to white background for terminal compatibility.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/epics.md</path>
+        <title>Epic 3: 2D Image Rendering Pipeline</title>
+        <section>Story 3.6: Add SVG Vector Graphics Support</section>
+        <snippet>SVG loading and rasterization to braille output. Load SVG with usvg, rasterize with resvg, output DynamicImage feeds to existing pipeline. Feature-gated: svg = ["dep:resvg", "dep:usvg"]. Target: render at high quality (anti-aliasing), respect dimensions, preserve aspect ratio. Critical for FR11 (vector graphics support).</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/image/mod.rs</path>
+        <kind>module</kind>
+        <symbol>N/A</symbol>
+        <lines>1-89</lines>
+        <reason>Module structure pattern for feature-gated image modules. Shows how to add svg module with #[cfg(feature = "svg")] and re-export SVG functions. Module-level documentation pattern to follow.</reason>
+      </artifact>
+      <artifact>
+        <path>src/image/loader.rs</path>
+        <kind>module</kind>
+        <symbol>load_from_path, load_from_bytes</symbol>
+        <lines>1-100</lines>
+        <reason>Pattern for image loading functions - shows validation, error handling, dimension limits (MAX_IMAGE_WIDTH/HEIGHT), tracing usage (info!/debug!), and rustdoc style. SVG loader should follow similar structure.</reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>enum</kind>
+        <symbol>DotmaxError</symbol>
+        <lines>37-149</lines>
+        <reason>Error type definition using thiserror. Need to add SvgError variant similar to ImageLoad variant. Shows error context pattern (path, source, dimensions). Feature-gating pattern with #[cfg(feature = "image")].</reason>
+      </artifact>
+      <artifact>
+        <path>src/image/mapper.rs</path>
+        <kind>module</kind>
+        <symbol>pixels_to_braille</symbol>
+        <lines>N/A</lines>
+        <reason>Downstream consumer of SVG output. SVG rasterizes to DynamicImage which feeds into existing pipeline: resize → grayscale → dither/threshold → mapper.pixels_to_braille(). Integration point for full SVG→braille pipeline testing.</reason>
+      </artifact>
+      <artifact>
+        <path>src/image/dither.rs</path>
+        <kind>module</kind>
+        <symbol>apply_dithering, DitheringMethod</symbol>
+        <lines>N/A</lines>
+        <reason>SVG output must work with all dithering methods (Floyd-Steinberg, Bayer, Atkinson). Integration testing should verify SVG → dither → braille pipeline works correctly.</reason>
+      </artifact>
+      <artifact>
+        <path>src/image/threshold.rs</path>
+        <kind>module</kind>
+        <symbol>otsu_threshold, auto_threshold, BinaryImage</symbol>
+        <lines>N/A</lines>
+        <reason>SVG output must work with Otsu thresholding and manual thresholds. BinaryImage is the data type that feeds into braille mapping. Integration tests should verify SVG → threshold → braille pipeline.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>struct</kind>
+        <symbol>BrailleGrid</symbol>
+        <lines>N/A</lines>
+        <reason>Final output target for SVG rendering. SVG → DynamicImage → resize → grayscale → dither/threshold → BinaryImage → BrailleGrid. Integration tests verify complete pipeline produces valid BrailleGrid.</reason>
+      </artifact>
+      <artifact>
+        <path>Cargo.toml</path>
+        <kind>config</kind>
+        <symbol>N/A</symbol>
+        <lines>20-29</lines>
+        <reason>Shows existing feature gate structure. Need to add resvg/usvg as optional dependencies and create svg feature: svg = ["dep:resvg", "dep:usvg"]. Pattern already exists for image feature.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <package name="resvg" version="0.38" optional="true" reason="SVG rendering engine for high-quality rasterization to pixel buffer" />
+        <package name="usvg" version="0.38" optional="true" reason="SVG parsing and normalization library required by resvg" />
+        <package name="tiny-skia" version="(transitive)" optional="false" reason="2D rendering backend for resvg, provides Pixmap for pixel buffer" />
+        <package name="fontdb" version="(transitive)" optional="false" reason="Font handling for SVG text elements, used by resvg for text rendering" />
+        <package name="image" version="0.25" optional="true" reason="Provides DynamicImage type for SVG rasterization output, already part of image feature" />
+        <package name="thiserror" version="2.0" optional="false" reason="Error handling for SvgError variant in DotmaxError enum" />
+        <package name="tracing" version="0.1" optional="false" reason="Structured logging for SVG loading and rasterization operations" />
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- **Zero Panics Guarantee**: All SVG functions must return Result&lt;T, DotmaxError&gt;. No .unwrap() or .expect() in production code. All error paths must be handled gracefully.
+- **Feature Gate Isolation**: svg module must compile independently when svg feature enabled. Must NOT compile when svg feature disabled. Core library must build without svg feature.
+- **Performance Budget**: SVG rasterization must complete in &lt;100ms for typical vector graphics, &lt;50ms for small icons/logos (per tech spec requirement).
+- **Memory Safety**: No unsafe code in SVG module. Rely on Rust's memory safety and safe abstractions from resvg/usvg crates.
+- **Dimension Validation**: Validate width &gt; 0 and height &gt; 0 before pixmap creation. Validate against MAX_IMAGE_WIDTH/HEIGHT limits to prevent OOM.
+- **Transparent Background Handling**: Convert transparent pixels to white background for terminal compatibility (terminals don't support alpha transparency well).
+- **Font Fallback**: Missing fonts should use system font fallback via fontdb, not fail. Log warning for missing fonts but continue rendering.
+- **Code Quality Standards**: Zero clippy warnings (mandatory), rustfmt formatted, comprehensive rustdoc with examples, all doctests compile and pass.
+- **Testing Requirements**: Unit tests for valid/invalid SVG, integration tests for SVG → full pipeline, visual example in examples/svg_demo.rs, feature gate compilation tests.
+- **API Consistency**: Follow same pattern as image/loader.rs - validate inputs, use tracing (info!/debug!), proper error context, comprehensive rustdoc.
+- **Integration with Pipeline**: SVG output (DynamicImage) must work seamlessly with existing pipeline: resize → grayscale → dither → threshold → mapper → BrailleGrid.
+- **License Compatibility**: resvg and usvg use MPL-2.0 license which is compatible with MIT/Apache-2.0 dual licensing (already documented in architecture).
+</constraints>
+
+  <interfaces>
+    <interface>
+      <name>load_svg_from_path</name>
+      <kind>function</kind>
+      <signature>pub fn load_svg_from_path(path: &amp;Path, width: u32, height: u32) -&gt; Result&lt;DynamicImage, DotmaxError&gt;</signature>
+      <path>src/image/svg.rs</path>
+    </interface>
+    <interface>
+      <name>load_svg_from_bytes</name>
+      <kind>function</kind>
+      <signature>pub fn load_svg_from_bytes(bytes: &amp;[u8], width: u32, height: u32) -&gt; Result&lt;DynamicImage, DotmaxError&gt;</signature>
+      <path>src/image/svg.rs</path>
+    </interface>
+    <interface>
+      <name>DotmaxError::SvgError</name>
+      <kind>error variant</kind>
+      <signature>#[error("SVG rendering error: {0}")] SvgError(String)</signature>
+      <path>src/error.rs</path>
+    </interface>
+    <interface>
+      <name>load_from_path (existing)</name>
+      <kind>function</kind>
+      <signature>pub fn load_from_path(path: &amp;Path) -&gt; Result&lt;DynamicImage, DotmaxError&gt;</signature>
+      <path>src/image/loader.rs</path>
+    </interface>
+    <interface>
+      <name>pixels_to_braille (existing)</name>
+      <kind>function</kind>
+      <signature>pub fn pixels_to_braille(binary: &amp;BinaryImage, cell_width: usize, cell_height: usize) -&gt; Result&lt;BrailleGrid, DotmaxError&gt;</signature>
+      <path>src/image/mapper.rs</path>
+    </interface>
+    <interface>
+      <name>apply_dithering (existing)</name>
+      <kind>function</kind>
+      <signature>pub fn apply_dithering(gray: &amp;GrayImage, method: DitheringMethod) -&gt; BinaryImage</signature>
+      <path>src/image/dither.rs</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+All tests use Rust's built-in test framework with #[cfg(test)] modules. Unit tests are co-located with source code in same file. Integration tests live in tests/ directory. Tests require #[cfg(feature = "svg")] feature gate. Use test fixtures in tests/fixtures/svg/ for SVG samples. Follow pattern from Story 3.5: 12 unit tests + 6 integration tests for comprehensive coverage. Benchmarks use criterion.rs with HTML reports in benches/ directory. Visual examples in examples/ directory demonstrate end-to-end usage.
+</standards>
+    <locations>
+- src/image/svg.rs (unit tests in #[cfg(test)] module at end of file)
+- tests/image_rendering_tests.rs (integration tests for full SVG → braille pipeline)
+- benches/svg_rendering.rs (performance benchmarks for rasterization targets)
+- examples/svg_demo.rs (visual demonstration of SVG → terminal braille rendering)
+- tests/fixtures/svg/ (test SVG files: simple_circle.svg, logo.svg, text_heavy.svg, gradient.svg)
+</locations>
+    <ideas>
+**Unit Tests (src/image/svg.rs #[cfg(test)]):**
+- test_load_valid_simple_svg_returns_dynamic_image (AC2)
+- test_load_svg_with_text_uses_font_fallback (AC2, AC5)
+- test_load_malformed_svg_returns_svg_error (AC5)
+- test_load_svg_from_bytes_same_as_file (AC2)
+- test_svg_with_gradients_rasterizes_correctly (AC4)
+- test_svg_with_paths_applies_antialiasing (AC4)
+- test_invalid_dimensions_zero_returns_error (AC5)
+- test_aspect_ratio_preserved_in_rasterization (AC4)
+
+**Integration Tests (tests/image_rendering_tests.rs):**
+- test_svg_to_dynamic_image_properties (AC3, AC6)
+- test_svg_grayscale_threshold_braille_pipeline (AC6)
+- test_svg_dither_floyd_steinberg_braille (AC6)
+- test_svg_dither_bayer_braille (AC6)
+- test_svg_dither_atkinson_braille (AC6)
+- test_svg_otsu_threshold_braille (AC6)
+
+**Performance Tests (benches/svg_rendering.rs):**
+- bench_small_svg_icon_rasterization (target &lt;50ms) (AC7)
+- bench_medium_svg_logo_rasterization (target &lt;100ms) (AC7)
+- bench_large_complex_svg_diagram (measure actual) (AC7)
+- bench_svg_full_pipeline_to_braille (AC7)
+
+**Visual Regression (examples/svg_demo.rs):**
+- Load sample SVG logo, rasterize to 160×96 pixels
+- Convert through full pipeline: grayscale → dither → threshold → braille
+- Render to terminal, manual visual inspection for quality
+- Test with multiple SVG samples (icon, logo, diagram)
+</ideas>
+  </tests>
+</story-context>

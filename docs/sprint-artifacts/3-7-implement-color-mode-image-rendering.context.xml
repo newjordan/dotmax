@@ -1,0 +1,356 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>7</storyId>
+    <title>Implement Color Mode Image Rendering</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-7-implement-color-mode-image-rendering.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating colored braille images</asA>
+    <iWant>to preserve image colors when rendering to terminal</iWant>
+    <soThat>braille output can be vibrant and faithful to the original image</soThat>
+    <tasks>- [ ] **Task 1: Define ColorMode enum and types** (AC: 2)
+  - [ ] 1.1: Create `ColorMode` enum in `src/image/mod.rs`
+  - [ ] 1.2: Add rustdoc explaining each variant with use cases
+  - [ ] 1.3: Derive `Debug, Clone, Copy, PartialEq, Eq` for ColorMode
+  - [ ] 1.4: Implement `Default` for `ColorMode` → `ColorMode::Monochrome`
+  - [ ] 1.5: Add to `src/image/mod.rs` public exports
+
+- [ ] **Task 2: Create color_mode.rs module** (AC: 1)
+  - [ ] 2.1: Create `src/image/color_mode.rs` file
+  - [ ] 2.2: Add module-level rustdoc explaining color-aware braille rendering
+  - [ ] 2.3: Import necessary types: `DynamicImage`, `Color`, `BrailleGrid`, `DotmaxError`
+  - [ ] 2.4: Import `image` crate types for pixel access
+  - [ ] 2.5: Add tracing imports for logging
+  - [ ] 2.6: Add `pub mod color_mode;` to `src/image/mod.rs`
+
+- [ ] **Task 3: Implement color extraction function** (AC: 3)
+  - [ ] 3.1: Function signature: `pub fn extract_cell_colors(image: &DynamicImage, cell_width: usize, cell_height: usize) -> Vec<Color>`
+  - [ ] 3.2: Iterate over image in 2×4 pixel blocks (matching braille cell dimensions)
+  - [ ] 3.3: For each block, collect all pixel RGB values
+  - [ ] 3.4: Implement average color calculation: sum RGB components, divide by pixel count
+  - [ ] 3.5: Return `Vec<Color>` with one color per braille cell
+  - [ ] 3.6: Handle edge cases: image dimensions not divisible by 2×4 (pad with black)
+  - [ ] 3.7: Add tracing: `debug!("Extracted {} cell colors from {}x{} image", colors.len(), width, height)`
+
+- [ ] **Task 4: Implement color sampling strategies** (AC: 3)
+  - [ ] 4.1: Create helper function: `average_color(pixels: &[Rgb<u8>]) -> Color`
+  - [ ] 4.2: Create helper function: `dominant_color(pixels: &[Rgb<u8>]) -> Color` (most frequent RGB)
+  - [ ] 4.3: Create helper function: `center_pixel_color(pixels: &[Rgb<u8>]) -> Color` (center of 2×4 block)
+  - [ ] 4.4: Add `ColorSamplingStrategy` enum to make strategies selectable
+  - [ ] 4.5: Update `extract_cell_colors` to accept strategy parameter
+  - [ ] 4.6: Document trade-offs: average (smooth), dominant (bold), center (fast)
+
+- [ ] **Task 5: Integrate color with BrailleGrid** (AC: 4)
+  - [ ] 5.1: Review `BrailleGrid::set_color()` API from Epic 2
+  - [ ] 5.2: Create function: `apply_colors_to_grid(grid: &mut BrailleGrid, colors: &[Color])`
+  - [ ] 5.3: Iterate over grid cells, call `grid.set_color(cell_x, cell_y, colors[index])`
+  - [ ] 5.4: Verify colors length matches grid dimensions (width × height cells)
+  - [ ] 5.5: Handle edge case: fewer colors than cells → fill remaining with default (white)
+  - [ ] 5.6: Add unit test verifying color assignment to each cell
+
+- [ ] **Task 6: Implement grayscale mode with intensity mapping** (AC: 5)
+  - [ ] 6.1: Create function: `rgb_to_grayscale_intensity(color: &Color) -> u8`
+  - [ ] 6.2: Use BT.709 formula: `Y = 0.2126*R + 0.7152*G + 0.0722*B` (from Story 3.3)
+  - [ ] 6.3: Map intensity (0-255) to ANSI 256-color palette (grayscale ramp)
+  - [ ] 6.4: Create function: `intensity_to_ansi256(intensity: u8) -> u8` (ANSI color code)
+  - [ ] 6.5: Grayscale ramp is ANSI codes 232-255 (24 shades)
+  - [ ] 6.6: Document ANSI 256-color compatibility (widely supported)
+
+- [ ] **Task 7: Implement TrueColor mode with RGB preservation** (AC: 6)
+  - [ ] 7.1: Create function: `color_to_truecolor_ansi(color: &Color) -> String`
+  - [ ] 7.2: Generate ANSI escape code: `\x1b[38;2;{r};{g};{b}m` for foreground
+  - [ ] 7.3: Generate ANSI escape code: `\x1b[48;2;{r};{g};{b}m` for background
+  - [ ] 7.4: Implement terminal capability detection (check COLORTERM env var)
+  - [ ] 7.5: Fallback: if terminal doesn't support truecolor, map RGB to closest ANSI 256 color
+  - [ ] 7.6: Document terminal compatibility: truecolor requires modern terminals
+
+- [ ] **Task 8: Extend TerminalRenderer for color support** (AC: 7)
+  - [ ] 8.1: Review `TerminalRenderer::render()` implementation from Epic 2
+  - [ ] 8.2: Add method: `pub fn render_with_colors(&mut self, grid: &BrailleGrid) -> Result<(), DotmaxError>`
+  - [ ] 8.3: Check if `grid` has color data: `grid.colors().is_some()`
+  - [ ] 8.4: For each cell with color, generate ANSI color escape codes before braille character
+  - [ ] 8.5: Reset color after each cell: `\x1b[0m` (prevent color bleeding)
+  - [ ] 8.6: Graceful degradation: if no color support detected, skip ANSI codes
+  - [ ] 8.7: Add tracing: `debug!("Rendering {x}x{y} grid with {} colored cells", color_count)`
+
+- [ ] **Task 9: Create high-level color rendering function** (AC: 1, 4)
+  - [ ] 9.1: Create function: `pub fn render_image_with_color(image: &DynamicImage, mode: ColorMode) -> Result<BrailleGrid, DotmaxError>`
+  - [ ] 9.2: Pipeline: resize image (Story 3.2) → extract colors → convert to binary (Story 3.3/3.4) → map to braille (Story 3.5) → apply colors
+  - [ ] 9.3: Handle `ColorMode::Monochrome`: skip color extraction, use existing pipeline
+  - [ ] 9.4: Handle `ColorMode::Grayscale`: extract colors → convert to intensity → apply grayscale ANSI
+  - [ ] 9.5: Handle `ColorMode::TrueColor`: extract colors → preserve RGB → apply truecolor ANSI
+  - [ ] 9.6: Return `BrailleGrid` with both dot patterns and color data
+
+- [ ] **Task 10: Unit tests for color extraction** (AC: 8)
+  - [ ] 10.1: Test average color calculation with known 2×4 pixel block
+  - [ ] 10.2: Test dominant color calculation (create block with 6 red, 2 blue pixels → expect red)
+  - [ ] 10.3: Test center pixel sampling (verify center pixel color returned)
+  - [ ] 10.4: Test edge case: block with all same color → correct color returned
+  - [ ] 10.5: Test edge case: block with mixed colors → average calculated correctly
+  - [ ] 10.6: Test `extract_cell_colors` with small image (4×8 pixels = 2×2 cells)
+  - [ ] 10.7: Test non-divisible dimensions (5×9 pixels → padding handled)
+
+- [ ] **Task 11: Integration tests with color pipeline** (AC: 8)
+  - [ ] 11.1: Integration test: color image → extract colors → verify color count matches grid
+  - [ ] 11.2: Integration test: color image → ColorMode::Grayscale → verify intensity mapping
+  - [ ] 11.3: Integration test: color image → ColorMode::TrueColor → verify RGB preservation
+  - [ ] 11.4: Integration test: color image → full pipeline → verify BrailleGrid has colors
+  - [ ] 11.5: Integration test: monochrome mode → verify no colors in grid (backward compatible)
+  - [ ] 11.6: Test with diverse images: solid color, gradient, photo, logo
+  - [ ] 11.7: Test terminal rendering: verify ANSI codes generated correctly
+
+- [ ] **Task 12: Visual regression test** (AC: 8)
+  - [ ] 12.1: Create test with known color image (e.g., RGB gradient)
+  - [ ] 12.2: Render through color pipeline → BrailleGrid with colors
+  - [ ] 12.3: Render to terminal with colors → capture ANSI output
+  - [ ] 12.4: Verify ANSI color codes present in output (regex match `\x1b[38;2;`)
+  - [ ] 12.5: Visual check: manually verify color braille output in terminal
+  - [ ] 12.6: Compare against baseline: solid red image → all cells have red ANSI code
+
+- [ ] **Task 13: Create color_image.rs example** (AC: 9)
+  - [ ] 13.1: Create `examples/color_image.rs` file with `fn main()`
+  - [ ] 13.2: Load sample color image (provide in examples/ or use test fixture)
+  - [ ] 13.3: Demonstrate `ColorMode::Monochrome` rendering (baseline)
+  - [ ] 13.4: Demonstrate `ColorMode::Grayscale` rendering (intensity)
+  - [ ] 13.5: Demonstrate `ColorMode::TrueColor` rendering (full RGB)
+  - [ ] 13.6: Add side-by-side comparison showing all three modes
+  - [ ] 13.7: Add comments explaining color sampling strategy choice
+  - [ ] 13.8: Verify example compiles: `cargo build --example color_image --features image`
+  - [ ] 13.9: Verify example runs: `cargo run --example color_image --features image`
+
+- [ ] **Task 14: Documentation and rustdoc** (AC: 9)
+  - [ ] 14.1: Comprehensive rustdoc for `ColorMode` enum
+  - [ ] 14.2: Rustdoc for `extract_cell_colors`
+  - [ ] 14.3: Rustdoc for `render_image_with_color`
+  - [ ] 14.4: Module-level documentation explaining color-aware braille rendering
+
+- [ ] **Task 15: Performance considerations** (AC: 9)
+  - [ ] 15.1: Measure color extraction overhead vs monochrome pipeline
+  - [ ] 15.2: Optimize average color calculation (SIMD-friendly loop)
+  - [ ] 15.3: Add benchmark: monochrome vs grayscale vs truecolor rendering
+  - [ ] 15.4: Document expected overhead: <5ms for color extraction on standard terminals
+  - [ ] 15.5: Ensure total pipeline still meets <50ms target (Story 3.8 requirement)
+
+- [ ] **Task 16: Validation and cleanup** (AC: All)
+  - [ ] 16.1: Run `cargo test --features image` - all tests pass
+  - [ ] 16.2: Run `cargo clippy --features image -- -D warnings` - zero warnings
+  - [ ] 16.3: Run `cargo fmt` - code formatted
+  - [ ] 16.4: Verify color mode integration with existing pipeline (backward compatible)
+  - [ ] 16.5: Run color_image.rs example, visually verify colored output
+  - [ ] 16.6: Cross-platform check: CI tests pass on Windows, Linux, macOS
+  - [ ] 16.7: Update `src/image/mod.rs` to export ColorMode and color functions
+  - [ ] 16.8: Verify zero panics guarantee (no .unwrap() / .expect() in production code)</tasks>
+  </story>
+
+  <acceptanceCriteria>1. **Color Rendering Module Structure**
+   - Module located at `src/image/color_mode.rs` (matches tech spec naming)
+   - Public API exported from `src/image/mod.rs`
+   - Provides color-aware braille rendering that preserves RGB data per cell
+   - Integrates with existing monochrome pipeline from Stories 3.1-3.6
+
+2. **ColorMode Enum and Configuration**
+   - Enum `ColorMode` with variants: `Monochrome`, `Grayscale`, `TrueColor`
+   - Integrated into `ImageRenderer` builder pattern (when Story 3.8 implements it)
+   - Default mode is `Monochrome` (backward compatible with existing pipeline)
+   - Each mode documented with clear use cases
+
+3. **Color Extraction and Sampling**
+   - Function: `extract_cell_colors(image: &DynamicImage, cell_width: usize, cell_height: usize) -> Vec<Color>`
+   - For each 2×4 pixel block, calculate representative color for the braille cell
+   - Three sampling strategies: Average color, Dominant color, Center pixel sampling
+   - Default strategy: average color (best visual quality)
+
+4. **Integration with BrailleGrid Color Support**
+   - Use `BrailleGrid::set_color(cell_x, cell_y, color)` from Epic 2
+   - Each braille cell stores both dot pattern (from binary threshold) AND color
+   - Color applied after dot pattern is determined (separate concerns)
+   - Handle edge cases: partially filled cells, padding regions
+
+5. **Grayscale Mode with Intensity Mapping**
+   - `ColorMode::Grayscale`: Convert RGB → luminance, map to 256 intensity levels
+   - Use ANSI 256-color palette for terminal compatibility
+   - Intensity-based rendering: darker pixels = darker ANSI colors
+   - Provides middle ground between monochrome and full color
+
+6. **TrueColor Mode with RGB Preservation**
+   - `ColorMode::TrueColor`: Preserve full RGB values per cell
+   - Render with ANSI 24-bit true color escape codes
+   - Detect terminal capability (if available) or fall back to ANSI 256
+   - High-fidelity color reproduction for modern terminals
+
+7. **TerminalRenderer Color Integration**
+   - Extend `TerminalRenderer::render()` to accept optional color data
+   - New method: `render_with_colors(grid: &BrailleGrid, colors: &[Color])`
+   - Generate ANSI escape codes for foreground/background colors
+   - Graceful degradation: if terminal doesn't support color, render monochrome
+
+8. **Testing and Quality Validation**
+   - Unit tests for color extraction (average, dominant, center pixel)
+   - Integration tests: color image → color braille grid → terminal output
+   - Test with diverse images (photos, logos, gradients, solid colors)
+   - Visual regression test comparing color output to expected patterns
+   - Feature gate test: color mode works with/without `image` feature
+
+9. **Documentation and Examples**
+   - Rustdoc for all color mode functions with usage examples
+   - Example program `examples/color_image.rs` demonstrating color rendering
+   - Document terminal compatibility requirements (ANSI 256 vs true color)
+   - Document color sampling strategies and when to use each
+   - Performance characteristics documented (color mode overhead vs monochrome)</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Tech Spec Epic 3: 2D Image Rendering Pipeline -->
+      <doc path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic Technical Specification: 2D Image Rendering Pipeline" section="Color Mode Pipeline (lines 324-345)" snippet="Color Mode Pipeline: Load + Resize → Preserve Color Information → Extract RGB per pixel → Map Color to Braille with Intensity → Render to Terminal with ANSI codes. Default mode is Monochrome for backward compatibility." />
+
+      <doc path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic Technical Specification: 2D Image Rendering Pipeline" section="Services and Modules (line 79)" snippet="src/image/color_mode.rs - Color-aware rendering - Input: DynamicImage, color mapping - Output: BrailleGrid with colors - Owner: Story 3.7" />
+
+      <doc path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic Technical Specification: 2D Image Rendering Pipeline" section="Data Models and Contracts (lines 124-130)" snippet="ColorMode enum with variants: Monochrome (Black/white only), Grayscale (256 shades using color intensity), TrueColor (Full RGB color per braille cell)" />
+
+      <!-- Architecture Document -->
+      <doc path="docs/architecture.md" title="dotmax - Architecture Document" section="Color System (lines 126-131)" snippet="src/color.rs - struct Color (RGB), struct ColorScheme, Terminal color conversion (ANSI 256, true color), 6+ predefined schemes from crabmusic" />
+
+      <doc path="docs/architecture.md" title="dotmax - Architecture Document" section="Error Handling with thiserror (ADR 0002)" snippet="Use thiserror for custom error types with DotmaxError enum. Type-safe error matching for users." />
+
+      <doc path="docs/architecture.md" title="dotmax - Architecture Document" section="Module Structure (lines 108-116)" snippet="src/image/ - Image rendering (Epic 3, feature-gated): mod.rs (Public API), loader.rs, resize.rs, convert.rs, threshold.rs, dither.rs, mapper.rs, svg.rs, color_mode.rs (NEW)" />
+    </docs>
+
+    <code>
+      <!-- Existing Color Infrastructure (Epic 2) -->
+      <artifact path="src/grid.rs" kind="module" symbol="Color" lines="32-62" reason="RGB color struct already implemented in Epic 2. Story 3.7 will use this existing type for per-cell colors." />
+
+      <artifact path="src/grid.rs" kind="method" symbol="BrailleGrid::set_cell_color" lines="757-783" reason="AC #4: Use this method to apply extracted colors to braille cells. Each cell stores dot pattern AND color." />
+
+      <artifact path="src/grid.rs" kind="method" symbol="BrailleGrid::get_color" lines="472-479" reason="AC #4: Retrieve color data for rendering. Used by TerminalRenderer to apply ANSI color codes." />
+
+      <artifact path="src/grid.rs" kind="method" symbol="BrailleGrid::clear_colors" lines="811-813" reason="Clear all colors without affecting dot patterns. Useful for switching back to monochrome mode." />
+
+      <!-- Terminal Renderer Integration (Epic 2) -->
+      <artifact path="src/render.rs" kind="method" symbol="TerminalRenderer::render" lines="392-469" reason="AC #7: Extend this method to generate ANSI color codes when rendering colored braille grids. Already has per-cell color logic (lines 443-455)." />
+
+      <artifact path="src/render.rs" kind="struct" symbol="TerminalCapabilities" lines="186-195" reason="Terminal capability detection including color support. Check supports_color and supports_truecolor before applying color codes." />
+
+      <!-- Existing Image Pipeline (Stories 3.1-3.6) -->
+      <artifact path="src/image/mod.rs" kind="module" symbol="image::mod" lines="1-105" reason="Public API for image module. Story 3.7 will add ColorMode enum and color rendering functions to exports." />
+
+      <artifact path="src/image/resize.rs" kind="function" symbol="resize_to_dimensions" reason="AC #3: Resize image before color extraction. Process resized image (2×4 pixel blocks per braille cell)." />
+
+      <artifact path="src/image/convert.rs" kind="function" symbol="to_grayscale" reason="AC #5: Grayscale conversion using BT.709 formula. Reuse this for ColorMode::Grayscale intensity mapping." />
+
+      <artifact path="src/image/mapper.rs" kind="function" symbol="pixels_to_braille" reason="AC #4: Maps binary pixels to braille dots. Story 3.7 integrates by applying colors AFTER dot patterns are determined." />
+
+      <artifact path="src/image/dither.rs" kind="enum" symbol="DitheringMethod" reason="Dithering is applied after color extraction but before braille mapping (separate dot pattern from color)." />
+
+      <artifact path="src/image/threshold.rs" kind="function" symbol="otsu_threshold" reason="Threshold calculation for binary conversion. Dot on/off decisions are independent of color preservation." />
+    </code>
+
+    <dependencies>
+      <rust>
+        <core>
+          <dependency name="image" version="0.25" feature="image" reason="DynamicImage type for color extraction input, pixel access APIs" />
+          <dependency name="imageproc" version="0.24" feature="image" reason="Image processing utilities (if needed for advanced color operations)" />
+          <dependency name="ratatui" version="0.29" reason="Terminal rendering with ANSI color code support (Span::styled with Color::Rgb)" />
+          <dependency name="crossterm" version="0.29" reason="Cross-platform terminal I/O and color capability detection" />
+          <dependency name="thiserror" version="2.0" reason="Error handling for DotmaxError variants" />
+          <dependency name="tracing" version="0.1" reason="Structured logging (debug!, info!, error!)" />
+        </core>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architectural" source="tech-spec-epic-3.md">Module located at src/image/color_mode.rs - must follow feature-based module structure</constraint>
+    <constraint type="architectural" source="architecture.md ADR 0002">All functions return Result&lt;T, DotmaxError&gt; - zero panics guarantee</constraint>
+    <constraint type="architectural" source="tech-spec-epic-3.md">Color rendering is feature-gated behind 'image' feature flag</constraint>
+    <constraint type="integration" source="grid.rs">Use existing Color struct from src/grid.rs (lines 32-62) - DO NOT create new color type</constraint>
+    <constraint type="integration" source="grid.rs">Use BrailleGrid::set_cell_color() from Epic 2 - color storage already implemented</constraint>
+    <constraint type="integration" source="render.rs">TerminalRenderer already supports per-cell colors (lines 443-455) - extend for ColorMode variants</constraint>
+    <constraint type="performance" source="tech-spec-epic-3.md">Color extraction overhead &lt;5ms target (added to pipeline)</constraint>
+    <constraint type="performance" source="tech-spec-epic-3.md">Total pipeline with color &lt;50ms for standard terminals (80×24)</constraint>
+    <constraint type="backward-compatibility" source="AC #2">Default mode is ColorMode::Monochrome - existing pipeline unaffected</constraint>
+    <constraint type="separation-of-concerns" source="AC #4">Color applied AFTER dot pattern is determined - keep rendering stages independent</constraint>
+    <constraint type="terminal-compatibility" source="AC #5, #6">Graceful degradation: if terminal lacks color support, render monochrome without errors</constraint>
+    <constraint type="code-quality" source="architecture.md">No .unwrap() or .expect() in production code - use Result&lt;&gt; for all fallible operations</constraint>
+    <constraint type="logging" source="Story 2.7">Use tracing macros (debug!, info!, error!) with structured context</constraint>
+    <constraint type="testing" source="AC #8">Unit tests (color extraction), integration tests (full pipeline), visual regression tests (ANSI output verification)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="ColorMode Enum" kind="enum" signature="pub enum ColorMode { Monochrome, Grayscale, TrueColor }" path="src/image/mod.rs">
+      <description>AC #2: Color rendering mode selection. Default: Monochrome (backward compatible). Integrated into ImageRenderer builder (Story 3.8).</description>
+    </interface>
+
+    <interface name="extract_cell_colors" kind="function" signature="pub fn extract_cell_colors(image: &amp;DynamicImage, cell_width: usize, cell_height: usize) -&gt; Vec&lt;Color&gt;" path="src/image/color_mode.rs">
+      <description>AC #3: Extract representative color for each braille cell (2×4 pixel block). Returns one Color per cell. Default strategy: average color.</description>
+    </interface>
+
+    <interface name="render_image_with_color" kind="function" signature="pub fn render_image_with_color(image: &amp;DynamicImage, mode: ColorMode) -&gt; Result&lt;BrailleGrid, DotmaxError&gt;" path="src/image/color_mode.rs">
+      <description>AC #1, #4: High-level color rendering function. Pipeline: resize → extract colors → convert to binary → map to braille → apply colors. Returns BrailleGrid with both dot patterns and colors.</description>
+    </interface>
+
+    <interface name="BrailleGrid::set_cell_color" kind="method" signature="pub fn set_cell_color(&amp;mut self, x: usize, y: usize, color: Color) -&gt; Result&lt;(), DotmaxError&gt;" path="src/grid.rs">
+      <description>AC #4: From Epic 2. Apply extracted color to specific braille cell. Used after dot patterns are set.</description>
+    </interface>
+
+    <interface name="TerminalRenderer::render" kind="method" signature="pub fn render(&amp;mut self, grid: &amp;BrailleGrid) -&gt; Result&lt;(), DotmaxError&gt;" path="src/render.rs">
+      <description>AC #7: From Epic 2. Already supports per-cell colors via Span::styled. Story 3.7 ensures correct ANSI codes for ColorMode variants.</description>
+    </interface>
+
+    <interface name="Color Struct" kind="struct" signature="pub struct Color { pub r: u8, pub g: u8, pub b: u8 }" path="src/grid.rs">
+      <description>From Epic 2. RGB color representation. Use Color::rgb(r, g, b) constructor. Already implements Debug, Clone, Copy, PartialEq, Eq.</description>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>All tests must follow dotmax testing standards from architecture.md:
+- Unit tests in #[cfg(test)] mod tests within each module
+- Integration tests in tests/image_rendering_tests.rs
+- Zero panics: all tests verify Result&lt;&gt; error paths
+- Performance: color extraction &lt;5ms (criterion benchmark in benches/image_conversion.rs)
+- Code coverage: &gt;80% line coverage for color_mode.rs module
+- Feature gates: test with and without 'image' feature enabled
+- Visual regression: verify ANSI color codes match expected patterns
+- Cross-platform: tests pass on Windows, Linux, macOS (GitHub Actions CI)</standards>
+
+    <locations>
+- src/image/color_mode.rs: Unit tests for color extraction, sampling strategies, ColorMode enum
+- tests/image_rendering_tests.rs: Integration tests for color pipeline (image → grid → terminal)
+- tests/fixtures/images/: Test images (color_gradient.png, color_photo.jpg, solid_colors.png)
+- benches/image_conversion.rs: Performance benchmarks (color extraction overhead, mode comparison)
+- examples/color_image.rs: Visual demonstration of ColorMode variants</locations>
+
+    <ideas>
+<!-- Unit Test Ideas (AC #8) -->
+- test_average_color_calculation_with_known_2x4_block: Create 8-pixel block with known RGB values, verify average
+- test_dominant_color_with_6_red_2_blue: Block with 6 red pixels, 2 blue → expect dominant red
+- test_center_pixel_sampling: Verify center pixel (pixel 4 or 5 in 2×4 block) color returned
+- test_extract_cell_colors_small_image: 4×8 pixel image → 2×2 cells, verify color count
+- test_extract_cell_colors_non_divisible_dimensions: 5×9 pixels → padding handled correctly
+- test_rgb_to_grayscale_intensity_bt709: Verify BT.709 formula correctness (Y = 0.2126*R + 0.7152*G + 0.0722*B)
+- test_intensity_to_ansi256_mapping: 0 → ANSI 232 (black), 255 → ANSI 255 (white), mid → mid
+- test_color_to_truecolor_ansi: RGB(255,0,0) → "\x1b[38;2;255;0;0m"
+
+<!-- Integration Test Ideas (AC #8) -->
+- test_color_pipeline_end_to_end: color_gradient.png → ColorMode::TrueColor → verify grid has colors
+- test_monochrome_mode_no_colors: image → ColorMode::Monochrome → verify grid.colors are None
+- test_grayscale_mode_intensity_mapping: verify intensity decreases with darker colors
+- test_color_count_matches_grid_dimensions: 80×24 grid → 1920 colors (80*24)
+- test_backward_compatibility: existing monochrome pipeline unaffected by new ColorMode code
+- test_diverse_images: photos (gradients), logos (solid colors), diagrams (line art)
+
+<!-- Visual Regression Test Ideas (AC #8) -->
+- test_ansi_codes_present_in_output: regex match for "\x1b[38;2;" in rendered output
+- test_solid_red_image_all_cells_red: Create 10×10 red image → all cells should have red ANSI code
+- test_color_reset_after_each_cell: Verify "\x1b[0m" (reset) after each colored cell
+
+<!-- Performance Test Ideas (AC #9) -->
+- bench_color_extraction_overhead: Compare monochrome vs color pipeline timing
+- bench_mode_comparison: Monochrome vs Grayscale vs TrueColor rendering speed
+- bench_simd_optimization: If SIMD used for average color, benchmark improvement</ideas>
+  </tests>
+</story-context>

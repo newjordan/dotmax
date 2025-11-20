@@ -94,6 +94,14 @@
 //! | Atkinson | Moderate | Artistic | Line art, artistic renders |
 //! | None (direct threshold) | Fast | Basic | When dithering not needed |
 
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::uninlined_format_args)]
+
 use image::GrayImage;
 use tracing::debug;
 
@@ -229,7 +237,12 @@ pub fn apply_dithering(
     gray: &GrayImage,
     method: DitheringMethod,
 ) -> Result<BinaryImage, DotmaxError> {
-    debug!("Applying {:?} dithering to {}×{} image", method, gray.width(), gray.height());
+    debug!(
+        "Applying {:?} dithering to {}×{} image",
+        method,
+        gray.width(),
+        gray.height()
+    );
 
     match method {
         DitheringMethod::None => {

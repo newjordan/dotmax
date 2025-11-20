@@ -64,10 +64,10 @@ development_status:
   3-1-implement-image-loading-from-file-paths-and-byte-buffers: done  # Review approved: All ACs met, all tasks verified, zero issues
   3-2-implement-image-resize-and-aspect-ratio-preservation: done  # Review approved: All 9 ACs met, all 67 subtasks verified, zero issues, exceptional quality
   3-3-implement-grayscale-conversion-and-otsu-thresholding: done  # Review APPROVED: All ACs met, spec updated to BT.709 (modern standard), exceptional quality
-  3-4-implement-dithering-algorithms-floyd-steinberg-bayer-atkinson: in-progress
-  3-5-implement-binary-image-to-braillegrid-conversion: backlog
-  3-6-add-svg-vector-graphics-support-with-rasterization: backlog
-  3-7-implement-color-mode-image-rendering: backlog
+  3-4-implement-dithering-algorithms-floyd-steinberg-bayer-atkinson: done  # Review APPROVED: All 9 ACs met, 38 tests passing (29 unit + 9 integration), zero clippy warnings, visual example created, exceptional quality
+  3-5-implement-binary-image-to-braillegrid-conversion: done  # Review APPROVED: All 9 ACs met, 18 tests passing (12 unit + 6 integration), zero issues, exceptional quality
+  3-6-add-svg-vector-graphics-support-with-rasterization: done  # Review APPROVED: All 9 ACs met, 15 tests passing, zero clippy warnings, example working, exceptional quality
+  3-7-implement-color-mode-image-rendering: in-progress
   3-8-create-high-level-image-rendering-api: backlog
   epic-3-retrospective: optional
 

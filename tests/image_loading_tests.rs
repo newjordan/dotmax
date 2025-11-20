@@ -679,7 +679,8 @@ fn test_integration_all_dithering_methods_produce_valid_output() {
     let gray = to_grayscale(&resized);
 
     // Test all methods
-    let floyd = apply_dithering(&gray, DitheringMethod::FloydSteinberg).expect("Floyd-Steinberg failed");
+    let floyd =
+        apply_dithering(&gray, DitheringMethod::FloydSteinberg).expect("Floyd-Steinberg failed");
     let bayer = apply_dithering(&gray, DitheringMethod::Bayer).expect("Bayer failed");
     let atkinson = apply_dithering(&gray, DitheringMethod::Atkinson).expect("Atkinson failed");
     let none = apply_dithering(&gray, DitheringMethod::None).expect("None failed");
@@ -708,7 +709,8 @@ fn test_integration_dithering_preserves_dimensions() {
         let resized = resize_to_dimensions(&img, size, size, true).expect("Resize failed");
         let gray = to_grayscale(&resized);
 
-        let floyd = apply_dithering(&gray, DitheringMethod::FloydSteinberg).expect("Floyd-Steinberg failed");
+        let floyd = apply_dithering(&gray, DitheringMethod::FloydSteinberg)
+            .expect("Floyd-Steinberg failed");
         let bayer = apply_dithering(&gray, DitheringMethod::Bayer).expect("Bayer failed");
         let atkinson = apply_dithering(&gray, DitheringMethod::Atkinson).expect("Atkinson failed");
 
@@ -734,7 +736,8 @@ fn test_integration_dithering_with_brightness_adjustment() {
     let adjusted = adjust_brightness(&gray, 1.5).expect("Brightness adjustment failed");
 
     // Apply dithering
-    let binary = apply_dithering(&adjusted, DitheringMethod::FloydSteinberg).expect("Dithering failed");
+    let binary =
+        apply_dithering(&adjusted, DitheringMethod::FloydSteinberg).expect("Dithering failed");
 
     assert_eq!(binary.width, 20);
     assert_eq!(binary.height, 20);
@@ -773,5 +776,8 @@ fn test_integration_dithering_cross_platform_consistency() {
     let result2 = apply_dithering(&gray, DitheringMethod::Bayer).expect("Dithering failed");
 
     // Should produce identical output
-    assert_eq!(result1.pixels, result2.pixels, "Bayer dithering should be deterministic");
+    assert_eq!(
+        result1.pixels, result2.pixels,
+        "Bayer dithering should be deterministic"
+    );
 }

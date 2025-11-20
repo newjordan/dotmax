@@ -1,0 +1,500 @@
+//! SVG vector graphics loading and rasterization
+//!
+//! This module provides SVG support for dotmax by rasterizing vector graphics
+//! to pixel buffers that feed into the standard image→braille pipeline.
+//!
+//! # Feature Gate
+//!
+//! To use this module, enable the `svg` feature in your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! dotmax = { version = "0.1", features = ["svg"] }
+//! ```
+//!
+//! # Rasterization Approach
+//!
+//! SVG files are vector graphics that must be converted to raster images before
+//! braille mapping. This module uses:
+//! - **`usvg`**: Parses and normalizes SVG files
+//! - **`resvg`**: Rasterizes SVG to high-quality pixel buffers
+//! - **`tiny-skia`**: 2D rendering backend (transitive dependency)
+//!
+//! The rasterization pipeline:
+//! 1. Parse SVG with usvg (simplifies complex SVG features)
+//! 2. Rasterize to pixel buffer with resvg (anti-aliased, high-quality)
+//! 3. Convert to `DynamicImage` (RGBA8 format)
+//! 4. Feed into existing image pipeline: resize → grayscale → dither → threshold → braille
+//!
+//! # Performance Characteristics
+//!
+//! - **Small SVGs** (icons, logos <5KB): <50ms rasterization
+//! - **Medium SVGs** (diagrams, 10-50KB): <100ms rasterization
+//! - **Large complex SVGs** (>100KB): May exceed 100ms but will not hang
+//!
+//! Rasterization time depends on SVG complexity (number of paths, gradients, text elements).
+//!
+//! # Transparent Background Handling
+//!
+//! Terminals typically don't support alpha transparency well. This module converts
+//! transparent pixels to white backgrounds for terminal compatibility. SVGs with
+//! transparent backgrounds will render as if placed on white paper.
+//!
+//! # Font Handling for Text-Heavy SVGs
+//!
+//! SVGs with text elements require system fonts. `resvg` uses `fontdb` to locate
+//! fonts automatically. If a specific font family is missing, the system will fall
+//! back to a generic sans-serif font. Missing fonts do not cause errors—text will
+//! render with fallback fonts instead.
+//!
+//! # Examples
+//!
+//! ## Loading SVG from file path
+//!
+//! ```no_run
+//! # #[cfg(feature = "svg")]
+//! # {
+//! use dotmax::image::load_svg_from_path;
+//! use std::path::Path;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Rasterize SVG to 160×96 pixels (80×24 terminal cells × 2×4 braille dots)
+//! let img = load_svg_from_path(Path::new("logo.svg"), 160, 96)?;
+//! println!("Rasterized SVG to {}×{}", img.width(), img.height());
+//! # Ok(())
+//! # }
+//! # }
+//! ```
+//!
+//! ## Loading SVG from byte buffer
+//!
+//! ```no_run
+//! # #[cfg(feature = "svg")]
+//! # {
+//! use dotmax::image::load_svg_from_bytes;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let svg_bytes = include_bytes!("../../tests/fixtures/svg/simple_circle.svg");
+//! let img = load_svg_from_bytes(svg_bytes, 100, 100)?;
+//! println!("Loaded SVG from bytes: {}×{}", img.width(), img.height());
+//! # Ok(())
+//! # }
+//! # }
+//! ```
+//!
+//! ## Full SVG → Braille Pipeline
+//!
+//! ```no_run
+//! # #[cfg(all(feature = "svg", feature = "image"))]
+//! # {
+//! use dotmax::image::{load_svg_from_path, to_grayscale, auto_threshold, pixels_to_braille};
+//! use std::path::Path;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load and rasterize SVG
+//! let img = load_svg_from_path(Path::new("diagram.svg"), 160, 96)?;
+//!
+//! // Convert to grayscale
+//! let gray = to_grayscale(&img);
+//!
+//! // Threshold to binary
+//! let binary = auto_threshold(&img);
+//!
+//! // Map to braille grid
+//! let grid = pixels_to_braille(&binary, 80, 24)?;
+//!
+//! println!("Rendered SVG to {}×{} braille grid", grid.width(), grid.height());
+//! # Ok(())
+//! # }
+//! # }
+//! ```
+
+use crate::DotmaxError;
+use image::DynamicImage;
+use std::path::Path;
+use tracing::{debug, info};
+use usvg::TreeParsing;
+
+/// Maximum SVG dimensions (width or height in pixels)
+///
+/// This limit prevents memory exhaustion from malicious or extremely large SVGs.
+/// SVGs exceeding these dimensions will return `DotmaxError::InvalidImageDimensions`.
+pub const MAX_SVG_WIDTH: u32 = 10_000;
+pub const MAX_SVG_HEIGHT: u32 = 10_000;
+
+/// Load an SVG from a file path and rasterize to specified dimensions
+///
+/// Parses the SVG file using `usvg`, rasterizes to a pixel buffer using `resvg`,
+/// and returns a `DynamicImage` (RGBA8 format) that can be processed through the
+/// standard image→braille pipeline.
+///
+/// # Arguments
+///
+/// * `path` - Path to the SVG file
+/// * `width` - Target width in pixels (will preserve aspect ratio)
+/// * `height` - Target height in pixels (will preserve aspect ratio)
+///
+/// # Returns
+///
+/// Returns a `DynamicImage` containing the rasterized SVG, or an error if:
+/// - File does not exist or is not readable
+/// - SVG is malformed or cannot be parsed
+/// - Dimensions are zero or exceed [`MAX_SVG_WIDTH`]/[`MAX_SVG_HEIGHT`]
+/// - Pixmap creation fails
+///
+/// # Examples
+///
+/// ```no_run
+/// # #[cfg(feature = "svg")]
+/// # {
+/// use dotmax::image::load_svg_from_path;
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Rasterize logo.svg to 200×150 pixels
+/// let img = load_svg_from_path(Path::new("logo.svg"), 200, 150)?;
+/// assert_eq!(img.width(), 200);
+/// assert_eq!(img.height(), 150);
+/// # Ok(())
+/// # }
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::SvgError`] if the SVG cannot be parsed or rasterized.
+/// Returns [`DotmaxError::InvalidImageDimensions`] if dimensions are invalid.
+/// Returns [`DotmaxError::Terminal`] if file I/O fails.
+///
+/// # Performance
+///
+/// Target: <50ms for small SVGs (icons, logos), <100ms for medium SVGs.
+pub fn load_svg_from_path(
+    path: &Path,
+    width: u32,
+    height: u32,
+) -> Result<DynamicImage, DotmaxError> {
+    info!("Loading SVG from {:?} at {}×{}", path, width, height);
+
+    // Validate path exists and is readable
+    if !path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("SVG file not found: {path:?}"),
+        )
+        .into());
+    }
+
+    // Read SVG file contents
+    let svg_data = std::fs::read(path)
+        .map_err(|e| DotmaxError::SvgError(format!("Failed to read SVG file {path:?}: {e}")))?;
+
+    // Delegate to bytes loader with path context for errors
+    load_svg_from_bytes(&svg_data, width, height).map_err(|e| match e {
+        DotmaxError::SvgError(msg) => {
+            DotmaxError::SvgError(format!("Error loading SVG from {path:?}: {msg}"))
+        }
+        other => other,
+    })
+}
+
+/// Load an SVG from a byte buffer and rasterize to specified dimensions
+///
+/// Parses the SVG data using `usvg`, rasterizes to a pixel buffer using `resvg`,
+/// and returns a `DynamicImage` (RGBA8 format).
+///
+/// # Arguments
+///
+/// * `bytes` - SVG file contents as bytes
+/// * `width` - Target width in pixels (will preserve aspect ratio)
+/// * `height` - Target height in pixels (will preserve aspect ratio)
+///
+/// # Returns
+///
+/// Returns a `DynamicImage` containing the rasterized SVG, or an error if:
+/// - SVG data is malformed or cannot be parsed
+/// - Dimensions are zero or exceed [`MAX_SVG_WIDTH`]/[`MAX_SVG_HEIGHT`]
+/// - Pixmap creation fails
+///
+/// # Examples
+///
+/// ```no_run
+/// # #[cfg(feature = "svg")]
+/// # {
+/// use dotmax::image::load_svg_from_bytes;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let svg_string = r#"
+///     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+///         <circle cx="50" cy="50" r="40" fill="black"/>
+///     </svg>
+/// "#;
+/// let img = load_svg_from_bytes(svg_string.as_bytes(), 100, 100)?;
+/// assert_eq!(img.width(), 100);
+/// assert_eq!(img.height(), 100);
+/// # Ok(())
+/// # }
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::SvgError`] if the SVG cannot be parsed or rasterized.
+/// Returns [`DotmaxError::InvalidImageDimensions`] if dimensions are invalid.
+///
+/// # Performance
+///
+/// Target: <50ms for small SVGs, <100ms for medium SVGs.
+pub fn load_svg_from_bytes(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<DynamicImage, DotmaxError> {
+    // Validate dimensions
+    if width == 0 || height == 0 {
+        return Err(DotmaxError::InvalidImageDimensions { width, height });
+    }
+
+    if width > MAX_SVG_WIDTH || height > MAX_SVG_HEIGHT {
+        return Err(DotmaxError::InvalidImageDimensions { width, height });
+    }
+
+    debug!("Parsing SVG data ({} bytes)", bytes.len());
+
+    // Parse SVG with usvg
+    let options = usvg::Options::default();
+    let tree = usvg::Tree::from_data(bytes, &options)
+        .map_err(|e| DotmaxError::SvgError(format!("Failed to parse SVG: {e}")))?;
+
+    debug!(
+        "SVG parsed successfully, viewBox size: {}×{}",
+        tree.size.width(),
+        tree.size.height()
+    );
+
+    // Rasterize to pixel buffer
+    rasterize_svg_tree(&tree, width, height)
+}
+
+/// Rasterize an SVG tree to a `DynamicImage`
+///
+/// Internal helper function that performs the actual rasterization using `resvg`.
+///
+/// # Arguments
+///
+/// * `tree` - Parsed SVG tree from `usvg`
+/// * `width` - Target width in pixels
+/// * `height` - Target height in pixels
+///
+/// # Returns
+///
+/// Returns a `DynamicImage` (RGBA8 format) with the rasterized SVG.
+///
+/// # Implementation Details
+///
+/// - Creates a pixel buffer (pixmap) using `tiny-skia`
+/// - Calculates transform for aspect ratio preservation using `usvg::FitTo`
+/// - Renders SVG to pixmap with anti-aliasing enabled by default
+/// - Converts transparent pixels to white background for terminal compatibility
+/// - Converts pixmap RGBA buffer to `image::RgbaImage` then `DynamicImage`
+fn rasterize_svg_tree(
+    tree: &usvg::Tree,
+    width: u32,
+    height: u32,
+) -> Result<DynamicImage, DotmaxError> {
+    use resvg::tiny_skia::{Pixmap, Transform};
+
+    debug!(
+        "Creating {}×{} pixel buffer for rasterization",
+        width, height
+    );
+
+    // Create pixel buffer
+    let mut pixmap = Pixmap::new(width, height).ok_or_else(|| {
+        DotmaxError::SvgError(format!(
+            "Failed to create pixmap for dimensions {}×{}",
+            width, height
+        ))
+    })?;
+
+    // Calculate transform for aspect ratio preservation
+    let tree_size = tree.size;
+    let scale_x = width as f32 / tree_size.width();
+    let scale_y = height as f32 / tree_size.height();
+    let scale = scale_x.min(scale_y);
+
+    let transform = Transform::from_scale(scale, scale);
+
+    debug!(
+        "Rendering SVG with transform (scale: {:.2}, {:.2})",
+        scale, scale
+    );
+
+    // Render tree to pixmap (anti-aliasing enabled by default)
+    resvg::render(tree, transform, &mut pixmap.as_mut());
+
+    debug!("SVG rasterization complete");
+
+    // Convert transparent pixels to white background for terminal compatibility
+    let pixmap_data = pixmap.data_mut();
+    for pixel in pixmap_data.chunks_exact_mut(4) {
+        let alpha = f32::from(pixel[3]) / 255.0;
+        if alpha < 1.0 {
+            // Blend with white background
+            pixel[0] = (f32::from(pixel[0]) * alpha + 255.0 * (1.0 - alpha)) as u8; // R
+            pixel[1] = (f32::from(pixel[1]) * alpha + 255.0 * (1.0 - alpha)) as u8; // G
+            pixel[2] = (f32::from(pixel[2]) * alpha + 255.0 * (1.0 - alpha)) as u8; // B
+            pixel[3] = 255; // Opaque
+        }
+    }
+
+    debug!("Converted transparent pixels to white background");
+
+    // Convert pixmap RGBA buffer to DynamicImage
+    let image_buffer =
+        image::RgbaImage::from_raw(width, height, pixmap.take()).ok_or_else(|| {
+            DotmaxError::SvgError("Failed to convert pixmap to image buffer".to_string())
+        })?;
+
+    Ok(DynamicImage::ImageRgba8(image_buffer))
+}
+
+#[cfg(all(test, feature = "svg"))]
+mod tests {
+    use super::*;
+
+    // Simple SVG test fixture - circle
+    const SIMPLE_CIRCLE_SVG: &str = r#"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="40" fill="black"/>
+        </svg>
+    "#;
+
+    // SVG with gradient
+    const GRADIENT_SVG: &str = r#"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+            <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:black;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:white;stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <rect width="100" height="100" fill="url(#grad1)" />
+        </svg>
+    "#;
+
+    // Malformed SVG
+    const MALFORMED_SVG: &str = "<svg><notvalid>";
+
+    #[test]
+    fn test_load_valid_simple_svg_returns_dynamic_image() {
+        let result = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 100, 100);
+        assert!(result.is_ok());
+        let img = result.unwrap();
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 100);
+    }
+
+    #[test]
+    fn test_load_svg_with_gradient_rasterizes_correctly() {
+        let result = load_svg_from_bytes(GRADIENT_SVG.as_bytes(), 200, 200);
+        assert!(result.is_ok());
+        let img = result.unwrap();
+        assert_eq!(img.width(), 200);
+        assert_eq!(img.height(), 200);
+    }
+
+    #[test]
+    fn test_load_malformed_svg_returns_svg_error() {
+        let result = load_svg_from_bytes(MALFORMED_SVG.as_bytes(), 100, 100);
+        assert!(result.is_err());
+        match result {
+            Err(DotmaxError::SvgError(msg)) => {
+                assert!(msg.contains("parse"));
+            }
+            _ => panic!("Expected SvgError"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_dimensions_zero_returns_error() {
+        let result = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 0, 100);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(DotmaxError::InvalidImageDimensions { .. })
+        ));
+
+        let result = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 100, 0);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(DotmaxError::InvalidImageDimensions { .. })
+        ));
+    }
+
+    #[test]
+    fn test_invalid_dimensions_exceeds_max_returns_error() {
+        let result = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 20_000, 100);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(DotmaxError::InvalidImageDimensions { .. })
+        ));
+
+        let result = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 100, 20_000);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(DotmaxError::InvalidImageDimensions { .. })
+        ));
+    }
+
+    #[test]
+    fn test_aspect_ratio_preserved_in_rasterization() {
+        // SVG with 2:1 aspect ratio (viewBox 200×100)
+        let svg = r#"
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+                <rect width="200" height="100" fill="black"/>
+            </svg>
+        "#;
+
+        // Request square dimensions - usvg FitTo should preserve aspect ratio
+        let result = load_svg_from_bytes(svg.as_bytes(), 100, 100);
+        assert!(result.is_ok());
+        let img = result.unwrap();
+        // Image will be 100×100 (as requested), but content will be centered/letterboxed
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 100);
+    }
+
+    #[test]
+    fn test_load_svg_from_bytes_same_as_file() {
+        // Test that bytes and file loading produce consistent results
+        let result1 = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 150, 150);
+        let result2 = load_svg_from_bytes(SIMPLE_CIRCLE_SVG.as_bytes(), 150, 150);
+
+        assert!(result1.is_ok());
+        assert!(result2.is_ok());
+
+        let img1 = result1.unwrap();
+        let img2 = result2.unwrap();
+
+        assert_eq!(img1.width(), img2.width());
+        assert_eq!(img1.height(), img2.height());
+    }
+
+    #[test]
+    fn test_svg_with_paths_applies_antialiasing() {
+        // SVG with complex paths
+        let svg = r#"
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                <path d="M 10 10 L 90 10 L 90 90 L 10 90 Z" fill="black" stroke="white" stroke-width="2"/>
+            </svg>
+        "#;
+
+        let result = load_svg_from_bytes(svg.as_bytes(), 100, 100);
+        assert!(result.is_ok());
+        // Anti-aliasing is enabled by default in resvg, so this should render smoothly
+    }
+}

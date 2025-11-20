@@ -28,7 +28,7 @@ const MAX_GRID_HEIGHT: usize = 10_000;
 /// RGB color representation for braille cells
 ///
 /// Extracted from crabmusic. Story 2.6 will implement full color rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
     pub g: u8,

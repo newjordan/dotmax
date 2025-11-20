@@ -57,25 +57,19 @@ fn benchmark_bayer(c: &mut Criterion) {
     // Standard terminal size (160×96 pixels)
     group.bench_function("160x96_standard_terminal", |b| {
         let gray = create_gradient_image(160, 96);
-        b.iter(|| {
-            apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed")
-        });
+        b.iter(|| apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed"));
     });
 
     // Small image (50×50)
     group.bench_function("50x50_small", |b| {
         let gray = create_gradient_image(50, 50);
-        b.iter(|| {
-            apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed")
-        });
+        b.iter(|| apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed"));
     });
 
     // Large terminal (320×192 pixels)
     group.bench_function("320x192_large_terminal", |b| {
         let gray = create_gradient_image(320, 192);
-        b.iter(|| {
-            apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed")
-        });
+        b.iter(|| apply_dithering(black_box(&gray), DitheringMethod::Bayer).expect("Bayer failed"));
     });
 
     group.finish();
