@@ -101,7 +101,7 @@ use super::threshold::BinaryImage;
 ///
 /// # Arguments
 ///
-/// * `binary` - The binary image to convert (pixels as Vec<bool>, true=black, false=white)
+/// * `binary` - The binary image to convert (pixels as `Vec<bool>`, true=black, false=white)
 /// * `cell_width` - Target grid width in braille cells (not used for calculation, reserved for future optimization)
 /// * `cell_height` - Target grid height in braille cells (not used for calculation, reserved for future optimization)
 ///

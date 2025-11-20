@@ -90,9 +90,9 @@
 //! # Integration with Epic 2
 //!
 //! This module uses the color infrastructure from Epic 2:
-//! - [`Color`](crate::Color): RGB color representation
-//! - [`BrailleGrid::set_cell_color()`](crate::BrailleGrid::set_cell_color): Apply colors to cells
-//! - [`TerminalRenderer`](crate::TerminalRenderer): Renders colored braille with ANSI codes
+//! - [`Color`]: RGB color representation
+//! - [`BrailleGrid::set_cell_color()`]: Apply colors to cells
+//! - [`crate::TerminalRenderer`]: Renders colored braille with ANSI codes
 
 use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;

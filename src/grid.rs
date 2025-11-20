@@ -165,12 +165,12 @@ pub struct BrailleGrid {
     height: usize,
     /// Dot patterns for each cell (binary on/off)
     ///
-    /// **Preserved from crabmusic**: Vec<u8> bitfield representation
-    /// Each u8 represents one terminal cell with 8 dots
+    /// **Preserved from crabmusic**: `Vec<u8>` bitfield representation
+    /// Each `u8` represents one terminal cell with 8 dots
     patterns: Vec<u8>,
     /// Optional colors for each cell
     ///
-    /// **Preserved from crabmusic**: Vec<Option<Color>>
+    /// **Preserved from crabmusic**: `Vec<Option<Color>>`
     /// Story 2.6 will implement color rendering
     colors: Vec<Option<Color>>,
 }

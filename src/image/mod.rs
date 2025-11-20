@@ -35,7 +35,7 @@
 //! dotmax = { version = "0.1", features = ["svg"] }
 //! ```
 //!
-//! SVG files are rasterized to pixel buffers before braille mapping. See [`svg`] module for details.
+//! SVG files are rasterized to pixel buffers before braille mapping. See the `svg` module for details.
 //!
 //! # Examples
 //!
