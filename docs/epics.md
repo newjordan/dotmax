@@ -1312,6 +1312,46 @@ ImageRenderer::new()
 
 ---
 
+### Story 3.9: Manual Testing, Validation, and Feedback Refinement
+
+As a **project maintainer evaluating Epic 3 completion**,
+I want to manually test all image rendering features with real-world scenarios and refine based on findings,
+So that Epic 3 is truly production-ready and meets quality standards before moving to Epic 4.
+
+**Acceptance Criteria:**
+
+**Given** all Epic 3 stories (3.1-3.8) completed
+**When** I perform comprehensive manual testing
+**Then**:
+
+1. All image formats load and render correctly (PNG, JPG, GIF, BMP, WebP, TIFF, SVG)
+2. All dithering methods (Floyd-Steinberg, Bayer, Atkinson, None) produce acceptable visual quality
+3. Color and monochrome modes both work correctly with proper terminal output
+4. Resize and aspect ratio preservation work without distortion
+5. Image adjustments (brightness, contrast, gamma, Otsu) improve visibility as expected
+6. High-level API is intuitive and achieves <50 line integration for common use cases
+7. Error handling provides clear, actionable messages for all failure cases
+8. Cross-platform consistency verified (same visual output on Windows/Linux/macOS)
+9. All discovered issues documented with severity ratings and either fixed or deferred with rationale
+
+**And** test report document created at `docs/epic-3-manual-test-report.md`
+
+**And** all CRITICAL and HIGH severity issues resolved before Epic 3 closure
+
+**And** example programs compile and run successfully on target platforms
+
+**Prerequisites:** Story 3.1-3.8 complete
+
+**Technical Notes:**
+- This is a human validation story, not automated testing
+- Goal: Actually use the features as a real developer would
+- Focus on visual quality, API ergonomics, and discovering edge cases
+- Test with diverse real-world images (photos, diagrams, logos, gradients)
+- Create test fixtures in `tests/manual/images/` directory
+- Success: Maintainer (Frosty) signs off that Epic 3 is production-ready
+
+---
+
 ## Epic 4: Drawing Primitives & Density Rendering
 
 **Goal**: Provide programmatic drawing capabilities (lines, circles, rectangles, polygons) using Bresenham algorithms and character density-based rendering for ASCII-art style effects. Enable developers to draw graphics procedurally, not just convert images.

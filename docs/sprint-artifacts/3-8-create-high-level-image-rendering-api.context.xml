@@ -1,0 +1,264 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.8</storyId>
+    <title>Create High-Level Image Rendering API</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-20</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-8-create-high-level-image-rendering-api.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer wanting simple image rendering</asA>
+    <iWant>a high-level API that handles the full pipeline with sensible defaults</iWant>
+    <soThat>I can render images to braille with &lt;10 lines of code</soThat>
+    <tasks>
+      <task id="1">Design and define ImageRenderer struct (AC: 1, 2)</task>
+      <task id="2">Implement builder pattern fundamentals (AC: 1)</task>
+      <task id="3">Implement image loading methods (AC: 6)</task>
+      <task id="4">Implement resize configuration methods (AC: 4, 5)</task>
+      <task id="5">Implement image adjustment methods (AC: 5)</task>
+      <task id="6">Implement algorithm configuration methods (AC: 5)</task>
+      <task id="7">Implement core render() method (AC: 1)</task>
+      <task id="8">Implement one-liner convenience function (AC: 3)</task>
+      <task id="9">Terminal dimension detection (AC: 4)</task>
+      <task id="10">Error validation and messages (AC: 7)</task>
+      <task id="11">Unit tests for builder pattern (AC: 9)</task>
+      <task id="12">Integration tests for full pipeline (AC: 9)</task>
+      <task id="13">Create simple_image.rs example (AC: 8)</task>
+      <task id="14">Create custom_image.rs example (AC: 8)</task>
+      <task id="15">Comprehensive documentation (AC: 8)</task>
+      <task id="16">Performance validation (AC: 9)</task>
+      <task id="17">Visual regression testing (AC: 9)</task>
+      <task id="18">Validation and cleanup (AC: All)</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">ImageRenderer Builder Pattern - Struct with builder pattern, fluent API for chaining, .render() executes full pipeline</criterion>
+    <criterion id="AC2">Sensible Default Configuration - FloydSteinberg dithering, Monochrome color, Otsu threshold, auto terminal resize, neutral adjustments</criterion>
+    <criterion id="AC3">One-Liner Convenience Function - render_image_simple(path) loads, auto-resizes, renders with defaults</criterion>
+    <criterion id="AC4">Terminal Auto-Sizing Integration - .resize_to_terminal() detects dimensions via TerminalBackend::size(), preserves aspect ratio, 80x24 fallback</criterion>
+    <criterion id="AC5">Manual Customization Support - .resize(), .threshold(), .brightness(), .contrast(), .gamma(), .dithering(), .color_mode() methods with validation</criterion>
+    <criterion id="AC6">Load from Multiple Sources - .load_from_path(), .load_from_bytes(), feature-gated .load_svg_from_path()</criterion>
+    <criterion id="AC7">Error Handling and Validation - Result types, clear error messages, validation at each step, zero panics guarantee</criterion>
+    <criterion id="AC8">Comprehensive Documentation - Rustdoc with examples, module docs, example programs (simple_image.rs, custom_image.rs)</criterion>
+    <criterion id="AC9">Testing and Quality - Unit tests for builder, integration tests for pipeline, terminal auto-sizing tests, error case tests, visual regression</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <artifact path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic 3 Technical Specification" section="High-Level API Design">
+        Defines ImageRenderer builder pattern requirements, sensible defaults philosophy, and &lt;100 line integration target. Pipeline integration architecture shows full flow from load through all 8 stages to BrailleGrid output.
+      </artifact>
+      <artifact path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic 3 Technical Specification" section="APIs and Interfaces">
+        Specifies high-level API with builder pattern example, all module APIs (loader, resize, threshold, dither, mapper), and error additions to src/error.rs for validation messages.
+      </artifact>
+      <artifact path="docs/sprint-artifacts/tech-spec-epic-3.md" title="Epic 3 Technical Specification" section="Performance Budget">
+        Performance targets: &lt;50ms for standard terminals (80×24), &lt;100ms for large terminals (200×50). Per-stage budget allocation shows dithering is most expensive at &lt;15ms target.
+      </artifact>
+      <artifact path="docs/architecture.md" title="Architecture Document" section="Pattern 2: Image-to-Braille Pipeline">
+        Defines 8-stage pipeline architecture: Load → Resize → Grayscale → Adjust → Dither → Threshold → Map → Render. Each stage in separate module for profiling. Must complete in &lt;50ms.
+      </artifact>
+      <artifact path="docs/architecture.md" title="Architecture Document" section="Builder Pattern (ADR 0006)">
+        Builder pattern used for complex types with many options (BrailleGrid, ImageRenderer). Simple types use constructors. Fluent API returns Self for chaining.
+      </artifact>
+      <artifact path="docs/architecture.md" title="Architecture Document" section="Error Handling Strategy">
+        All public functions return Result&lt;T, DotmaxError&gt;. Builder methods that can fail return Result&lt;Self, DotmaxError&gt;. Methods that can't fail return Self directly.
+      </artifact>
+    </docs>
+    <code>
+      <artifact path="src/image/mod.rs" kind="module" symbol="N/A" lines="1-107" reason="Current image module exports - shows existing pipeline functions that ImageRenderer will orchestrate">
+        Module exports all existing pipeline functions: load_from_path, load_from_bytes, resize_to_terminal, resize_to_dimensions, to_grayscale, adjust_brightness/contrast/gamma, apply_dithering, auto_threshold, pixels_to_braille, render_image_with_color. Also exports enums: DitheringMethod, ColorMode, ColorSamplingStrategy.
+      </artifact>
+      <artifact path="src/image/loader.rs" kind="service" symbol="load_from_path" lines="52-114" reason="Image loading function to call from ImageRenderer.load_from_path() method">
+        Loads image from Path, validates file exists, decodes with image crate, returns DynamicImage or DotmaxError::ImageLoad. Supports PNG, JPG, GIF, BMP, WebP, TIFF.
+      </artifact>
+      <artifact path="src/image/loader.rs" kind="service" symbol="load_from_bytes" lines="116-157" reason="Image loading function to call from ImageRenderer.load_from_bytes() method">
+        Loads image from byte buffer, decodes with image crate, returns DynamicImage or DotmaxError::UnsupportedFormat. Used for in-memory images.
+      </artifact>
+      <artifact path="src/image/resize.rs" kind="service" symbol="resize_to_terminal" lines="134-345" reason="Terminal auto-sizing function - ImageRenderer will use this for .resize_to_terminal()">
+        Detects terminal dimensions using crossterm::terminal::size(), converts cells to pixels (width×2, height×4), preserves aspect ratio, uses Lanczos3 filter, returns resized DynamicImage.
+      </artifact>
+      <artifact path="src/image/resize.rs" kind="service" symbol="resize_to_dimensions" lines="347-502" reason="Manual resize function - ImageRenderer will use this for .resize() method">
+        Resizes image to exact pixel dimensions, optional aspect ratio preservation, uses Lanczos3 filter, validates dimensions &gt;0 and &lt;10,000, returns resized DynamicImage.
+      </artifact>
+      <artifact path="src/image/threshold.rs" kind="service" symbol="adjust_brightness" lines="364-422" reason="Brightness adjustment - ImageRenderer will call if brightness != 1.0">
+        Adjusts image brightness by factor (0.0-2.0), multiplies pixel values, clamps to 0-255, returns adjusted GrayImage or validation error.
+      </artifact>
+      <artifact path="src/image/threshold.rs" kind="service" symbol="adjust_contrast" lines="424-482" reason="Contrast adjustment - ImageRenderer will call if contrast != 1.0">
+        Adjusts image contrast by factor (0.0-2.0), applies contrast formula around 128 midpoint, clamps to 0-255, returns adjusted GrayImage or validation error.
+      </artifact>
+      <artifact path="src/image/threshold.rs" kind="service" symbol="adjust_gamma" lines="484-544" reason="Gamma adjustment - ImageRenderer will call if gamma != 1.0">
+        Adjusts image gamma by value (0.1-3.0), applies power law transformation, clamps to 0-255, returns adjusted GrayImage or validation error.
+      </artifact>
+      <artifact path="src/image/convert.rs" kind="service" symbol="to_grayscale" lines="66-118" reason="Grayscale conversion - ImageRenderer will call before dithering/thresholding">
+        Converts DynamicImage to GrayImage using BT.709 luma coefficients (0.2126×R + 0.7152×G + 0.0722×B), handles already-grayscale images efficiently.
+      </artifact>
+      <artifact path="src/image/dither.rs" kind="service" symbol="apply_dithering" lines="236-296" reason="Dithering dispatcher - ImageRenderer will call based on selected DitheringMethod">
+        Dispatches to floyd_steinberg, bayer, or atkinson functions based on DitheringMethod enum. Returns BinaryImage (boolean pixels).
+      </artifact>
+      <artifact path="src/image/threshold.rs" kind="service" symbol="auto_threshold" lines="312-362" reason="Auto Otsu thresholding - ImageRenderer will use if threshold=None">
+        Calculates optimal threshold using Otsu algorithm, applies binary conversion, returns BinaryImage. Used when user doesn't specify manual threshold.
+      </artifact>
+      <artifact path="src/image/threshold.rs" kind="struct" symbol="BinaryImage" lines="71-86" reason="Binary image output type from dithering/thresholding - input to pixels_to_braille">
+        Stores boolean pixels (true=black, false=white) with width, height dimensions. Created by dithering or thresholding functions.
+      </artifact>
+      <artifact path="src/image/mapper.rs" kind="service" symbol="pixels_to_braille" lines="146-285" reason="Final stage - converts BinaryImage to BrailleGrid">
+        Maps 2×4 pixel blocks to braille cells, calls BrailleGrid::set_dot() for each dot position, returns BrailleGrid ready for terminal rendering.
+      </artifact>
+      <artifact path="src/image/color_mode.rs" kind="service" symbol="render_image_with_color" lines="704-897" reason="Color rendering - ImageRenderer will call if color_mode != Monochrome">
+        Full color pipeline for ColorMode::Grayscale or ::TrueColor. Extracts cell colors from original image, maps to braille with color data, returns BrailleGrid with colors.
+      </artifact>
+      <artifact path="src/image/dither.rs" kind="enum" symbol="DitheringMethod" lines="134-168" reason="Dithering algorithm selection enum - builder configuration option">
+        Enum variants: None, FloydSteinberg, Bayer, Atkinson. Default should be FloydSteinberg (best quality per tech spec).
+      </artifact>
+      <artifact path="src/image/color_mode.rs" kind="enum" symbol="ColorMode" lines="149-204" reason="Color rendering mode enum - builder configuration option">
+        Enum variants: Monochrome, Grayscale, TrueColor. Default should be Monochrome (universal compatibility, backward compatible).
+      </artifact>
+      <artifact path="src/error.rs" kind="enum" symbol="DotmaxError" lines="39-162" reason="Error type - all builder methods return Result&lt;T, DotmaxError&gt;">
+        Existing error variants: InvalidDimensions, OutOfBounds, InvalidDotIndex, Terminal, TerminalBackend, UnicodeConversion, ImageLoad, UnsupportedFormat, InvalidImageDimensions, InvalidParameter, SvgError. InvalidParameter can be used for brightness/contrast/gamma validation.
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dependency name="ratatui" version="0.29" purpose="Terminal UI framework - used by resize_to_terminal for terminal size detection"/>
+          <dependency name="crossterm" version="0.29" purpose="Cross-platform terminal I/O - terminal::size() function for auto-sizing"/>
+          <dependency name="thiserror" version="2.0" purpose="Error handling - DotmaxError enum with derive macros"/>
+          <dependency name="tracing" version="0.1" purpose="Structured logging - instrument builder methods and render pipeline stages"/>
+        </core>
+        <optional>
+          <dependency name="image" version="0.25" feature="image" purpose="Image loading and processing - DynamicImage, GrayImage types, load/resize operations"/>
+          <dependency name="imageproc" version="0.24" feature="image" purpose="Image processing algorithms - used by threshold/dither modules"/>
+          <dependency name="resvg" version="0.38" feature="svg" purpose="SVG rasterization - optional .load_svg_from_path() method"/>
+          <dependency name="usvg" version="0.38" feature="svg" purpose="SVG parsing - required by resvg"/>
+        </optional>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <architecture>
+      <constraint>Builder pattern for complex types (ADR 0006) - ImageRenderer must use fluent API returning Self for chaining</constraint>
+      <constraint>Sensible defaults philosophy - minimize required configuration, intelligent defaults for all options (FloydSteinberg, Monochrome, Otsu, auto-terminal)</constraint>
+      <constraint>Feature-based modules (ADR 0003) - ImageRenderer stays in src/image/ module, feature-gated behind 'image' flag</constraint>
+      <constraint>Zero unsafe code - Rust memory safety guarantees maintained throughout builder and pipeline</constraint>
+      <constraint>Measure-first optimization (ADR 0007) - No optimization without criterion benchmark proof</constraint>
+    </architecture>
+    <patterns>
+      <constraint>Error handling - All builder methods return Result&lt;Self, DotmaxError&gt; for chainable error handling, methods that can't fail return Self</constraint>
+      <constraint>Naming conventions - snake_case for methods (load_from_path, resize_to_terminal), PascalCase for types (ImageRenderer, DitheringMethod)</constraint>
+      <constraint>References - pass &amp;self for read-only, &amp;mut self for modify, consume self in render() to produce BrailleGrid</constraint>
+      <constraint>Logging strategy - use tracing::instrument for methods, info! for major operations, debug! for detailed flow</constraint>
+      <constraint>Documentation - rustdoc for all public items with Examples, Errors, Panics sections</constraint>
+    </patterns>
+    <performance>
+      <constraint>Total pipeline target: &lt;50ms for standard terminals (80×24), &lt;100ms for large terminals (200×50)</constraint>
+      <constraint>Builder overhead: &lt;1ms (should be negligible vs pipeline stages)</constraint>
+      <constraint>Memory efficiency: &lt;500KB per frame overhead, reuse DynamicImage/GrayImage buffers where possible</constraint>
+      <constraint>Zero allocations in hot paths - store image in Option, consume in render() to avoid clones</constraint>
+    </performance>
+    <testing>
+      <constraint>Zero panics guarantee - all error paths tested, no .unwrap()/.expect() in production code</constraint>
+      <constraint>Unit test coverage &gt;80% for builder methods, validation logic, defaults</constraint>
+      <constraint>Integration tests cover end-to-end pipeline with all configuration combinations</constraint>
+      <constraint>Cross-platform CI tests on Windows, Linux, macOS with stable Rust and MSRV 1.70</constraint>
+    </testing>
+  </constraints>
+
+  <interfaces>
+    <interface name="ImageRenderer" kind="struct">
+      <signature>
+        pub struct ImageRenderer {
+            image: Option&lt;DynamicImage&gt;,
+            dithering: DitheringMethod,
+            color_mode: ColorMode,
+            threshold: Option&lt;u8&gt;,
+            resize_mode: ResizeMode,
+            brightness: f32,
+            contrast: f32,
+            gamma: f32,
+        }
+      </signature>
+      <path>src/image/mod.rs (or new src/image/renderer.rs)</path>
+      <methods>
+        new() -&gt; Self
+        load_from_path(self, path: &amp;Path) -&gt; Result&lt;Self, DotmaxError&gt;
+        load_from_bytes(self, bytes: &amp;[u8]) -&gt; Result&lt;Self, DotmaxError&gt;
+        load_svg_from_path(self, path: &amp;Path, width: u32, height: u32) -&gt; Result&lt;Self, DotmaxError&gt; [feature="svg"]
+        resize_to_terminal(self) -&gt; Result&lt;Self, DotmaxError&gt;
+        resize(self, width: usize, height: usize, preserve_aspect: bool) -&gt; Result&lt;Self, DotmaxError&gt;
+        brightness(self, factor: f32) -&gt; Result&lt;Self, DotmaxError&gt;
+        contrast(self, factor: f32) -&gt; Result&lt;Self, DotmaxError&gt;
+        gamma(self, value: f32) -&gt; Result&lt;Self, DotmaxError&gt;
+        dithering(self, method: DitheringMethod) -&gt; Self
+        color_mode(self, mode: ColorMode) -&gt; Self
+        threshold(self, value: u8) -&gt; Self
+        render(self) -&gt; Result&lt;BrailleGrid, DotmaxError&gt;
+      </methods>
+    </interface>
+
+    <interface name="render_image_simple" kind="function">
+      <signature>pub fn render_image_simple(path: &amp;Path) -&gt; Result&lt;BrailleGrid, DotmaxError&gt;</signature>
+      <path>src/image/mod.rs</path>
+      <description>One-liner convenience function - loads, auto-resizes to terminal, renders with defaults (FloydSteinberg, Monochrome, Otsu)</description>
+    </interface>
+
+    <interface name="ResizeMode" kind="enum">
+      <signature>
+        enum ResizeMode {
+            AutoTerminal { preserve_aspect: bool },
+            Manual { width: usize, height: usize, preserve_aspect: bool },
+        }
+      </signature>
+      <path>src/image/mod.rs or src/image/renderer.rs (private enum)</path>
+      <description>Internal enum to track resize configuration - not part of public API</description>
+    </interface>
+
+    <interface name="detect_terminal_size" kind="function">
+      <signature>fn detect_terminal_size() -&gt; (usize, usize)</signature>
+      <path>src/image/mod.rs or src/image/renderer.rs (private helper)</path>
+      <description>Helper function using crossterm::terminal::size() with 80×24 fallback, converts u16 to usize</description>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards from Story 3.7 (exceptional quality): zero clippy warnings, zero rustdoc warnings, comprehensive unit tests (20+ tests for builder), integration tests (10+ end-to-end scenarios), performance benchmarks with criterion, visual regression with test fixtures. All tests in #[cfg(test)] blocks or tests/ directory. Use tracing-subscriber in tests for debug output. Test both with/without features (cargo test --features image,svg).
+    </standards>
+
+    <locations>
+      <location>src/image/mod.rs or src/image/renderer.rs - #[cfg(test)] mod tests { ... }</location>
+      <location>tests/image_rendering_tests.rs - integration tests (already exists, extend with ImageRenderer tests)</location>
+      <location>benches/image_conversion.rs or new benches/high_level_api.rs - performance benchmarks</location>
+      <location>examples/simple_image.rs - &lt;10 line usage example (NEW)</location>
+      <location>examples/custom_image.rs - full customization example (NEW)</location>
+    </locations>
+
+    <ideas>
+      <test-idea ac="AC1,AC2">Unit test: ImageRenderer::new() creates struct with correct defaults (FloydSteinberg, Monochrome, None threshold, AutoTerminal, 1.0 adjustments)</test-idea>
+      <test-idea ac="AC1">Unit test: Fluent API chaining - verify multiple method calls in sequence return Self and final render() produces BrailleGrid</test-idea>
+      <test-idea ac="AC5">Unit test: brightness/contrast/gamma validation - test valid values (0.0, 1.0, 2.0) pass, invalid values (&lt;0, &gt;2) return InvalidParameter error</test-idea>
+      <test-idea ac="AC5">Unit test: resize validation - zero dimensions return error, excessive dimensions (&gt;10000) return error</test-idea>
+      <test-idea ac="AC7">Unit test: render() without loading image first returns NoImageLoaded error (need to add this error variant)</test-idea>
+      <test-idea ac="AC2">Unit test: defaults applied correctly - when brightness not called, pipeline uses 1.0; when threshold not called, uses Otsu</test-idea>
+      <test-idea ac="AC5">Unit test: manual threshold overrides auto Otsu - set threshold(128), verify auto_threshold not called in render()</test-idea>
+      <test-idea ac="AC5">Unit test: color mode integration - set color_mode(TrueColor), verify render_image_with_color called instead of monochrome pipeline</test-idea>
+      <test-idea ac="AC6,AC12">Integration test: load from path → auto-resize → render with defaults produces valid BrailleGrid</test-idea>
+      <test-idea ac="AC5,AC12">Integration test: load → manual resize(100, 50, true) → custom brightness(1.2) → render produces correct dimensions</test-idea>
+      <test-idea ac="AC1,AC12">Integration test: Floyd-Steinberg dithering produces different output than Bayer for same image</test-idea>
+      <test-idea ac="AC5,AC12">Integration test: color mode TrueColor produces BrailleGrid with color data, Monochrome has no colors</test-idea>
+      <test-idea ac="AC3">Integration test: render_image_simple(path) one-liner works - loads, resizes, renders, returns BrailleGrid in &lt;10 lines</test-idea>
+      <test-idea ac="AC4">Integration test: terminal auto-sizing with mock terminal - mock crossterm::terminal::size() to return (40, 12), verify resize to 80×48 pixels</test-idea>
+      <test-idea ac="AC4">Integration test: terminal size detection failure - simulate error, verify fallback to 80×24 default</test-idea>
+      <test-idea ac="AC7">Integration test: error handling - file not found, invalid parameters, missing image, unsupported format all return clear errors</test-idea>
+      <test-idea ac="AC9">Integration test: diverse images - test with photo (gradient), diagram (sharp lines), small (10×10), large (2000×1500)</test-idea>
+      <test-idea ac="AC9">Visual regression: render test images with various builder configurations, compare output against baseline snapshots (use insta crate or manual comparison)</test-idea>
+      <test-idea ac="AC8,AC9">Example validation: cargo build --example simple_image --features image compiles, cargo run --example simple_image --features image executes</test-idea>
+      <test-idea ac="AC9">Performance benchmark: criterion benchmark for ImageRenderer.render() full pipeline, target &lt;50ms for 80×24 terminal</test-idea>
+      <test-idea ac="AC9">Performance benchmark: compare builder overhead vs raw pipeline function calls, verify &lt;1ms difference</test-idea>
+    </ideas>
+  </tests>
+</story-context>

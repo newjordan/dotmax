@@ -1,0 +1,331 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3.5</epicId>
+    <storyId>1</storyId>
+    <title>Add Examples to CI Clippy Gate</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-5-1-add-examples-to-ci-clippy-gate.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer maintaining code quality</asA>
+    <iWant>examples to be checked by CI clippy and build gates</iWant>
+    <soThat>broken examples are caught before merge and don't reach users</soThat>
+    <tasks>
+- Task 1: Audit Current Examples for Clippy Issues (AC: #3)
+  - 1.1: Run `cargo clippy --examples --all-features -- -D warnings` locally
+  - 1.2: Document any warnings found
+  - 1.3: Fix all clippy warnings in examples/
+  - 1.4: Run `cargo build --examples --all-features` to verify compilation
+  - 1.5: Test examples manually to ensure fixes don't break functionality
+  - 1.6: Commit fixes before updating CI configuration
+
+- Task 2: Analyze Current CI Configuration (AC: #8)
+  - 2.1: Review `.github/workflows/ci.yml` completely
+  - 2.2: Note that `test` job line 30 already runs `cargo build --examples`
+  - 2.3: Note that `clippy` job line 51 runs `cargo clippy --all-targets --all-features`
+  - 2.4: Verify if `--all-targets` includes examples (it should per Cargo docs)
+  - 2.5: Research why Story 3.4 and 3.6 issues weren't caught
+  - 2.6: Determine if issue is with `--all-targets` flag or CI execution
+
+- Task 3: Update Clippy Job Configuration (AC: #1, #5)
+  - 3.1: Add explicit step to clippy job: `cargo clippy --examples --all-features -- -D warnings`
+  - 3.2: Add comment explaining why examples are checked explicitly
+  - 3.3: Keep existing `--all-targets` check for completeness
+  - 3.4: Ensure `-D warnings` flag is present (blocks CI on warnings)
+  - 3.5: Verify `--all-features` covers image, svg, and future features
+
+- Task 4: Update Test Job Configuration (AC: #2)
+  - 4.1: Verify "Build examples" step (line 29-30) exists and is labeled clearly
+  - 4.2: Ensure it runs `cargo build --examples --all-features` (add --all-features if missing)
+  - 4.3: Runs on all platforms (ubuntu-latest, windows-latest, macos-latest)
+  - 4.4: Verify step fails CI if example compilation fails
+
+- Task 5: Add CI Documentation (AC: #4, #7)
+  - 5.1: Add comment block to CI file explaining example quality gates
+  - 5.2: Update contributing guide (if exists) with example requirements
+  - 5.3: Document commands for local reproduction
+  - 5.4: Note in docs that examples are held to same quality as src/
+
+- Task 6: Test CI Configuration Locally (AC: #6, #7)
+  - 6.1: Run updated clippy command locally: `cargo clippy --examples --all-features -- -D warnings`
+  - 6.2: Verify it catches issues (introduce test warning, confirm detection)
+  - 6.3: Run updated build command: `cargo build --examples --all-features`
+  - 6.4: Measure time for example clippy check (should be <30 seconds)
+  - 6.5: Confirm rust-cache applies (second run should be fast)
+
+- Task 7: Create Test Branch and Validate CI (AC: #1, #2, #6, #9)
+  - 7.1: Create branch `ci/add-example-checks`
+  - 7.2: Commit example fixes from Task 1
+  - 7.3: Commit CI configuration updates from Tasks 3-4
+  - 7.4: Push branch and open draft PR
+  - 7.5: Verify all CI jobs pass (test, clippy, fmt, audit, msrv, deny)
+  - 7.6: Check CI logs for clear error messages (simulate failure if needed)
+  - 7.7: Verify CI time increase is acceptable (<30 seconds added)
+
+- Task 8: Validation Against Known Issues (AC: #9)
+  - 8.1: Create test commit with clippy warning in example (e.g., unused variable)
+  - 8.2: Push and verify CI fails clippy job
+  - 8.3: Verify error message clearly shows which example and which warning
+  - 8.4: Revert test commit
+  - 8.5: Create test commit with missing `fn main()` in example
+  - 8.6: Push and verify CI fails build job
+  - 8.7: Verify error message clearly shows compilation error
+  - 8.8: Revert test commit and confirm CI passes
+
+- Task 9: Finalize and Merge (AC: #4)
+  - 9.1: Update README.md or CONTRIBUTING.md with example quality standards
+  - 9.2: Mark PR ready for review (remove draft status)
+  - 9.3: Self-review: verify all ACs met
+  - 9.4: Merge to main branch
+  - 9.5: Verify main branch CI passes with new configuration
+  - 9.6: Delete feature branch
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+AC1: CI Clippy Explicitly Checks Examples
+- CI workflow runs `cargo clippy --examples --all-features -- -D warnings`
+- Clippy warnings in examples/ directory block CI
+- All current examples pass clippy with `-D warnings` flag
+- No false positives (legitimate code patterns are allowed)
+
+AC2: CI Build Explicitly Checks Examples Compilation
+- CI workflow runs `cargo build --examples --all-features` as separate step
+- Example compilation errors block CI
+- Build step clearly labeled "Build Examples" for visibility
+- Compilation success confirmed on all platforms (Linux, Windows, macOS)
+
+AC3: Existing Examples Fixed Before CI Update
+- All examples in `examples/` directory pass current clippy checks
+- No `fn main()` missing errors (Story 3.6 issue)
+- No clippy warnings (Story 3.4 had 35 example warnings)
+- Examples compile successfully with `cargo build --examples --all-features`
+
+AC4: CI Configuration Documented
+- CI workflow comments explain why examples are checked separately
+- README or docs note that examples must pass clippy
+- Contributing guide updated (if exists) to note example quality requirements
+- Developers understand examples are held to same standard as src/
+
+AC5: Feature Flag Coverage
+- Examples checked with `--all-features` to catch feature-gated code issues
+- Image examples tested with `image` feature
+- SVG examples tested with `svg` feature
+- Core examples tested without optional features
+
+AC6: No Regression in CI Speed
+- Example checks add minimal CI time (<30 seconds)
+- Rust-cache still applies to example builds
+- No redundant rebuilds (examples already built in test job)
+- CI remains fast enough for rapid iteration
+
+AC7: Clear Error Messages on Failure
+- When example fails clippy, error shows which example and which warning
+- When example fails build, error shows compilation error clearly
+- Developer can reproduce failure locally with provided commands
+- CI logs are easy to read and actionable
+
+AC8: Test Job Integration
+- Verify `test` job already builds examples (line 30: `cargo build --examples`)
+- Ensure clippy job coverage doesn't duplicate test job unnecessarily
+- Consider if clippy should check examples or if separate job needed
+- Maintain DRY principle (Don't Repeat Yourself) in CI config
+
+AC9: Validation Against Previous Issues
+- Story 3.4 issue (35 clippy warnings in examples) would be caught
+- Story 3.6 issue (missing `fn main()`) would be caught
+- Examples with unused variables/imports blocked
+- Examples with inefficient patterns (clone in loop, etc.) caught
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+<!-- Architecture Document -->
+<doc>
+  <path>docs/architecture.md</path>
+  <title>dotmax - Architecture Document</title>
+  <section>Project Structure</section>
+  <snippet>Examples directory (examples/) contains demonstration code: hello_braille.rs, render_image.rs, draw_shapes.rs, color_schemes.rs, simple_animation.rs. Code Quality Standards: Zero Panics (all code returns Result), Clippy Clean (all code must pass cargo clippy -- -D warnings), Rustfmt (all code formatted), Documentation (examples should demonstrate best practices).</snippet>
+</doc>
+
+<doc>
+  <path>docs/architecture.md</path>
+  <title>dotmax - Architecture Document</title>
+  <section>Development Workflow</section>
+  <snippet>Before committing: cargo test --all-features, cargo clippy -- -D warnings, cargo fmt --check, cargo deny check. Run examples: cargo run --example hello_braille, cargo run --example render_image --features image.</snippet>
+</doc>
+
+<!-- Epic 3 Retrospective -->
+<doc>
+  <path>docs/sprint-artifacts/epic-3-retro-2025-11-21.md</path>
+  <title>Epic 3 Retrospective</title>
+  <section>Challenge 2: Example Files Not in CI Gates</section>
+  <snippet>Pattern Observed: Story 3.4 had 35 clippy warnings in examples/, Story 3.6 had missing fn main() in example (compilation error). Impact: Required re-review cycles (though quick fixes). Root Cause: Examples not included in strict CI checks. Resolution: Action item created for Epic 3.5 (Story 3.5.1) to add examples to CI clippy gate. Lesson Learned: CI gates should cover ALL code, not just src/.</snippet>
+</doc>
+
+<doc>
+  <path>docs/sprint-artifacts/epic-3-retro-2025-11-21.md</path>
+  <title>Epic 3 Retrospective</title>
+  <section>Action Items for Epic 3.5 - Story 3.5.5</section>
+  <snippet>Story 3.5.5: Add Examples to CI Clippy Gate. Issue: Examples had clippy warnings (Story 3.4) and compilation errors (Story 3.6). Acceptance Criteria: CI runs cargo clippy --examples --all-features -- -D warnings, CI runs cargo build --examples --all-features, Prevents broken examples from merging. Estimated Effort: Tiny (30 minutes - 1 hour). Rationale: Prevents future regressions. Technical Note: Update .github/workflows/ci.yml to include examples in clippy + build steps.</snippet>
+</doc>
+    </docs>
+
+    <code>
+<!-- CI Workflow Configuration -->
+<artifact>
+  <path>.github/workflows/ci.yml</path>
+  <kind>workflow</kind>
+  <symbol>test job</symbol>
+  <lines>10-33</lines>
+  <reason>Test job currently builds examples at line 30 (cargo build --examples) but without --all-features flag. Story needs to verify this and potentially update to include --all-features.</reason>
+</artifact>
+
+<artifact>
+  <path>.github/workflows/ci.yml</path>
+  <kind>workflow</kind>
+  <symbol>clippy job</symbol>
+  <lines>35-51</lines>
+  <reason>Clippy job runs cargo clippy --all-targets --all-features (line 51) which should include examples, but Story 3.4/3.6 issues suggest it's not catching example problems. Story needs to add explicit example checks.</reason>
+</artifact>
+
+<!-- Example Files -->
+<artifact>
+  <path>examples/hello_braille.rs</path>
+  <kind>example</kind>
+  <symbol>main</symbol>
+  <lines>all</lines>
+  <reason>Core example that should pass clippy checks</reason>
+</artifact>
+
+<artifact>
+  <path>examples/simple_image.rs</path>
+  <kind>example</kind>
+  <symbol>main</symbol>
+  <lines>all</lines>
+  <reason>Image example requiring 'image' feature flag</reason>
+</artifact>
+
+<artifact>
+  <path>examples/svg_demo.rs</path>
+  <kind>example</kind>
+  <symbol>main</symbol>
+  <lines>all</lines>
+  <reason>SVG example requiring 'svg' feature flag</reason>
+</artifact>
+
+<artifact>
+  <path>examples/dither_comparison.rs</path>
+  <kind>example</kind>
+  <symbol>main</symbol>
+  <lines>all</lines>
+  <reason>Story 3.4 example that had 35 clippy warnings - needs to verify fix and prevent regression</reason>
+</artifact>
+    </code>
+
+    <dependencies>
+<rust>
+  <core>
+    <dep name="ratatui" version="0.29" reason="Terminal UI framework"/>
+    <dep name="crossterm" version="0.29" reason="Cross-platform terminal I/O"/>
+    <dep name="thiserror" version="2.0" reason="Error handling derive macros"/>
+    <dep name="tracing" version="0.1" reason="Structured logging"/>
+  </core>
+  <optional>
+    <dep name="image" version="0.25" feature="image" reason="Image loading (PNG, JPG, GIF, BMP, WebP, TIFF)"/>
+    <dep name="imageproc" version="0.24" feature="image" reason="Image processing"/>
+    <dep name="resvg" version="0.38" feature="svg" reason="SVG rasterization"/>
+    <dep name="usvg" version="0.38" feature="svg" reason="SVG parsing"/>
+  </optional>
+  <dev>
+    <dep name="criterion" version="0.7" reason="Benchmarking with html_reports"/>
+    <dep name="tracing-subscriber" version="0.3" reason="Logging subscriber for examples"/>
+  </dev>
+</rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+1. **Zero Panics Policy**: All code (including examples) must return Result&lt;T, DotmaxError&gt; - no unwrap() or panic!() allowed
+2. **Clippy Compliance**: All code must pass `cargo clippy --all-features -- -D warnings` with zero warnings
+3. **Rustfmt Formatting**: All code must be formatted with rustfmt
+4. **Feature Flag Coverage**: Examples using features must be tested with appropriate flags (--features image,svg)
+5. **Cross-Platform Support**: CI must test on ubuntu-latest, windows-latest, macos-latest
+6. **MSRV Compliance**: Rust 1.70 minimum supported version
+7. **CI Performance**: New checks should add &lt;30 seconds to CI time
+8. **DRY Principle**: Avoid duplicate CI steps - use existing rust-cache and build optimization
+9. **Clear Error Messages**: CI failures must provide actionable error messages showing which example and which issue
+10. **Backward Compatibility**: Don't break existing CI workflows - add to them incrementally
+  </constraints>
+
+  <interfaces>
+<api name="cargo clippy" kind="CLI command" signature="cargo clippy --examples --all-features -- -D warnings" path="N/A (Cargo toolchain)" />
+<api name="cargo build" kind="CLI command" signature="cargo build --examples --all-features" path="N/A (Cargo toolchain)" />
+<api name="GitHub Actions workflow" kind="CI pipeline" signature="jobs.clippy.steps[N].run: cargo clippy ..." path=".github/workflows/ci.yml" />
+<api name="rust-cache" kind="GitHub Action" signature="uses: Swatinem/rust-cache@v2" path=".github/workflows/ci.yml" />
+  </interfaces>
+
+  <tests>
+    <standards>
+Testing standards from architecture.md and Epic 2/3:
+- Unit tests in #[cfg(test)] modules within source files
+- Integration tests in tests/ directory
+- Examples serve as both demos and integration validation
+- Criterion.rs for benchmarking (benches/)
+- Test coverage target: &gt;80% for critical paths
+- Visual validation required for rendering (manual testing)
+- CI runs: cargo test --verbose on all platforms
+- Zero clippy warnings enforced via cargo clippy -- -D warnings
+- Rustfmt check enforced via cargo fmt --check
+    </standards>
+
+    <locations>
+- tests/*.rs - Integration tests
+- src/**/*.rs - Unit tests in #[cfg(test)] modules
+- examples/*.rs - Example programs (also serve as integration validation)
+- .github/workflows/ci.yml - CI pipeline tests
+    </locations>
+
+    <ideas>
+Test ideas mapped to acceptance criteria:
+
+AC1 (CI Clippy Checks Examples):
+- Test: Add clippy warning to example, verify CI fails
+- Test: Verify CI shows which example has the warning
+- Test: Verify all 19 examples pass clippy with -D warnings
+
+AC2 (CI Build Checks Examples):
+- Test: Remove fn main() from example, verify CI fails
+- Test: Verify build step labeled "Build Examples"
+- Test: Verify compilation on all 3 platforms (ubuntu, windows, macos)
+
+AC3 (Fix Existing Examples):
+- Test: Run cargo clippy --examples --all-features -- -D warnings locally
+- Test: Run cargo build --examples --all-features locally
+- Test: Manually run examples to ensure no breakage
+
+AC6 (No CI Speed Regression):
+- Test: Measure CI time before/after changes
+- Test: Verify second run uses rust-cache (fast)
+- Test: Confirm example checks add &lt;30 seconds
+
+AC7 (Clear Error Messages):
+- Test: Simulate failure, verify error message clarity
+- Test: Verify local reproduction command in error
+
+AC8 (Test Job Integration):
+- Test: Verify test job line 30 builds examples
+- Test: Check if --all-features flag is present
+- Test: Confirm no duplicate builds
+
+AC9 (Validation Against Known Issues):
+- Test: Story 3.4 scenario (35 warnings) would be caught
+- Test: Story 3.6 scenario (missing fn main) would be caught
+- Test: Unused variables/imports blocked
+- Test: Inefficient patterns (clone in loop) caught
+    </ideas>
+  </tests>
+</story-context>

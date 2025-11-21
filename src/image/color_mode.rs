@@ -52,12 +52,15 @@
 //! ## Render with `TrueColor`
 //!
 //! ```no_run
-//! use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+//! use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 //! use std::path::Path;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = load_from_path(Path::new("photo.png"))?;
-//! let grid = render_image_with_color(&img, ColorMode::TrueColor)?;
+//! let grid = render_image_with_color(
+//!     &img, ColorMode::TrueColor, 80, 24,
+//!     DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0
+//! )?;
 //! // grid now contains both dot patterns and RGB colors per cell
 //! # Ok(())
 //! # }
@@ -66,12 +69,12 @@
 //! ## Render with Grayscale
 //!
 //! ```no_run
-//! use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+//! use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 //! use std::path::Path;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = load_from_path(Path::new("diagram.png"))?;
-//! let grid = render_image_with_color(&img, ColorMode::Grayscale)?;
+//! let grid = render_image_with_color(&img, ColorMode::Grayscale, 80, 24, DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0)?;
 //! // grid contains dot patterns with grayscale intensity colors
 //! # Ok(())
 //! # }
@@ -97,7 +100,11 @@
 use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;
 
-use crate::image::{auto_threshold, pixels_to_braille, resize_to_dimensions};
+use crate::image::{
+    auto_threshold, pixels_to_braille, to_grayscale,
+    adjust_brightness, adjust_contrast, adjust_gamma,
+    apply_threshold, apply_dithering, DitheringMethod
+};
 use crate::{BrailleGrid, Color, DotmaxError};
 
 /// Color rendering mode for braille output.
@@ -654,12 +661,15 @@ pub fn color_to_truecolor_ansi(color: &Color) -> String {
 /// ## Monochrome Rendering (Default)
 ///
 /// ```no_run
-/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 /// use std::path::Path;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let img = load_from_path(Path::new("image.png"))?;
-/// let grid = render_image_with_color(&img, ColorMode::Monochrome)?;
+/// let grid = render_image_with_color(
+///     &img, ColorMode::Monochrome, 80, 24,
+///     DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0
+/// )?;
 /// // Grid has dot patterns but no color data (backward compatible)
 /// # Ok(())
 /// # }
@@ -668,12 +678,15 @@ pub fn color_to_truecolor_ansi(color: &Color) -> String {
 /// ## Grayscale Rendering
 ///
 /// ```no_run
-/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 /// use std::path::Path;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let img = load_from_path(Path::new("photo.jpg"))?;
-/// let grid = render_image_with_color(&img, ColorMode::Grayscale)?;
+/// let grid = render_image_with_color(
+///     &img, ColorMode::Grayscale, 80, 24,
+///     DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0
+/// )?;
 /// // Grid has dot patterns + grayscale intensity colors
 /// # Ok(())
 /// # }
@@ -682,12 +695,15 @@ pub fn color_to_truecolor_ansi(color: &Color) -> String {
 /// ## `TrueColor` Rendering
 ///
 /// ```no_run
-/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+/// use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 /// use std::path::Path;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let img = load_from_path(Path::new("artwork.png"))?;
-/// let grid = render_image_with_color(&img, ColorMode::TrueColor)?;
+/// let grid = render_image_with_color(
+///     &img, ColorMode::TrueColor, 80, 24,
+///     DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0
+/// )?;
 /// // Grid has dot patterns + full RGB colors per cell
 /// # Ok(())
 /// # }
@@ -701,14 +717,24 @@ pub fn color_to_truecolor_ansi(color: &Color) -> String {
 /// - Monochrome: ~40ms (no color extraction)
 /// - Grayscale: ~43ms (+3ms for color extraction)
 /// - `TrueColor`: ~45ms (+5ms for color extraction)
+///
+/// ## ISSUE #1 FIX
+/// This function now accepts dimensions, dithering method, threshold, and image adjustments
+/// to ensure color mode uses the same pipeline as monochrome mode.
+#[allow(clippy::too_many_arguments)]
 pub fn render_image_with_color(
     image: &DynamicImage,
     mode: ColorMode,
+    cell_width: usize,
+    cell_height: usize,
+    dithering: DitheringMethod,
+    threshold: Option<u8>,
+    brightness: f32,
+    contrast: f32,
+    gamma: f32,
 ) -> Result<BrailleGrid, DotmaxError> {
-    // For now, use fixed terminal dimensions (80×24 cells = 160×96 pixels)
-    // Story 3.8 will make this configurable via ImageRenderer builder
-    let cell_width = 80_usize;
-    let cell_height = 24_usize;
+    const EPSILON: f32 = 0.001;
+
     let pixel_width = cell_width * 2; // 2 pixels per cell width
     let pixel_height = cell_height * 4; // 4 pixels per cell height
 
@@ -717,36 +743,58 @@ pub fn render_image_with_color(
         mode, cell_width, cell_height, pixel_width, pixel_height
     );
 
-    // Step 1: Resize to terminal dimensions
-    #[allow(clippy::cast_possible_truncation)]
-    let resized = resize_to_dimensions(image, pixel_width as u32, pixel_height as u32, true)?;
-
-    // After resize with aspect ratio preservation, calculate actual cell dimensions
-    let actual_pixel_width = resized.width() as usize;
-    let actual_pixel_height = resized.height() as usize;
+    // Image is already resized by caller, use directly
+    let actual_pixel_width = image.width() as usize;
+    let actual_pixel_height = image.height() as usize;
     let actual_cell_width = (actual_pixel_width + 1) / 2; // Round up
     let actual_cell_height = (actual_pixel_height + 3) / 4; // Round up
 
     debug!(
-        "After resize: {}×{} pixels → {}×{} cells",
+        "Image dimensions: {}×{} pixels → {}×{} cells",
         actual_pixel_width, actual_pixel_height, actual_cell_width, actual_cell_height
     );
 
-    // Step 2: Extract colors if not monochrome
+    // Step 1: Extract colors if not monochrome (before grayscale conversion)
     let colors = if mode == ColorMode::Monochrome {
         None
     } else {
         Some(extract_cell_colors(
-            &resized,
+            image,
             actual_cell_width,
             actual_cell_height,
             ColorSamplingStrategy::Average, // Default strategy
         ))
     };
 
-    // Step 3: Convert to binary (grayscale → dither → threshold)
-    // Use auto_threshold which handles grayscale conversion internally
-    let binary = auto_threshold(&resized);
+    // Step 2: Convert to grayscale and apply adjustments (same as monochrome pipeline)
+    let mut gray = to_grayscale(image);
+
+    // Apply adjustments (brightness/contrast/gamma) if not default
+    if (brightness - 1.0).abs() > EPSILON {
+        gray = adjust_brightness(&gray, brightness)?;
+        debug!("Applied brightness adjustment: {}", brightness);
+    }
+    if (contrast - 1.0).abs() > EPSILON {
+        gray = adjust_contrast(&gray, contrast)?;
+        debug!("Applied contrast adjustment: {}", contrast);
+    }
+    if (gamma - 1.0).abs() > EPSILON {
+        gray = adjust_gamma(&gray, gamma)?;
+        debug!("Applied gamma adjustment: {}", gamma);
+    }
+
+    // Step 3: Convert to binary using same logic as monochrome pipeline
+    let binary = if let Some(threshold_value) = threshold {
+        debug!("Applying manual threshold: {}", threshold_value);
+        apply_threshold(&gray, threshold_value)
+    } else if dithering == DitheringMethod::None {
+        debug!("Applying automatic Otsu thresholding");
+        let gray_dynamic = DynamicImage::ImageLuma8(gray);
+        auto_threshold(&gray_dynamic)
+    } else {
+        debug!("Applying {:?} dithering", dithering);
+        apply_dithering(&gray, dithering)?
+    };
 
     // Step 4: Map pixels to braille dots
     let mut grid = pixels_to_braille(&binary, actual_cell_width, actual_cell_height)?;

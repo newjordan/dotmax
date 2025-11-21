@@ -398,6 +398,11 @@ impl TerminalRenderer {
             "Rendering BrailleGrid to terminal"
         );
 
+        // ISSUE #2 FIX: Clear the terminal buffer before rendering to ensure
+        // ratatui's differential rendering has a clean baseline.
+        // Without this, stale buffer data can cause incomplete initial renders.
+        self.terminal.clear()?;
+
         // Convert grid to Unicode characters using Story 2.2 functionality
         let unicode_grid = grid.to_unicode_grid();
 

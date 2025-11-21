@@ -34,11 +34,21 @@
 //!
 //! Rasterization time depends on SVG complexity (number of paths, gradients, text elements).
 //!
-//! # Transparent Background Handling
+//! # SVG Rendering Approach
 //!
-//! Terminals typically don't support alpha transparency well. This module converts
-//! transparent pixels to white backgrounds for terminal compatibility. SVGs with
-//! transparent backgrounds will render as if placed on white paper.
+//! SVGs are rasterized using `resvg` and automatically adjusted for optimal braille rendering:
+//!
+//! 1. **Rasterize** the SVG to a pixel buffer at the requested dimensions
+//! 2. **Check brightness**: Calculate average brightness of all pixels
+//! 3. **Invert if dark**: If average < 127, invert all RGB values (dark → light, light → dark)
+//! 4. **Pass to pipeline**: The result goes to standard image processing (grayscale → threshold → braille)
+//!
+//! This simple inversion approach ensures good contrast for Otsu thresholding:
+//! - **Dark-background SVGs** (e.g., dark gray #4d4d4d with white text) → inverted → light background with dark text
+//! - **Light-background SVGs** → unchanged → already good for thresholding
+//! - **Transparent SVGs** → treated as light → unchanged
+//!
+//! The result is that content is visible regardless of the original SVG background color.
 //!
 //! # Font Handling for Text-Heavy SVGs
 //!
@@ -113,7 +123,7 @@ use crate::DotmaxError;
 use image::DynamicImage;
 use std::path::Path;
 use tracing::{debug, info};
-use usvg::TreeParsing;
+use usvg::{TreeParsing, TreePostProc};
 
 /// Maximum SVG dimensions (width or height in pixels)
 ///
@@ -180,19 +190,19 @@ pub fn load_svg_from_path(
     if !path.exists() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("SVG file not found: {path:?}"),
+            format!("SVG file not found: {}", path.display()),
         )
         .into());
     }
 
     // Read SVG file contents
     let svg_data = std::fs::read(path)
-        .map_err(|e| DotmaxError::SvgError(format!("Failed to read SVG file {path:?}: {e}")))?;
+        .map_err(|e| DotmaxError::SvgError(format!("Failed to read SVG file {}: {e}", path.display())))?;
 
     // Delegate to bytes loader with path context for errors
     load_svg_from_bytes(&svg_data, width, height).map_err(|e| match e {
         DotmaxError::SvgError(msg) => {
-            DotmaxError::SvgError(format!("Error loading SVG from {path:?}: {msg}"))
+            DotmaxError::SvgError(format!("Error loading SVG from {}: {msg}", path.display()))
         }
         other => other,
     })
@@ -263,7 +273,7 @@ pub fn load_svg_from_bytes(
 
     // Parse SVG with usvg
     let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(bytes, &options)
+    let mut tree = usvg::Tree::from_data(bytes, &options)
         .map_err(|e| DotmaxError::SvgError(format!("Failed to parse SVG: {e}")))?;
 
     debug!(
@@ -271,6 +281,10 @@ pub fn load_svg_from_bytes(
         tree.size.width(),
         tree.size.height()
     );
+
+    // Postprocess tree to flatten text nodes and calculate bounding boxes
+    // This prevents rendering warnings and ensures proper text rendering
+    tree.postprocess(usvg::PostProcessingSteps::default(), &usvg::fontdb::Database::new());
 
     // Rasterize to pixel buffer
     rasterize_svg_tree(&tree, width, height)
@@ -312,14 +326,15 @@ fn rasterize_svg_tree(
     // Create pixel buffer
     let mut pixmap = Pixmap::new(width, height).ok_or_else(|| {
         DotmaxError::SvgError(format!(
-            "Failed to create pixmap for dimensions {}×{}",
-            width, height
+            "Failed to create pixmap for dimensions {width}×{height}"
         ))
     })?;
 
     // Calculate transform for aspect ratio preservation
     let tree_size = tree.size;
+    #[allow(clippy::cast_precision_loss)]
     let scale_x = width as f32 / tree_size.width();
+    #[allow(clippy::cast_precision_loss)]
     let scale_y = height as f32 / tree_size.height();
     let scale = scale_x.min(scale_y);
 
@@ -335,20 +350,44 @@ fn rasterize_svg_tree(
 
     debug!("SVG rasterization complete");
 
-    // Convert transparent pixels to white background for terminal compatibility
-    let pixmap_data = pixmap.data_mut();
-    for pixel in pixmap_data.chunks_exact_mut(4) {
-        let alpha = f32::from(pixel[3]) / 255.0;
-        if alpha < 1.0 {
-            // Blend with white background
-            pixel[0] = (f32::from(pixel[0]) * alpha + 255.0 * (1.0 - alpha)) as u8; // R
-            pixel[1] = (f32::from(pixel[1]) * alpha + 255.0 * (1.0 - alpha)) as u8; // G
-            pixel[2] = (f32::from(pixel[2]) * alpha + 255.0 * (1.0 - alpha)) as u8; // B
-            pixel[3] = 255; // Opaque
-        }
+    // Check if image is predominantly dark and invert if needed
+    // This ensures good contrast for Otsu thresholding with dark-background SVGs
+    let pixmap_data = pixmap.data();
+    let mut brightness_sum: u64 = 0;
+    let pixel_count = (width * height) as usize;
+
+    for pixel in pixmap_data.chunks_exact(4) {
+        // Calculate perceived brightness using standard luminance formula
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::suboptimal_flops)]
+        let brightness = (0.299 * f32::from(pixel[0])
+            + 0.587 * f32::from(pixel[1])
+            + 0.114 * f32::from(pixel[2])) as u64;
+        brightness_sum += brightness;
     }
 
-    debug!("Converted transparent pixels to white background");
+    let avg_brightness = brightness_sum / pixel_count as u64;
+    let should_invert = avg_brightness < 127;
+
+    if should_invert {
+        debug!(
+            "Image is dark (avg brightness: {}), inverting for better contrast",
+            avg_brightness
+        );
+
+        // Invert all pixel values
+        let pixmap_data = pixmap.data_mut();
+        for pixel in pixmap_data.chunks_exact_mut(4) {
+            pixel[0] = 255 - pixel[0]; // R
+            pixel[1] = 255 - pixel[1]; // G
+            pixel[2] = 255 - pixel[2]; // B
+            // Keep alpha as-is
+        }
+    } else {
+        debug!(
+            "Image is light (avg brightness: {}), no inversion needed",
+            avg_brightness
+        );
+    }
 
     // Convert pixmap RGBA buffer to DynamicImage
     let image_buffer =

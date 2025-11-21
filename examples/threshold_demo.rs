@@ -7,9 +7,10 @@
 //! - Brightness/contrast/gamma adjustments
 //!
 //! Usage:
-//!   cargo run --example threshold_demo --features image
+//!   cargo run --example `threshold_demo` --features image
 
 #![cfg(feature = "image")]
+#![allow(clippy::uninlined_format_args, clippy::too_many_lines, clippy::unnecessary_debug_formatting, clippy::cast_precision_loss)]
 
 use dotmax::image::{
     adjust_brightness, adjust_contrast, adjust_gamma, apply_threshold, auto_threshold,

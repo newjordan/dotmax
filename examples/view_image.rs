@@ -9,6 +9,7 @@ use dotmax::image::load_from_path;
 use std::env;
 use std::path::Path;
 
+#[allow(clippy::uninlined_format_args, clippy::unnecessary_wraps)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     tracing_subscriber::fmt()

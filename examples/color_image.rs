@@ -3,17 +3,19 @@
 //! Demonstrates the three color modes for image rendering:
 //! - Monochrome: Black/white only (default, backward compatible)
 //! - Grayscale: 256 shades using ANSI 256-color palette
-//! - TrueColor: Full RGB color per braille cell (24-bit)
+//! - `TrueColor`: Full RGB color per braille cell (24-bit)
 //!
 //! Usage:
 //! ```bash
 //! cargo run --example color_image --features image
+
+#![allow(clippy::uninlined_format_args, clippy::too_many_lines)]
 //! ```
 //!
 //! This example loads a sample image and renders it in all three modes,
 //! demonstrating the visual differences between color rendering strategies.
 
-use dotmax::image::{load_from_path, render_image_with_color, ColorMode};
+use dotmax::image::{load_from_path, render_image_with_color, ColorMode, DitheringMethod};
 use dotmax::TerminalRenderer;
 use std::path::Path;
 
@@ -48,7 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - No color information stored");
     println!("   - Fastest rendering (no color extraction overhead)\n");
 
-    let grid_mono = render_image_with_color(&img, ColorMode::Monochrome)?;
+    let grid_mono = render_image_with_color(
+        &img, ColorMode::Monochrome, 80, 24,
+        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+    )?;
     println!(
         "   Rendered {}×{} braille cells",
         grid_mono.width(),
@@ -69,7 +74,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Maps intensity to grayscale ramp (ANSI 232-255)");
     println!("   - Wide terminal compatibility (95%+)\n");
 
-    let grid_gray = render_image_with_color(&img, ColorMode::Grayscale)?;
+    let grid_gray = render_image_with_color(
+        &img, ColorMode::Grayscale, 80, 24,
+        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+    )?;
     println!(
         "   Rendered {}×{} braille cells with grayscale",
         grid_gray.width(),
@@ -101,7 +109,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - High-fidelity color reproduction");
     println!("   - Requires modern terminal (80%+ support)\n");
 
-    let grid_true = render_image_with_color(&img, ColorMode::TrueColor)?;
+    let grid_true = render_image_with_color(
+        &img, ColorMode::TrueColor, 80, 24,
+        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+    )?;
     println!(
         "   Rendered {}×{} braille cells with truecolor",
         grid_true.width(),

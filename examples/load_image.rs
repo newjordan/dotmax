@@ -10,6 +10,7 @@
 use dotmax::image::{load_from_bytes, load_from_path, supported_formats};
 use std::path::Path;
 
+#[allow(clippy::uninlined_format_args, clippy::unnecessary_wraps)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing to see debug output
     tracing_subscriber::fmt()

@@ -27,7 +27,7 @@ jobs:
         run: cargo build --verbose
 
       - name: Build examples
-        run: cargo build --examples
+        run: cargo build --examples --all-features
 
       - name: Run tests
         run: cargo test --verbose
@@ -47,8 +47,14 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Clippy
+      # Check all targets including library, binaries, tests, benches, and examples
+      - name: Run Clippy (all targets)
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # Explicit example check for visibility and certainty
+      # This ensures examples are always checked even if --all-targets behavior changes
+      - name: Run Clippy on examples
+        run: cargo clippy --examples --all-features -- -D warnings
 
   fmt:
     name: Rustfmt

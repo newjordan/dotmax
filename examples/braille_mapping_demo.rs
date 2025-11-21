@@ -4,7 +4,7 @@
 //! showing how images are processed and mapped to braille characters for terminal display.
 //!
 //! Usage:
-//!   cargo run --example braille_mapping_demo --features image
+//!   cargo run --example `braille_mapping_demo` --features image
 
 #[cfg(feature = "image")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the sample image
     let img_path = Path::new("tests/fixtures/images/sample.png");
-    println!("Loading image from: {:?}", img_path);
+    println!("Loading image from: {}", img_path.display());
     let img = load_from_path(img_path)?;
     println!(
         "Original dimensions: {}×{} pixels\n",
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Resize to small terminal dimensions for demo (30×20 pixels = 15×5 cells)
     println!("Resizing to 30×20 pixels (15×5 braille cells)...");
-    let resized = resize_to_dimensions(&img, 30, 20, true);
+    let resized = resize_to_dimensions(&img, 30, 20, true)?;
 
     // Convert to grayscale
     println!("Converting to grayscale...");
@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Demo 1: Auto threshold (no dithering)
     println!("\n--- Rendering with Auto Threshold (No Dithering) ---");
-    let binary_threshold = auto_threshold(&gray);
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let binary_threshold = auto_threshold(&gray_dynamic);
     let grid_threshold = pixels_to_braille(&binary_threshold, 15, 5)?;
     println!(
         "Grid dimensions: {}×{} cells\n",
@@ -45,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         grid_threshold.height()
     );
 
-    let renderer = TerminalRenderer::new()?;
+    let mut renderer = TerminalRenderer::new()?;
     renderer.render(&grid_threshold)?;
 
     // Demo 2: Floyd-Steinberg dithering

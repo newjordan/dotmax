@@ -4,9 +4,10 @@
 //! 1. Automatic terminal-based resizing with `resize_to_terminal()`
 //! 2. Manual resizing with `resize_to_dimensions()` and aspect ratio control
 //!
-//! Run with: cargo run --example resize_image --features image
+//! Run with: cargo run --example `resize_image` --features image
 
 #![cfg(feature = "image")]
+#![allow(clippy::uninlined_format_args, clippy::too_many_lines, clippy::unnecessary_debug_formatting, clippy::cast_precision_loss)]
 
 use dotmax::image::{load_from_path, resize_to_dimensions, resize_to_terminal};
 use std::path::Path;

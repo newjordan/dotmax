@@ -3,6 +3,8 @@
 //! This example demonstrates the full SVG → braille pipeline:
 //! 1. Load SVG from file path
 //! 2. Rasterize to target dimensions
+
+#![allow(clippy::uninlined_format_args)]
 //! 3. Convert to grayscale
 //! 4. Apply dithering for quality
 //! 5. Map to braille grid

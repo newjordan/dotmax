@@ -188,6 +188,12 @@ Run Clippy to catch common mistakes and enforce Rust idioms:
 cargo clippy --all-targets --all-features
 ```
 
+**Examples are also checked by Clippy in CI.** All code in `examples/` must pass clippy checks with no warnings. To check examples specifically:
+
+```bash
+cargo clippy --examples --all-features -- -D warnings
+```
+
 Fix any warnings before committing. For false positives, use `#[allow(clippy::lint_name)]` with a comment explaining why.
 
 #### Formatting (Rustfmt)
@@ -227,6 +233,7 @@ Before pushing code, ensure all quality checks pass:
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --examples --all-features -- -D warnings  # Examples checked separately
 cargo deny check
 cargo test
 ```
@@ -242,6 +249,7 @@ Before submitting pull requests, ensure all code quality checks pass:
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --examples --all-features -- -D warnings  # Examples must also pass
 cargo deny check
 cargo test
 ```
