@@ -1,6 +1,6 @@
 # Story 3.5.3: Add Otsu Threshold Toggle Control
 
-Status: review
+Status: done
 
 ## Story
 
