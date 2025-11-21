@@ -73,17 +73,17 @@ development_status:
   epic-3-retrospective: completed  # 2025-11-21: Retrospective complete, Epic 3.5 polish sprint created
 
   # Epic 3.5: Polish & Refinement Sprint (addresses Story 3.9 findings)
-  epic-3-5: backlog
+  epic-3-5: contexted
   3-5-1-add-examples-to-ci-clippy-gate: done  # Review APPROVED: All 9 ACs met, all 19 examples pass clippy, CI updated, comprehensive docs, zero issues, exceptional quality
   3-5-2-fix-resize-refresh-behavior: done  # Review APPROVED: All 9 ACs met, 67 tasks verified, zero issues, exceptional quality
   3-5-3-add-otsu-threshold-toggle-control: done  # Review APPROVED: All 9 ACs met, 67 tasks verified, zero clippy warnings, 1 LOW severity finding (doc gap), exceptional quality
   3-5-4-improve-svg-font-handling: done  # MEDIUM: Research and fix SVG text rendering quality - Font loading fix implemented, tested by user, all ACs met ✅
   3-5-5-optimize-large-extreme-aspect-ratio-image-loading: done  # Review APPROVED: All 3 action items resolved, all 9 ACs met, 56 tasks verified, 240 tests passing, zero issues, 45% performance improvement (501ms→276ms), exceptional quality
-  epic-3-5-retrospective: optional  # Brief retrospective after polish sprint
+  epic-3-5-retrospective: completed  # 2025-11-21: All Epic 3.5 polish stories complete - terminal resize fixes implemented
 
   # Epic 4: Drawing Primitives & Density Rendering
-  epic-4: backlog
-  4-1-implement-bresenham-line-drawing-algorithm: backlog
+  epic-4: contexted
+  4-1-implement-bresenham-line-drawing-algorithm: drafted
   4-2-implement-bresenham-circle-drawing-algorithm: backlog
   4-3-implement-rectangle-and-polygon-drawing: backlog
   4-4-implement-character-density-based-rendering: backlog
