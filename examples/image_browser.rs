@@ -8,13 +8,23 @@
 //! - **Left/Right Arrow**: Previous/Next image
 //! - **C**: Cycle color mode (Monochrome → Grayscale → `TrueColor`)
 //! - **D**: Cycle dithering algorithm (Floyd-Steinberg → Bayer → Atkinson → None)
+//! - **O**: Toggle threshold mode (Auto Otsu ↔ Manual)
+//! - **+/-**: Increase/Decrease manual threshold by 10 (range: 0-255, only in Manual mode)
 //! - **b/B**: Increase/Decrease brightness by 0.05 (lowercase = up, uppercase = down)
 //! - **t/T**: Increase/Decrease contrast by 0.05 (lowercase = up, uppercase = down)
 //! - **g/G**: Increase/Decrease gamma by 0.05 (lowercase = up, uppercase = down)
 //! - **R**: Reset all adjustments to defaults
 //! - **Q or Esc**: Quit
 
-#![allow(clippy::uninlined_format_args, clippy::cast_lossless, clippy::unnecessary_wraps, clippy::needless_pass_by_ref_mut, clippy::missing_const_for_fn, clippy::items_after_statements, clippy::map_unwrap_or)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::cast_lossless,
+    clippy::unnecessary_wraps,
+    clippy::needless_pass_by_ref_mut,
+    clippy::missing_const_for_fn,
+    clippy::items_after_statements,
+    clippy::map_unwrap_or
+)]
 //!
 //! # Usage
 //!
@@ -30,7 +40,15 @@ use dotmax::TerminalRenderer;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Threshold mode selection for binary conversion
+#[derive(Debug, Clone, Copy, Default)]
+enum ThresholdMode {
+    #[default]
+    Auto, // Use Otsu automatic thresholding
+    Manual(u8), // Use manual threshold value (0-255)
+}
 
 #[derive(Debug, Clone)]
 struct RenderSettings {
@@ -39,6 +57,7 @@ struct RenderSettings {
     brightness: f32,
     contrast: f32,
     gamma: f32,
+    threshold_mode: ThresholdMode,
 }
 
 impl RenderSettings {
@@ -49,6 +68,7 @@ impl RenderSettings {
             brightness: 1.0,
             contrast: 1.0,
             gamma: 1.0,
+            threshold_mode: ThresholdMode::default(),
         }
     }
 
@@ -91,10 +111,37 @@ impl RenderSettings {
         self.gamma = (self.gamma * 100.0).round() / 100.0;
     }
 
+    /// Toggle threshold mode between Auto (Otsu) and Manual
+    /// When switching to Manual, initialize to 128 (mid-point) or preserve last manual value
+    fn toggle_threshold_mode(&mut self) {
+        self.threshold_mode = match self.threshold_mode {
+            ThresholdMode::Auto => ThresholdMode::Manual(128), // Default to mid-point
+            ThresholdMode::Manual(_) => ThresholdMode::Auto,
+        };
+    }
+
+    /// Adjust manual threshold value by delta
+    /// Only applies when in Manual mode; no-op if in Auto mode
+    /// Value clamped to [0, 255] range
+    fn adjust_threshold(&mut self, delta: i16) {
+        if let ThresholdMode::Manual(ref mut val) = self.threshold_mode {
+            // Clamp to valid u8 range [0, 255]
+            // Cast is safe because clamp ensures result is in [0, 255]
+            #[allow(clippy::cast_sign_loss)]
+            let new_val = (*val as i16 + delta).clamp(0, 255) as u8;
+            *val = new_val;
+        }
+        // If Auto mode, do nothing (user must toggle to Manual first)
+    }
+
     fn display_string(&self) -> String {
+        let threshold_str = match self.threshold_mode {
+            ThresholdMode::Auto => "Auto (Otsu)".to_string(),
+            ThresholdMode::Manual(val) => format!("Manual ({})", val),
+        };
         format!(
-            "Color: {:?} | Dither: {:?} | Brightness: {:.1} | Contrast: {:.1} | Gamma: {:.1}",
-            self.color_mode, self.dithering, self.brightness, self.contrast, self.gamma
+            "Color: {:?} | Dither: {:?} | Threshold: {} | Brightness: {:.1} | Contrast: {:.1} | Gamma: {:.1}",
+            self.color_mode, self.dithering, threshold_str, self.brightness, self.contrast, self.gamma
         )
     }
 }
@@ -104,6 +151,8 @@ struct ImageBrowser {
     current_index: usize,
     settings: RenderSettings,
     renderer: TerminalRenderer,
+    last_resize_time: Option<Instant>,
+    pending_resize: bool,
 }
 
 impl ImageBrowser {
@@ -119,6 +168,8 @@ impl ImageBrowser {
             current_index: 0,
             settings: RenderSettings::new(),
             renderer: TerminalRenderer::new()?,
+            last_resize_time: None,
+            pending_resize: false,
         })
     }
 
@@ -142,9 +193,7 @@ impl ImageBrowser {
 
         // Filter out known test files that are intentionally corrupted
         images.retain(|path| {
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             !filename.contains("corrupted") && !filename.contains("malformed")
         });
 
@@ -152,7 +201,10 @@ impl ImageBrowser {
         Ok(images)
     }
 
-    fn scan_directory(dir: &PathBuf, images: &mut Vec<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    fn scan_directory(
+        dir: &PathBuf,
+        images: &mut Vec<PathBuf>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -160,7 +212,10 @@ impl ImageBrowser {
             if path.is_file() {
                 if let Some(ext) = path.extension() {
                     let ext = ext.to_string_lossy().to_lowercase();
-                    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "svg") {
+                    if matches!(
+                        ext.as_str(),
+                        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "svg"
+                    ) {
                         images.push(path);
                     }
                 }
@@ -187,7 +242,11 @@ impl ImageBrowser {
 
     fn render_current(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Clear screen
-        execute!(io::stdout(), terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+        execute!(
+            io::stdout(),
+            terminal::Clear(ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
 
         let path = self.current_image().clone();
         let is_svg = path.extension().map(|e| e == "svg").unwrap_or(false);
@@ -222,7 +281,10 @@ impl ImageBrowser {
         Ok(())
     }
 
-    fn try_render_image(&mut self, is_svg: bool) -> Result<dotmax::BrailleGrid, Box<dyn std::error::Error>> {
+    fn try_render_image(
+        &mut self,
+        is_svg: bool,
+    ) -> Result<dotmax::BrailleGrid, Box<dyn std::error::Error>> {
         let path = self.current_image();
 
         // Render image with current settings
@@ -240,6 +302,13 @@ impl ImageBrowser {
         if (self.settings.gamma - 1.0).abs() > 0.001 {
             builder = builder.gamma(self.settings.gamma)?;
         }
+
+        // Apply manual threshold if in Manual mode
+        // If Auto mode, do not call .threshold() to allow Otsu to execute
+        builder = match self.settings.threshold_mode {
+            ThresholdMode::Manual(value) => builder.threshold(value),
+            ThresholdMode::Auto => builder, // Don't call .threshold(), use Otsu
+        };
 
         // Load image (SVG or raster)
         #[cfg(feature = "svg")]
@@ -270,8 +339,11 @@ impl ImageBrowser {
         }
 
         // Display current image info
-        println!("\n┌─────────────────────────────────────────────────────────────────────────────┐");
-        println!("│ Image: {}/{} - {}",
+        println!(
+            "\n┌─────────────────────────────────────────────────────────────────────────────┐"
+        );
+        println!(
+            "│ Image: {}/{} - {}",
             self.current_index + 1,
             self.images.len(),
             self.current_image().display()
@@ -280,6 +352,7 @@ impl ImageBrowser {
         println!("│");
         println!("│ Controls: ← → (prev/next) | C (color) | D (dither) | R (reset) | Q (quit)");
         println!("│ Adjust:   b/B (+/- brightness) | t/T (+/- contrast) | g/G (+/- gamma)");
+        println!("│ Threshold: O (toggle Otsu/Manual) | +/- (adjust manual threshold)");
         println!("└─────────────────────────────────────────────────────────────────────────────┘");
 
         Ok(())
@@ -292,18 +365,46 @@ impl ImageBrowser {
         // Initial render
         self.render_current()?;
 
+        // Debounce delay for resize events (milliseconds)
+        const RESIZE_DEBOUNCE_MS: u64 = 150;
+
         loop {
             // Poll for events with timeout
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    match self.handle_key(key)? {
-                        ControlFlow::Continue => {
-                            self.render_current()?;
+            if event::poll(Duration::from_millis(50))? {
+                match event::read()? {
+                    // Handle terminal resize events - debounced re-render
+                    Event::Resize(width, height) => {
+                        tracing::info!("Terminal resized to {}x{}", width, height);
+                        // Mark that a resize occurred and record the time
+                        self.last_resize_time = Some(Instant::now());
+                        self.pending_resize = true;
+                        // Don't render immediately - wait for debounce
+                    }
+                    // Handle keyboard events
+                    Event::Key(key) => {
+                        match self.handle_key(key)? {
+                            ControlFlow::Continue => {
+                                self.render_current()?;
+                            }
+                            ControlFlow::Skip => {
+                                // No render needed
+                            }
+                            ControlFlow::Quit => break,
                         }
-                        ControlFlow::Skip => {
-                            // No render needed
-                        }
-                        ControlFlow::Quit => break,
+                    }
+                    // Ignore other events (mouse, focus, etc.)
+                    _ => {}
+                }
+            }
+
+            // Check if we have a pending resize that has stabilized
+            if self.pending_resize {
+                if let Some(last_resize) = self.last_resize_time {
+                    if last_resize.elapsed() >= Duration::from_millis(RESIZE_DEBOUNCE_MS) {
+                        // Resize has stabilized - render now
+                        self.pending_resize = false;
+                        self.last_resize_time = None;
+                        self.render_current()?;
                     }
                 }
             }
@@ -311,7 +412,11 @@ impl ImageBrowser {
 
         // Cleanup
         terminal::disable_raw_mode()?;
-        execute!(io::stdout(), terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+        execute!(
+            io::stdout(),
+            terminal::Clear(ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
         println!("Image browser closed.");
 
         Ok(())
@@ -376,6 +481,22 @@ impl ImageBrowser {
                 Ok(ControlFlow::Continue)
             }
 
+            // Threshold mode toggle (O = capital O)
+            KeyCode::Char('o' | 'O') => {
+                self.settings.toggle_threshold_mode();
+                Ok(ControlFlow::Continue)
+            }
+
+            // Manual threshold adjustment (+ and -)
+            KeyCode::Char('+') => {
+                self.settings.adjust_threshold(10);
+                Ok(ControlFlow::Continue)
+            }
+            KeyCode::Char('-') => {
+                self.settings.adjust_threshold(-10);
+                Ok(ControlFlow::Continue)
+            }
+
             // Reset
             KeyCode::Char('r' | 'R') => {
                 self.settings.reset();
@@ -383,9 +504,7 @@ impl ImageBrowser {
             }
 
             // Quit
-            KeyCode::Char('q' | 'Q') | KeyCode::Esc => {
-                Ok(ControlFlow::Quit)
-            }
+            KeyCode::Char('q' | 'Q') | KeyCode::Esc => Ok(ControlFlow::Quit),
 
             // Unhandled keys - no re-render needed
             _ => Ok(ControlFlow::Skip),

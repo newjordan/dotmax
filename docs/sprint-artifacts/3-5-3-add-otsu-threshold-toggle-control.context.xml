@@ -3,7 +3,7 @@
     <epicId>3.5</epicId>
     <storyId>3.5.3</storyId>
     <title>Add Otsu Threshold Toggle Control</title>
-    <status>drafted</status>
+    <status>review</status>
     <generatedAt>2025-11-21</generatedAt>
     <generator>BMAD Story Context Workflow</generator>
     <sourceStoryPath>docs/sprint-artifacts/3-5-3-add-otsu-threshold-toggle-control.md</sourceStoryPath>
@@ -87,16 +87,155 @@
   </acceptanceCriteria>
 
   <artifacts>
-    <docs></docs>
-    <code></code>
-    <dependencies></dependencies>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Image Pipeline</section>
+        <snippet>Staged pipeline (Load → Resize → Grayscale → Dither → Threshold → Map) with separate stages for profiling. ImageRenderer uses builder pattern with manual threshold support via .threshold(u8) method.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Performance Targets</section>
+        <snippet>Performance targets: &lt;25ms image rendering, 60-120fps animation. Re-render target &lt;200ms for typical images. Zero panics discipline enforced.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-3.md</path>
+        <title>Epic 3 Technical Specification</title>
+        <section>Image Rendering Pipeline</section>
+        <snippet>Otsu thresholding implementation (Story 3.3) provides automatic optimal threshold calculation. ImageRenderer API (Story 3.8) supports both automatic (Otsu) and manual threshold modes via optional .threshold(u8) call.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/epic-3-retro-2025-11-21.md</path>
+        <title>Epic 3 Retrospective</title>
+        <section>Story 3.5.2 Requirements</section>
+        <snippet>Manual testing (Story 3.9) identified need for threshold toggle: "No way to switch between auto (Otsu) and manual threshold". Priority: MEDIUM. Estimated effort: 1 day. Rationale: Power-user feature for fine-tuning.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>examples/image_browser.rs</path>
+        <kind>example</kind>
+        <symbol>RenderSettings</symbol>
+        <lines>36-100</lines>
+        <reason>State management struct for image rendering settings (color_mode, dithering, brightness, contrast, gamma). Needs to add threshold_mode field and methods for toggle/adjust operations.</reason>
+      </file>
+      <file>
+        <path>examples/image_browser.rs</path>
+        <kind>example</kind>
+        <symbol>handle_key</symbol>
+        <lines>320-390</lines>
+        <reason>Keyboard event handler with existing controls for color mode (C), dithering (D), brightness (b/B), contrast (t/T), gamma (g/G), reset (R). New threshold controls (O, +, -) need to be added here.</reason>
+      </file>
+      <file>
+        <path>examples/image_browser.rs</path>
+        <kind>example</kind>
+        <symbol>try_render_image</symbol>
+        <lines>223-258</lines>
+        <reason>Image rendering function that builds ImageRenderer with current settings. Threshold mode integration point - conditionally call .threshold(value) based on mode.</reason>
+      </file>
+      <file>
+        <path>src/image/mod.rs</path>
+        <kind>module</kind>
+        <symbol>ImageRenderer</symbol>
+        <lines>208-259</lines>
+        <reason>High-level image renderer with builder pattern. Has threshold: Option&lt;u8&gt; field (line 212). Default is None (automatic Otsu). .threshold(u8) method sets manual value.</reason>
+      </file>
+      <file>
+        <path>src/image/mod.rs</path>
+        <kind>module</kind>
+        <symbol>ImageRenderer::threshold</symbol>
+        <lines>690-693</lines>
+        <reason>Builder method to set manual threshold value. Sets self.threshold = Some(value). This is the API integration point for manual mode.</reason>
+      </file>
+      <file>
+        <path>src/image/threshold.rs</path>
+        <kind>module</kind>
+        <symbol>otsu_threshold</symbol>
+        <lines>180-240</lines>
+        <reason>Automatic Otsu threshold calculation. Returns optimal u8 threshold value (0-255) by maximizing between-class variance. Used when manual threshold not specified.</reason>
+      </file>
+      <file>
+        <path>src/image/threshold.rs</path>
+        <kind>module</kind>
+        <symbol>apply_threshold</symbol>
+        <lines>250-280</lines>
+        <reason>Applies manual threshold value to grayscale image to create binary image. Used when ImageRenderer.threshold is Some(value).</reason>
+      </file>
+    </code>
+    <dependencies>
+      <rust>
+        <crate name="crossterm" version="0.29">Event handling for keyboard input (KeyCode::Char)</crate>
+        <crate name="ratatui" version="0.29">Terminal UI framework</crate>
+        <crate name="image" version="0.25" feature="image">Image processing (DynamicImage, GrayImage)</crate>
+        <crate name="tracing" version="0.1">Structured logging</crate>
+      </rust>
+    </dependencies>
   </artifacts>
 
-  <constraints></constraints>
-  <interfaces></interfaces>
+  <constraints>
+    - **Zero Panics**: All threshold operations must use validated/clamped values (no panic on invalid input)
+    - **Manual threshold range**: Must be clamped to [0, 255] (u8 grayscale range)
+    - **No src/ changes needed**: ImageRenderer API already supports both Auto and Manual modes
+    - **Examples held to same quality standards as src/**: Must pass clippy, rustfmt (per Story 3.5.1)
+    - **Performance target**: Re-render on threshold change must complete in &lt;200ms for typical images
+    - **Builder pattern consistency**: Follow existing ImageRenderer builder pattern (method chaining)
+    - **Backward compatibility**: Default mode must remain Auto (Otsu) for existing code
+    - **UI responsiveness**: Threshold adjustments trigger immediate re-render
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>ImageRenderer::threshold</name>
+      <kind>builder method</kind>
+      <signature>pub fn threshold(mut self, value: u8) -&gt; Self</signature>
+      <path>src/image/mod.rs:690-693</path>
+      <description>Sets manual threshold value for binary image conversion. If called, overrides automatic Otsu thresholding. Value clamped to [0, 255].</description>
+    </interface>
+    <interface>
+      <name>otsu_threshold</name>
+      <kind>function</kind>
+      <signature>pub fn otsu_threshold(gray: &amp;GrayImage) -&gt; u8</signature>
+      <path>src/image/threshold.rs:180</path>
+      <description>Calculates optimal threshold value automatically using Otsu's method. Returns value in range [0, 255]. Used when manual threshold not specified.</description>
+    </interface>
+    <interface>
+      <name>apply_threshold</name>
+      <kind>function</kind>
+      <signature>pub fn apply_threshold(gray: &amp;GrayImage, threshold: u8) -&gt; BinaryImage</signature>
+      <path>src/image/threshold.rs:250</path>
+      <description>Applies manual threshold to grayscale image. Pixels &gt;= threshold become black (true), pixels &lt; threshold become white (false).</description>
+    </interface>
+    <interface>
+      <name>crossterm::event::KeyCode</name>
+      <kind>enum</kind>
+      <signature>KeyCode::Char(char)</signature>
+      <description>Keyboard event type for character input. Used for threshold controls: 'O' (toggle), '+' (increase), '-' (decrease).</description>
+    </interface>
+  </interfaces>
+
   <tests>
-    <standards></standards>
-    <locations></locations>
-    <ideas></ideas>
+    <standards>
+      Zero panics discipline enforced. Examples must pass cargo clippy --examples --all-features -- -D warnings (per Story 3.5.1 CI gate). Manual testing required for interactive features - automated tests insufficient for UI interactions. Rust formatting via cargo fmt required.
+    </standards>
+    <locations>
+      - tests/image_rendering_tests.rs (existing image pipeline tests)
+      - tests/integration_tests.rs (existing integration tests)
+      - Manual testing via: cargo run --example image_browser --features image,svg
+    </locations>
+    <ideas>
+      **AC1**: Manual test threshold toggle - Press 'O' key, verify UI shows "Threshold: Manual (128)", press 'O' again, verify shows "Threshold: Auto (Otsu)"
+
+      **AC2**: Manual test threshold adjustment - Set to Manual mode, press '+' multiple times, verify value increases (128 → 138 → 148...), press '-' to decrease, verify value decreases and clamps at 0 and 255
+
+      **AC3**: Manual test state preservation - Toggle to Manual (128), adjust to 200, toggle to Auto, toggle back to Manual, verify value restored to 200
+
+      **AC7**: Manual test edge cases - Set threshold to 0 (all white, no dots), set to 255 (all black, all dots), verify graceful handling
+
+      **AC8**: Manual test dithering interaction - Enable Floyd-Steinberg dithering (press 'D'), toggle threshold mode, verify threshold control only affects output when dithering = None
+
+      **AC9**: Manual test with diverse images - Test with high-key image (bright), low-key image (dark), line art, photograph. Verify Otsu produces good results, manual allows fine-tuning for special cases
+    </ideas>
   </tests>
 </story-context>

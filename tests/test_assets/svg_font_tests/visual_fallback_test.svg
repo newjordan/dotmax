@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 120">
+  <!-- Black background so white text shows as braille dots -->
+  <rect width="450" height="120" fill="#000000"/>
+  <text x="10" y="35" font-family="NonExistentFancyFont123, Comic Sans MS, sans-serif" font-size="28" fill="#FFFFFF">
+    FALLBACK TEST
+  </text>
+  <text x="10" y="70" font-family="NonExistentFancyFont123, sans-serif" font-size="20" fill="#FFFFFF">
+    Missing font fallback
+  </text>
+  <text x="10" y="100" font-family="sans-serif" font-size="16" fill="#FFFFFF">
+    DejaVu Sans works!
+  </text>
+</svg>

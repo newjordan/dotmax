@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial project structure and setup
+- Adaptive resize filter selection for extreme aspect ratio images
+- Comprehensive performance benchmarks for extreme image sizes
+- Integration tests for large and extreme aspect ratio images
+
+### Changed
+- Image resize algorithm now uses Triangle filter (3x faster) for extreme aspect ratios (>2.5:1)
+- Improved resize performance by 45% for extreme aspect ratio images (501ms → 276ms for 10000×4000 images)
+
+### Performance
+- Large images (4000×4000): 222ms total
+- Extreme wide (10000×4000): 725ms total (449ms load + 276ms resize)
+- Extreme tall (4000×10000): ~700ms total
+- All image sizes now meet <5s performance targets
 
 ## [0.1.0] - Unreleased
 

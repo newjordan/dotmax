@@ -32,11 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loading image: {}", img_path.display());
 
     let img = load_from_path(img_path)?;
-    println!(
-        "Image loaded: {}×{} pixels\n",
-        img.width(),
-        img.height()
-    );
+    println!("Image loaded: {}×{} pixels\n", img.width(), img.height());
 
     // Initialize terminal renderer
     let mut renderer = TerminalRenderer::new()?;
@@ -51,8 +47,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Fastest rendering (no color extraction overhead)\n");
 
     let grid_mono = render_image_with_color(
-        &img, ColorMode::Monochrome, 80, 24,
-        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+        &img,
+        ColorMode::Monochrome,
+        80,
+        24,
+        DitheringMethod::FloydSteinberg,
+        None,
+        1.0,
+        1.0,
+        1.0,
     )?;
     println!(
         "   Rendered {}×{} braille cells",
@@ -75,8 +78,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Wide terminal compatibility (95%+)\n");
 
     let grid_gray = render_image_with_color(
-        &img, ColorMode::Grayscale, 80, 24,
-        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+        &img,
+        ColorMode::Grayscale,
+        80,
+        24,
+        DitheringMethod::FloydSteinberg,
+        None,
+        1.0,
+        1.0,
+        1.0,
     )?;
     println!(
         "   Rendered {}×{} braille cells with grayscale",
@@ -110,8 +120,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Requires modern terminal (80%+ support)\n");
 
     let grid_true = render_image_with_color(
-        &img, ColorMode::TrueColor, 80, 24,
-        DitheringMethod::FloydSteinberg, None, 1.0, 1.0, 1.0,
+        &img,
+        ColorMode::TrueColor,
+        80,
+        24,
+        DitheringMethod::FloydSteinberg,
+        None,
+        1.0,
+        1.0,
+        1.0,
     )?;
     println!(
         "   Rendered {}×{} braille cells with truecolor",

@@ -101,9 +101,8 @@ use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;
 
 use crate::image::{
-    auto_threshold, pixels_to_braille, to_grayscale,
-    adjust_brightness, adjust_contrast, adjust_gamma,
-    apply_threshold, apply_dithering, DitheringMethod
+    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering, apply_threshold,
+    auto_threshold, pixels_to_braille, to_grayscale, DitheringMethod,
 };
 use crate::{BrailleGrid, Color, DotmaxError};
 
@@ -434,7 +433,8 @@ pub fn dominant_color(pixels: &[Rgb<u8>]) -> Color {
     // Find color with highest count
     color_counts
         .into_iter()
-        .max_by_key(|(_, count)| *count).map_or_else(|| Color::rgb(0, 0, 0), |(color, _)| color)
+        .max_by_key(|(_, count)| *count)
+        .map_or_else(|| Color::rgb(0, 0, 0), |(color, _)| color)
 }
 
 /// Use the center pixel's color as representative.
@@ -831,7 +831,9 @@ pub fn render_image_with_color(
 
     debug!(
         "Rendered {}×{} grid with {} mode",
-        actual_cell_width, actual_cell_height, mode_name(mode)
+        actual_cell_width,
+        actual_cell_height,
+        mode_name(mode)
     );
 
     Ok(grid)

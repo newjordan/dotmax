@@ -20,9 +20,10 @@ fn bench_pixels_to_braille_standard(c: &mut Criterion) {
     // Prepare binary image at terminal size
     let img = load_from_path(Path::new("tests/fixtures/images/sample.png"))
         .expect("Failed to load sample image");
-    let resized = resize_to_dimensions(&img, 160, 96, true);
+    let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let binary = auto_threshold(&gray);
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_160x96", |b| {
         b.iter(|| {
@@ -36,9 +37,10 @@ fn bench_pixels_to_braille_standard(c: &mut Criterion) {
 fn bench_pixels_to_braille_large(c: &mut Criterion) {
     let img = load_from_path(Path::new("tests/fixtures/images/sample.png"))
         .expect("Failed to load sample image");
-    let resized = resize_to_dimensions(&img, 400, 200, true);
+    let resized = resize_to_dimensions(&img, 400, 200, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let binary = auto_threshold(&gray);
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_400x200", |b| {
         b.iter(|| {
@@ -52,9 +54,10 @@ fn bench_pixels_to_braille_large(c: &mut Criterion) {
 fn bench_pixels_to_braille_small(c: &mut Criterion) {
     let img = load_from_path(Path::new("tests/fixtures/images/sample.png"))
         .expect("Failed to load sample image");
-    let resized = resize_to_dimensions(&img, 40, 24, true);
+    let resized = resize_to_dimensions(&img, 40, 24, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let binary = auto_threshold(&gray);
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_40x24", |b| {
         b.iter(|| {
@@ -68,12 +71,13 @@ fn bench_pixels_to_braille_small(c: &mut Criterion) {
 fn bench_threshold_to_braille_pipeline(c: &mut Criterion) {
     let img = load_from_path(Path::new("tests/fixtures/images/sample.png"))
         .expect("Failed to load sample image");
-    let resized = resize_to_dimensions(&img, 160, 96, true);
+    let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
 
     c.bench_function("threshold_to_braille_pipeline_160x96", |b| {
         b.iter(|| {
-            let binary = auto_threshold(black_box(&gray));
+            let binary = auto_threshold(black_box(&gray_dynamic));
             let grid = pixels_to_braille(&binary, 80, 24).unwrap();
             black_box(grid);
         });
@@ -87,9 +91,10 @@ fn bench_full_image_to_braille_pipeline(c: &mut Criterion) {
 
     c.bench_function("full_image_to_braille_pipeline", |b| {
         b.iter(|| {
-            let resized = resize_to_dimensions(black_box(&img), 160, 96, true);
+            let resized = resize_to_dimensions(black_box(&img), 160, 96, true).expect("Failed to resize");
             let gray = to_grayscale(&resized);
-            let binary = auto_threshold(&gray);
+            let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
+            let binary = auto_threshold(&gray_dynamic);
             let grid = pixels_to_braille(&binary, 80, 24).unwrap();
             black_box(grid);
         });

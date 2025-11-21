@@ -2,9 +2,15 @@
 //!
 //! This example loads the problematic `svg_test.svg` and provides diagnostic output
 
-#![allow(clippy::doc_markdown, clippy::unnecessary_debug_formatting, clippy::uninlined_format_args, clippy::cast_precision_loss, clippy::branches_sharing_code)]
+#![allow(
+    clippy::doc_markdown,
+    clippy::unnecessary_debug_formatting,
+    clippy::uninlined_format_args,
+    clippy::cast_precision_loss,
+    clippy::branches_sharing_code
+)]
 
-use dotmax::image::{load_svg_from_path, to_grayscale, auto_threshold, pixels_to_braille};
+use dotmax::image::{auto_threshold, load_svg_from_path, pixels_to_braille, to_grayscale};
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,8 +70,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    println!("  Black pixels: {} ({:.1}%)", black_count, (black_count as f32 / (black_count + white_count) as f32) * 100.0);
-    println!("  White pixels: {} ({:.1}%)", white_count, (white_count as f32 / (black_count + white_count) as f32) * 100.0);
+    println!(
+        "  Black pixels: {} ({:.1}%)",
+        black_count,
+        (black_count as f32 / (black_count + white_count) as f32) * 100.0
+    );
+    println!(
+        "  White pixels: {} ({:.1}%)",
+        white_count,
+        (white_count as f32 / (black_count + white_count) as f32) * 100.0
+    );
 
     if black_count == 0 {
         println!();
@@ -87,14 +101,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for y in 0..grid.height() {
         for x in 0..grid.width() {
             let ch = grid.get_char(x, y);
-            if ch != ' ' && ch != '\u{2800}' { // Space and empty braille
+            if ch != ' ' && ch != '\u{2800}' {
+                // Space and empty braille
                 braille_count += 1;
             }
         }
     }
-    println!("  Non-empty braille cells: {} out of {} ({:.1}%)",
-             braille_count, grid.width() * grid.height(),
-             (braille_count as f32 / (grid.width() * grid.height()) as f32) * 100.0);
+    println!(
+        "  Non-empty braille cells: {} out of {} ({:.1}%)",
+        braille_count,
+        grid.width() * grid.height(),
+        (braille_count as f32 / (grid.width() * grid.height()) as f32) * 100.0
+    );
 
     if braille_count == 0 {
         println!();

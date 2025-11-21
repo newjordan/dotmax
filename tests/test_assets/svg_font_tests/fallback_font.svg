@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 200">
+  <rect width="500" height="200" fill="white"/>
+  <!-- Request an uncommon font that doesn't exist, should fallback to sans-serif -->
+  <text x="250" y="100" font-family="NonExistentFancyFont123, Comic Sans MS, sans-serif" font-size="42" text-anchor="middle" fill="black">Fallback Font Test</text>
+  <text x="250" y="160" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="#666">(Requesting NonExistentFancyFont123)</text>
+</svg>

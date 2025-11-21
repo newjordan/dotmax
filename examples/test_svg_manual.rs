@@ -48,7 +48,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total = filled + empty;
     let filled_pct = (filled * 100) / total;
 
-    println!("Stats: {} filled, {} empty ({}% filled)", filled, empty, filled_pct);
+    println!(
+        "Stats: {} filled, {} empty ({}% filled)",
+        filled, empty, filled_pct
+    );
     println!();
     println!("Can you see the content clearly? (The text 'Omni-Booth' should be visible)");
 

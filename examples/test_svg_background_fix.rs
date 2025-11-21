@@ -1,6 +1,10 @@
 //! Test program to debug SVG background replacement
 
-#![allow(clippy::unnecessary_debug_formatting, clippy::uninlined_format_args, clippy::explicit_iter_loop)]
+#![allow(
+    clippy::unnecessary_debug_formatting,
+    clippy::uninlined_format_args,
+    clippy::explicit_iter_loop
+)]
 
 use dotmax::image::{auto_threshold, load_svg_from_path};
 use std::path::Path;

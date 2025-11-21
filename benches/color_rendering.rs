@@ -14,11 +14,10 @@
 #![cfg(feature = "image")]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use dotmax::image::{
-    load_from_path, render_image_with_color, resize_to_dimensions, ColorMode,
-    ColorSamplingStrategy,
-};
 use dotmax::image::color_mode::extract_cell_colors;
+use dotmax::image::{
+    load_from_path, render_image_with_color, resize_to_dimensions, ColorMode, ColorSamplingStrategy, DitheringMethod,
+};
 use std::path::Path;
 
 /// Benchmark monochrome mode (baseline, no color overhead)
@@ -28,8 +27,18 @@ fn bench_render_monochrome(c: &mut Criterion) {
 
     c.bench_function("render_image_monochrome_80x24", |b| {
         b.iter(|| {
-            let grid = render_image_with_color(black_box(&img), ColorMode::Monochrome)
-                .expect("Failed to render");
+            let grid = render_image_with_color(
+                black_box(&img),
+                ColorMode::Monochrome,
+                80,
+                24,
+                DitheringMethod::FloydSteinberg,
+                None,
+                1.0,
+                1.0,
+                1.0,
+            )
+            .expect("Failed to render");
             black_box(grid);
         });
     });
@@ -42,8 +51,18 @@ fn bench_render_grayscale(c: &mut Criterion) {
 
     c.bench_function("render_image_grayscale_80x24", |b| {
         b.iter(|| {
-            let grid = render_image_with_color(black_box(&img), ColorMode::Grayscale)
-                .expect("Failed to render");
+            let grid = render_image_with_color(
+                black_box(&img),
+                ColorMode::Grayscale,
+                80,
+                24,
+                DitheringMethod::FloydSteinberg,
+                None,
+                1.0,
+                1.0,
+                1.0,
+            )
+            .expect("Failed to render");
             black_box(grid);
         });
     });
@@ -56,8 +75,18 @@ fn bench_render_truecolor(c: &mut Criterion) {
 
     c.bench_function("render_image_truecolor_80x24", |b| {
         b.iter(|| {
-            let grid = render_image_with_color(black_box(&img), ColorMode::TrueColor)
-                .expect("Failed to render");
+            let grid = render_image_with_color(
+                black_box(&img),
+                ColorMode::TrueColor,
+                80,
+                24,
+                DitheringMethod::FloydSteinberg,
+                None,
+                1.0,
+                1.0,
+                1.0,
+            )
+            .expect("Failed to render");
             black_box(grid);
         });
     });
@@ -140,8 +169,18 @@ fn bench_render_large_terminal(c: &mut Criterion) {
 
     c.bench_function("render_image_truecolor_200x50", |b| {
         b.iter(|| {
-            let grid = render_image_with_color(black_box(&resized), ColorMode::TrueColor)
-                .expect("Failed to render");
+            let grid = render_image_with_color(
+                black_box(&resized),
+                ColorMode::TrueColor,
+                200,
+                50,
+                DitheringMethod::FloydSteinberg,
+                None,
+                1.0,
+                1.0,
+                1.0,
+            )
+            .expect("Failed to render");
             black_box(grid);
         });
     });

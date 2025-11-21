@@ -1,0 +1,415 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3.5</epicId>
+    <storyId>5</storyId>
+    <title>Optimize Large/Extreme Aspect Ratio Image Loading</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-5-5-optimize-large-extreme-aspect-ratio-image-loading.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user loading images with extreme dimensions or aspect ratios</asA>
+    <iWant>faster loading times for large and extremely wide/tall images</iWant>
+    <soThat>my workflow isn't interrupted by 20+ second delays when viewing panoramas or extreme aspect ratio content</soThat>
+    <tasks>
+- Task 1: Profile Image Loading Pipeline (AC: #1)
+  - 1.1: Create extreme aspect ratio test images (10000×100, 100×10000)
+  - 1.2: Add benchmark in benches/image_conversion.rs for extreme cases
+  - 1.3: Run benchmarks: cargo bench --features image --bench image_conversion
+  - 1.4: Measure time per pipeline stage (load, resize, convert, dither, map)
+  - 1.5: Identify bottleneck stage (expected: resize with Lanczos3)
+  - 1.6: Document findings with millisecond breakdown per stage
+
+- Task 2: Research Resize Algorithm Options (AC: #2)
+  - 2.1: Review image crate resize filters (Nearest, Triangle, CatmullRom, Gaussian, Lanczos3)
+  - 2.2: Benchmark each filter with extreme aspect ratio images
+  - 2.3: Compare quality vs performance trade-offs
+  - 2.4: Determine optimal filter for extreme cases (likely CatmullRom or Triangle)
+  - 2.5: Design adaptive algorithm selection logic
+
+- Task 3: Implement Adaptive Resize Algorithm (AC: #2)
+  - 3.1: Modify src/image/resize.rs to detect extreme aspect ratios
+  - 3.2: Add helper: fn is_extreme_aspect_ratio(width, height) -> bool
+  - 3.3: Implement adaptive filter selection (Normal: Lanczos3, Extreme: CatmullRom/Triangle)
+  - 3.4: Add configuration option to ImageRenderer for filter override
+  - 3.5: Verify no regression for normal images
+
+- Task 4: Implement Early Downsample Optimization (AC: #3)
+  - 4.1: Add pre-processing step before resize
+  - 4.2: Detect if image dimensions >> terminal dimensions
+  - 4.3: Calculate optimal downsample factor
+  - 4.4: Apply fast downsample first (Nearest or Triangle)
+  - 4.5: Then apply normal pipeline with quality resize
+  - 4.6: Verify output quality acceptable
+
+- Task 5: Update Documentation (AC: #4)
+  - 5.1: Update rustdoc in src/image/mod.rs with performance expectations
+  - 5.2: Update rustdoc in src/image/resize.rs with algorithm details
+  - 5.3: Document extreme aspect ratio behavior and trade-offs
+  - 5.4: Add recommendations for best performance
+  - 5.5: Update examples with comments about extreme images
+
+- Task 6: Add Performance Benchmarks (AC: #5)
+  - 6.1-6.3: Add bench_extreme_wide/tall/large functions
+  - 6.4: Measure before optimization (baseline)
+  - 6.5: Measure after optimization (validate <5s target)
+  - 6.6: Run: cargo bench --features image
+
+- Task 7: Add Integration Tests (AC: #7)
+  - 7.1-7.2: Add tests for extreme wide/tall images
+  - 7.3-7.5: Verify rendering correctness and no regression
+  - 7.6: Run: cargo test --features image --test image_rendering_tests
+
+- Task 8: Manual Validation (AC: #8)
+  - 8.1-8.3: Create/find real panorama, banner, and synthetic extreme images
+  - 8.4-8.5: Test loading times before/after optimization
+  - 8.6-8.7: Verify quality and document findings
+
+- Task 9: Code Quality and Cleanup (AC: #9)
+  - 9.1-9.3: Run clippy, fix warnings, run rustfmt
+  - 9.4-9.5: Run full test suite and verify benchmarks compile
+  - 9.6: Update CHANGELOG.md
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+AC1: Profile and Identify Performance Bottleneck
+- Profile image loading pipeline with extreme aspect ratio test images (10000×100, 100×10000)
+- Measure time spent in each stage: load → resize → convert → dither/threshold → map
+- Identify which stage(s) contribute most to 20+ second delay
+- Document findings with benchmark data (milliseconds per stage)
+- Determine root cause: resize algorithm complexity, memory allocation, or disk I/O
+
+AC2: Optimize Resize Algorithm (if bottleneck identified)
+- If resize stage is bottleneck: Research alternative scaling algorithms
+- Consider switching to faster algorithm (Bilinear/Cubic) for extreme cases
+- Implement adaptive algorithm selection: Lanczos3 for normal, faster for extreme
+- Maintain visual quality for normal images (no regression)
+- Measure improvement: target <5 second total pipeline time for 10000×100 images
+- Document trade-offs between quality and performance
+
+AC3: Add Early Resize Optimization
+- Detect extreme aspect ratios (ratio > 10:1 or < 1:10) before full pipeline
+- Pre-downsample extreme images to reasonable dimensions
+- Calculate optimal downsample factor based on terminal dimensions
+- Verify image quality remains acceptable after optimization
+
+AC4: Document Performance Expectations
+- Update rustdoc in src/image/mod.rs and src/image/resize.rs
+- Document expected performance: Normal (800×600): <50ms, Large (4K): <200ms, Extreme (10000×100): <5s
+- Provide recommendations for best performance with extreme aspect ratios
+- Document any quality trade-offs made for extreme cases
+
+AC5: Add Performance Tests for Extreme Cases
+- Add benchmarks in benches/image_conversion.rs for extreme aspect ratios
+- Test cases: extreme wide (10000×100), extreme tall (100×10000), very large square (4096×4096)
+- Measure before and after optimization
+- Verify improvements meet <5s target for extreme cases
+- Ensure no regression for normal images
+
+AC6: Optional Progress Indicator (if async loading implemented)
+- Only if optimization doesn't meet <5s target: consider async loading with progress callback
+- Skip if synchronous optimization meets target
+- Document rationale for sync-only API if async not needed
+
+AC7: Integration Testing
+- Add integration tests in tests/image_rendering_tests.rs
+- Test extreme aspect ratio images render successfully
+- Test optimizations don't break normal image rendering
+- Verify visual quality acceptable (compare output before/after)
+- Tests must pass on CI (Linux environment)
+
+AC8: Manual Validation
+- Manually test with real extreme images: panoramas (4:1+), vertical banners (1:4+), extreme test images (10000×100)
+- Measure loading time before and after optimization
+- Verify visual quality acceptable
+- Document subjective quality assessment in Dev Agent Record
+
+AC9: Code Quality
+- Run clippy with -D warnings, fix any new warnings
+- Run rustfmt
+- Verify full test suite passes
+- Verify benchmarks compile
+- Update CHANGELOG.md with performance improvements
+</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Epic 3 Tech Spec - Performance Targets and Pipeline Architecture -->
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-3.md</path>
+        <title>Epic 3 Technical Specification: 2D Image Rendering Pipeline</title>
+        <section>Performance / Per-Stage Budget Allocation (lines 358-368)</section>
+        <snippet>Pipeline stages must sum to &lt;50ms total. Resize stage allocated &lt;10ms with Lanczos3 filter (expensive but necessary for quality). This story addresses extreme cases where resize exceeds budget significantly (20+ seconds for 10000×100 images).</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-3.md</path>
+        <title>Epic 3 Technical Specification: 2D Image Rendering Pipeline</title>
+        <section>Image-to-Braille Pipeline Workflow (lines 264-310)</section>
+        <snippet>6-stage pipeline: Load → Resize → Grayscale → Dither/Threshold → Map → Render. Resize uses Lanczos3 filter for quality. Each stage designed to be independently testable and optimizable for profiling bottlenecks.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/sprint-artifacts/tech-spec-epic-3.md</path>
+        <title>Epic 3 Technical Specification: 2D Image Rendering Pipeline</title>
+        <section>Services and Modules / src/image/resize.rs (line 73)</section>
+        <snippet>Module responsibility: Resize images with aspect ratio preservation. Inputs: DynamicImage + target dimensions. Outputs: Resized DynamicImage. Implemented in Story 3.2.</snippet>
+      </artifact>
+
+      <!-- Architecture - Performance Targets and Strategies -->
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Performance Considerations / Performance Targets (lines 911-937)</section>
+        <snippet>Image-to-braille: &lt;25ms target (50ms max) for 80×24 terminals. Large terminals (200×50): &lt;100ms max. Memory efficiency: &lt;500KB per frame overhead. Performance is highest priority NFR.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Performance Considerations / Performance Strategies (lines 939-977)</section>
+        <snippet>Buffer reuse pattern, measure-first optimization with criterion, zero-copy where possible, pipeline profiling (resize &lt;10ms, dithering &lt;15ms, threshold &lt;5ms, mapping &lt;10ms). Flamegraph for hotspot identification.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Pattern 2: Image-to-Braille Conversion Pipeline (lines 337-404)</section>
+        <snippet>6-component pipeline with resize.rs using Lanczos3 filter for quality. Performance critical: entire pipeline must complete &lt;50ms. Each stage needs separate benchmarking. Story 3.2 chose Lanczos3 for quality over speed.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>ADR 0007: Measure-First Performance Optimization (lines 1284-1302)</section>
+        <snippet>No optimization without benchmark proof. Use criterion for all performance work. Profile with flamegraph before optimizing. Data-driven optimization avoids wasted effort on non-hotspots. Required for aggressive &lt;25ms target.</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <!--Primary implementation target: src/image/resize.rs -->
+      <artifact>
+        <path>src/image/resize.rs</path>
+        <kind>module</kind>
+        <symbol>resize_to_terminal, resize_to_dimensions</symbol>
+        <lines>all</lines>
+        <reason>Core resize module currently using Lanczos3 filter (lines 186, 392). This is the primary bottleneck for extreme aspect ratios. Will add adaptive algorithm selection and early downsample optimization here.</reason>
+      </artifact>
+      <artifact>
+        <path>src/image/resize.rs</path>
+        <kind>module</kind>
+        <symbol>calculate_fit_dimensions, prevent_upscale</symbol>
+        <lines>196-288</lines>
+        <reason>Helper functions for aspect ratio calculations. May need enhancement to detect extreme aspect ratios (ratio &gt; 10:1 or &lt; 1:10) and trigger early downsample optimization.</reason>
+      </artifact>
+
+      <!-- High-level API integration point -->
+      <artifact>
+        <path>src/image/mod.rs</path>
+        <kind>module</kind>
+        <symbol>ImageRenderer::render, calculate_target_dimensions</symbol>
+        <lines>747-876</lines>
+        <reason>High-level rendering pipeline that calls resize_to_dimensions. May need configuration option to expose resize filter selection to advanced users. Performance caching already implemented (lines 769-796).</reason>
+      </artifact>
+
+      <!-- Benchmark infrastructure for profiling -->
+      <artifact>
+        <path>benches/image_conversion.rs</path>
+        <kind>benchmark</kind>
+        <symbol>bench functions</symbol>
+        <lines>1-150</lines>
+        <reason>Existing benchmark structure for image pipeline stages. Will add bench_extreme_wide(), bench_extreme_tall(), bench_very_large_square() functions here to measure before/after optimization.</reason>
+      </artifact>
+
+      <!-- Integration test patterns -->
+      <artifact>
+        <path>tests/image_rendering_tests.rs</path>
+        <kind>integration test</kind>
+        <symbol>test_full_pipeline_* functions</symbol>
+        <lines>1-100</lines>
+        <reason>Integration test patterns for end-to-end pipeline validation. Will add tests for extreme aspect ratio images to verify correctness and no regression for normal images.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <!-- Core image processing dependency -->
+      <rust>
+        <crate name="image" version="0.25" features="[]">
+          FilterType enum (Lanczos3, CatmullRom, Triangle, Nearest, Gaussian) for resize algorithms. Current code uses Lanczos3 exclusively. This story will add adaptive selection.
+        </crate>
+        <crate name="imageops" version="(from image crate)" features="[]">
+          resize() function called at lines 186 and 392 in resize.rs. Takes FilterType parameter - this is what we'll make adaptive.
+        </crate>
+      </rust>
+
+      <!-- Benchmarking for profiling -->
+      <dev-dependency>
+        <crate name="criterion" version="0.7" features="html_reports">
+          Statistical benchmarking with HTML reports. Used to measure performance improvements and track regressions in CI.
+        </crate>
+      </dev-dependency>
+
+      <!-- Logging for debug output -->
+      <dependency>
+        <crate name="tracing" version="0.1" features="[]">
+          Structured logging used throughout pipeline. Will add debug logs for filter selection and optimization decisions.
+        </crate>
+      </dependency>
+
+      <!-- Terminal utilities (already available) -->
+      <dependency>
+        <crate name="crossterm" version="0.29" features="[]">
+          Used in detect_terminal_size() (mod.rs:957) to calculate optimal downsample factor based on terminal dimensions.
+        </crate>
+      </dependency>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <!-- Performance requirements -->
+    - **Primary Goal:** Reduce extreme aspect ratio image loading from 20+ seconds to &lt;5 seconds (25%+ improvement)
+    - **No Regression:** Normal images (800×600, 1920×1080) must maintain &lt;50ms total pipeline time
+    - **Memory Budget:** Maintain &lt;500KB per frame overhead (no excessive buffer allocations)
+    - **Quality Trade-off:** Acceptable to use faster filter (CatmullRom vs Lanczos3) for extreme cases only
+
+    <!-- Architecture constraints from architecture.md -->
+    - **Zero Panics Discipline:** All functions return Result&lt;T, DotmaxError&gt; (architecture.md:886-890)
+    - **Measure-First Optimization:** No optimization without benchmark proof via criterion (ADR 0007, lines 1284-1302)
+    - **Buffer Reuse Pattern:** Reuse allocations where possible, no unnecessary Vec allocations (architecture.md:941-951)
+
+    <!-- Code quality standards -->
+    - **Clippy Clean:** All code must pass `cargo clippy --all-features -- -D warnings`
+    - **Rustfmt Formatted:** All code must be formatted with rustfmt
+    - **Documentation:** Rustdoc must explain performance characteristics and trade-offs
+    - **Testing:** Benchmarks validate &lt;5s target, integration tests ensure no breakage
+
+    <!-- Module constraints -->
+    - **No Breaking Changes:** ImageRenderer API and resize module APIs remain unchanged (backward compatibility)
+    - **Internal Optimization Only:** Changes confined to resize.rs implementation, no new public APIs unless explicitly required (AC5)
+    - **Feature Flag Compliance:** All image code remains behind `image` feature flag
+  </constraints>
+
+  <interfaces>
+    <!-- Primary function signatures that will be modified internally -->
+    <interface>
+      <name>resize_to_terminal</name>
+      <kind>function signature</kind>
+      <signature>pub fn resize_to_terminal(image: &amp;DynamicImage, term_width: u16, term_height: u16) -> Result&lt;DynamicImage, DotmaxError&gt;</signature>
+      <path>src/image/resize.rs:134-194</path>
+      <notes>Current implementation always uses Lanczos3 filter (line 190). Will add internal logic to detect extreme aspect ratios and select faster filter adaptively. Signature remains unchanged.</notes>
+    </interface>
+
+    <interface>
+      <name>resize_to_dimensions</name>
+      <kind>function signature</kind>
+      <signature>pub fn resize_to_dimensions(image: &amp;DynamicImage, target_width: u32, target_height: u32, preserve_aspect: bool) -> Result&lt;DynamicImage, DotmaxError&gt;</signature>
+      <path>src/image/resize.rs:347-400</path>
+      <notes>Current implementation always uses Lanczos3 filter (line 396). Will add adaptive filter selection based on image dimensions and aspect ratio. Signature remains unchanged.</notes>
+    </interface>
+
+    <!-- Optional new interface if user configuration is needed (AC optional) -->
+    <interface>
+      <name>ImageRenderer::resize_with_filter (OPTIONAL - only if needed)</name>
+      <kind>builder method</kind>
+      <signature>pub fn resize_with_filter(mut self, filter: FilterType) -> Self</signature>
+      <path>src/image/mod.rs (new method, optional)</path>
+      <notes>Only add if research shows benefit of exposing filter selection to users. Allows advanced users to override automatic filter selection. Backward compatible (existing code unaffected).</notes>
+    </interface>
+
+    <!-- Image crate filter types (external interface) -->
+    <interface>
+      <name>imageops::FilterType enum</name>
+      <kind>enum</kind>
+      <signature>pub enum FilterType { Nearest, Triangle, CatmullRom, Gaussian, Lanczos3 }</signature>
+      <path>image crate (external)</path>
+      <notes>Available resize filters from image crate. Quality vs speed trade-offs: Nearest (fastest, lowest quality), Triangle (fast, medium quality), CatmullRom (balanced), Gaussian (high quality, slower), Lanczos3 (highest quality, slowest).</notes>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+**Testing Standards from Architecture (lines 616-677, 1150):**
+
+**Unit Tests:** In-module `#[cfg(test)]` blocks with >80% line coverage target
+- Test individual functions in isolation with edge cases
+- Use `assert!`, `assert_eq!`, pattern matching for Result types
+- Naming: `test_function_name_scenario` (e.g., `test_extreme_aspect_ratio_wide`)
+
+**Integration Tests:** `tests/*.rs` files exercising complete pipelines
+- Test full image loading pipeline: load → resize → convert → dither → map → render
+- Verify error handling end-to-end (missing files, corrupted images)
+- Pattern: `test_full_pipeline_*` naming convention
+
+**Benchmark Tests:** `benches/*.rs` using criterion.rs with statistical analysis
+- Separate benchmarks for each pipeline stage
+- Track performance over time, fail CI if >10% regression
+- HTML reports for visual tracking
+- Pattern from benches/image_conversion.rs:25-145
+
+**Code Quality Gates:**
+- Run clippy: `cargo clippy --all-features -- -D warnings`
+- Run rustfmt: `cargo fmt --check`
+- Run full test suite: `cargo test --all-features`
+- Verify benchmarks compile: `cargo bench --no-run --all-features`
+
+**CI Platform Testing:** GitHub Actions runs tests on Windows, Linux, macOS with stable Rust and MSRV (1.70)
+    </standards>
+
+    <locations>
+**Test Directories and Patterns:**
+- Unit tests: `src/image/resize.rs` lines 402-678 (existing tests to extend)
+- Integration tests: `tests/image_rendering_tests.rs` (add extreme case tests)
+- Benchmark tests: `benches/image_conversion.rs` (add extreme case benchmarks)
+- Test fixtures: `tests/fixtures/images/` (will add extreme aspect ratio test images)
+
+**Specific Test Locations for This Story:**
+- `benches/image_conversion.rs`: Add `bench_extreme_wide()`, `bench_extreme_tall()`, `bench_very_large_square()` functions
+- `tests/image_rendering_tests.rs`: Add `test_extreme_aspect_ratio_wide()`, `test_extreme_aspect_ratio_tall()` functions
+- `src/image/resize.rs` tests: Add unit tests for adaptive filter selection logic
+    </locations>
+
+    <ideas>
+**AC1 - Profiling and Bottleneck Identification:**
+- **Test Idea:** Create synthetic 10000×100 and 100×10000 test images, benchmark each pipeline stage separately
+- **Test Idea:** Use criterion to measure load, resize, convert, dither, threshold, map stages individually
+- **Test Idea:** Generate flamegraph profile to visually identify hotspot (expected: resize with Lanczos3)
+- **Map to AC:** Validates that resize stage is bottleneck before optimization
+
+**AC2 - Resize Algorithm Optimization:**
+- **Test Idea:** Benchmark each FilterType (Nearest, Triangle, CatmullRom, Gaussian, Lanczos3) with extreme images
+- **Test Idea:** Compare visual quality vs speed trade-offs for each filter on extreme cases
+- **Test Idea:** Unit test `is_extreme_aspect_ratio()` helper function with various ratios (1:1, 4:3, 16:9, 21:9, 10:1, 100:1)
+- **Map to AC:** Validates adaptive algorithm selection improves speed without unacceptable quality loss
+
+**AC3 - Early Downsample Optimization:**
+- **Test Idea:** Unit test early downsample logic with terminal dimensions (80×24) and extreme image (10000×100)
+- **Test Idea:** Verify optimal downsample factor calculation (e.g., 10000px → 2000px for 160px terminal width)
+- **Test Idea:** Integration test that extreme image renders successfully with early downsample enabled
+- **Map to AC:** Validates pre-processing optimization reduces resize workload
+
+**AC4 - Performance Documentation:**
+- **Test Idea:** Rustdoc examples showing expected performance for different image sizes (compile-test with `cargo test --doc`)
+- **Map to AC:** Documentation validated by Rust's doc-test system
+
+**AC5 - Performance Benchmarks:**
+- **Test Idea:** Baseline benchmarks before optimization (20+ seconds for 10000×100)
+- **Test Idea:** After-optimization benchmarks (<5s for extreme cases, <50ms maintained for normal cases)
+- **Test Idea:** Regression test in CI fails if performance degrades >10% from baseline
+- **Map to AC:** Validates performance improvements meet <5s target with no normal-image regression
+
+**AC7 - Integration Testing:**
+- **Test Idea:** `test_extreme_wide_image_renders_without_panic()` loads 10000×100, verifies successful grid creation
+- **Test Idea:** `test_extreme_tall_image_renders_without_panic()` loads 100×10000, verifies no errors
+- **Test Idea:** `test_normal_images_maintain_performance()` ensures 800×600 and 1920×1080 still render quickly
+- **Test Idea:** Visual quality comparison test (before/after optimization output grids compared)
+- **Map to AC:** Ensures optimizations don't break correctness or introduce regressions
+
+**AC8 - Manual Validation:**
+- **Test Idea:** Manual test with real panorama images (4:1 aspect ratio) measuring load times
+- **Test Idea:** Create synthetic test_extreme_10000x100.png for reproducible testing
+- **Test Idea:** Subjective quality assessment comparing Lanczos3 vs CatmullRom output visually
+- **Map to AC:** Human verification of acceptable quality trade-offs
+
+**AC9 - Code Quality:**
+- **Test Idea:** Clippy gate in CI fails PR if warnings introduced
+- **Test Idea:** Rustfmt check ensures consistent formatting
+- **Test Idea:** Full test suite passes on all platforms (Linux, Windows, macOS)
+- **Map to AC:** Automated code quality validation
+    </ideas>
+  </tests>
+</story-context>

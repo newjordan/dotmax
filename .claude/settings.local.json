@@ -64,7 +64,17 @@
       "SlashCommand(/bmad:bmm:workflows:create-story)",
       "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-1-add-examples-to-ci-clippy-gate.context.xml\" ])",
       "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-2-fix-resize-refresh-behavior.context.xml\" ])",
-      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-3-add-otsu-threshold-toggle-control.context.xml\" ])"
+      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-3-add-otsu-threshold-toggle-control.context.xml\" ])",
+      "Bash(timeout 3 cargo run:*)",
+      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-4-improve-svg-font-handling.context.xml\" ])",
+      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/3-5-5-optimize-large-extreme-aspect-ratio-image-loading.context.xml\" ])",
+      "Bash(fc-list:*)",
+      "Bash(tee:*)",
+      "Bash(timeout 60 cargo run:*)",
+      "Bash([ -f \"benches/extreme_image_pipeline.rs\" ])",
+      "Bash(identify:*)",
+      "Bash([ -f \"examples/test_adaptive_resize_performance.rs\" ])",
+      "Bash([ -f \"/mnt/e/dotmax/docs/backlog.md\" ])"
     ],
     "deny": [],
     "ask": []

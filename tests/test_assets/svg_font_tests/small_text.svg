@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="white"/>
+  <text x="200" y="50" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="black">Size 8px - Very Small</text>
+  <text x="200" y="100" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="black">Size 12px - Small</text>
+  <text x="200" y="150" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="black">Size 16px - Medium</text>
+  <text x="200" y="200" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="black">Size 24px - Large</text>
+  <text x="200" y="260" font-family="Arial, sans-serif" font-size="36" text-anchor="middle" fill="black">Size 36px - Extra Large</text>
+</svg>

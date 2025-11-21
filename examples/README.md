@@ -7,6 +7,8 @@ This directory contains runnable examples demonstrating how to use dotmax for te
 | Example | Description | Features Required | Difficulty |
 |---------|-------------|-------------------|------------|
 | `hello_braille.rs` | Minimal braille grid creation and rendering | `default` | Beginner |
+| `simple_image.rs` | Load and render PNG image with automatic resize handling | `image` | Beginner |
+| `image_browser.rs` | Interactive image viewer with settings controls and resize support | `image,svg` | Intermediate |
 
 ## Running Examples
 
@@ -57,6 +59,39 @@ The following examples will be added in upcoming epics:
   - `bouncing_ball.rs` - Physics-based animation
   - `video_playback.rs` - Play video files in terminal
 
+## Automatic Terminal Resize Handling
+
+All interactive examples (those with event loops) support automatic re-rendering when the terminal window is resized. When you resize your terminal:
+
+- The image automatically scales to fit the new dimensions
+- Aspect ratio is preserved (no distortion)
+- No manual refresh or restart required
+- Performance is optimized (typically <50ms re-render)
+
+**Implementation Pattern:**
+
+```rust
+use crossterm::event::{self, Event};
+use std::time::Duration;
+
+loop {
+    if event::poll(Duration::from_millis(100))? {
+        match event::read()? {
+            Event::Resize(width, height) => {
+                // Re-render with new terminal dimensions
+                render_image(image_path)?;
+            }
+            Event::Key(key) => {
+                // Handle keyboard input
+            }
+            _ => {}
+        }
+    }
+}
+```
+
+This pattern ensures your terminal applications remain responsive and visually correct regardless of window size changes. See `simple_image.rs` and `image_browser.rs` for complete working examples.
+
 ## Example Guidelines
 
 All examples in this repository follow these principles:
@@ -65,6 +100,7 @@ All examples in this repository follow these principles:
 2. **Commented** - Inline comments explain key steps and API usage
 3. **Runnable** - All examples compile and run successfully in CI
 4. **Practical** - Examples show real-world usage patterns, not toy code
+5. **Responsive** - Interactive examples handle terminal resize events automatically
 
 ## Getting Help
 

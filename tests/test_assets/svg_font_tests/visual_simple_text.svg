@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 150">
+  <!-- Black background so white text shows as braille dots -->
+  <rect width="400" height="150" fill="#000000"/>
+  <text x="10" y="40" font-family="Arial, Helvetica, sans-serif" font-size="32" fill="#FFFFFF">
+    FONT TEST
+  </text>
+  <text x="10" y="80" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#FFFFFF">
+    Arial/Helvetica
+  </text>
+  <text x="10" y="110" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#FFFFFF">
+    System fonts: 30 faces
+  </text>
+</svg>

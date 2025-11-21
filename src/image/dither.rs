@@ -237,11 +237,58 @@ pub fn apply_dithering(
     gray: &GrayImage,
     method: DitheringMethod,
 ) -> Result<BinaryImage, DotmaxError> {
+    apply_dithering_with_custom_threshold(gray, method, None)
+}
+
+/// Apply dithering with a custom threshold value.
+///
+/// This allows combining dithering algorithms with manual threshold control.
+/// If `threshold` is None, uses the default value of 127.
+///
+/// # Arguments
+///
+/// * `gray` - Grayscale image to dither
+/// * `method` - Which dithering algorithm to use
+/// * `threshold` - Optional custom threshold (0-255). None uses default 127.
+///
+/// # Returns
+///
+/// Returns a binary image (black/white pixels stored as booleans).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Image dimensions are zero
+/// - Invalid parameters detected
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::image::{to_grayscale, load_from_path};
+/// use dotmax::image::dither::{apply_dithering_with_custom_threshold, DitheringMethod};
+/// use std::path::Path;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let img = load_from_path(Path::new("photo.jpg"))?;
+/// let gray = to_grayscale(&img);
+/// // Use Floyd-Steinberg with darker threshold (100 instead of 127)
+/// let binary = apply_dithering_with_custom_threshold(&gray, DitheringMethod::FloydSteinberg, Some(100))?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn apply_dithering_with_custom_threshold(
+    gray: &GrayImage,
+    method: DitheringMethod,
+    threshold: Option<u8>,
+) -> Result<BinaryImage, DotmaxError> {
+    let threshold_value = threshold.unwrap_or(THRESHOLD);
+
     debug!(
-        "Applying {:?} dithering to {}×{} image",
+        "Applying {:?} dithering to {}×{} image with threshold {}",
         method,
         gray.width(),
-        gray.height()
+        gray.height(),
+        threshold_value
     );
 
     match method {
@@ -250,9 +297,9 @@ pub fn apply_dithering(
             let binary = auto_threshold(&image::DynamicImage::ImageLuma8(gray.clone()));
             Ok(binary)
         }
-        DitheringMethod::FloydSteinberg => floyd_steinberg(gray),
-        DitheringMethod::Bayer => bayer(gray),
-        DitheringMethod::Atkinson => atkinson(gray),
+        DitheringMethod::FloydSteinberg => floyd_steinberg_with_threshold(gray, threshold_value),
+        DitheringMethod::Bayer => bayer(gray), // Bayer uses its own matrix-based threshold
+        DitheringMethod::Atkinson => atkinson_with_threshold(gray, threshold_value),
     }
 }
 
@@ -296,6 +343,13 @@ pub fn apply_dithering(
 /// # }
 /// ```
 pub fn floyd_steinberg(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
+    floyd_steinberg_with_threshold(gray, THRESHOLD)
+}
+
+fn floyd_steinberg_with_threshold(
+    gray: &GrayImage,
+    threshold: u8,
+) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
 
@@ -322,7 +376,7 @@ pub fn floyd_steinberg(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
             let new_pixel = old_pixel + errors[pixel_idx];
 
             // Apply threshold
-            let output_value = if new_pixel >= THRESHOLD as f32 {
+            let output_value = if new_pixel >= threshold as f32 {
                 255.0
             } else {
                 0.0
@@ -472,6 +526,13 @@ pub fn bayer(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
 /// # }
 /// ```
 pub fn atkinson(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
+    atkinson_with_threshold(gray, THRESHOLD)
+}
+
+fn atkinson_with_threshold(
+    gray: &GrayImage,
+    threshold: u8,
+) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
 
@@ -497,7 +558,7 @@ pub fn atkinson(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
             let new_pixel = old_pixel + errors[pixel_idx];
 
             // Apply threshold
-            let output_value = if new_pixel >= THRESHOLD as f32 {
+            let output_value = if new_pixel >= threshold as f32 {
                 255.0
             } else {
                 0.0

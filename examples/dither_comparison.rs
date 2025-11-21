@@ -7,7 +7,11 @@
 //!   cargo run --example `dither_comparison` --features image
 
 #![cfg(feature = "image")]
-#![allow(clippy::uninlined_format_args, clippy::unnecessary_debug_formatting, clippy::cast_precision_loss)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::unnecessary_debug_formatting,
+    clippy::cast_precision_loss
+)]
 
 use dotmax::image::{
     apply_dithering, load_from_path, resize_to_terminal, to_grayscale, DitheringMethod,

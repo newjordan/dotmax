@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300">
+  <rect width="500" height="300" fill="white"/>
+  <text x="250" y="60" font-family="Arial, sans-serif" font-size="36" text-anchor="middle" fill="black">Arial Text</text>
+  <text x="250" y="120" font-family="Georgia, serif" font-size="36" text-anchor="middle" fill="black">Serif Text</text>
+  <text x="250" y="180" font-family="Courier New, monospace" font-size="36" text-anchor="middle" fill="black">Monospace Text</text>
+  <text x="250" y="240" font-family="Ubuntu, sans-serif" font-size="36" text-anchor="middle" fill="black">Ubuntu Font</text>
+</svg>

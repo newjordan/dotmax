@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 180">
+  <!-- Black background so white text shows as braille dots -->
+  <rect width="400" height="180" fill="#000000"/>
+  <text x="10" y="35" font-family="Arial, sans-serif" font-size="26" font-weight="normal" fill="#FFFFFF">
+    Normal Weight
+  </text>
+  <text x="10" y="70" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF">
+    Bold Weight
+  </text>
+  <text x="10" y="110" font-family="Arial, sans-serif" font-size="26" font-style="italic" fill="#FFFFFF">
+    Italic Style
+  </text>
+  <text x="10" y="150" font-family="Arial, sans-serif" font-size="26" font-weight="bold" font-style="italic" fill="#FFFFFF">
+    Bold Italic
+  </text>
+</svg>

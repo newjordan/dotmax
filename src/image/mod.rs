@@ -125,7 +125,7 @@ pub mod threshold;
 // Re-export public types and functions for convenience
 pub use color_mode::{render_image_with_color, ColorMode, ColorSamplingStrategy};
 pub use convert::to_grayscale;
-pub use dither::{apply_dithering, DitheringMethod};
+pub use dither::{apply_dithering, apply_dithering_with_custom_threshold, DitheringMethod};
 pub use loader::{load_from_bytes, load_from_path, supported_formats};
 pub use mapper::pixels_to_braille;
 pub use resize::{resize_to_dimensions, resize_to_terminal};
@@ -220,6 +220,8 @@ pub struct ImageRenderer {
     /// Cache for original color image before grayscale conversion
     /// (needed for color mode rendering)
     cached_original_resized: Option<DynamicImage>,
+    /// Dimensions used for the cached resized image (to detect terminal resize)
+    cached_dimensions: Option<(u32, u32)>,
 }
 
 impl ImageRenderer {
@@ -255,6 +257,7 @@ impl ImageRenderer {
             gamma: 1.0,
             cached_resized: None,
             cached_original_resized: None,
+            cached_dimensions: None,
         }
     }
 
@@ -302,6 +305,7 @@ impl ImageRenderer {
         // ISSUE #3: Invalidate cache when new image loaded
         self.cached_resized = None;
         self.cached_original_resized = None;
+        self.cached_dimensions = None;
         Ok(self)
     }
 
@@ -346,6 +350,7 @@ impl ImageRenderer {
         // ISSUE #3: Invalidate cache when new image loaded
         self.cached_resized = None;
         self.cached_original_resized = None;
+        self.cached_dimensions = None;
         Ok(self)
     }
 
@@ -402,6 +407,7 @@ impl ImageRenderer {
         // ISSUE #3: Invalidate cache when new image loaded
         self.cached_resized = None;
         self.cached_original_resized = None;
+        self.cached_dimensions = None;
         Ok(self)
     }
 
@@ -747,12 +753,15 @@ impl ImageRenderer {
     #[instrument(skip(self))]
     pub fn render(&mut self) -> Result<BrailleGrid, DotmaxError> {
         // Validate image is loaded
-        let img = self.image.as_ref().ok_or_else(|| DotmaxError::InvalidParameter {
-            parameter_name: "image".to_string(),
-            value: "None".to_string(),
-            min: "Must load image first".to_string(),
-            max: "loaded image".to_string(),
-        })?;
+        let img = self
+            .image
+            .as_ref()
+            .ok_or_else(|| DotmaxError::InvalidParameter {
+                parameter_name: "image".to_string(),
+                value: "None".to_string(),
+                min: "Must load image first".to_string(),
+                max: "loaded image".to_string(),
+            })?;
 
         info!("Starting image rendering pipeline");
 
@@ -764,21 +773,65 @@ impl ImageRenderer {
         );
 
         // ISSUE #3 FIX: Check if we can reuse cached resized image
+        // Must check both cache existence AND that dimensions haven't changed (e.g., terminal resize)
+        let dimensions_match = self
+            .cached_dimensions
+            .map_or(false, |(w, h)| w == target_width_pixels && h == target_height_pixels);
+
         let resized = if let Some(cached) = &self.cached_resized {
-            // Fast path: reuse cached resized image
-            debug!("Using cached resized image (fast path for parameter adjustments)");
-            cached.clone()
+            if dimensions_match {
+                // Fast path: reuse cached resized image (dimensions unchanged)
+                debug!("Using cached resized image (fast path for parameter adjustments)");
+                cached.clone()
+            } else {
+                // Dimensions changed (e.g., terminal resize) - must re-resize
+                debug!(
+                    "Dimensions changed from {:?} to {}x{}, invalidating cache and re-resizing",
+                    self.cached_dimensions, target_width_pixels, target_height_pixels
+                );
+                let resized = match &self.resize_mode {
+                    ResizeMode::AutoTerminal { preserve_aspect }
+                    | ResizeMode::Manual {
+                        preserve_aspect, ..
+                    } => resize_to_dimensions(
+                        img,
+                        target_width_pixels,
+                        target_height_pixels,
+                        *preserve_aspect,
+                    )?,
+                };
+                debug!(
+                    "Image resized to {}x{}, caching for future renders",
+                    resized.width(),
+                    resized.height()
+                );
+                self.cached_resized = Some(resized.clone());
+                self.cached_original_resized = Some(resized.clone());
+                self.cached_dimensions = Some((target_width_pixels, target_height_pixels));
+                resized
+            }
         } else {
-            // Slow path: resize image and cache it
+            // Slow path: resize image and cache it (no cache available)
             debug!("Resizing image (no cache available)");
             let resized = match &self.resize_mode {
-                ResizeMode::AutoTerminal { preserve_aspect } | ResizeMode::Manual { preserve_aspect, .. } => {
-                    resize_to_dimensions(img, target_width_pixels, target_height_pixels, *preserve_aspect)?
-                }
+                ResizeMode::AutoTerminal { preserve_aspect }
+                | ResizeMode::Manual {
+                    preserve_aspect, ..
+                } => resize_to_dimensions(
+                    img,
+                    target_width_pixels,
+                    target_height_pixels,
+                    *preserve_aspect,
+                )?,
             };
-            debug!("Image resized to {}x{}, caching for future renders", resized.width(), resized.height());
+            debug!(
+                "Image resized to {}x{}, caching for future renders",
+                resized.width(),
+                resized.height()
+            );
             self.cached_resized = Some(resized.clone());
             self.cached_original_resized = Some(resized.clone());
+            self.cached_dimensions = Some((target_width_pixels, target_height_pixels));
             resized
         };
 
@@ -821,17 +874,29 @@ impl ImageRenderer {
         }
 
         // Convert to binary (dithering or threshold)
-        let binary = if let Some(threshold_value) = self.threshold {
-            debug!("Applying manual threshold: {}", threshold_value);
-            apply_threshold(&gray, threshold_value)
-        } else if self.dithering == DitheringMethod::None {
-            debug!("Applying automatic Otsu thresholding");
-            // auto_threshold takes DynamicImage, need to convert gray back
-            let gray_dynamic = DynamicImage::ImageLuma8(gray);
-            auto_threshold(&gray_dynamic)
+        let binary = if self.dithering == DitheringMethod::None {
+            // No dithering - use threshold only
+            if let Some(threshold_value) = self.threshold {
+                debug!("Applying manual threshold (no dithering): {}", threshold_value);
+                apply_threshold(&gray, threshold_value)
+            } else {
+                debug!("Applying automatic Otsu thresholding (no dithering)");
+                // auto_threshold takes DynamicImage, need to convert gray back
+                let gray_dynamic = DynamicImage::ImageLuma8(gray);
+                auto_threshold(&gray_dynamic)
+            }
         } else {
-            debug!("Applying {:?} dithering", self.dithering);
-            apply_dithering(&gray, self.dithering)?
+            // Dithering enabled - can be combined with manual threshold
+            if let Some(threshold_value) = self.threshold {
+                debug!(
+                    "Applying {:?} dithering with manual threshold: {}",
+                    self.dithering, threshold_value
+                );
+                apply_dithering_with_custom_threshold(&gray, self.dithering, Some(threshold_value))?
+            } else {
+                debug!("Applying {:?} dithering with default threshold (127)", self.dithering);
+                apply_dithering(&gray, self.dithering)?
+            }
         };
 
         // Map to braille grid
@@ -847,7 +912,7 @@ impl ImageRenderer {
     }
 
     /// Helper method to calculate target pixel dimensions based on resize mode.
-    #[allow(clippy::cast_possible_truncation)]  // Terminal dimensions won't exceed u32
+    #[allow(clippy::cast_possible_truncation)] // Terminal dimensions won't exceed u32
     fn calculate_target_dimensions(&self) -> (u32, u32) {
         match &self.resize_mode {
             ResizeMode::AutoTerminal { .. } => {
@@ -948,7 +1013,10 @@ pub fn detect_terminal_size() -> (usize, usize) {
             (cols as usize, rows as usize)
         }
         Err(e) => {
-            debug!("Terminal size detection failed ({}), using default 80x24", e);
+            debug!(
+                "Terminal size detection failed ({}), using default 80x24",
+                e
+            );
             (80, 24)
         }
     }
