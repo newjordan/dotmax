@@ -1,0 +1,603 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.1</storyId>
+    <title>Implement Bresenham Line Drawing Algorithm</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/4-1-implement-bresenham-line-drawing-algorithm.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer drawing graphics programmatically</asA>
+    <iWant>line drawing between two points on braille grid</iWant>
+    <soThat>I can create wireframes, UI borders, and connections</soThat>
+    <tasks>
+- **Task 1: Create Primitives Module Structure** (AC: #1, #7)
+  - 1.1: Create `src/primitives/` directory
+  - 1.2: Create `src/primitives/mod.rs` with module exports
+  - 1.3: Create `src/primitives/line.rs` file
+  - 1.4: Update `src/lib.rs` to conditionally include primitives module
+  - 1.5: Add primitives module to public API exports in lib.rs
+  - 1.6: Verify module structure compiles
+
+- **Task 2: Implement Bresenham Core Algorithm** (AC: #1)
+  - 2.1: Research Bresenham's line algorithm
+  - 2.2: Check crabmusic for existing implementation
+  - 2.3: Implement basic Bresenham for positive slope
+  - 2.4: Extend to handle all 8 octants
+  - 2.5: Implement `draw_line()` function
+  - 2.6: Use `grid.set_dot(x, y, true)` to set dots
+  - 2.7: Handle zero-length line edge case
+
+- **Task 3: Implement Boundary Clipping** (AC: #2)
+  - 3.1: Check bounds before set_dot
+  - 3.2: Use grid dimensions, convert to dot space
+  - 3.3: Skip out-of-bounds dots without error
+  - 3.4: Test extreme coordinates
+  - 3.5: Verify partial lines render correctly
+
+- **Task 4: Implement Line Thickness** (AC: #3)
+  - 4.1: Calculate perpendicular direction
+  - 4.2: Implement `draw_line_thick()` function
+  - 4.3: Draw parallel lines for thickness > 1
+  - 4.4: Handle thickness=1 special case
+  - 4.5: Validate thickness > 0, return error for 0
+  - 4.6: Document recommended max thickness
+
+- **Task 5: Add Unit Tests** (AC: #6)
+  - 5.1: Create test module with `#[cfg(test)]`
+  - 5.2: Test horizontal line
+  - 5.3: Test vertical line
+  - 5.4: Test 45° diagonal
+  - 5.5: Test arbitrary angle
+  - 5.6: Test thickness variations
+  - 5.7: Test boundary clipping
+  - 5.8: Test zero-length line
+  - 5.9: Test invalid thickness=0
+  - 5.10: Run tests with `cargo test primitives`
+
+- **Task 6: Create Example** (AC: #4)
+  - 6.1: Create `examples/lines_demo.rs`
+  - 6.2: Initialize BrailleGrid (80x24 cells = 160x96 dots)
+  - 6.3: Draw horizontal line
+  - 6.4: Draw vertical line
+  - 6.5: Draw diagonal X pattern
+  - 6.6: Draw arbitrary angle lines
+  - 6.7: Demonstrate thick lines
+  - 6.8: Render to terminal
+  - 6.9: Add explanatory comments
+  - 6.10: Test with `cargo run --example lines_demo`
+
+- **Task 7: Add Performance Benchmarks** (AC: #5)
+  - 7.1: Create/update `benches/primitives.rs`
+  - 7.2: Add Cargo.toml [[bench]] entry
+  - 7.3: Benchmark 1000-pixel line
+  - 7.4: Benchmark thick line (thickness=5, 1000px)
+  - 7.5: Verify <1ms for basic, <5ms for thick
+  - 7.6: Run with `cargo bench primitives`
+
+- **Task 8: Add Comprehensive Documentation** (AC: #8)
+  - 8.1: Module-level rustdoc for mod.rs
+  - 8.2: Module-level rustdoc for line.rs (Bresenham)
+  - 8.3: Document `draw_line()` function
+  - 8.4: Document `draw_line_thick()` function
+  - 8.5: Include coordinate system note
+  - 8.6: Add performance notes (O(n))
+  - 8.7: Reference crabmusic source if extracted
+  - 8.8: Generate and verify with `cargo doc --open`
+
+- **Task 9: Code Quality and Finalization** (AC: #9)
+  - 9.1: Run clippy with `-D warnings`
+  - 9.2: Fix any clippy warnings
+  - 9.3: Run rustfmt
+  - 9.4: Run full test suite
+  - 9.5: Verify benchmarks compile
+  - 9.6: Check for unsafe code
+  - 9.7: Update CHANGELOG.md
+  - 9.8: Verify no regressions (all 240+ tests pass)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+AC1: Core Line Drawing Function
+- Create `src/primitives/line.rs` module
+- Implement `draw_line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<(), DotmaxError>`
+- Uses Bresenham's line algorithm (integer-only, no floating point)
+- Sets dots along line from (x0, y0) to (x1, y1) in dot coordinates
+- Handles all octants (any angle)
+- Coordinates are signed i32 for clipping calculations
+
+AC2: Boundary Clipping
+- Out-of-bounds coordinates do NOT return error
+- Dots outside grid boundaries are silently skipped
+- Lines partially off-grid render visible portion correctly
+- No panics for extreme coordinates
+
+AC3: Line Thickness Support
+- Implement `draw_line_thick()` with thickness parameter
+- thickness = 1: single dot width
+- thickness > 1: parallel lines perpendicular to main line
+- thickness = 0: return error
+- Maximum thickness documented (recommend ≤10)
+
+AC4: Example Demonstration
+- Create `examples/lines_demo.rs`
+- Demonstrates horizontal, vertical, diagonal, arbitrary angles
+- Shows thick lines (thickness 1, 3, 5)
+- Shows boundary clipping
+- Example compiles and runs correctly
+
+AC5: Performance Target
+- Benchmark in `benches/primitives.rs`
+- 1000-pixel line draws in <1ms
+- Thick line (thickness 5, 1000px) draws in <5ms
+- No allocations during line drawing
+
+AC6: Unit Tests
+- Test horizontal, vertical, diagonal, arbitrary angle lines
+- Test line thickness variations
+- Test boundary clipping
+- Test invalid thickness=0 returns error
+- All tests pass with `cargo test --all-features`
+
+AC7: Integration with BrailleGrid
+- Uses existing `BrailleGrid::set_dot()` method
+- No breaking changes to BrailleGrid API
+- Works with colored and monochrome grids
+- Line drawing is additive (doesn't clear existing content)
+
+AC8: Documentation
+- Comprehensive rustdoc for all public functions
+- Parameter explanations (dot space coordinates)
+- Return values and error conditions
+- Example code snippets
+- Performance characteristics (O(n))
+- Module-level docs explain Bresenham algorithm
+- Reference crabmusic implementation if extracted
+
+AC9: Code Quality
+- Zero clippy warnings with `-D warnings`
+- Run rustfmt
+- All unit tests pass
+- Benchmarks compile
+- No unsafe code (unless justified)
+- Update CHANGELOG.md
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Architecture Document -->
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Module Structure - Epic 4 Primitives</section>
+        <snippet>
+          src/primitives.rs - Drawing primitives (lines, circles, shapes) using Bresenham algorithms.
+          Extracts ~500 lines from crabmusic. Integer-only arithmetic, handles all octants, clips to grid boundaries.
+          Critical integration: calls BrailleGrid::set_dot(x, y) for dot manipulation (lines 117-121, 298-330).
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Data Flow - Drawing Primitives Integration</section>
+        <snippet>
+          Drawing Primitives (lines, circles, shapes) → Bresenham algorithms → Dot setting → BrailleGrid (central state: dots Vec&lt;u8&gt;, colors Option&lt;Vec&lt;Color&gt;&gt;) → TerminalRenderer → Terminal Output.
+          Coordinate system: Cell coordinates (cell_x, cell_y), Dot coordinates (x, y) where x/y in dot space. Mapping: cell_x = x/2, cell_y = y/4 (lines 218-240, 262-331).
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>ADR 0007: Measure-First Performance Optimization</section>
+        <snippet>
+          No optimization without benchmark proof. Use criterion for all performance work. Profile with flamegraph before optimizing.
+          Data-driven optimization avoids wasted effort on non-hotspots. Critical for &lt;25ms render target (lines 1285-1302).
+        </snippet>
+      </doc>
+
+      <!-- Epic 4 Technical Specification -->
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification - Drawing Primitives &amp; Density Rendering</title>
+        <section>System Architecture Alignment</section>
+        <snippet>
+          Module Location: src/primitives.rs (Bresenham line/circle, rectangle, polygon).
+          Extraction Source: ~500 lines from crabmusic with proven algorithms.
+          Core Constraints: Zero panics (all primitives validate inputs, return Results), performance targets (&lt;1ms for 100-pixel lines),
+          memory discipline (&lt;500KB per frame overhead). Integration: primitives call BrailleGrid::set_dot(x, y) (lines 59-95).
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification</title>
+        <section>Detailed Design - Drawing Primitives Data Model</section>
+        <snippet>
+          Point struct (x: i32, y: i32), LineThickness enum (Thin=1, Medium=2, Thick=3), DrawConfig struct (thickness, color: Option&lt;Color&gt;).
+          All functions validate coordinates against grid bounds, return PrimitivesError::OutOfBounds for invalid inputs (no panics).
+          Forward-compatible with Epic 5 color system via Option&lt;Color&gt; in DrawConfig (lines 136-169, 213-244).
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification</title>
+        <section>APIs and Interfaces - Drawing Primitives API</section>
+        <snippet>
+          BrailleGrid::draw_line(p0: Point, p1: Point, config: &amp;DrawConfig) → Result&lt;(), PrimitivesError&gt;.
+          Uses Bresenham algorithm, validates coordinates, applies thickness via parallel lines, sets dots via self.set_dot(x, y).
+          Performance: &lt;1ms for 200-pixel lines. All primitives return Result types, no panics on invalid inputs (lines 249-291, 389-404).
+        </snippet>
+      </doc>
+
+      <!-- Epics Document - Story 4.1 Details -->
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic 4: Drawing Primitives &amp; Density Rendering</title>
+        <section>Story 4.1: Implement Bresenham Line Drawing Algorithm</section>
+        <snippet>
+          draw_line(grid, x0, y0, x1, y1) uses Bresenham (integer-only, fast), handles all octants, clips to grid boundaries.
+          draw_line_thick adds thickness support (thickness &gt; 1 draws parallel lines perpendicular to main line).
+          Performance target: &lt;1ms for 1000-pixel line. Bresenham is standard raster line algorithm (~50 lines), integer arithmetic only.
+          Reference: crabmusic Bresenham implementation (lines 1365-1412).
+        </snippet>
+      </doc>
+    </docs>
+    <code>
+      <!-- BrailleGrid - Core Integration Point -->
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>struct</kind>
+        <symbol>BrailleGrid</symbol>
+        <lines>161-176</lines>
+        <reason>
+          Core data structure that line drawing must integrate with. Contains width, height, patterns Vec&lt;u8&gt;, colors Vec&lt;Option&lt;Color&gt;&gt;.
+          Line drawing calls set_dot() to manipulate dots. Grid is width*height cells = width*2 x height*4 dots.
+        </reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>method</kind>
+        <symbol>BrailleGrid::set_dot</symbol>
+        <lines>310-356</lines>
+        <reason>
+          Critical method for line drawing. Takes dot coordinates (dot_x, dot_y), validates bounds, converts to cell coordinates,
+          maps to braille dot positions (0-7), and sets the bit in patterns Vec. Returns Result&lt;(), DotmaxError&gt;.
+          Line drawing will call this for each dot along the line.
+        </reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>method</kind>
+        <symbol>BrailleGrid::{width, height, dot_width, dot_height}</symbol>
+        <lines>240-266</lines>
+        <reason>
+          Dimension accessors needed for boundary clipping. width()/height() return cell dimensions,
+          dot_width()/dot_height() return dot dimensions (width*2, height*4). Line drawing validates against dot dimensions.
+        </reason>
+      </artifact>
+
+      <!-- Error Types -->
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>enum</kind>
+        <symbol>DotmaxError</symbol>
+        <lines>44-162</lines>
+        <reason>
+          Main error type. Story 4.1 will add InvalidThickness variant for thickness=0 validation.
+          OutOfBounds and InvalidDimensions already exist. All drawing functions return Result&lt;(), DotmaxError&gt;.
+        </reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>error-variant</kind>
+        <symbol>DotmaxError::OutOfBounds</symbol>
+        <lines>59-64</lines>
+        <reason>
+          Used when line coordinates exceed grid bounds. Includes x, y, width, height for diagnostic messages.
+          Line drawing returns this error for invalid coordinates (zero panics policy).
+        </reason>
+      </artifact>
+
+      <!-- Color Type (for future integration) -->
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>struct</kind>
+        <symbol>Color</symbol>
+        <lines>32-62</lines>
+        <reason>
+          RGB color struct. Story 4.1 DrawConfig includes Option&lt;Color&gt; for forward-compatibility with Epic 5.
+          Currently unused (Epic 4 is monochrome), but API designed for future color support.
+        </reason>
+      </artifact>
+
+      <!-- Public API Structure -->
+      <artifact>
+        <path>src/lib.rs</path>
+        <kind>module</kind>
+        <symbol>pub mod exports</symbol>
+        <lines>63-81</lines>
+        <reason>
+          Public API structure. Story 4.1 will add "pub mod primitives;" and re-export draw_line, draw_line_thick.
+          Follows existing pattern: core modules (grid, render, error) + feature-gated modules (image).
+        </reason>
+      </artifact>
+
+      <!-- Testing Examples -->
+      <artifact>
+        <path>tests/image_rendering_tests.rs</path>
+        <kind>test</kind>
+        <symbol>test_full_pipeline_with_threshold</symbol>
+        <lines>15-42</lines>
+        <reason>
+          Example of integration test pattern. Tests load → process → verify dimensions → verify output.
+          Story 4.1 will follow similar pattern: create grid → draw line → verify dots set at expected positions.
+        </reason>
+      </artifact>
+
+      <!-- No existing primitives module - Story 4.1 creates it from scratch -->
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dep name="ratatui" version="0.29" purpose="Terminal UI framework (core dependency, already present)" />
+          <dep name="crossterm" version="0.29" purpose="Cross-platform terminal I/O (core dependency, already present)" />
+          <dep name="thiserror" version="2.0" purpose="Error handling derive macros (used for InvalidThickness error)" />
+          <dep name="tracing" version="0.1" purpose="Structured logging for line drawing operations" />
+        </core>
+        <dev>
+          <dep name="criterion" version="0.7" purpose="Performance benchmarking (Story 4.1 AC5 requires &lt;1ms benchmark)" />
+          <dep name="tracing-subscriber" version="0.3" purpose="Tracing initialization for tests and examples" />
+        </dev>
+      </rust>
+      <external>
+        <note>No new external dependencies required. Story 4.1 uses only standard library and existing dotmax dependencies.</note>
+        <note>Bresenham algorithm is pure Rust implementation with integer-only arithmetic (no math libraries).</note>
+      </external>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <!-- Zero Panics Policy -->
+    <constraint>
+      All drawing functions must return Result&lt;(), DotmaxError&gt; and validate inputs. Out-of-bounds coordinates,
+      invalid thickness (0), or any error condition must return typed error, never panic. Architecture.md line 8, error.rs lines 7-10.
+    </constraint>
+
+    <!-- Performance Targets -->
+    <constraint>
+      Line drawing performance target: &lt;1ms for 1000-pixel lines (AC5). Thick lines (thickness=5, 1000px): &lt;5ms.
+      Measure with criterion benchmarks. ADR 0007: No optimization without benchmark proof. Tech-spec lines 389-404.
+    </constraint>
+
+    <!-- Coordinate System -->
+    <constraint>
+      Line drawing uses DOT coordinates (x, y), not cell coordinates. Grid is width*2 × height*4 dots.
+      set_dot() expects dot coordinates. Architecture.md lines 274-289, grid.rs lines 297-302.
+    </constraint>
+
+    <!-- Memory Discipline -->
+    <constraint>
+      No allocations during line drawing. Reuse grid buffer. Line drawing calls set_dot() which modifies existing Vec&lt;u8&gt; in place.
+      &lt;500KB per frame overhead target (architecture.md line 89). Tech-spec lines 59-95.
+    </constraint>
+
+    <!-- Bresenham Algorithm Requirements -->
+    <constraint>
+      Use Bresenham line algorithm: integer-only arithmetic, no floating point, no division. Handles all 8 octants
+      (horizontal, vertical, diagonal, steep/shallow slopes). ~50 lines of code. Epics.md lines 1408-1410.
+    </constraint>
+
+    <!-- Boundary Clipping -->
+    <constraint>
+      Out-of-bounds coordinates do NOT return error. Line drawing must clip gracefully: dots outside grid are skipped,
+      visible portions render correctly. AC2: No panics for extreme coordinates (-10000, 50000). Story file lines 21-26.
+    </constraint>
+
+    <!-- Integration with Existing APIs -->
+    <constraint>
+      No breaking changes to BrailleGrid API (AC7). Line drawing uses existing set_dot() method. Works with both colored
+      and monochrome grids. Drawing is additive (doesn't clear existing content). Story file lines 62-67.
+    </constraint>
+
+    <!-- Code Quality Standards -->
+    <constraint>
+      Zero clippy warnings: cargo clippy --all-features -- -D warnings (AC9). Run rustfmt. All unit tests pass.
+      Benchmarks compile. No unsafe code unless absolutely necessary with justification. Update CHANGELOG.md. Story file lines 78-85.
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <!-- BrailleGrid::set_dot - Primary Interface -->
+    <interface>
+      <name>BrailleGrid::set_dot</name>
+      <kind>method</kind>
+      <signature>pub fn set_dot(&amp;mut self, dot_x: usize, dot_y: usize) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/grid.rs:310-356</path>
+      <description>
+        Sets a single dot at (dot_x, dot_y) in dot coordinates. Validates bounds, converts to cell coordinates,
+        maps to braille dot positions (0-7), sets bit in patterns Vec. Returns OutOfBounds error if coordinates exceed grid dimensions.
+        This is the core integration point - line drawing calls this for each dot along the line.
+      </description>
+    </interface>
+
+    <!-- BrailleGrid Dimension Accessors -->
+    <interface>
+      <name>BrailleGrid::dot_width, BrailleGrid::dot_height</name>
+      <kind>method</kind>
+      <signature>pub const fn dot_width(&amp;self) -> usize; pub const fn dot_height(&amp;self) -> usize</signature>
+      <path>src/grid.rs:256-266</path>
+      <description>
+        Returns grid dimensions in dots (width*2, height*4). Used for boundary clipping validation.
+        Line drawing checks if dot coordinates are within [0, dot_width) and [0, dot_height).
+      </description>
+    </interface>
+
+    <!-- DotmaxError Types -->
+    <interface>
+      <name>DotmaxError::OutOfBounds</name>
+      <kind>error-variant</kind>
+      <signature>OutOfBounds { x: usize, y: usize, width: usize, height: usize }</signature>
+      <path>src/error.rs:59-64</path>
+      <description>
+        Error returned when coordinates exceed grid bounds. Used by set_dot() if dot_x >= dot_width or dot_y >= dot_height.
+        Line drawing propagates this error for invalid coordinates. Note: AC2 specifies clipping (skip out-of-bounds dots),
+        so line drawing catches this error internally and continues.
+      </description>
+    </interface>
+
+    <!-- New Error Variant to Add -->
+    <interface>
+      <name>DotmaxError::InvalidThickness (NEW in Story 4.1)</name>
+      <kind>error-variant</kind>
+      <signature>InvalidThickness { thickness: u32 }</signature>
+      <path>src/error.rs (to be added)</path>
+      <description>
+        New error variant for AC3. Returned by draw_line_thick() when thickness=0 (invalid).
+        Error message: "Invalid line thickness: {thickness} (must be ≥ 1)".
+      </description>
+    </interface>
+
+    <!-- Public API Functions (NEW in Story 4.1) -->
+    <interface>
+      <name>draw_line (NEW in Story 4.1)</name>
+      <kind>function</kind>
+      <signature>pub fn draw_line(grid: &amp;mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/line.rs (to be created)</path>
+      <description>
+        AC1: Draw line from (x0, y0) to (x1, y1) using Bresenham algorithm. Handles all octants, clips to grid boundaries.
+        Coordinates are signed i32 for clipping calculations. Performance: &lt;1ms for 1000-pixel lines.
+      </description>
+    </interface>
+
+    <interface>
+      <name>draw_line_thick (NEW in Story 4.1)</name>
+      <kind>function</kind>
+      <signature>pub fn draw_line_thick(grid: &amp;mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, thickness: u32) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/line.rs (to be created)</path>
+      <description>
+        AC3: Draw thick line with specified thickness. thickness=1 is single dot (equivalent to draw_line), thickness&gt;1 draws
+        parallel lines perpendicular to main line. thickness=0 returns InvalidThickness error. Maximum thickness documented (≤10 recommended).
+      </description>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+      Testing standards from Epic 3 (>80% coverage target, comprehensive unit+integration tests, criterion benchmarks):
+
+      1. **Unit Tests**: Located in same file as implementation with #[cfg(test)] module. Test individual functions, algorithm correctness, error handling.
+         Pattern from grid.rs: Test specific behaviors (horizontal line, vertical line, diagonal, arbitrary angle), verify expected dots set, test edge cases (zero-length, extreme coords, invalid thickness).
+
+      2. **Integration Tests**: Located in tests/ directory (e.g., tests/primitives_tests.rs). Test combining primitives, primitives + images, multiple shapes on same grid.
+         Pattern from image_rendering_tests.rs: Test full pipeline (create grid → draw line → verify dimensions → verify output not empty).
+
+      3. **Performance Tests**: Located in benches/ directory using criterion. Measure with criterion::Criterion, compare against targets (&lt;1ms for 1000-pixel line).
+         Pattern from Cargo.toml: [[bench]] entries with harness = false. CI regression detection: fail if >10% slower than baseline.
+
+      4. **Code Quality**: cargo clippy --all-features -- -D warnings (zero warnings enforced). cargo fmt (formatting). cargo test --all-features (all tests pass).
+         cargo bench --no-run (benchmarks compile). No unsafe code unless justified. Rustdoc on all public items with examples.
+
+      5. **Coverage Goal**: >80% code coverage (Epic 3 standard from tech-spec line 656). 100% coverage of public API, all octants tested, all error paths tested.
+    </standards>
+
+    <locations>
+      <!-- Unit Tests -->
+      <location>
+        src/primitives/line.rs - Unit tests in #[cfg(test)] module at end of file. Test draw_line() and draw_line_thick() functions.
+        Test all octants, boundary clipping, thickness variations, zero-length lines, invalid thickness=0.
+      </location>
+
+      <!-- Integration Tests -->
+      <location>
+        tests/primitives_tests.rs (to be created) - Integration tests for line drawing. Test drawing multiple lines on same grid,
+        combining lines with existing image content, verifying no conflicts or overlap issues.
+      </location>
+
+      <!-- Performance Benchmarks -->
+      <location>
+        benches/primitives.rs (to be created or updated) - Criterion benchmarks for draw_line() and draw_line_thick().
+        Benchmark 1000-pixel line (&lt;1ms target), thick line thickness=5 1000px (&lt;5ms target). Add [[bench]] entry to Cargo.toml if needed.
+      </location>
+
+      <!-- Manual Testing Example -->
+      <location>
+        examples/lines_demo.rs (to be created) - Interactive example demonstrating line drawing capabilities.
+        Shows horizontal, vertical, diagonal, arbitrary angles, thick lines (1, 3, 5), boundary clipping. Compiles and runs without errors.
+      </location>
+    </locations>
+
+    <ideas>
+      <!-- Unit Test Ideas (AC6) -->
+      <test id="AC6-1" criterion="AC6" type="unit">
+        Test horizontal line: draw_line from (0,0) to (10,0), verify dots set at y=0, x from 0 to 10. Verify expected dot pattern in grid.patterns.
+      </test>
+
+      <test id="AC6-2" criterion="AC6" type="unit">
+        Test vertical line: draw_line from (0,0) to (0,10), verify dots set at x=0, y from 0 to 10. Verify expected dot pattern.
+      </test>
+
+      <test id="AC6-3" criterion="AC6" type="unit">
+        Test 45° diagonal: draw_line from (0,0) to (10,10), verify dots form diagonal pattern (roughly 1:1 slope).
+      </test>
+
+      <test id="AC6-4" criterion="AC6" type="unit">
+        Test arbitrary angle: draw_line from (0,0) to (10,5), verify line connects endpoints, dots along expected path.
+      </test>
+
+      <test id="AC6-5" criterion="AC6" type="unit">
+        Test thickness variations: draw_line_thick with thickness 1, 3, 5. Verify thickness=3 produces wider line than thickness=1.
+        Count set dots, verify thickness scaling (thickness=3 should set ~3x more dots than thickness=1 for same length line).
+      </test>
+
+      <test id="AC6-6" criterion="AC6" type="unit">
+        Test boundary clipping: draw_line from (-10,-10) to (200,200) on 80×24 grid (160×96 dots). Verify doesn't panic,
+        visible portion renders correctly (dots within grid bounds are set, out-of-bounds dots skipped).
+      </test>
+
+      <test id="AC6-7" criterion="AC6" type="unit">
+        Test zero-length line: draw_line from (5,5) to (5,5). Verify handles gracefully (no panic, returns Ok, no-op or single dot).
+      </test>
+
+      <test id="AC6-8" criterion="AC6" type="unit">
+        Test invalid thickness=0: draw_line_thick with thickness=0. Verify returns Err(DotmaxError::InvalidThickness), doesn't panic.
+      </test>
+
+      <!-- Integration Test Ideas (AC7) -->
+      <test id="AC7-1" criterion="AC7" type="integration">
+        Test multiple lines on same grid: Draw horizontal line, then vertical line crossing it. Verify both lines rendered, no conflicts.
+        Grid dimensions unchanged, set_dot() called additively (doesn't clear existing dots).
+      </test>
+
+      <test id="AC7-2" criterion="AC7" type="integration">
+        Test line drawing on colored vs monochrome grid: Create grid with colors, draw line, verify colors unaffected (line drawing doesn't modify colors Vec).
+        Test on monochrome grid (colors=None), verify works identically.
+      </test>
+
+      <!-- Performance Test Ideas (AC5) -->
+      <test id="AC5-1" criterion="AC5" type="benchmark">
+        Benchmark draw_line for 1000-pixel diagonal line (0,0) to (1000,1000) on large grid. Criterion measure: &lt;1ms target.
+        Report: min/max/median duration. Fail CI if >1.1ms (10% margin).
+      </test>
+
+      <test id="AC5-2" criterion="AC5" type="benchmark">
+        Benchmark draw_line_thick with thickness=5 for 1000-pixel line. Criterion measure: &lt;5ms target.
+        Compare against draw_line (thickness=1) to verify thickness scaling is linear or sub-linear.
+      </test>
+
+      <!-- Example/Manual Test Ideas (AC4) -->
+      <test id="AC4-1" criterion="AC4" type="manual">
+        lines_demo.rs: Draw horizontal line across middle of 80×24 grid, vertical line down center, diagonal X pattern, star pattern (arbitrary angles).
+        Render to terminal, visually inspect: lines are straight, no gaps, angles correct.
+      </test>
+
+      <test id="AC4-2" criterion="AC4" type="manual">
+        lines_demo.rs: Draw thick lines with thickness 1, 3, 5. Visually inspect: thickness increases proportionally, no artifacts or gaps at steep angles.
+      </test>
+
+      <test id="AC4-3" criterion="AC4" type="manual">
+        lines_demo.rs: Draw lines partially off-grid (start outside, end inside; start inside, end outside). Verify visible portions render correctly, no panics.
+      </test>
+    </ideas>
+  </tests>
+</story-context>

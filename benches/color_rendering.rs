@@ -16,7 +16,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dotmax::image::color_mode::extract_cell_colors;
 use dotmax::image::{
-    load_from_path, render_image_with_color, resize_to_dimensions, ColorMode, ColorSamplingStrategy, DitheringMethod,
+    load_from_path, render_image_with_color, resize_to_dimensions, ColorMode,
+    ColorSamplingStrategy, DitheringMethod,
 };
 use std::path::Path;
 

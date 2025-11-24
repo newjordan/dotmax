@@ -1,0 +1,538 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>5.1</storyId>
+    <title>Implement Terminal Color Capability Detection</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/5-1-implement-terminal-color-capability-detection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating colored terminal graphics</asA>
+    <iWant>automatic detection of terminal color capabilities</iWant>
+    <soThat>color output adapts to each terminal's support level (monochrome, 16-color, 256-color, or true color) without manual configuration</soThat>
+    <tasks>
+**Task 1: Create ColorCapability Enum and Module Structure** (AC: #1)
+  - 1.1: Create `src/utils/` directory if not exists
+  - 1.2: Create `src/utils/mod.rs` with `pub mod terminal_caps;`
+  - 1.3: Create `src/utils/terminal_caps.rs`
+  - 1.4: Define `ColorCapability` enum with 4 variants
+  - 1.5: Derive Debug, Clone, Copy, PartialEq, Eq
+  - 1.6: Implement `supports_color(&self) -> bool` method
+  - 1.7: Implement `supports_truecolor(&self) -> bool` method
+  - 1.8: Add rustdoc to enum and methods
+
+**Task 2: Implement Detection Logic** (AC: #2, #3)
+  - 2.1: Add dependency on `std::sync::OnceLock` for caching
+  - 2.2: Create static `DETECTED_CAPABILITY: OnceLock<ColorCapability>`
+  - 2.3: Implement `detect_color_capability() -> ColorCapability` function
+  - 2.4: Check `$COLORTERM` for "truecolor" or "24bit"
+  - 2.5: Check `$TERM` for "256color" or "color"
+  - 2.6: Implement fallback logic (default to Ansi256)
+  - 2.7: Store result in OnceLock cache
+  - 2.8: Return cached value on subsequent calls
+
+**Task 3: Add Logging and Error Handling** (AC: #6)
+  - 3.1: Add `#[instrument]` attribute to `detect_color_capability()`
+  - 3.2: Log `info!` with detected capability
+  - 3.3: Log `debug!` with environment variable values
+  - 3.4: Handle env::var() errors gracefully (Ok/Err pattern)
+  - 3.5: Ensure no panics in detection logic
+
+**Task 4: Write Comprehensive Unit Tests** (AC: #5)
+  - 4.1: Create test module in `src/utils/terminal_caps.rs`
+  - 4.2: Test true color detection: mock `$COLORTERM="truecolor"`
+  - 4.3: Test 256-color detection: mock `$TERM="xterm-256color"`
+  - 4.4: Test 16-color detection: mock `$TERM="xterm-color"`
+  - 4.5: Test fallback: no env vars set
+  - 4.6: Test caching: verify OnceLock behavior
+  - 4.7: Test helper methods: `supports_color()`, `supports_truecolor()`
+  - 4.8: Run tests: `cargo test terminal_caps`
+
+**Task 5: Create Detection Example** (AC: #7)
+  - 5.1: Create `examples/color_detection.rs`
+  - 5.2: Call `detect_color_capability()`
+  - 5.3: Display detected capability name
+  - 5.4: Display support levels (color, truecolor)
+  - 5.5: Show current `$COLORTERM` and `$TERM` values
+  - 5.6: Test example: `cargo run --example color_detection`
+
+**Task 6: Integration and Exports** (AC: #8)
+  - 6.1: Update `src/utils/mod.rs` to export `terminal_caps`
+  - 6.2: Update `src/lib.rs` to re-export `ColorCapability` and `detect_color_capability`
+  - 6.3: Verify no breaking changes to existing APIs
+  - 6.4: Run full test suite: `cargo test`
+
+**Task 7: Cross-Platform Validation** (AC: #4)
+  - 7.1: Test on Windows (PowerShell, Windows Terminal)
+  - 7.2: Test on Linux (bash, various terminals)
+  - 7.3: Test on macOS (iTerm2, Terminal.app)
+  - 7.4: Verify fallback behavior on all platforms
+  - 7.5: Document any platform-specific quirks
+
+**Task 8: Documentation and Finalization** (AC: #9)
+  - 8.1: Add module-level rustdoc to `src/utils/terminal_caps.rs`
+  - 8.2: Document detection algorithm and fallbacks
+  - 8.3: Add examples to rustdoc
+  - 8.4: Generate docs: `cargo doc --open`
+  - 8.5: Run clippy: `cargo clippy -- -D warnings`
+  - 8.6: Run rustfmt: `cargo fmt`
+  - 8.7: Verify zero rustdoc warnings
+  - 8.8: Update CHANGELOG.md
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+**AC1: ColorCapability Enum Defined**
+   - Define `ColorCapability` enum in `src/utils/terminal_caps.rs`
+   - Variants: Monochrome, Ansi16, Ansi256, TrueColor
+   - Derive: Debug, Clone, Copy, PartialEq, Eq
+   - Include helper methods: `supports_color()`, `supports_truecolor()`
+
+**AC2: Environment Variable Detection Implemented**
+   - `detect_color_capability()` function checks `$COLORTERM` environment variable
+   - If `$COLORTERM` contains "truecolor" or "24bit" → TrueColor
+   - If `$COLORTERM` is set but not truecolor → Ansi256 (safe fallback)
+   - Check `$TERM` environment variable for additional hints
+   - If `$TERM` contains "256color" → Ansi256
+   - If `$TERM` contains "color" → Ansi16
+   - Default fallback: Ansi256 (widely supported)
+
+**AC3: Detection Result is Cached**
+   - Use `std::sync::OnceLock<ColorCapability>` for global cache
+   - Detection runs only once per process lifetime
+   - Subsequent calls return cached value instantly (<1ns overhead)
+   - Thread-safe access via OnceLock
+
+**AC4: Cross-Platform Compatibility**
+   - Works on Windows (PowerShell, CMD, Windows Terminal)
+   - Works on Linux (bash, zsh, various terminal emulators)
+   - Works on macOS (iTerm2, Terminal.app, Alacritty)
+   - Handles missing environment variables gracefully (fallback to Ansi256)
+   - No platform-specific code branches (pure environment variable reading)
+
+**AC5: Comprehensive Unit Tests**
+   - Test with mocked `$COLORTERM="truecolor"` → TrueColor
+   - Test with mocked `$COLORTERM="24bit"` → TrueColor
+   - Test with mocked `$TERM="xterm-256color"` → Ansi256
+   - Test with mocked `$TERM="xterm-color"` → Ansi16
+   - Test with no environment variables → Ansi256 (fallback)
+   - Test caching: verify detection runs only once
+   - Achieve >80% code coverage for terminal_caps module
+
+**AC6: Error Handling and Logging**
+   - No panics in detection logic (all errors handled gracefully)
+   - Use tracing for structured logging: `info!` for detected capability, `debug!` for env var values
+   - Instrument `detect_color_capability()` function with `#[instrument]`
+   - If detection fails, log warning and default to Ansi256
+
+**AC7: Example Demonstrates Detection**
+   - Create `examples/color_detection.rs`
+   - Example detects and displays current terminal capability
+   - Shows detected capability name and support levels
+   - Example compiles and runs on all platforms
+   - Visual output helps users understand their terminal's capabilities
+
+**AC8: Integration with Existing Code**
+   - Export `ColorCapability` and `detect_color_capability()` from `src/lib.rs`
+   - Update `src/utils/mod.rs` to include `pub mod terminal_caps;`
+   - No breaking changes to existing APIs
+   - Story 5.2 will use this detection for color conversion
+
+**AC9: Production-Quality Documentation**
+   - Rustdoc on all public types and functions
+   - Document detection algorithm and fallback strategy
+   - Examples in rustdoc showing usage
+   - Note performance characteristics (cached, <1ms first call)
+   - Zero rustdoc warnings
+</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Module Structure, src/utils/terminal_caps.rs</section>
+        <snippet>Architecture specifies `src/utils/terminal_caps.rs` for terminal capability detection. Module location aligns with overall design.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Error Handling (ADR 0002)</section>
+        <snippet>Use thiserror for DotmaxError. No new error variants needed for Story 5.1 (detection never fails, uses fallback). All errors handled gracefully with default to Ansi256.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Logging Strategy</section>
+        <snippet>Use tracing crate for structured logging. Instrument detection function with `#[instrument]`. Log levels: `info!` for detected capability, `debug!` for env vars.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-5.md</path>
+        <title>Epic Technical Specification: Color System & Visual Schemes</title>
+        <section>Data Models and Contracts - ColorCapability</section>
+        <snippet>ColorCapability enum defined with 4 variants: Monochrome, Ansi16, Ansi256, TrueColor. Provides `detect()`, `supports_color()`, and `supports_truecolor()` methods. Detection checks `$COLORTERM` and `$TERM` environment variables with fallback to Ansi256.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-5.md</path>
+        <title>Epic Technical Specification: Color System & Visual Schemes</title>
+        <section>APIs and Interfaces - Terminal Capability Detection API</section>
+        <snippet>Function signature: `pub fn detect_color_capability() -> ColorCapability;` Checks `$COLORTERM`, `$TERM`, terminal queries. Returns cached result (only detects once per session).</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-5.md</path>
+        <title>Epic Technical Specification: Color System & Visual Schemes</title>
+        <section>Performance - Target: Color conversion must be negligible overhead</section>
+        <snippet>Terminal capability detection: <1ms (cached after first call, one-time cost). Detection must not bottleneck image rendering <25ms target.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-5.md</path>
+        <title>Epic Technical Specification: Color System & Visual Schemes</title>
+        <section>Reliability/Availability - Error Handling</section>
+        <snippet>Graceful degradation: If color detection fails, default to `ColorCapability::Ansi256` (safe fallback). All public functions return Result<T, DotmaxError> (no panics).</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/4-5-add-color-support-for-drawing-primitives.md</path>
+        <title>Story 4.5: Add Color Support for Drawing Primitives</title>
+        <section>Learnings Applied to Story 5.1</section>
+        <snippet>Additive API design: Create new module without breaking existing code. Module structure: Create `src/utils/` directory. Testing: 80% coverage with comprehensive unit tests. Example as validation: Create visual demo for verification. Documentation: Zero rustdoc warnings with comprehensive examples.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>src/lib.rs</path>
+        <kind>module</kind>
+        <symbol>N/A</symbol>
+        <lines>1-96</lines>
+        <reason>Main library entry point. Story 5.1 will add re-exports for ColorCapability and detect_color_capability(). Currently exports core types (BrailleGrid, Color, TerminalRenderer) and feature modules (image, primitives, density). Line 79-87 show existing feature module pattern to follow.</reason>
+      </file>
+      <file>
+        <path>src/error.rs</path>
+        <kind>error types</kind>
+        <symbol>DotmaxError</symbol>
+        <lines>1-340</lines>
+        <reason>Comprehensive error enum using thiserror. Story 5.1 does not need new error variants (detection never fails, uses fallback to Ansi256). Demonstrates error handling pattern: all variants have contextual information, use #[error] attribute for messages, include #[source] for error chains.</reason>
+      </file>
+      <file>
+        <path>Cargo.toml</path>
+        <kind>dependencies</kind>
+        <symbol>N/A</symbol>
+        <lines>13-24</lines>
+        <reason>Core dependencies already include tracing (0.1) for logging. Story 5.1 uses std::sync::OnceLock (stdlib, no new dependency). No changes needed to Cargo.toml for this story.</reason>
+      </file>
+      <file>
+        <path>src/grid.rs</path>
+        <kind>core type</kind>
+        <symbol>Color</symbol>
+        <lines>N/A</lines>
+        <reason>BrailleGrid already has `colors: Option<Vec<Color>>` field from Epic 2. Color struct (RGB) already defined. Story 5.1 provides detection infrastructure; subsequent Epic 5 stories will populate grid colors. No changes to grid.rs in Story 5.1.</reason>
+      </file>
+      <file>
+        <path>examples/colored_shapes.rs</path>
+        <kind>example</kind>
+        <symbol>N/A</symbol>
+        <lines>N/A</lines>
+        <reason>Example from Story 4.5 showing how to create visual examples. Demonstrates pattern: create demo that can be run with `cargo run --example`. Story 5.1 will create `examples/color_detection.rs` following similar structure for visual validation.</reason>
+      </file>
+    </code>
+    <dependencies>
+      <rust>
+        <package name="ratatui" version="0.29" reason="Terminal UI framework - core dependency, already included" />
+        <package name="crossterm" version="0.29" reason="Cross-platform terminal I/O - used for environment variable access, already included" />
+        <package name="thiserror" version="2.0" reason="Error handling derive macros - already included, Story 5.1 doesn't need new errors" />
+        <package name="tracing" version="0.1" reason="Structured logging - instrument detection function with #[instrument], already included" />
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+**Development Constraints from Architecture:**
+
+1. **Module Structure:**
+   - Create `src/utils/` directory for utility functions
+   - New module: `src/utils/terminal_caps.rs` for capability detection
+   - Update `src/utils/mod.rs` to export `pub mod terminal_caps;`
+   - Export from `src/lib.rs`: Re-export ColorCapability and detect_color_capability
+
+2. **Error Handling (ADR 0002):**
+   - Use thiserror for errors (already established pattern)
+   - Story 5.1 detection never fails (uses safe fallback to Ansi256)
+   - No new DotmaxError variants needed
+   - All errors handled gracefully, no panics
+
+3. **Logging (tracing crate):**
+   - Instrument `detect_color_capability()` with `#[instrument]`
+   - Log levels: `info!` for detected capability, `debug!` for environment variable values
+   - Use tracing::info!, debug! macros
+   - No TRACE level logging (performance consideration)
+
+4. **Performance Requirements:**
+   - Detection cached via `std::sync::OnceLock<ColorCapability>`
+   - First call: <1ms (environment variable reads)
+   - Subsequent calls: <1ns (cached result)
+   - No allocations in hot paths
+   - Thread-safe via OnceLock
+
+5. **Cross-Platform:**
+   - Works on Windows, Linux, macOS (NFR-R2)
+   - No unsafe code
+   - Pure environment variable reading (no OS-specific APIs)
+   - Handles missing env vars gracefully
+
+6. **Naming Conventions:**
+   - Types: PascalCase (ColorCapability)
+   - Functions: snake_case (detect_color_capability)
+   - Files/modules: snake_case (terminal_caps.rs)
+   - Constants: SCREAMING_SNAKE_CASE (DETECTED_CAPABILITY)
+
+7. **Code Quality:**
+   - Zero rustdoc warnings
+   - Zero clippy warnings (`cargo clippy -- -D warnings`)
+   - Code formatted with rustfmt
+   - >80% test coverage for terminal_caps module
+
+8. **Testing Standards:**
+   - Unit tests in same file under `#[cfg(test)]`
+   - Test helper methods: supports_color(), supports_truecolor()
+   - Test detection logic with mocked environment variables
+   - Test caching behavior (OnceLock)
+   - Example as visual validation: `examples/color_detection.rs`
+
+9. **Documentation Standards:**
+   - Rustdoc on all public types and functions
+   - Format: Brief summary, longer explanation, # Examples section, # Errors section (if applicable)
+   - Document detection algorithm and fallback strategy
+   - Note performance characteristics
+   - Examples must compile and run
+
+**Dev Notes Context:**
+
+From Story 5.1 Dev Notes:
+- Story 5.1 is the foundation for Epic 5 (Color System)
+- No dependencies on other stories
+- Provides capability detection for Story 5.2 (RGB-to-ANSI conversion)
+- Learnings from Story 4.5: Additive API design, module structure, comprehensive testing, example as validation
+- Files to create: src/utils/mod.rs, src/utils/terminal_caps.rs, examples/color_detection.rs
+- Files to modify: src/lib.rs (re-exports)
+- No changes to: src/grid.rs, src/render.rs (Story 5.1 is self-contained)
+</constraints>
+
+  <interfaces>
+**API Signatures for Story 5.1:**
+
+```rust
+// src/utils/terminal_caps.rs
+
+use std::sync::OnceLock;
+use tracing::{debug, info, instrument};
+
+/// Terminal color capability levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorCapability {
+    /// No color support (monochrome)
+    Monochrome,
+    /// 16 colors (basic ANSI)
+    Ansi16,
+    /// 256 colors (extended ANSI)
+    Ansi256,
+    /// 24-bit true color (16 million colors)
+    TrueColor,
+}
+
+impl ColorCapability {
+    /// Check if terminal supports any color
+    pub fn supports_color(&self) -> bool {
+        !matches!(self, ColorCapability::Monochrome)
+    }
+
+    /// Check if terminal supports true color (24-bit RGB)
+    pub fn supports_truecolor(&self) -> bool {
+        matches!(self, ColorCapability::TrueColor)
+    }
+
+    /// Detect current terminal capability (alias for detect_color_capability)
+    pub fn detect() -> Self {
+        detect_color_capability()
+    }
+}
+
+// Global cache for detected capability
+static DETECTED_CAPABILITY: OnceLock<ColorCapability> = OnceLock::new();
+
+/// Detect terminal color capability from environment variables.
+///
+/// This function checks `$COLORTERM` and `$TERM` environment variables
+/// to determine the terminal's color support level. The result is cached
+/// globally, so detection only happens once per process.
+///
+/// # Detection Algorithm
+///
+/// 1. Check `$COLORTERM` for "truecolor" or "24bit" → TrueColor
+/// 2. Check `$TERM` for "256color" → Ansi256
+/// 3. Check `$TERM` for "color" → Ansi16
+/// 4. Default fallback → Ansi256 (widely supported)
+///
+/// # Performance
+///
+/// First call: <1ms (environment variable reads)
+/// Subsequent calls: <1ns (cached result)
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::detect_color_capability;
+///
+/// let capability = detect_color_capability();
+/// println!("Terminal supports: {:?}", capability);
+///
+/// if capability.supports_truecolor() {
+///     println!("Using 24-bit RGB colors");
+/// }
+/// ```
+#[instrument]
+pub fn detect_color_capability() -> ColorCapability;
+```
+
+**Integration Points:**
+
+1. **src/lib.rs (re-exports):**
+```rust
+// Add to src/lib.rs
+pub mod utils;
+pub use utils::terminal_caps::{ColorCapability, detect_color_capability};
+```
+
+2. **src/utils/mod.rs (new file):**
+```rust
+pub mod terminal_caps;
+```
+
+3. **Story 5.2 (RGB-to-ANSI Conversion) will use:**
+```rust
+use dotmax::{detect_color_capability, ColorCapability};
+
+let capability = detect_color_capability();
+match capability {
+    ColorCapability::TrueColor => rgb_to_truecolor_escape(r, g, b),
+    ColorCapability::Ansi256 => rgb_to_ansi256(r, g, b),
+    ColorCapability::Ansi16 => rgb_to_ansi16(r, g, b),
+    ColorCapability::Monochrome => String::new(),
+}
+```
+
+4. **Epic 2 (TerminalRenderer) will query:**
+```rust
+// Future integration (not in Story 5.1)
+let capability = detect_color_capability();
+if capability.supports_color() {
+    // Output color escape codes
+}
+```
+</interfaces>
+
+  <tests>
+    <standards>
+**Testing Framework:** Rust `#[cfg(test)]` modules with `#[test]` attribute
+**Coverage Target:** >80% line coverage for terminal_caps module
+**Critical Path Coverage:** 100% for detection function
+
+**Unit Test Structure:**
+- Tests in same file: `src/utils/terminal_caps.rs` under `#[cfg(test)] mod tests`
+- Test helper methods: `supports_color()`, `supports_truecolor()`
+- Test detection logic with mocked environment variables (requires test isolation or environment mocking)
+- Test caching behavior: verify OnceLock returns same value on subsequent calls
+
+**Test Categories:**
+1. Helper method tests (supports_color, supports_truecolor)
+2. Detection logic tests (with mocked env vars)
+3. Caching tests (OnceLock behavior)
+4. Fallback tests (no env vars, invalid values)
+
+**Framework Tools:**
+- Standard Rust test framework
+- cargo test --lib for unit tests
+- cargo test terminal_caps to run specific module tests
+- Consider temp_env crate or similar for environment variable mocking in tests
+
+**CI Integration:**
+- Tests run on ubuntu-latest, windows-latest, macos-latest
+- Rust versions: stable and 1.70 (MSRV)
+- Clippy: cargo clippy -- -D warnings (zero warnings requirement)
+- Rustfmt: cargo fmt --check (formatting verification)
+</standards>
+    <locations>
+**Test Locations:**
+
+1. **Unit Tests:**
+   - File: `src/utils/terminal_caps.rs`
+   - Module: `#[cfg(test)] mod tests`
+   - Run: `cargo test terminal_caps`
+
+2. **Integration Tests:**
+   - Not needed for Story 5.1 (detection is self-contained)
+   - Integration with Story 5.2 will be tested in that story
+
+3. **Example/Visual Tests:**
+   - File: `examples/color_detection.rs`
+   - Run: `cargo run --example color_detection`
+   - Manual validation on multiple terminals
+
+4. **Cross-Platform Tests:**
+   - Location: GitHub Actions CI (.github/workflows/ci.yml)
+   - Platforms: Windows, Linux, macOS
+   - Validation: Environment variable handling, fallback behavior
+</locations>
+    <ideas>
+**Unit Test Ideas (Mapped to Acceptance Criteria):**
+
+**AC1 (ColorCapability Enum):**
+- test_color_capability_derives: Verify Debug, Clone, Copy, PartialEq, Eq traits
+- test_supports_color_monochrome_returns_false: Monochrome.supports_color() == false
+- test_supports_color_ansi16_returns_true: Ansi16.supports_color() == true
+- test_supports_color_ansi256_returns_true: Ansi256.supports_color() == true
+- test_supports_color_truecolor_returns_true: TrueColor.supports_color() == true
+- test_supports_truecolor_only_for_truecolor: Only TrueColor.supports_truecolor() == true
+
+**AC2 (Environment Variable Detection):**
+- test_detect_colorterm_truecolor: Mock `$COLORTERM="truecolor"` → TrueColor
+- test_detect_colorterm_24bit: Mock `$COLORTERM="24bit"` → TrueColor
+- test_detect_term_256color: Mock `$TERM="xterm-256color"` → Ansi256
+- test_detect_term_color: Mock `$TERM="xterm-color"` → Ansi16
+- test_fallback_when_no_env_vars: No env vars → Ansi256 (default)
+- test_colorterm_takes_precedence_over_term: `$COLORTERM="truecolor"` + `$TERM="xterm"` → TrueColor
+
+**AC3 (Caching):**
+- test_detect_returns_same_value_on_repeated_calls: Verify OnceLock caching
+- test_detect_is_deterministic: Multiple calls return identical result
+
+**AC5 (Unit Test Coverage):**
+- All above tests ensure >80% coverage
+- Focus on public API: detect_color_capability(), supports_color(), supports_truecolor()
+
+**AC6 (Error Handling):**
+- test_no_panic_with_invalid_env_vars: Set invalid values, verify no panic
+- test_graceful_handling_of_missing_env_vars: Unset env vars, verify fallback
+
+**Integration Test Ideas:**
+
+**AC7 (Example Demonstrates Detection):**
+- Manual test: Run `cargo run --example color_detection` on multiple terminals
+- Verify output displays detected capability correctly
+- Visual inspection: iTerm2 (TrueColor), Windows Terminal (TrueColor), basic CMD (Ansi256 fallback)
+
+**AC8 (Integration with Existing Code):**
+- test_public_api_exports: Verify `use dotmax::{ColorCapability, detect_color_capability};` compiles
+- test_no_breaking_changes: Existing tests still pass after adding Story 5.1
+
+**AC9 (Documentation):**
+- test_rustdoc_compiles: `cargo doc --no-deps` succeeds with zero warnings
+- Manual review: `cargo doc --open` to verify examples render correctly
+
+**Performance Ideas (Not Required for AC, but Good Practice):**
+- benchmark_detect_first_call: Measure <1ms first call
+- benchmark_detect_cached_call: Measure <1ns cached call (should be instant)
+</ideas>
+  </tests>
+</story-context>

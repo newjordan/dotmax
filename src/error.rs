@@ -159,6 +159,76 @@ pub enum DotmaxError {
     #[cfg(feature = "svg")]
     #[error("SVG rendering error: {0}")]
     SvgError(String),
+
+    /// Invalid line thickness (must be ≥ 1)
+    ///
+    /// This error is returned when attempting to draw a line with thickness=0.
+    /// Valid thickness values must be at least 1. For braille resolution,
+    /// recommended maximum is 10 dots.
+    #[error("Invalid line thickness: {thickness} (must be ≥ 1)")]
+    InvalidThickness { thickness: u32 },
+
+    /// Invalid polygon definition
+    ///
+    /// This error is returned when attempting to draw a polygon with invalid
+    /// parameters (e.g., fewer than 3 vertices, empty vertex list).
+    /// Polygons require at least 3 vertices to form a closed shape.
+    #[error("Invalid polygon: {reason}")]
+    InvalidPolygon { reason: String },
+
+    /// Density set cannot be empty
+    ///
+    /// This error is returned when attempting to create a `DensitySet` with an
+    /// empty character list. A valid density set must contain at least one
+    /// character for intensity mapping.
+    #[error("Density set cannot be empty")]
+    EmptyDensitySet,
+
+    /// Density set has too many characters (max 256)
+    ///
+    /// This error is returned when attempting to create a `DensitySet` with more
+    /// than 256 characters. The limit ensures reasonable memory usage and
+    /// mapping performance.
+    #[error("Density set has too many characters: {count} (max 256)")]
+    TooManyCharacters { count: usize },
+
+    /// Intensity buffer size mismatch with grid dimensions
+    ///
+    /// This error is returned when the intensity buffer length does not match
+    /// the expected grid size (width × height). All intensity buffers must
+    /// have exactly one f32 value per grid cell.
+    #[error(
+        "Intensity buffer size mismatch: expected {expected} (grid width × height), got {actual}"
+    )]
+    BufferSizeMismatch { expected: usize, actual: usize },
+
+    /// Color scheme cannot have an empty color list
+    ///
+    /// This error is returned when attempting to create a `ColorScheme` with an
+    /// empty color vector. A valid color scheme must contain at least one color
+    /// stop for intensity mapping.
+    #[error("Color scheme cannot be empty: at least one color is required")]
+    EmptyColorScheme,
+
+    /// Invalid color scheme configuration
+    ///
+    /// This error is returned when attempting to build a `ColorScheme` with an
+    /// invalid configuration. Common causes include:
+    /// - Fewer than 2 color stops defined
+    /// - Duplicate intensity values at the same position
+    ///
+    /// The error message provides specific details about the validation failure.
+    #[error("Invalid color scheme: {0}")]
+    InvalidColorScheme(String),
+
+    /// Invalid intensity value for color scheme
+    ///
+    /// This error is returned when a color stop's intensity value is outside
+    /// the valid range of 0.0 to 1.0 (inclusive).
+    ///
+    /// Valid intensity values must satisfy: `0.0 <= intensity <= 1.0`
+    #[error("Invalid intensity value: {0} (must be 0.0-1.0)")]
+    InvalidIntensity(f32),
 }
 
 #[cfg(test)]
@@ -176,6 +246,44 @@ mod tests {
         assert!(msg.contains("10"));
         assert!(msg.contains("width"));
         assert!(msg.contains("height"));
+    }
+
+    // ========================================================================
+    // Story 5.4: InvalidColorScheme and InvalidIntensity Error Tests
+    // ========================================================================
+
+    #[test]
+    fn test_invalid_color_scheme_message_includes_reason() {
+        let err = DotmaxError::InvalidColorScheme("at least 2 colors required".into());
+        let msg = format!("{err}");
+        assert!(msg.contains("Invalid color scheme"));
+        assert!(msg.contains("at least 2 colors required"));
+    }
+
+    #[test]
+    fn test_invalid_color_scheme_duplicate_intensity() {
+        let err = DotmaxError::InvalidColorScheme("duplicate intensity value".into());
+        let msg = format!("{err}");
+        assert!(msg.contains("Invalid color scheme"));
+        assert!(msg.contains("duplicate"));
+    }
+
+    #[test]
+    fn test_invalid_intensity_negative() {
+        let err = DotmaxError::InvalidIntensity(-0.5);
+        let msg = format!("{err}");
+        assert!(msg.contains("Invalid intensity value"));
+        assert!(msg.contains("-0.5"));
+        assert!(msg.contains("0.0-1.0"));
+    }
+
+    #[test]
+    fn test_invalid_intensity_above_one() {
+        let err = DotmaxError::InvalidIntensity(1.5);
+        let msg = format!("{err}");
+        assert!(msg.contains("Invalid intensity value"));
+        assert!(msg.contains("1.5"));
+        assert!(msg.contains("0.0-1.0"));
     }
 
     #[test]

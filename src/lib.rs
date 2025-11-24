@@ -65,10 +65,28 @@ pub mod error;
 pub mod grid;
 pub mod render;
 
+// Utility modules (Epic 5)
+pub mod utils;
+
 // Re-export public types for convenience
 pub use error::DotmaxError;
 pub use grid::{BrailleGrid, Color};
 pub use render::{TerminalBackend, TerminalCapabilities, TerminalRenderer, TerminalType};
+
+// Re-export color capability detection (Epic 5)
+pub use utils::terminal_caps::{detect_color_capability, ColorCapability};
+
+// Re-export color scheme types (Epic 5, Story 5.3)
+pub use color::schemes::{
+    blue_purple, cyan_magenta, get_scheme, grayscale, green_yellow, heat_map, list_schemes,
+    monochrome, rainbow, ColorScheme,
+};
+
+// Re-export color scheme builder (Epic 5, Story 5.4)
+pub use color::scheme_builder::ColorSchemeBuilder;
+
+// Re-export color application functions (Epic 5, Story 5.5)
+pub use color::apply::{apply_color_scheme, apply_colors_to_grid};
 
 /// Convenience type alias for Results using `DotmaxError`
 ///
@@ -76,9 +94,18 @@ pub use render::{TerminalBackend, TerminalCapabilities, TerminalRenderer, Termin
 /// in applications using this library.
 pub type Result<T> = std::result::Result<T, DotmaxError>;
 
-// Feature modules (Epic 3+): image, primitives, color, animation
+// Feature modules (Epic 3+): image, primitives, density, color, animation
 #[cfg(feature = "image")]
 pub mod image;
+
+// Drawing primitives (Epic 4)
+pub mod primitives;
+
+// Character density rendering (Epic 4)
+pub mod density;
+
+// Color conversion (Epic 5)
+pub mod color;
 
 #[cfg(test)]
 mod tests {

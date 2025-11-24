@@ -91,7 +91,8 @@ fn bench_full_image_to_braille_pipeline(c: &mut Criterion) {
 
     c.bench_function("full_image_to_braille_pipeline", |b| {
         b.iter(|| {
-            let resized = resize_to_dimensions(black_box(&img), 160, 96, true).expect("Failed to resize");
+            let resized =
+                resize_to_dimensions(black_box(&img), 160, 96, true).expect("Failed to resize");
             let gray = to_grayscale(&resized);
             let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
             let binary = auto_threshold(&gray_dynamic);

@@ -1,0 +1,376 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.2</storyId>
+    <title>Implement Bresenham Circle Drawing Algorithm</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/4-2-implement-bresenham-circle-drawing-algorithm.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating circular UI elements</asA>
+    <iWant>circle drawing with center and radius</iWant>
+    <soThat>I can create buttons, indicators, and radial graphics</soThat>
+    <tasks>
+- [ ] **Task 1: Create Circle Module** (AC: #1, #8)
+  - [ ] 1.1: Create `src/primitives/circle.rs` file
+  - [ ] 1.2: Update `src/primitives/mod.rs` to include circle module
+  - [ ] 1.3: Add circle module exports to public API in mod.rs
+  - [ ] 1.4: Verify module structure compiles
+
+- [ ] **Task 2: Implement Midpoint Circle Algorithm** (AC: #1)
+  - [ ] 2.1: Research Bresenham's circle algorithm (midpoint circle algorithm)
+  - [ ] 2.2: Check crabmusic for existing circle implementation to extract
+  - [ ] 2.3: Implement midpoint circle algorithm for first octant
+  - [ ] 2.4: Extend to all 8 octants using symmetry (plot 8 points per iteration)
+  - [ ] 2.5: Implement `draw_circle()` function signature
+  - [ ] 2.6: Use `grid.set_dot(x, y, true)` to set dots along circle perimeter
+  - [ ] 2.7: Handle edge case: radius=0 (single dot at center)
+  - [ ] 2.8: Handle edge case: very large radius (>1000)
+
+- [ ] **Task 3: Implement Boundary Clipping** (AC: #2)
+  - [ ] 3.1: Check if dot coordinates are within grid bounds before calling set_dot
+  - [ ] 3.2: Use grid.width() and grid.height() to determine bounds (convert to dots: width*2, height*4)
+  - [ ] 3.3: Skip out-of-bounds dots without error (no Result::Err)
+  - [ ] 3.4: Test with extreme coordinates (center -10000, radius 50000) to ensure no panic
+  - [ ] 3.5: Verify partial circles render correctly (circle extends beyond grid)
+
+- [ ] **Task 4: Implement Filled Circle** (AC: #3, #8)
+  - [ ] 4.1: Implement `draw_circle_filled()` function
+  - [ ] 4.2: Use scanline fill approach: for each y from -radius to +radius, calculate x span
+  - [ ] 4.3: Calculate x span using circle equation: x = sqrt(r² - y²)
+  - [ ] 4.4: Call existing `draw_line()` from Story 4.1 to draw horizontal spans
+  - [ ] 4.5: Verify filled circle has no gaps or artifacts
+  - [ ] 4.6: Test filled circles at various radii (5, 25, 100)
+
+- [ ] **Task 5: Implement Circle Thickness** (AC: #4)
+  - [ ] 5.1: Implement `draw_circle_thick()` function
+  - [ ] 5.2: For thickness N, draw concentric circles from radius to radius+thickness-1
+  - [ ] 5.3: Handle thickness=1 as special case (call draw_circle)
+  - [ ] 5.4: Validate thickness > 0, return DotmaxError::InvalidThickness for thickness=0
+  - [ ] 5.5: Verify 8-way symmetry maintained in thick circles
+  - [ ] 5.6: Document recommended max thickness (e.g., 10 dots for braille resolution)
+
+- [ ] **Task 6: Add Unit Tests** (AC: #7)
+  - [ ] 6.1: Create test module in `src/primitives/circle.rs` with `#[cfg(test)]`
+  - [ ] 6.2: Test small circle (radius 5): verify 8-way symmetry using octant helpers
+  - [ ] 6.3: Test medium circle (radius 25): verify no jagged artifacts
+  - [ ] 6.4: Test large circle (radius 100): verify correctness and performance
+  - [ ] 6.5: Test filled circle: verify interior dots set
+  - [ ] 6.6: Test thick circle: verify thickness produces more dots than outline
+  - [ ] 6.7: Test boundary clipping: circle centered at (-50, -50) doesn't panic
+  - [ ] 6.8: Test zero radius: single dot at center
+  - [ ] 6.9: Test invalid thickness=0: returns error
+  - [ ] 6.10: Run tests: `cargo test primitives::circle`
+
+- [ ] **Task 7: Create Example** (AC: #5)
+  - [ ] 7.1: Create `examples/circles_demo.rs`
+  - [ ] 7.2: Initialize BrailleGrid (e.g., 80x24 cells = 160x96 dots)
+  - [ ] 7.3: Draw small circles (radius 5, 10)
+  - [ ] 7.4: Draw medium circles (radius 20, 30, 40)
+  - [ ] 7.5: Draw large circle (radius 50)
+  - [ ] 7.6: Draw concentric circles pattern
+  - [ ] 7.7: Draw filled circles
+  - [ ] 7.8: Draw thick circles (thickness 3, 5)
+  - [ ] 7.9: Demonstrate clipping (circle partially off-grid)
+  - [ ] 7.10: Render grid to terminal using TerminalRenderer
+  - [ ] 7.11: Add comments explaining each drawing operation
+  - [ ] 7.12: Test example: `cargo run --example circles_demo`
+
+- [ ] **Task 8: Add Performance Benchmarks** (AC: #6)
+  - [ ] 8.1: Update `benches/primitives.rs` with circle benchmarks
+  - [ ] 8.2: Benchmark `draw_circle()` for radius 100
+  - [ ] 8.3: Benchmark `draw_circle_filled()` for radius 100
+  - [ ] 8.4: Benchmark `draw_circle_thick()` with thickness=5, radius 100
+  - [ ] 8.5: Benchmark concentric circles pattern (10 circles)
+  - [ ] 8.6: Verify <2ms for outline, <10ms for filled, <10ms for thick
+  - [ ] 8.7: Run benchmarks: `cargo bench primitives`
+
+- [ ] **Task 9: Add Comprehensive Documentation** (AC: #9)
+  - [ ] 9.1: Add module-level rustdoc to `src/primitives/circle.rs` explaining midpoint circle algorithm
+  - [ ] 9.2: Document `draw_circle()` function with full rustdoc (summary, params, returns, examples, errors)
+  - [ ] 9.3: Document `draw_circle_filled()` function with full rustdoc
+  - [ ] 9.4: Document `draw_circle_thick()` function with full rustdoc
+  - [ ] 9.5: Include coordinate system note: "Center coordinates are in dot space (not cell space)"
+  - [ ] 9.6: Add performance notes: "O(r) complexity where r is radius in dots"
+  - [ ] 9.7: Reference classic computer graphics algorithms (Foley & Van Dam)
+  - [ ] 9.8: Generate docs: `cargo doc --open --all-features` and verify quality
+
+- [ ] **Task 10: Code Quality and Finalization** (AC: #9)
+  - [ ] 10.1: Run clippy: `cargo clippy --all-features -- -D warnings`
+  - [ ] 10.2: Fix any clippy warnings in circle.rs
+  - [ ] 10.3: Run rustfmt: `cargo fmt`
+  - [ ] 10.4: Run full test suite: `cargo test --all-features`
+  - [ ] 10.5: Verify benchmarks compile: `cargo bench --no-run --all-features`
+  - [ ] 10.6: Check for any unsafe code, document if necessary
+  - [ ] 10.7: Update CHANGELOG.md with "Added circle drawing primitives (draw_circle, draw_circle_filled, draw_circle_thick)"
+  - [ ] 10.8: Verify no regressions in existing tests (all tests including line tests still pass)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. **AC1: Core Circle Drawing Function**
+   - Create `src/primitives/circle.rs` module
+   - Implement `draw_circle(grid: &mut BrailleGrid, center_x: i32, center_y: i32, radius: u32) -> Result<(), DotmaxError>`
+   - Uses Bresenham's circle algorithm (midpoint circle algorithm)
+   - Draws circle outline (not filled) with 8-way symmetry
+   - Handles all quadrants correctly
+   - Coordinates are signed i32 for center, unsigned u32 for radius
+
+2. **AC2: Boundary Clipping**
+   - Out-of-bounds dots do NOT return error (graceful handling)
+   - Dots outside grid boundaries are silently skipped (clipped)
+   - Circles partially off-grid render the visible portion correctly
+   - No panics for circles centered far outside grid or with very large radii
+
+3. **AC3: Filled Circle Support**
+   - Implement `draw_circle_filled(grid: &mut BrailleGrid, center_x: i32, center_y: i32, radius: u32) -> Result<(), DotmaxError>`
+   - Fills interior using horizontal line spans (scanline fill approach)
+   - Uses existing `draw_line()` from Story 4.1 for horizontal fills
+   - Produces solid filled circle with no gaps or artifacts
+
+4. **AC4: Circle Thickness Support**
+   - Implement `draw_circle_thick(grid: &mut BrailleGrid, center_x: i32, center_y: i32, radius: u32, thickness: u32) -> Result<(), DotmaxError>`
+   - thickness = 1: single dot width (equivalent to draw_circle)
+   - thickness > 1: draws concentric circles to create thick outline
+   - thickness = 0: return error (invalid thickness)
+   - Thick circles maintain proper symmetry (8-way)
+
+5. **AC5: Example Demonstration**
+   - Create `examples/circles_demo.rs`
+   - Demonstrates small, medium, large circles; concentric patterns; filled vs outline; thick circles; clipping
+   - Example compiles and runs without errors
+   - Example output is visually correct (manual inspection)
+
+6. **AC6: Performance Target**
+   - Benchmark in `benches/primitives.rs` (add to existing file)
+   - Circle with radius 100 draws in <2ms (measured with criterion)
+   - Filled circle with radius 100 draws in <10ms
+   - Thick circle (thickness 5, radius 100) draws in <10ms
+   - No allocations during circle drawing (reuses grid buffer)
+
+7. **AC7: Unit Tests**
+   - Test small circle (radius 5): verify 8-way symmetry (octants)
+   - Test medium circle (radius 25): verify circular shape (no jagged artifacts)
+   - Test large circle (radius 100): verify performance and correctness
+   - Test filled circle: interior is completely filled
+   - Test thick circle: thickness produces wider outline
+   - Test boundary clipping: circle centered at (-50, -50) clips correctly
+   - Test zero radius: radius=0 draws single dot at center
+   - Test invalid thickness: thickness=0 returns error for draw_circle_thick
+   - All tests pass with `cargo test --all-features`
+
+8. **AC8: Integration with Line Drawing**
+   - Uses existing `draw_line()` from Story 4.1 for filled circle scanlines
+   - Uses existing `BrailleGrid::set_dot(x, y, value)` method for outline dots
+   - No breaking changes to BrailleGrid or primitives APIs
+   - Works with both colored and monochrome grids
+   - Circle drawing does not clear existing grid content (additive)
+
+9. **AC9: Documentation and Code Quality**
+   - Public functions have comprehensive rustdoc with summary, parameters, returns, examples, performance characteristics
+   - Module-level docs explain Bresenham circle algorithm briefly
+   - Reference classic computer graphics algorithms (midpoint circle)
+   - Run clippy: `cargo clippy --all-features -- -D warnings` (zero warnings for circle code)
+   - Run rustfmt: `cargo fmt`
+   - All unit tests pass: `cargo test primitives --all-features`
+   - Benchmarks compile: `cargo bench --no-run --all-features`
+   - No unsafe code (unless absolutely necessary with justification)
+   - Update CHANGELOG.md with new circle drawing feature
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Primitives Module Structure (lines 117-124)</section>
+        <snippet>Module location: src/primitives/circle.rs (new), src/primitives/mod.rs (update). Bresenham algorithms use integer-only arithmetic. Data flow: Primitives → BrailleGrid::set_dot() → TerminalRenderer.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document - Pattern 1: Braille Dot Matrix Mapping</title>
+        <section>Pattern 1: Braille Dot Matrix Mapping (lines 262-334)</section>
+        <snippet>BrailleGrid uses packed bits (8 dots per byte). set_dot(x, y) maps dot coordinates to cell coordinates. Coordinate system: cell_x = x/2, cell_y = y/4. Dot positions: 0-7 in specific bit pattern (0 3, 1 4, 2 5, 6 7).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document - ADR 0007: Measure-First Performance Optimization</title>
+        <section>ADR 0007: Measure-First Performance Optimization (lines 1285-1302)</section>
+        <snippet>No optimization without benchmark proof. Use criterion for all performance work. Profile with flamegraph before optimizing. Circle benchmarks must validate <2ms for radius 100 outline, <10ms for filled.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification</title>
+        <section>Drawing Primitives API (lines 248-291)</section>
+        <snippet>Circle drawing API: draw_circle(grid, center: Point, radius: i32, config) uses Bresenham midpoint algorithm with 8-way symmetry. draw_circle_filled uses scanline fill with draw_line(). draw_circle_thick draws concentric circles. All use DrawConfig for thickness/color forward-compatibility.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification - Bresenham Circle Algorithm</title>
+        <section>Bresenham Circle Algorithm Reference (lines 337-389)</section>
+        <snippet>Midpoint circle algorithm: integer-only, O(r) complexity, 8-way symmetry. For each (x,y) in first octant, plot 8 symmetric points. Decision variable d determines next pixel. Reference: Foley & Van Dam "Computer Graphics: Principles and Practice" Section 3.2.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification - Performance Targets</title>
+        <section>Performance Targets (lines 391-404)</section>
+        <snippet>Circle outline (radius 100): <2ms. Filled circle (radius 100): <10ms. Thick circle (thickness 5, radius 100): <10ms. Expected: outline ~0.5ms (800 dot ops), filled ~5ms (200 line spans), thick ~3ms (5 concentric).</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/4-1-implement-bresenham-line-drawing-algorithm.md</path>
+        <title>Story 4.1 - Line Drawing (Precedent)</title>
+        <section>Dev Notes - Learnings from Story 4.1 (lines 206-286)</section>
+        <snippet>Story 4.1 patterns to reuse: Bresenham integer arithmetic, boundary clipping (skip out-of-bounds, no panics), InvalidThickness error, test structure with helper functions, benchmark structure in primitives.rs, documentation standards. Files pattern: create circle.rs, update mod.rs, update primitives.rs bench, update CHANGELOG.md.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epics Document - Story 4.2</title>
+        <section>Story 4.2: Implement Bresenham Circle Drawing (lines 1415-1457)</section>
+        <snippet>Acceptance criteria: draw_circle() uses midpoint algorithm with 8-way symmetry. draw_circle_filled() uses horizontal line spans. Unit tests verify small/medium/large circles, clipping, filled vs outline. Example: circles_demo.rs. Prerequisites: Story 2.1 (BrailleGrid), Story 4.1 (line drawing).</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/primitives/mod.rs</path>
+        <kind>module</kind>
+        <symbol>pub mod line; pub use line::{draw_line, draw_line_thick};</symbol>
+        <lines>1-24</lines>
+        <reason>Primitives module structure. Need to add: pub mod circle; pub use circle::{draw_circle, draw_circle_filled, draw_circle_thick};</reason>
+      </artifact>
+      <artifact>
+        <path>src/primitives/line.rs</path>
+        <kind>module</kind>
+        <symbol>draw_line(), draw_line_thick()</symbol>
+        <lines>1-258</lines>
+        <reason>Line drawing precedent for Story 4.2. Reuse patterns: Bresenham integer arithmetic (lines 107-142), boundary clipping (lines 119-124), signed i32 coords for clipping, InvalidThickness error handling. draw_line() needed for filled circle horizontal spans.</reason>
+      </artifact>
+      <artifact>
+        <path>src/grid.rs</path>
+        <kind>module</kind>
+        <symbol>BrailleGrid, set_dot()</symbol>
+        <lines>1-150</lines>
+        <reason>BrailleGrid is the target for circle drawing. set_dot(x: usize, y: usize) method used to set dots along circle perimeter. Grid dimensions: width*2 dots wide, height*4 dots tall. Color struct available for future (Epic 5).</reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>module</kind>
+        <symbol>DotmaxError enum, InvalidThickness</symbol>
+        <lines>1-100</lines>
+        <reason>Error types for circle drawing. InvalidThickness already exists (Story 4.1, line 167). May need InvalidRadius for radius=0 validation if circle doesn't handle it gracefully. All functions return Result&lt;(), DotmaxError&gt;.</reason>
+      </artifact>
+      <artifact>
+        <path>crabmusic/src/visualization/braille.rs</path>
+        <kind>reference</kind>
+        <symbol>draw_circle()</symbol>
+        <lines>288-325</lines>
+        <reason>Crabmusic reference implementation of midpoint circle algorithm. Uses 8-way symmetry (lines 302-311), integer-only arithmetic (err variable), boundary clipping (lines 313-315). Key algorithm: while x >= y loop, decision variable err, 8 symmetric points per iteration. Extract and adapt for dotmax (remove color param in Epic 4, add Result return).</reason>
+      </artifact>
+      <artifact>
+        <path>benches/primitives.rs</path>
+        <kind>benchmark</kind>
+        <symbol>bench_line_drawing, bench_line_octants, bench_thick_line_drawing</symbol>
+        <lines>1-167</lines>
+        <reason>Benchmark structure for primitives. Add circle benchmarks: bench_circle_drawing (radii 10, 100, 1000), bench_circle_filled (radii 100), bench_circle_thick (thickness 1, 3, 5), bench_concentric_circles (10 circles). Use same criterion patterns.</reason>
+      </artifact>
+      <artifact>
+        <path>examples/lines_demo.rs</path>
+        <kind>example</kind>
+        <symbol>main() with 8 line demos</symbol>
+        <lines>1-141</lines>
+        <reason>Example structure precedent. circles_demo.rs should follow same pattern: initialize grid (80×24), draw various circles with comments, render with TerminalRenderer. Demos: small/medium/large circles, concentric patterns, filled vs outline, thick circles, clipping.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <ecosystem name="rust">
+        <package name="thiserror" version="2.0">Error type derivation (InvalidThickness already exists)</package>
+        <package name="tracing" version="0.1">Structured logging for debug/trace</package>
+        <package name="criterion" version="0.7">Benchmarking (dev dependency)</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Zero panics policy: All coordinate/radius validation returns Result, no panics. Out-of-bounds dots are silently clipped (AC2).</constraint>
+    <constraint>Integer-only arithmetic: Bresenham midpoint circle uses only addition, subtraction, and bit shifts. No floating point (except filled circle scanline x-span calculation using sqrt).</constraint>
+    <constraint>Signed i32 center coordinates: Allow negative values for clipping calculations. Unsigned u32 radius (always positive).</constraint>
+    <constraint>Graceful clipping: Circles partially off-grid render visible portion. Extreme coordinates (center at -10000) do not panic.</constraint>
+    <constraint>No breaking changes: Use existing BrailleGrid::set_dot() and draw_line() APIs. Reuse InvalidThickness error from Story 4.1.</constraint>
+    <constraint>Performance targets: Circle outline (radius 100) <2ms, filled circle <10ms, thick circle (thickness 5) <10ms. Measured with criterion benchmarks.</constraint>
+    <constraint>Module structure consistency: Follow Story 4.1 pattern - circle.rs in src/primitives/, export from mod.rs, tests in #[cfg(test)] within circle.rs.</constraint>
+    <constraint>Documentation standards: Comprehensive rustdoc with summary, parameters, returns, examples, performance notes. Module-level docs explain midpoint circle algorithm. Reference Foley & Van Dam.</constraint>
+  </constraints>
+  <interfaces>
+    <interface>
+      <name>draw_circle</name>
+      <kind>function</kind>
+      <signature>pub fn draw_circle(grid: &amp;mut BrailleGrid, center_x: i32, center_y: i32, radius: u32) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/circle.rs</path>
+      <description>Draw circle outline using Bresenham midpoint algorithm. 8-way symmetry, integer-only, O(r) complexity. Clips to grid bounds. Signed center for clipping, unsigned radius.</description>
+    </interface>
+    <interface>
+      <name>draw_circle_filled</name>
+      <kind>function</kind>
+      <signature>pub fn draw_circle_filled(grid: &amp;mut BrailleGrid, center_x: i32, center_y: i32, radius: u32) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/circle.rs</path>
+      <description>Draw filled circle using scanline fill. For each y from -radius to +radius, calculate x span (sqrt(r²-y²)) and call draw_line() for horizontal fill. O(r²) complexity.</description>
+    </interface>
+    <interface>
+      <name>draw_circle_thick</name>
+      <kind>function</kind>
+      <signature>pub fn draw_circle_thick(grid: &amp;mut BrailleGrid, center_x: i32, center_y: i32, radius: u32, thickness: u32) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/circle.rs</path>
+      <description>Draw thick circle outline by drawing N concentric circles (radius to radius+thickness-1). Returns InvalidThickness error if thickness=0. Recommended max thickness 10 for braille resolution.</description>
+    </interface>
+    <interface>
+      <name>BrailleGrid::set_dot</name>
+      <kind>method</kind>
+      <signature>pub fn set_dot(&amp;mut self, x: usize, y: usize) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/grid.rs (existing, Epic 2)</path>
+      <description>Set dot at (x, y) dot coordinates. Used by circle outline to set perimeter dots. Returns OutOfBounds error if x/y exceed grid dimensions (width*2, height*4). Circle functions check bounds BEFORE calling to skip out-of-bounds dots.</description>
+    </interface>
+    <interface>
+      <name>draw_line</name>
+      <kind>function</kind>
+      <signature>pub fn draw_line(grid: &amp;mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) -&gt; Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/line.rs (existing, Story 4.1)</path>
+      <description>Draw line using Bresenham algorithm. Used by draw_circle_filled() to draw horizontal spans for scanline fill. Handles clipping internally.</description>
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+      <standard>Unit tests in #[cfg(test)] module within src/primitives/circle.rs (Story 4.1 precedent)</standard>
+      <standard>Target >80% code coverage (Epic 3 quality standard from tech spec line 551)</standard>
+      <standard>Test structure: helper function is_dot_set(grid, x, y) for assertions (Story 4.1 pattern line.rs:266-287)</standard>
+      <standard>All tests pass with: cargo test primitives::circle --all-features</standard>
+      <standard>Benchmarks compile with: cargo bench --no-run --all-features</standard>
+      <standard>Benchmarks run with: cargo bench primitives (criterion validates performance targets)</standard>
+      <standard>Zero clippy warnings for circle code: cargo clippy --all-features -- -D warnings</standard>
+    </standards>
+    <locations>
+      <location>src/primitives/circle.rs - Unit tests in #[cfg(test)] module (8+ test cases)</location>
+      <location>benches/primitives.rs - Add circle benchmarks (4-5 benchmark functions for outline/filled/thick/concentric)</location>
+      <location>examples/circles_demo.rs - Interactive example for visual validation (12 demos: small/medium/large/concentric/filled/thick/clipping)</location>
+    </locations>
+    <ideas>
+      <test ac="AC1" idea="test_small_circle_symmetry: Draw circle radius 5, verify 8-way symmetry by checking octant dots match expected pattern. Use helper to check symmetric points (cx+x, cy+y) vs (cx+y, cy+x), etc."></test>
+      <test ac="AC1" idea="test_medium_circle_shape: Draw circle radius 25, verify circular shape (no jagged artifacts). Check perimeter dots form smooth curve, no gaps."></test>
+      <test ac="AC1" idea="test_large_circle_correctness: Draw circle radius 100, verify correctness and performance. Ensure all expected perimeter dots set."></test>
+      <test ac="AC2" idea="test_boundary_clipping: Draw circle centered at (-50, -50) with radius 100. Verify no panic, visible portion renders correctly within grid bounds."></test>
+      <test ac="AC2" idea="test_extreme_coordinates: Circle centered at (-10000, -10000) with radius 50000. Verify no panic, returns Ok(())."></test>
+      <test ac="AC3" idea="test_filled_circle_interior: Draw filled circle radius 50, verify interior completely filled (all dots inside perimeter are set). Check dots at various interior points."></test>
+      <test ac="AC3" idea="test_filled_no_gaps: Draw filled circle radius 25, verify no gaps or artifacts in scanline fill. Each horizontal span is complete."></test>
+      <test ac="AC4" idea="test_thick_circle_outline: Draw thick circle (thickness 5, radius 50), verify thickness produces wider outline than thin. Count dots, should be ~5x more than outline."></test>
+      <test ac="AC4" idea="test_invalid_thickness_zero: Call draw_circle_thick with thickness=0, verify returns DotmaxError::InvalidThickness."></test>
+      <test ac="AC7" idea="test_zero_radius: Draw circle with radius=0, verify single dot at center (or no-op, depends on implementation). No panic."></test>
+      <test ac="AC8" idea="test_integration_with_line: Verify draw_circle_filled correctly calls draw_line for horizontal spans. Mock or spy on draw_line calls."></test>
+      <test ac="AC8" idea="test_additive_drawing: Draw circle, then draw another overlapping circle. Verify both circles visible (no clearing of existing content)."></test>
+      <benchmark ac="AC6" idea="bench_circle_outline: Benchmark draw_circle for radii 10, 100, 1000. Verify radius 100 <2ms."></benchmark>
+      <benchmark ac="AC6" idea="bench_circle_filled: Benchmark draw_circle_filled for radius 100. Verify <10ms target."></benchmark>
+      <benchmark ac="AC6" idea="bench_circle_thick: Benchmark draw_circle_thick for thickness 5, radius 100. Verify <10ms target."></benchmark>
+      <benchmark ac="AC6" idea="bench_concentric_circles: Benchmark drawing 10 concentric circles (radii 10-100). Measure total time for pattern generation."></benchmark>
+    </ideas>
+  </tests>
+</story-context>

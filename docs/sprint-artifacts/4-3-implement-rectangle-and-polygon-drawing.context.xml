@@ -1,0 +1,229 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.3</storyId>
+    <title>Implement Rectangle and Polygon Drawing</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-21</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/4-3-implement-rectangle-and-polygon-drawing.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating UI layouts and shapes</asA>
+    <iWant>rectangle and polygon drawing primitives</iWant>
+    <soThat>I can create boxes, borders, and complex shapes</soThat>
+    <tasks>
+      - Create shapes module (src/primitives/shapes.rs) with 5 public functions
+      - Implement rectangle outline (4 lines approach using draw_line)
+      - Implement filled rectangle (scanline fill with draw_line)
+      - Implement thick rectangle (concentric rectangles, thickness validation)
+      - Implement polygon outline (N lines connecting vertices, validate ≥3 vertices)
+      - Implement filled polygon (scanline fill algorithm with edge table, even-odd rule)
+      - Add 12+ unit tests (rectangles: outline/filled/thick/edge cases, polygons: various vertex counts/filled/outline/invalid)
+      - Create shapes_demo.rs example (10+ visual demonstrations)
+      - Add performance benchmarks to primitives.rs (rectangle outline/filled/thick, polygon outline/filled)
+      - Add comprehensive rustdoc (module + function level, algorithm refs, performance notes)
+      - Code quality finalization (clippy, rustfmt, CHANGELOG.md)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">Rectangle Drawing Functions: draw_rectangle() with 4-line approach, boundary clipping, signed i32 position, unsigned u32 dimensions, error on zero width/height</criterion>
+    <criterion id="AC2">Filled Rectangle Support: draw_rectangle_filled() with scanline fill using draw_line(), solid fill with no gaps</criterion>
+    <criterion id="AC3">Polygon Drawing Functions: draw_polygon() with N-line approach, automatically closes path, validates ≥3 vertices, handles complex polygons (5+ vertices)</criterion>
+    <criterion id="AC4">Filled Polygon Support: draw_polygon_filled() with scanline fill algorithm, handles non-convex and self-intersecting polygons (even-odd rule), solid fill with no gaps</criterion>
+    <criterion id="AC5">Rectangle Thickness Support: draw_rectangle_thick() with concentric rectangles, validates thickness > 0 and ≤ width/2 and height/2, maintains corner connections</criterion>
+    <criterion id="AC6">Example Demonstration: shapes_demo.rs with rectangles (sizes, filled, thick), triangles (orientations), complex polygons (pentagon, hexagon, octagon), filled polygons, irregular shapes, clipping demos</criterion>
+    <criterion id="AC7">Performance Target: Rectangle outline (100×50) <1ms, filled <5ms, thick <5ms; Polygon outline (10 vertices) <2ms, filled <10ms; benchmarks in primitives.rs</criterion>
+    <criterion id="AC8">Unit Tests: Rectangles (outline/filled/thick, sizes, edge cases), polygons (triangle/square/pentagon/hexagon/octagon, filled/outline, invalid <3 vertices, clipping, self-intersecting)</criterion>
+    <criterion id="AC9">Documentation and Code Quality: Comprehensive rustdoc (module + function level, algorithm refs, performance O() notes), zero clippy warnings, all tests pass, benchmarks compile, CHANGELOG.md updated</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification: Drawing Primitives & Density Rendering</title>
+        <section>Detailed Design - APIs and Interfaces</section>
+        <snippet>Rectangle API design (lines 250-290): draw_rectangle(), draw_rectangle_filled(), draw_polygon(), draw_polygon_filled() function signatures with BrailleGrid parameter, signed i32 coordinates, unsigned u32 dimensions. Error types: PrimitivesError::OutOfBounds, InvalidDimensions, InvalidPolygon.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-4.md</path>
+        <title>Epic 4 Technical Specification</title>
+        <section>Detailed Design - Data Models and Contracts</section>
+        <snippet>Rectangle implementation (lines 272-289): Outline draws 4 lines (top, right, bottom, left). Filled uses scanline fill (horizontal spans for each row). Polygon outline draws lines between consecutive vertices (close path). Polygon filled uses scanline fill algorithm with edge table.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Project Structure - Module Organization</section>
+        <snippet>Lines 117-124: src/primitives/ module structure with line.rs (Story 4.1), circle.rs (Story 4.2), shapes.rs for rectangles and polygons. Each primitive in separate file with unit tests, exported from primitives/mod.rs.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>dotmax Architecture Document</title>
+        <section>Error Handling</section>
+        <snippet>Lines 605-624: All errors use DotmaxError enum with thiserror. All public functions return Result<T, DotmaxError>. Error variants include diagnostic context (coordinates, dimensions, reasons). Zero panics guarantee.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/4-1-implement-bresenham-line-drawing-algorithm.md</path>
+        <title>Story 4.1 Completed</title>
+        <section>Dev Notes - Learnings</section>
+        <snippet>Line drawing implementation (src/primitives/line.rs:92-145): draw_line() uses Bresenham algorithm with graceful boundary clipping (skip out-of-bounds, no errors). draw_line_thick() uses perpendicular offset strategy. All rectangle edges and polygon edges will reuse draw_line().</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/4-2-implement-bresenham-circle-drawing-algorithm.md</path>
+        <title>Story 4.2 Completed</title>
+        <section>Dev Notes - Learnings from Previous Story</section>
+        <snippet>Module structure pattern: create src/primitives/circle.rs (470 lines including tests), update primitives/mod.rs with exports. Filled shape implementation uses scanline fill calling draw_line() for horizontal spans (circle.rs:136-174). Thickness uses concentric shapes approach (circle.rs:209-231). Testing: 9 unit tests with 100% public API coverage.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/primitives/line.rs</path>
+        <kind>module</kind>
+        <symbol>draw_line</symbol>
+        <lines>92-145</lines>
+        <reason>CRITICAL: Rectangle outline (4 edges) and polygon outline (N edges) both call draw_line(). Rectangle filled and polygon filled use draw_line() for horizontal scanline spans. Clipping logic in draw_line() handles out-of-bounds coordinates gracefully.</reason>
+      </artifact>
+      <artifact>
+        <path>src/primitives/line.rs</path>
+        <kind>module</kind>
+        <symbol>draw_line_thick</symbol>
+        <lines>194-258</lines>
+        <reason>Reference for thickness implementation pattern (perpendicular offset). Rectangle thickness will use simpler concentric rectangles approach (similar to circle thickness in Story 4.2).</reason>
+      </artifact>
+      <artifact>
+        <path>src/primitives/circle.rs</path>
+        <kind>module</kind>
+        <symbol>draw_circle_filled</symbol>
+        <lines>136-174</lines>
+        <reason>PATTERN: Scanline fill approach for filled circles (calculates horizontal spans, calls draw_line). Rectangle filled and polygon filled will use same pattern - iterate over y range, calculate x spans, call draw_line().</reason>
+      </artifact>
+      <artifact>
+        <path>src/primitives/circle.rs</path>
+        <kind>module</kind>
+        <symbol>draw_circle_thick</symbol>
+        <lines>209-231</lines>
+        <reason>PATTERN: Concentric shapes for thickness (draws multiple circles with incrementing radius). Rectangle thick will use same approach - draw concentric rectangles from outer to inner with (x+i, y+i, width-2i, height-2i).</reason>
+      </artifact>
+      <artifact>
+        <path>src/primitives/mod.rs</path>
+        <kind>module</kind>
+        <symbol>pub mod line, pub mod circle</symbol>
+        <lines>22-26</lines>
+        <reason>MODULE STRUCTURE: Add "pub mod shapes;" and export functions (draw_rectangle, draw_rectangle_filled, draw_rectangle_thick, draw_polygon, draw_polygon_filled) following same pattern as line and circle.</reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>module</kind>
+        <symbol>DotmaxError::InvalidThickness</symbol>
+        <lines>169-170</lines>
+        <reason>REUSE: InvalidThickness error already exists from Story 4.1, reuse for draw_rectangle_thick() thickness validation (thickness > 0).</reason>
+      </artifact>
+      <artifact>
+        <path>src/error.rs</path>
+        <kind>module</kind>
+        <symbol>DotmaxError::InvalidDimensions</symbol>
+        <lines>51-52</lines>
+        <reason>REUSE: InvalidDimensions error exists, reuse for rectangle zero width/height validation and thickness > width/2 or height/2 validation.</reason>
+      </artifact>
+      <artifact>
+        <path>benches/primitives.rs</path>
+        <kind>benchmark</kind>
+        <symbol>criterion benchmarks</symbol>
+        <lines>1-316</lines>
+        <reason>ADD: Rectangle and polygon benchmarks to this existing file (Stories 4.1 and 4.2 added line and circle benchmarks here). Add 5 benchmark groups: rectangle outline, rectangle filled, rectangle thick, polygon outline, polygon filled.</reason>
+      </artifact>
+      <artifact>
+        <path>examples/lines_demo.rs</path>
+        <kind>example</kind>
+        <symbol>main</symbol>
+        <lines>1-141</lines>
+        <reason>REFERENCE: Story 4.1 example structure (8 demos, 141 lines, clear comments). shapes_demo.rs should follow same pattern with 10+ demos for rectangles and polygons.</reason>
+      </artifact>
+      <artifact>
+        <path>examples/circles_demo.rs</path>
+        <kind>example</kind>
+        <symbol>main</symbol>
+        <lines>1-171</lines>
+        <reason>REFERENCE: Story 4.2 example structure (12 demos, 171 lines, visual demonstrations). shapes_demo.rs should follow same pattern - small/medium/large shapes, outline/filled/thick, clipping, artistic patterns.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <package name="ratatui" version="0.29" reason="Terminal UI framework - BrailleGrid comes from here"/>
+          <package name="crossterm" version="0.29" reason="Cross-platform terminal I/O"/>
+          <package name="thiserror" version="2.0" reason="Error handling derive macros - used for DotmaxError"/>
+          <package name="tracing" version="0.1" reason="Structured logging - instrument shape drawing functions"/>
+        </core>
+        <dev>
+          <package name="criterion" version="0.7" features="html_reports" reason="Benchmarking - add rectangle and polygon benchmarks"/>
+          <package name="tracing-subscriber" version="0.3" reason="Logging subscriber for examples"/>
+        </dev>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint id="C1">Zero panics guarantee: All shape drawing functions validate inputs and return Result types. Out-of-bounds coordinates handled by draw_line() clipping. Invalid dimensions (zero width/height, <3 polygon vertices) return errors, not panics.</constraint>
+    <constraint id="C2">Coordinate system: Rectangle position (x, y) and polygon vertices in dot space (signed i32 for negative clipping). Dimensions (width, height, thickness) in dots (unsigned u32). Grid is width*2 × height*4 dots.</constraint>
+    <constraint id="C3">Reuse draw_line(): Rectangle outline (4 calls), polygon outline (N calls), rectangle filled (height calls for horizontal spans), polygon filled (scanline fill calls for horizontal spans). NO direct set_dot calls - always use draw_line() which handles clipping.</constraint>
+    <constraint id="C4">Error handling: Reuse InvalidThickness for thickness=0, InvalidDimensions for zero width/height and thickness exceeding limits. Add InvalidPolygon variant to src/error.rs for <3 vertices with descriptive reason field.</constraint>
+    <constraint id="C5">Module structure: Create src/primitives/shapes.rs following same structure as line.rs and circle.rs (implementation + tests in single file, #[cfg(test)] module). Update primitives/mod.rs with "pub mod shapes;" and re-exports.</constraint>
+    <constraint id="C6">Performance targets: Rectangle outline <1ms (4 line calls), filled <5ms (height scanlines), thick <5ms (thickness concentric). Polygon outline <2ms (N line calls), filled <10ms (scanline algorithm). Benchmark all functions in benches/primitives.rs.</constraint>
+    <constraint id="C7">Testing coverage: 12+ unit tests covering rectangles (outline/filled/thick, small/medium/large sizes, edge cases), polygons (triangle/square/pentagon/hexagon/octagon, filled/outline, invalid <3 vertices, empty vertices, clipping, self-intersecting). 100% public API coverage.</constraint>
+    <constraint id="C8">Documentation: Comprehensive rustdoc at module level (explain rectangle and polygon algorithms, scanline fill) and function level (parameters, returns, examples, performance O() complexity). Reference classic graphics algorithms (Foley & Van Dam Section 3.11).</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>draw_line</name>
+      <kind>function</kind>
+      <signature>pub fn draw_line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/primitives/line.rs:92-145</path>
+      <usage>CRITICAL: Called by rectangle outline (4 times for edges), rectangle filled (height times for scanlines), polygon outline (N times for edges), polygon filled (scanline times for horizontal spans). Handles all coordinate clipping automatically.</usage>
+    </interface>
+    <interface>
+      <name>BrailleGrid</name>
+      <kind>struct</kind>
+      <signature>pub struct BrailleGrid { width: usize, height: usize, dots: Vec&lt;u8&gt;, colors: Option&lt;Vec&lt;Color&gt;&gt; }</signature>
+      <path>src/grid.rs</path>
+      <usage>Grid is width*2 × height*4 dots. Use grid.width() and grid.height() to get dimensions in cells. All shape drawing operates on this grid by calling draw_line().</usage>
+    </interface>
+    <interface>
+      <name>DotmaxError</name>
+      <kind>enum</kind>
+      <signature>pub enum DotmaxError { InvalidDimensions { width: usize, height: usize }, InvalidThickness { thickness: u32 }, ... }</signature>
+      <path>src/error.rs:44-170</path>
+      <usage>All shape functions return Result&lt;(), DotmaxError&gt;. Reuse InvalidThickness for thickness=0, InvalidDimensions for zero width/height. Add InvalidPolygon { reason: String } for <3 vertices.</usage>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      All unit tests use #[cfg(test)] module at bottom of implementation file (src/primitives/shapes.rs). Test naming: test_function_scenario (e.g., test_rectangle_outline_small, test_polygon_filled_triangle). Use helper functions for validation (is_dot_set helper from line.rs and circle.rs pattern). Assert specific behavior, not just "no panic". Verify filled shapes have interior dots set, outlines have edge dots set. Test edge cases: zero dimensions (error), extreme positions (clipping), invalid polygons (<3 vertices error). Run with: cargo test primitives::shapes --all-features. Target: 12+ tests, 100% public API coverage.
+    </standards>
+    <locations>
+      - Unit tests: src/primitives/shapes.rs (bottom of file, #[cfg(test)] module)
+      - Integration tests: Not required for Story 4.3 (covered by unit tests + example)
+      - Benchmarks: benches/primitives.rs (add rectangle and polygon benchmark groups)
+      - Example: examples/shapes_demo.rs (manual visual validation)
+    </locations>
+    <ideas>
+      <idea ac="AC1">test_rectangle_outline_small (10×10), test_rectangle_outline_medium (50×25), test_rectangle_outline_large (100×50) - verify 4 edges drawn</idea>
+      <idea ac="AC2">test_rectangle_filled_small, test_rectangle_filled_medium - verify interior completely filled using count_dots helper</idea>
+      <idea ac="AC5">test_rectangle_thick_thickness_3, test_rectangle_thick_corners_connected - verify concentric rectangles with proper corner connections</idea>
+      <idea ac="AC1">test_rectangle_zero_width_error, test_rectangle_zero_height_error - verify InvalidDimensions returned</idea>
+      <idea ac="AC5">test_rectangle_thick_exceeds_width_error - verify thickness > width/2 returns error</idea>
+      <idea ac="AC3">test_polygon_triangle (3 vertices), test_polygon_square (4), test_polygon_pentagon (5), test_polygon_hexagon (6) - verify closed paths</idea>
+      <idea ac="AC4">test_polygon_filled_triangle, test_polygon_filled_hexagon - verify scanline fill correctness with interior dots</idea>
+      <idea ac="AC3">test_polygon_invalid_2_vertices_error, test_polygon_invalid_empty_error - verify InvalidPolygon returned for <3 vertices</idea>
+      <idea ac="AC8">test_polygon_clipping_extreme_coords - verify no panic for vertices far outside grid (draw_line clips)</idea>
+      <idea ac="AC4">test_polygon_self_intersecting - verify even-odd fill rule renders without crash</idea>
+      <idea ac="AC1">test_rectangle_extreme_position_clipping - verify rectangle partially off-grid renders visible portion</idea>
+    </ideas>
+  </tests>
+</story-context>

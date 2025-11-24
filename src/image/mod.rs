@@ -774,9 +774,9 @@ impl ImageRenderer {
 
         // ISSUE #3 FIX: Check if we can reuse cached resized image
         // Must check both cache existence AND that dimensions haven't changed (e.g., terminal resize)
-        let dimensions_match = self
-            .cached_dimensions
-            .map_or(false, |(w, h)| w == target_width_pixels && h == target_height_pixels);
+        let dimensions_match = self.cached_dimensions.is_some_and(|(w, h)| {
+            w == target_width_pixels && h == target_height_pixels
+        });
 
         let resized = if let Some(cached) = &self.cached_resized {
             if dimensions_match {
@@ -877,7 +877,10 @@ impl ImageRenderer {
         let binary = if self.dithering == DitheringMethod::None {
             // No dithering - use threshold only
             if let Some(threshold_value) = self.threshold {
-                debug!("Applying manual threshold (no dithering): {}", threshold_value);
+                debug!(
+                    "Applying manual threshold (no dithering): {}",
+                    threshold_value
+                );
                 apply_threshold(&gray, threshold_value)
             } else {
                 debug!("Applying automatic Otsu thresholding (no dithering)");
@@ -894,7 +897,10 @@ impl ImageRenderer {
                 );
                 apply_dithering_with_custom_threshold(&gray, self.dithering, Some(threshold_value))?
             } else {
-                debug!("Applying {:?} dithering with default threshold (127)", self.dithering);
+                debug!(
+                    "Applying {:?} dithering with default threshold (127)",
+                    self.dithering
+                );
                 apply_dithering(&gray, self.dithering)?
             }
         };

@@ -529,10 +529,7 @@ pub fn atkinson(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
     atkinson_with_threshold(gray, THRESHOLD)
 }
 
-fn atkinson_with_threshold(
-    gray: &GrayImage,
-    threshold: u8,
-) -> Result<BinaryImage, DotmaxError> {
+fn atkinson_with_threshold(gray: &GrayImage, threshold: u8) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
 

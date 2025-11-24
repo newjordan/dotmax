@@ -173,6 +173,14 @@ pub struct BrailleGrid {
     /// **Preserved from crabmusic**: `Vec<Option<Color>>`
     /// Story 2.6 will implement color rendering
     colors: Vec<Option<Color>>,
+    /// Optional text characters for density rendering (Story 4.4)
+    ///
+    /// When set, these characters override braille dot patterns for rendering.
+    /// This enables character-density based rendering (ASCII art style) as an
+    /// alternative to binary braille dot rendering.
+    ///
+    /// `None` = use braille dots (default), `Some(char)` = render this character
+    characters: Vec<Option<char>>,
 }
 
 impl BrailleGrid {
@@ -230,6 +238,7 @@ impl BrailleGrid {
             height,
             patterns: vec![0; size],
             colors: vec![None; size],
+            characters: vec![None; size], // Story 4.4: character buffer for density rendering
         })
     }
 
@@ -454,7 +463,9 @@ impl BrailleGrid {
     /// * `cell_y` - Y position in cells
     ///
     /// # Returns
-    /// Braille character representing the dot pattern
+    /// Character at the cell position:
+    /// - If a text character is set (Story 4.4 density rendering), returns that character
+    /// - Otherwise, returns braille character representing the dot pattern
     #[must_use]
     pub fn get_char(&self, cell_x: usize, cell_y: usize) -> char {
         if cell_x >= self.width || cell_y >= self.height {
@@ -462,6 +473,13 @@ impl BrailleGrid {
         }
 
         let index = cell_y * self.width + cell_x;
+
+        // Story 4.4: Prioritize text characters for density rendering
+        if let Some(ch) = self.characters[index] {
+            return ch;
+        }
+
+        // Default: Convert dot pattern to braille character
         dots_to_char(self.patterns[index])
     }
 
@@ -810,6 +828,207 @@ impl BrailleGrid {
     /// ```
     pub fn clear_colors(&mut self) {
         self.colors.fill(None);
+    }
+
+    /// Set a text character at a cell position (Story 4.4)
+    ///
+    /// **Story 4.4** - Character density-based rendering support.
+    ///
+    /// Sets a text character at the specified cell position. When a character is set,
+    /// it overrides the braille dot pattern for that cell during rendering. This enables
+    /// ASCII-art style density rendering as an alternative to binary braille dots.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in cells (0-indexed)
+    /// * `y` - Y position in cells (0-indexed)
+    /// * `character` - The character to set at this position
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if character was set successfully
+    /// * `Err(DotmaxError::OutOfBounds)` if coordinates exceed grid dimensions
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10).unwrap();
+    ///
+    /// // Set character at cell (5, 5)
+    /// grid.set_char(5, 5, '@').unwrap();
+    ///
+    /// // Verify character was set
+    /// assert_eq!(grid.get_char(5, 5), '@');
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `OutOfBounds` if x >= width or y >= height.
+    pub fn set_char(&mut self, x: usize, y: usize, character: char) -> Result<(), DotmaxError> {
+        // Validate bounds
+        if x >= self.width || y >= self.height {
+            error!(
+                x = x,
+                y = y,
+                width = self.width,
+                height = self.height,
+                "Out of bounds character assignment: ({}, {}) in grid of size ({}, {})",
+                x,
+                y,
+                self.width,
+                self.height
+            );
+            return Err(DotmaxError::OutOfBounds {
+                x,
+                y,
+                width: self.width,
+                height: self.height,
+            });
+        }
+
+        // Set character
+        let index = y * self.width + x;
+        self.characters[index] = Some(character);
+        Ok(())
+    }
+
+    /// Clear all text characters (Story 4.4)
+    ///
+    /// **Story 4.4** - Reset character buffer for density rendering.
+    ///
+    /// Resets all cell characters to `None`, restoring default braille dot rendering
+    /// mode. This is useful for switching back from density rendering to braille dots
+    /// without creating a new grid.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 10).unwrap();
+    ///
+    /// // Set some characters
+    /// grid.set_char(5, 5, '@').unwrap();
+    /// grid.set_char(7, 7, '#').unwrap();
+    ///
+    /// // Clear all characters
+    /// grid.clear_characters();
+    ///
+    /// // All characters are now None (braille mode restored)
+    /// assert_eq!(grid.get_char(5, 5), '⠀'); // Empty braille pattern
+    /// ```
+    pub fn clear_characters(&mut self) {
+        self.characters.fill(None);
+    }
+
+    // ========================================================================
+    // Story 5.5: Apply Color Scheme to Intensity Buffer
+    // ========================================================================
+
+    /// Apply a color scheme to a flattened intensity buffer.
+    ///
+    /// **Story 5.5** - Convenience method for colorizing intensity data.
+    ///
+    /// Maps a 1D intensity buffer to colors using the provided color scheme,
+    /// populating the grid's color buffer. The intensity buffer must be in
+    /// row-major order and match the grid dimensions (`width × height`).
+    ///
+    /// This method directly modifies the grid's internal color buffer for
+    /// maximum performance, avoiding intermediate allocations.
+    ///
+    /// # Arguments
+    ///
+    /// * `intensities` - Flattened 1D intensity buffer (row-major order)
+    /// * `scheme` - Color scheme for intensity-to-color mapping
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if colors were applied successfully
+    /// * `Err(DotmaxError::BufferSizeMismatch)` if buffer length doesn't match grid size
+    ///
+    /// # Intensity Handling
+    ///
+    /// - Values in range 0.0-1.0 are mapped normally
+    /// - Values outside range are clamped (consistent with `ColorScheme::sample`)
+    /// - NaN values are treated as 0.0
+    /// - Infinity values are clamped to 0.0 or 1.0
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::{BrailleGrid, ColorScheme};
+    ///
+    /// let mut grid = BrailleGrid::new(4, 3).unwrap();
+    ///
+    /// // Create intensity buffer (4×3 = 12 cells)
+    /// let intensities: Vec<f32> = (0..12)
+    ///     .map(|i| i as f32 / 11.0)
+    ///     .collect();
+    ///
+    /// // Apply heat map scheme
+    /// let scheme = ColorScheme::heat_map();
+    /// grid.apply_color_scheme(&intensities, &scheme).unwrap();
+    ///
+    /// // First cell is black (intensity 0.0)
+    /// let c0 = grid.get_color(0, 0).unwrap();
+    /// assert_eq!(c0.r, 0);
+    ///
+    /// // Last cell is white (intensity 1.0)
+    /// let c11 = grid.get_color(3, 2).unwrap();
+    /// assert_eq!(c11.r, 255);
+    /// ```
+    ///
+    /// # Integration with Epic 3 Image Pipeline
+    ///
+    /// ```no_run
+    /// use dotmax::{BrailleGrid, ColorScheme};
+    /// # // Note: This requires the image feature
+    /// # // Load image -> Grayscale -> Intensity buffer -> Color scheme
+    /// ```
+    ///
+    /// # Performance
+    ///
+    /// Target: <10ms for 80×24 grid (1,920 cells)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DotmaxError::BufferSizeMismatch`] if `intensities.len() != width × height`.
+    pub fn apply_color_scheme(
+        &mut self,
+        intensities: &[f32],
+        scheme: &crate::color::schemes::ColorScheme,
+    ) -> Result<(), DotmaxError> {
+        let expected_len = self.width * self.height;
+
+        // Validate buffer size
+        if intensities.len() != expected_len {
+            return Err(DotmaxError::BufferSizeMismatch {
+                expected: expected_len,
+                actual: intensities.len(),
+            });
+        }
+
+        // Apply colors directly to internal buffer
+        for (index, &intensity) in intensities.iter().enumerate() {
+            // Handle special float values and clamp
+            let normalized = if intensity.is_nan() {
+                0.0
+            } else if intensity.is_infinite() {
+                if intensity.is_sign_positive() {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                intensity.clamp(0.0, 1.0)
+            };
+
+            self.colors[index] = Some(scheme.sample(normalized));
+        }
+
+        Ok(())
     }
 }
 
@@ -2166,5 +2385,167 @@ mod tests {
         assert!(grid.is_empty(0, 0));
 
         // If this completes, logging worked throughout workflow
+    }
+
+    // ========================================================================
+    // Story 5.5: Apply Color Scheme to Intensity Buffer Tests (AC #3, #6)
+    // ========================================================================
+
+    /// Test `apply_color_scheme()` basic functionality (AC #3)
+    #[test]
+    fn test_apply_color_scheme_basic() {
+        use crate::color::schemes::grayscale;
+
+        let mut grid = BrailleGrid::new(4, 3).unwrap();
+        let intensities: Vec<f32> = (0..12).map(|i| i as f32 / 11.0).collect();
+        let scheme = grayscale();
+
+        let result = grid.apply_color_scheme(&intensities, &scheme);
+        assert!(result.is_ok());
+
+        // First cell (intensity 0.0) -> black
+        let c0 = grid.get_color(0, 0).unwrap();
+        assert_eq!(c0, Color::black());
+
+        // Last cell (intensity 1.0) -> white
+        let c_last = grid.get_color(3, 2).unwrap();
+        assert_eq!(c_last, Color::white());
+    }
+
+    /// Test `apply_color_scheme()` buffer size mismatch (AC #3)
+    #[test]
+    fn test_apply_color_scheme_buffer_mismatch() {
+        use crate::color::schemes::grayscale;
+
+        let mut grid = BrailleGrid::new(4, 3).unwrap();
+        let too_short: Vec<f32> = vec![0.5; 10]; // 10 < 12
+        let too_long: Vec<f32> = vec![0.5; 15]; // 15 > 12
+        let scheme = grayscale();
+
+        let result = grid.apply_color_scheme(&too_short, &scheme);
+        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+
+        let result = grid.apply_color_scheme(&too_long, &scheme);
+        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+    }
+
+    /// Test `apply_color_scheme()` with special float values (AC #4)
+    #[test]
+    fn test_apply_color_scheme_special_floats() {
+        use crate::color::schemes::grayscale;
+
+        let mut grid = BrailleGrid::new(5, 1).unwrap();
+        let intensities = vec![
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -0.5,
+            1.5,
+        ];
+        let scheme = grayscale();
+
+        let result = grid.apply_color_scheme(&intensities, &scheme);
+        assert!(result.is_ok());
+
+        // NaN -> 0.0 -> black
+        assert_eq!(grid.get_color(0, 0), Some(Color::black()));
+        // +Infinity -> 1.0 -> white
+        assert_eq!(grid.get_color(1, 0), Some(Color::white()));
+        // -Infinity -> 0.0 -> black
+        assert_eq!(grid.get_color(2, 0), Some(Color::black()));
+        // -0.5 clamped to 0.0 -> black
+        assert_eq!(grid.get_color(3, 0), Some(Color::black()));
+        // 1.5 clamped to 1.0 -> white
+        assert_eq!(grid.get_color(4, 0), Some(Color::white()));
+    }
+
+    /// Test `apply_color_scheme()` with heat_map scheme (AC #6, #7)
+    #[test]
+    fn test_apply_color_scheme_heat_map() {
+        use crate::color::schemes::heat_map;
+
+        let mut grid = BrailleGrid::new(5, 1).unwrap();
+        let intensities = vec![0.0, 0.25, 0.5, 0.75, 1.0];
+        let scheme = heat_map();
+
+        grid.apply_color_scheme(&intensities, &scheme).unwrap();
+
+        // 0.0 -> black (cold)
+        assert_eq!(grid.get_color(0, 0), Some(Color::black()));
+        // 1.0 -> white (hot)
+        assert_eq!(grid.get_color(4, 0), Some(Color::white()));
+
+        // Middle values should have color
+        let mid = grid.get_color(2, 0).unwrap();
+        assert!(mid.r > 0 || mid.g > 0 || mid.b > 0);
+    }
+
+    /// Test `apply_color_scheme()` with rainbow scheme (AC #6, #7)
+    #[test]
+    fn test_apply_color_scheme_rainbow() {
+        use crate::color::schemes::rainbow;
+
+        let mut grid = BrailleGrid::new(3, 1).unwrap();
+        let intensities = vec![0.0, 0.5, 1.0];
+        let scheme = rainbow();
+
+        grid.apply_color_scheme(&intensities, &scheme).unwrap();
+
+        // 0.0 -> red
+        let red = grid.get_color(0, 0).unwrap();
+        assert_eq!(red.r, 255);
+        assert_eq!(red.g, 0);
+        assert_eq!(red.b, 0);
+
+        // 1.0 -> purple-ish
+        let purple = grid.get_color(2, 0).unwrap();
+        assert!(purple.r > 200);
+        assert!(purple.b > 200);
+    }
+
+    /// Test `apply_color_scheme()` result is renderable (AC #5)
+    #[test]
+    fn test_apply_color_scheme_colors_renderable() {
+        use crate::color::schemes::heat_map;
+
+        let mut grid = BrailleGrid::new(10, 10).unwrap();
+
+        // Set some dots
+        grid.set_dot(5, 5).unwrap();
+        grid.set_dot(10, 10).unwrap();
+
+        // Apply color scheme
+        let intensities: Vec<f32> = (0..100)
+            .map(|i| (i as f32) / 99.0)
+            .collect();
+        let scheme = heat_map();
+        grid.apply_color_scheme(&intensities, &scheme).unwrap();
+
+        // All cells should have colors
+        for y in 0..10 {
+            for x in 0..10 {
+                assert!(grid.get_color(x, y).is_some());
+            }
+        }
+
+        // Dots should still exist
+        assert!(!grid.is_empty(2, 1)); // dot (5,5) -> cell (2,1)
+        assert!(!grid.is_empty(5, 2)); // dot (10,10) -> cell (5,2)
+    }
+
+    /// Test `apply_color_scheme()` empty grid (edge case)
+    #[test]
+    fn test_apply_color_scheme_single_cell() {
+        use crate::color::schemes::grayscale;
+
+        let mut grid = BrailleGrid::new(1, 1).unwrap();
+        let intensities = vec![0.5];
+        let scheme = grayscale();
+
+        grid.apply_color_scheme(&intensities, &scheme).unwrap();
+
+        let color = grid.get_color(0, 0).unwrap();
+        // 0.5 gray should be around 127-128
+        assert!(color.r >= 127 && color.r <= 128);
     }
 }

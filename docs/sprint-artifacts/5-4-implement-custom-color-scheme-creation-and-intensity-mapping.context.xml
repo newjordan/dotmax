@@ -1,0 +1,291 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>4</storyId>
+    <title>Implement Custom Color Scheme Creation and Intensity Mapping</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/5-4-implement-custom-color-scheme-creation-and-intensity-mapping.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer creating unique color palettes</asA>
+    <iWant>to define custom color schemes with intensity-based color stops</iWant>
+    <soThat>I can create brand-specific or artistic effects without modifying library code</soThat>
+    <tasks>
+      <task id="1" ac="#9">Create Module Structure
+        <subtask id="1.1">Create `src/color/scheme_builder.rs` file</subtask>
+        <subtask id="1.2">Add `pub mod scheme_builder;` to `src/color/mod.rs`</subtask>
+        <subtask id="1.3">Add module-level rustdoc explaining builder purpose</subtask>
+        <subtask id="1.4">Import `Color` from `crate::grid` and `ColorScheme` from `crate::color::schemes`</subtask>
+      </task>
+      <task id="2" ac="#1,#2">Implement ColorSchemeBuilder Struct
+        <subtask id="2.1">Define struct with name and color stops storage</subtask>
+        <subtask id="2.2">Implement `ColorSchemeBuilder::new(name: impl Into&lt;String&gt;) -&gt; Self`</subtask>
+        <subtask id="2.3">Initialize with empty stops vec</subtask>
+        <subtask id="2.4">Add rustdoc with builder pattern example</subtask>
+      </task>
+      <task id="3" ac="#2,#4">Implement add_color Method
+        <subtask id="3.1">Implement `pub fn add_color(mut self, intensity: f32, color: Color) -&gt; Self`</subtask>
+        <subtask id="3.2">Store (intensity, color) pair in stops vec</subtask>
+        <subtask id="3.3">Return self for method chaining</subtask>
+        <subtask id="3.4">Add rustdoc explaining intensity range</subtask>
+      </task>
+      <task id="4" ac="#1,#3,#4">Implement build Method with Validation
+        <subtask id="4.1">Implement `pub fn build(self) -&gt; Result&lt;ColorScheme, DotmaxError&gt;`</subtask>
+        <subtask id="4.2">Validate at least 2 color stops</subtask>
+        <subtask id="4.3">Validate all intensities in 0.0-1.0 range</subtask>
+        <subtask id="4.4">Check for duplicate intensity values</subtask>
+        <subtask id="4.5">Sort stops by intensity ascending</subtask>
+        <subtask id="4.6">Extract colors in sorted order for ColorScheme</subtask>
+        <subtask id="4.7">Create and return ColorScheme with sorted colors</subtask>
+        <subtask id="4.8">Add rustdoc explaining validation rules</subtask>
+      </task>
+      <task id="5" ac="#3">Add Error Variants to DotmaxError
+        <subtask id="5.1">Add `InvalidColorScheme(String)` variant if not exists</subtask>
+        <subtask id="5.2">Verify `InvalidIntensity(f32)` variant exists (from tech spec)</subtask>
+        <subtask id="5.3">Add appropriate error messages</subtask>
+        <subtask id="5.4">Update error.rs with new variants</subtask>
+      </task>
+      <task id="6" ac="#6">Implement from_colors Convenience Constructor
+        <subtask id="6.1">Add `pub fn from_colors(name: impl Into&lt;String&gt;, colors: Vec&lt;Color&gt;) -&gt; Result&lt;Self, DotmaxError&gt;`</subtask>
+        <subtask id="6.2">Distribute colors evenly across 0.0-1.0 range</subtask>
+        <subtask id="6.3">Validate at least 2 colors</subtask>
+        <subtask id="6.4">Calculate intensity positions: `i as f32 / (n - 1) as f32`</subtask>
+        <subtask id="6.5">Add rustdoc with example</subtask>
+      </task>
+      <task id="7" ac="#5">Integration with Existing sample() Method
+        <subtask id="7.1">Verify built ColorScheme works with existing sample()</subtask>
+        <subtask id="7.2">Ensure linear interpolation works with arbitrary stops</subtask>
+        <subtask id="7.3">Test sample() at various intensity points</subtask>
+        <subtask id="7.4">Verify &lt;100ns performance maintained</subtask>
+      </task>
+      <task id="8" ac="#7">Write Comprehensive Unit Tests
+        <subtask id="8.1">Create test module in `src/color/scheme_builder.rs`</subtask>
+        <subtask id="8.2">Test `ColorSchemeBuilder::new()` creates empty builder</subtask>
+        <subtask id="8.3">Test `add_color()` method chaining</subtask>
+        <subtask id="8.4">Test `build()` with valid stops (2, 3, 5, 10 colors)</subtask>
+        <subtask id="8.5">Test `build()` validation: empty stops -&gt; error</subtask>
+        <subtask id="8.6">Test `build()` validation: single stop -&gt; error</subtask>
+        <subtask id="8.7">Test `build()` validation: invalid intensity -&gt; error</subtask>
+        <subtask id="8.8">Test `build()` validation: duplicate intensity -&gt; error</subtask>
+        <subtask id="8.9">Test automatic sorting</subtask>
+        <subtask id="8.10">Test `from_colors()` with valid colors</subtask>
+        <subtask id="8.11">Test `from_colors()` validation</subtask>
+        <subtask id="8.12">Test integration with `sample()` method</subtask>
+        <subtask id="8.13">Run tests: `cargo test color::scheme_builder`</subtask>
+      </task>
+      <task id="9" ac="#8">Create Visual Example
+        <subtask id="9.1">Create `examples/custom_scheme.rs`</subtask>
+        <subtask id="9.2">Build custom brand-themed color scheme</subtask>
+        <subtask id="9.3">Render horizontal gradient bar using scheme</subtask>
+        <subtask id="9.4">Use truecolor ANSI escape codes for display</subtask>
+        <subtask id="9.5">Add comments explaining each color stop</subtask>
+        <subtask id="9.6">Run example: `cargo run --example custom_scheme`</subtask>
+      </task>
+      <task id="10" ac="#9">Documentation and Exports
+        <subtask id="10.1">Add comprehensive rustdoc to all public types and methods</subtask>
+        <subtask id="10.2">Include usage examples in rustdoc</subtask>
+        <subtask id="10.3">Document error conditions</subtask>
+        <subtask id="10.4">Update `src/color/mod.rs` to re-export `ColorSchemeBuilder`</subtask>
+        <subtask id="10.5">Update `src/lib.rs` to re-export `ColorSchemeBuilder`</subtask>
+        <subtask id="10.6">Run `cargo doc --no-deps` and verify zero warnings</subtask>
+      </task>
+      <task id="11" ac="All">Final Validation
+        <subtask id="11.1">Run full test suite: `cargo test`</subtask>
+        <subtask id="11.2">Run clippy: `cargo clippy -- -D warnings`</subtask>
+        <subtask id="11.3">Run rustfmt: `cargo fmt`</subtask>
+        <subtask id="11.4">Run cargo doc: `cargo doc --no-deps`</subtask>
+        <subtask id="11.5">Run visual example and verify output</subtask>
+        <subtask id="11.6">Verify all ACs met</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" name="ColorSchemeBuilder Struct Implemented">
+      ColorSchemeBuilder struct in src/color/scheme_builder.rs with builder pattern API: new(), add_color(), build() returning Result&lt;ColorScheme, DotmaxError&gt;
+    </criterion>
+    <criterion id="AC2" name="Intensity-Based Color Stops">
+      add_color(intensity: f32, color: Color) method; intensity 0.0-1.0 range; colors stored ascending; min 2 stops, no max
+    </criterion>
+    <criterion id="AC3" name="Validation Rules Enforced">
+      build() validates: at least 2 stops -&gt; InvalidColorScheme; intensity in range -&gt; InvalidIntensity; no duplicates -&gt; InvalidColorScheme
+    </criterion>
+    <criterion id="AC4" name="Automatic Intensity Sorting">
+      Color stops auto-sorted by intensity ascending; allows any insertion order; interpolation works correctly
+    </criterion>
+    <criterion id="AC5" name="Integration with ColorScheme::sample()">
+      Built schemes work with existing sample() method; linear interpolation between stops; &lt;100ns per sample
+    </criterion>
+    <criterion id="AC6" name="Convenience Constructor for Simple Gradients">
+      ColorScheme::from_colors(name, colors: Vec&lt;Color&gt;) creates evenly-spaced gradient across 0.0-1.0
+    </criterion>
+    <criterion id="AC7" name="Comprehensive Unit Tests">
+      Tests for builder, validation errors, sorting, from_colors, sample() integration; &gt;80% coverage for scheme_builder module
+    </criterion>
+    <criterion id="AC8" name="Visual Example">
+      examples/custom_scheme.rs demonstrating custom color scheme with brand colors and gradient bar
+    </criterion>
+    <criterion id="AC9" name="Production-Quality Documentation">
+      Rustdoc on ColorSchemeBuilder with examples; document validation rules, error types, interpolation behavior; zero warnings
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-5.md" title="Epic 5 Technical Specification" section="AC7, AC8">
+        Defines ColorScheme custom creation API (AC7) and intensity-to-color mapping requirements (AC8). Performance target: &lt;100ns per sample call.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Data Architecture, Error Handling">
+        Specifies ColorScheme data model with name and colors Vec. Error handling via thiserror (ADR 0002). Module structure follows src/color.rs pattern.
+      </doc>
+      <doc path="docs/PRD.md" title="Product Requirements Document" section="FR35">
+        FR35: Developers can create custom color schemes with intensity-to-color mappings. Supports Epic 5 Color System requirements.
+      </doc>
+      <doc path="docs/sprint-artifacts/5-3-extract-and-integrate-6-color-schemes-from-crabmusic.md" title="Story 5.3 Implementation" section="Dev Agent Record">
+        Previous story that created ColorScheme struct and sample() method. Key learnings: Linear RGB interpolation, ~11ns per sample() call (10x better than 100ns target), 39 unit tests.
+      </doc>
+    </docs>
+    <code>
+      <file path="src/color/schemes.rs" kind="module" symbol="ColorScheme" lines="109-276" reason="Core ColorScheme struct with new(), sample(), name(), colors() methods. Builder will create ColorScheme instances. REUSE sample() interpolation - DO NOT duplicate."/>
+      <file path="src/color/schemes.rs" kind="function" symbol="lerp_u8" lines="implicit" reason="Internal linear interpolation helper used by sample(). Reference for understanding interpolation behavior."/>
+      <file path="src/color/mod.rs" kind="module" symbol="mod.rs" lines="89-103" reason="Module structure for color submodules. Add `pub mod scheme_builder;` here and update re-exports."/>
+      <file path="src/error.rs" kind="module" symbol="DotmaxError" lines="44-212" reason="Error enum with EmptyColorScheme variant. Need to add InvalidColorScheme(String) and InvalidIntensity(f32) variants for builder validation."/>
+      <file path="src/grid.rs" kind="struct" symbol="Color" lines="32-62" reason="RGB Color struct with rgb(), black(), white() constructors. Used in ColorSchemeBuilder for color stops."/>
+      <file path="src/lib.rs" kind="module" symbol="lib.rs" lines="79-83" reason="Current color scheme exports. Add ColorSchemeBuilder re-export after implementation."/>
+      <file path="examples/color_schemes_demo.rs" kind="example" symbol="N/A" reason="Pattern for visual example using truecolor escape codes. Follow this pattern for custom_scheme.rs"/>
+      <file path="benches/color_schemes.rs" kind="benchmark" symbol="N/A" reason="Benchmark pattern for ColorScheme::sample(). Add builder benchmarks if performance-critical."/>
+    </code>
+    <dependencies>
+      <rust>
+        <crate name="thiserror" version="2.0" purpose="Error handling derive macros for DotmaxError"/>
+        <crate name="tracing" version="0.1" purpose="Structured logging (optional, for debug instrumentation)"/>
+      </rust>
+      <dev>
+        <crate name="criterion" version="0.7" purpose="Benchmarking framework for performance validation"/>
+        <crate name="tracing-subscriber" version="0.3" purpose="Log output for examples"/>
+      </dev>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="performance" source="tech-spec-epic-5.md">
+      ColorScheme::sample() must remain &lt;100ns per call. Builder operations are not hot-path, but built schemes must not add overhead.
+    </constraint>
+    <constraint type="api-compatibility" source="architecture.md">
+      Built ColorScheme instances must be compatible with existing sample() method without modification to sample().
+    </constraint>
+    <constraint type="error-handling" source="architecture.md, ADR-0002">
+      All public functions return Result&lt;T, DotmaxError&gt;. No panics in library code. Use thiserror for error derives.
+    </constraint>
+    <constraint type="documentation" source="architecture.md">
+      Every public API must have rustdoc with examples. Zero rustdoc warnings. Examples must compile and run.
+    </constraint>
+    <constraint type="code-quality" source="Cargo.toml">
+      clippy::all = "deny", clippy::pedantic = "warn", clippy::nursery = "warn". Zero warnings required.
+    </constraint>
+    <constraint type="naming" source="architecture.md">
+      Files: snake_case (scheme_builder.rs). Types: PascalCase (ColorSchemeBuilder). Functions: snake_case (add_color, build).
+    </constraint>
+    <constraint type="memory" source="story-5.3">
+      No allocations in sample() hot path. Builder can allocate during build(), but final ColorScheme must match existing memory pattern.
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="ColorScheme" kind="struct" path="src/color/schemes.rs">
+      <signature>
+pub struct ColorScheme {
+    name: String,
+    colors: Vec&lt;Color&gt;,
+}
+impl ColorScheme {
+    pub fn new(name: impl Into&lt;String&gt;, colors: Vec&lt;Color&gt;) -> Result&lt;Self, DotmaxError&gt;;
+    pub fn sample(&amp;self, intensity: f32) -> Color;  // Linear RGB interpolation
+    pub fn name(&amp;self) -> &amp;str;
+    pub fn colors(&amp;self) -> &amp;[Color];
+}
+      </signature>
+      <notes>Builder must construct valid ColorScheme via new() or directly set fields if ColorScheme allows. Existing sample() handles interpolation automatically based on colors.len().</notes>
+    </interface>
+    <interface name="Color" kind="struct" path="src/grid.rs">
+      <signature>
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Color { pub r: u8, pub g: u8, pub b: u8 }
+impl Color {
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self;
+    pub const fn black() -> Self;
+    pub const fn white() -> Self;
+}
+      </signature>
+    </interface>
+    <interface name="DotmaxError" kind="enum" path="src/error.rs">
+      <signature>
+#[derive(Error, Debug)]
+pub enum DotmaxError {
+    // Existing variant to use:
+    #[error("Color scheme cannot be empty: at least one color is required")]
+    EmptyColorScheme,
+
+    // New variants needed (Task 5):
+    // #[error("Invalid color scheme: {0}")]
+    // InvalidColorScheme(String),
+    //
+    // #[error("Invalid intensity value: {0}, must be 0.0-1.0")]
+    // InvalidIntensity(f32),
+}
+      </signature>
+      <notes>Add InvalidColorScheme(String) for "at least 2 colors required" and "duplicate intensity" errors. Add InvalidIntensity(f32) for out-of-range intensity values.</notes>
+    </interface>
+    <interface name="ColorSchemeBuilder (NEW)" kind="struct" path="src/color/scheme_builder.rs">
+      <signature>
+pub struct ColorSchemeBuilder {
+    name: String,
+    stops: Vec&lt;(f32, Color)&gt;,  // (intensity, color) pairs
+}
+impl ColorSchemeBuilder {
+    pub fn new(name: impl Into&lt;String&gt;) -> Self;
+    pub fn add_color(self, intensity: f32, color: Color) -> Self;
+    pub fn build(self) -> Result&lt;ColorScheme, DotmaxError&gt;;
+}
+      </signature>
+      <notes>Builder pattern for flexible scheme creation. Stores intensity+color pairs, sorts on build(), extracts colors in order for ColorScheme.</notes>
+    </interface>
+    <interface name="from_colors (NEW)" kind="method" path="src/color/schemes.rs">
+      <signature>
+impl ColorScheme {
+    pub fn from_colors(name: impl Into&lt;String&gt;, colors: Vec&lt;Color&gt;) -> Result&lt;Self, DotmaxError&gt;;
+}
+      </signature>
+      <notes>Convenience constructor for evenly-spaced gradients. Validates at least 2 colors. Delegates to ColorScheme::new() after validation.</notes>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Tests use Rust's built-in #[cfg(test)] modules within source files. Unit tests in src/color/scheme_builder.rs test module. Integration tests if needed in tests/ directory. Benchmarks use criterion.rs in benches/ directory. All tests must pass with `cargo test`. Coverage target: &gt;80% for scheme_builder module. Pattern matching on DotmaxError variants for validation error tests. Visual tests via examples/ with manual verification.
+    </standards>
+    <locations>
+      <location pattern="src/color/scheme_builder.rs#[cfg(test)]">Unit tests for ColorSchemeBuilder</location>
+      <location pattern="benches/color_schemes.rs">Add builder benchmarks if needed</location>
+      <location pattern="examples/custom_scheme.rs">Visual example for manual testing</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">test_builder_new_creates_empty_builder: Verify ColorSchemeBuilder::new("test") creates builder with empty stops vec</idea>
+      <idea ac="AC2">test_add_color_stores_intensity_and_color: Verify add_color(0.5, Color::rgb(255,0,0)) stores the pair</idea>
+      <idea ac="AC2">test_add_color_method_chaining: Verify builder.add_color(...).add_color(...) returns self</idea>
+      <idea ac="AC3">test_build_validates_minimum_stops: Verify build() with 0 or 1 stops returns InvalidColorScheme error</idea>
+      <idea ac="AC3">test_build_validates_intensity_range: Verify build() with intensity &lt;0 or &gt;1 returns InvalidIntensity error</idea>
+      <idea ac="AC3">test_build_validates_duplicate_intensity: Verify build() with two stops at same intensity returns InvalidColorScheme error</idea>
+      <idea ac="AC4">test_build_sorts_stops_by_intensity: Verify colors added as (1.0, 0.5, 0.0) are sorted to (0.0, 0.5, 1.0) order</idea>
+      <idea ac="AC5">test_built_scheme_sample_returns_correct_colors: Verify sample(0.0), sample(0.5), sample(1.0) return expected interpolated values</idea>
+      <idea ac="AC5">test_built_scheme_performance: Benchmark sample() on built scheme to verify &lt;100ns</idea>
+      <idea ac="AC6">test_from_colors_creates_evenly_spaced_gradient: Verify 4 colors create stops at 0.0, 0.33, 0.66, 1.0</idea>
+      <idea ac="AC6">test_from_colors_validates_minimum_colors: Verify from_colors with 0 or 1 colors returns error</idea>
+      <idea ac="AC7">test_comprehensive_builder_workflow: End-to-end test creating scheme with 5 custom colors and sampling</idea>
+      <idea ac="AC8">examples/custom_scheme.rs: Visual demo with brand colors (company logo colors as gradient)</idea>
+    </ideas>
+  </tests>
+</story-context>

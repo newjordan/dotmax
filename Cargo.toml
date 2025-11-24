@@ -40,6 +40,107 @@ harness = false
 name = "extreme_image_pipeline"
 harness = false
 
+[[bench]]
+name = "color_conversion"
+harness = false
+
+[[bench]]
+name = "color_schemes"
+harness = false
+
+[[bench]]
+name = "color_apply"
+harness = false
+
+# Examples requiring the 'image' feature
+[[example]]
+name = "compare_resize_filters"
+required-features = ["image"]
+
+[[example]]
+name = "resize_image"
+required-features = ["image"]
+
+[[example]]
+name = "measure_extreme_baseline"
+required-features = ["image"]
+
+[[example]]
+name = "dither_comparison"
+required-features = ["image"]
+
+[[example]]
+name = "compare_all_sizes"
+required-features = ["image"]
+
+[[example]]
+name = "svg_demo"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "threshold_demo"
+required-features = ["image"]
+
+[[example]]
+name = "image_browser"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "test_svg_background_fix"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "color_image"
+required-features = ["image"]
+
+[[example]]
+name = "view_image"
+required-features = ["image"]
+
+[[example]]
+name = "custom_image"
+required-features = ["image"]
+
+[[example]]
+name = "svg_font_visual_demo"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "svg_font_quality"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "test_svg_manual"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "simple_image"
+required-features = ["image"]
+
+[[example]]
+name = "test_svg_loading"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "load_image"
+required-features = ["image"]
+
+[[example]]
+name = "braille_mapping_demo"
+required-features = ["image"]
+
+[[example]]
+name = "save_svg_raster"
+required-features = ["image", "svg"]
+
+[[example]]
+name = "test_adaptive_resize_performance"
+required-features = ["image"]
+
+[[example]]
+name = "generate_extreme_test_images"
+required-features = ["image"]
+
 [lints.clippy]
 all = "deny"
 pedantic = "warn"
