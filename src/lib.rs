@@ -79,6 +79,8 @@
 // Core modules (Epic 2)
 pub mod error;
 pub mod grid;
+pub mod prelude;
+pub mod quick;
 pub mod render;
 
 // Utility modules (Epic 5)

@@ -99,6 +99,10 @@ name = "image_processing"
 harness = false
 required-features = ["image"]
 
+[[bench]]
+name = "quick"
+harness = false
+
 # Examples requiring the 'image' feature
 [[example]]
 name = "compare_resize_filters"

@@ -1,12 +1,16 @@
 //! Hello Braille - Simple viewport test
 //!
-//! Run with: `RUST_LOG=dotmax=debug` cargo run --example `hello_braille`
+//! This example demonstrates using the prelude for convenient imports.
+//! Instead of importing individual types, we use `dotmax::prelude::*`.
+//!
+//! Run with: `RUST_LOG=dotmax=debug cargo run --example hello_braille`
 
-use dotmax::{BrailleGrid, TerminalRenderer};
+// The prelude provides all commonly used types with a single import!
+use dotmax::prelude::*;
 use std::thread;
 use std::time::Duration;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Initialize logging to see debug output
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
