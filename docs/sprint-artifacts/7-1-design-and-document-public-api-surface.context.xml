@@ -1,0 +1,292 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>7</epicId>
+    <storyId>1</storyId>
+    <title>Design and Document Public API Surface</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-25</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/7-1-design-and-document-public-api-surface.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Rust developer integrating dotmax</asA>
+    <iWant>a well-organized, thoroughly documented public API surface</iWant>
+    <soThat>I can quickly discover available types, understand their purpose, and use them correctly with minimal trial and error</soThat>
+    <tasks>
+      <task id="1" name="Audit Current API Surface" acs="1,8">
+        <subtask id="1.1">Run `cargo doc --open` and inventory all currently exported types</subtask>
+        <subtask id="1.2">List all public types in `src/lib.rs` re-exports</subtask>
+        <subtask id="1.3">Identify any internal types that are accidentally public</subtask>
+        <subtask id="1.4">Document current module organization</subtask>
+        <subtask id="1.5">Create checklist of types that SHOULD be public (from tech-spec)</subtask>
+      </task>
+      <task id="2" name="Enable and Fix missing_docs Warning" acs="5">
+        <subtask id="2.1">Add `#![warn(missing_docs)]` to `src/lib.rs` if not present</subtask>
+        <subtask id="2.2">Run `cargo doc` and collect all missing docs warnings</subtask>
+        <subtask id="2.3">Group warnings by module (error, grid, render, etc.)</subtask>
+        <subtask id="2.4">Prioritize: error.rs, grid.rs, render.rs first (core types)</subtask>
+        <subtask id="2.5">Add documentation to each public item with missing docs</subtask>
+      </task>
+      <task id="3" name="Add Module-Level Documentation" acs="4">
+        <subtask id="3.1">Add `//!` documentation to `src/error.rs`</subtask>
+        <subtask id="3.2">Add `//!` documentation to `src/grid.rs`</subtask>
+        <subtask id="3.3">Add `//!` documentation to `src/render.rs`</subtask>
+        <subtask id="3.4">Add `//!` documentation to `src/image/mod.rs`</subtask>
+        <subtask id="3.5">Add `//!` documentation to `src/primitives.rs`</subtask>
+        <subtask id="3.6">Add `//!` documentation to `src/density.rs`</subtask>
+        <subtask id="3.7">Add `//!` documentation to `src/color/mod.rs`</subtask>
+        <subtask id="3.8">Add `//!` documentation to `src/animation/mod.rs`</subtask>
+        <subtask id="3.9">Verify all modules have explanatory documentation</subtask>
+      </task>
+      <task id="4" name="Verify and Enhance Top-Level Re-exports" acs="2,3">
+        <subtask id="4.1">Verify `BrailleGrid` re-exported at crate root</subtask>
+        <subtask id="4.2">Verify `TerminalRenderer` re-exported at crate root</subtask>
+        <subtask id="4.3">Verify `Color` re-exported at crate root</subtask>
+        <subtask id="4.4">Verify `ColorScheme` re-exported at crate root</subtask>
+        <subtask id="4.5">Verify `DotmaxError` re-exported at crate root</subtask>
+        <subtask id="4.6">Verify `pub type Result&lt;T&gt;` alias exists and is documented</subtask>
+        <subtask id="4.7">Add any missing re-exports from animation module</subtask>
+        <subtask id="4.8">Add any missing re-exports from primitives module</subtask>
+      </task>
+      <task id="5" name="Add Rustdoc Examples to Core Types" acs="6">
+        <subtask id="5.1">Add/verify `# Examples` section to `BrailleGrid` struct doc</subtask>
+        <subtask id="5.2">Add/verify `# Examples` section to `TerminalRenderer` struct doc</subtask>
+        <subtask id="5.3">Add/verify `# Examples` section to `Color` struct doc</subtask>
+        <subtask id="5.4">Add/verify `# Examples` section to `ColorScheme` struct doc</subtask>
+        <subtask id="5.5">Add/verify `# Examples` section to `DotmaxError` enum doc</subtask>
+        <subtask id="5.6">Add/verify `# Examples` section to `AnimationLoop` struct doc</subtask>
+        <subtask id="5.7">Add/verify `# Examples` section to `FrameBuffer` struct doc</subtask>
+        <subtask id="5.8">Run `cargo test --doc` to verify all examples compile</subtask>
+      </task>
+      <task id="6" name="Document Error Conditions" acs="7">
+        <subtask id="6.1">Audit all public functions returning `Result&lt;T, DotmaxError&gt;`</subtask>
+        <subtask id="6.2">Add `# Errors` section to `BrailleGrid::new()`</subtask>
+        <subtask id="6.3">Add `# Errors` section to `BrailleGrid::set_dot()`</subtask>
+        <subtask id="6.4">Add `# Errors` section to `TerminalRenderer::new()`</subtask>
+        <subtask id="6.5">Add `# Errors` section to `TerminalRenderer::render()`</subtask>
+        <subtask id="6.6">Add `# Errors` section to image module public functions</subtask>
+        <subtask id="6.7">Add `# Errors` section to animation module public functions</subtask>
+        <subtask id="6.8">Verify each `# Errors` section lists specific error variants</subtask>
+      </task>
+      <task id="7" name="Document Thread Safety" acs="9">
+        <subtask id="7.1">Identify which types are Send + Sync (BrailleGrid, FrameBuffer, etc.)</subtask>
+        <subtask id="7.2">Identify which types are !Send (TerminalRenderer, AnimationLoop)</subtask>
+        <subtask id="7.3">Add thread safety notes to `BrailleGrid` documentation</subtask>
+        <subtask id="7.4">Add thread safety notes to `TerminalRenderer` documentation</subtask>
+        <subtask id="7.5">Add thread safety notes to `FrameBuffer` documentation</subtask>
+        <subtask id="7.6">Add thread safety notes to `AnimationLoop` documentation</subtask>
+        <subtask id="7.7">Create "# Thread Safety" section in crate-level docs</subtask>
+      </task>
+      <task id="8" name="Verify No Internal Types Leaked" acs="8">
+        <subtask id="8.1">Run `cargo doc --document-private-items` and compare with public docs</subtask>
+        <subtask id="8.2">Identify any types that should be private but aren't</subtask>
+        <subtask id="8.3">Make internal helper types `pub(crate)` or private</subtask>
+        <subtask id="8.4">Verify no implementation details exposed in public API</subtask>
+        <subtask id="8.5">Document rationale for any intentionally public internal types</subtask>
+      </task>
+      <task id="9" name="Final API Validation" acs="ALL">
+        <subtask id="9.1">Run `cargo doc` with `RUSTDOCFLAGS="-D warnings"` - zero warnings</subtask>
+        <subtask id="9.2">Run `cargo test --doc` - all doc tests pass</subtask>
+        <subtask id="9.3">Run `cargo clippy --all-features -- -D warnings` - zero warnings</subtask>
+        <subtask id="9.4">Verify `dotmax::*` imports work as expected (compile test)</subtask>
+        <subtask id="9.5">Create simple integration test using only top-level re-exports</subtask>
+        <subtask id="9.6">Review docs.rs preview (cargo doc --open) for presentation quality</subtask>
+        <subtask id="9.7">Verify all 9 ACs are met with evidence</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="src/lib.rs exposes organized module structure">
+      <requirement>Modules visible: grid, render, image (feature-gated), primitives, density, color, animation, error</requirement>
+      <requirement>Module organization follows feature/epic boundaries</requirement>
+      <requirement>Clear separation between core and optional modules</requirement>
+    </criterion>
+    <criterion id="AC2" title="Top-level re-exports for convenience types">
+      <requirement>`BrailleGrid` accessible from `dotmax::BrailleGrid`</requirement>
+      <requirement>`TerminalRenderer` accessible from `dotmax::TerminalRenderer`</requirement>
+      <requirement>`Color` accessible from `dotmax::Color`</requirement>
+      <requirement>`ColorScheme` accessible from `dotmax::ColorScheme`</requirement>
+      <requirement>`DotmaxError` accessible from `dotmax::DotmaxError`</requirement>
+      <requirement>All key types usable without navigating module paths</requirement>
+    </criterion>
+    <criterion id="AC3" title="pub type Result&lt;T&gt; alias defined">
+      <requirement>`dotmax::Result&lt;T&gt;` is equivalent to `Result&lt;T, DotmaxError&gt;`</requirement>
+      <requirement>Documented with usage example</requirement>
+      <requirement>Simplifies error handling for library users</requirement>
+    </criterion>
+    <criterion id="AC4" title="Module-level documentation complete">
+      <requirement>Every `pub mod` has `//!` doc comment explaining purpose</requirement>
+      <requirement>Documentation explains what the module contains and when to use it</requirement>
+      <requirement>Each module has at least 2-3 sentences of explanation</requirement>
+    </criterion>
+    <criterion id="AC5" title="All public items have rustdoc">
+      <requirement>`#![warn(missing_docs)]` enabled at crate root</requirement>
+      <requirement>Zero warnings when running `cargo doc`</requirement>
+      <requirement>Every public struct, enum, trait, function, const has documentation</requirement>
+    </criterion>
+    <criterion id="AC6" title="Code examples in rustdoc">
+      <requirement>`BrailleGrid` has `# Examples` section with working code</requirement>
+      <requirement>`TerminalRenderer` has `# Examples` section with working code</requirement>
+      <requirement>`Color` and `ColorScheme` have examples</requirement>
+      <requirement>`AnimationLoop` and `FrameBuffer` have examples</requirement>
+      <requirement>All rustdoc examples compile via `cargo test --doc`</requirement>
+    </criterion>
+    <criterion id="AC7" title="Errors section documented">
+      <requirement>All Result-returning functions document error conditions</requirement>
+      <requirement>Uses `# Errors` section in rustdoc</requirement>
+      <requirement>Lists which `DotmaxError` variants can be returned</requirement>
+    </criterion>
+    <criterion id="AC8" title="No internal types leaked">
+      <requirement>Only intentional public API visible</requirement>
+      <requirement>Internal helper types not exposed</requirement>
+      <requirement>Private implementation details remain private</requirement>
+      <requirement>Run `cargo doc --document-private-items` to verify separation</requirement>
+    </criterion>
+    <criterion id="AC9" title="Thread safety documented">
+      <requirement>`Send`/`Sync` bounds noted where applicable</requirement>
+      <requirement>Types that are !Send (like TerminalRenderer) documented as such</requirement>
+      <requirement>Thread-safe types (like BrailleGrid) explicitly noted</requirement>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-7.md" title="Epic 7 Technical Specification" section="Story 7.1: Design and Document Public API Surface">
+        Authoritative acceptance criteria (AC7.1.1-7.1.9), API surface specifications, public type requirements, and rustdoc format standards. Defines target public types: BrailleGrid, TerminalRenderer, Color, ColorScheme, DotmaxError, FrameBuffer, FrameTimer, AnimationLoop, DifferentialRenderer, ImageRenderer (feature-gated).
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Public API Surface, Documentation Format">
+        Defines naming conventions, code organization standards, rustdoc requirements, and the target public API surface. Key types: BrailleGrid, TerminalBackend, TerminalRenderer, Color, ColorScheme, DotmaxError. Documents builder pattern usage and error handling conventions.
+      </doc>
+      <doc path="docs/PRD.md" title="Product Requirements Document" section="Functional Requirements, API Design">
+        FR44-FR50 define API requirements: &lt;100 lines for basic integration, Rust idioms, builder patterns, async-compatible API, examples, feature flags, minimal surface. NFR-DX1-DX4 specify developer experience requirements.
+      </doc>
+      <doc path="docs/adr/0001-use-braille-unicode-for-rendering.md" title="ADR 0001" section="Full Document">
+        Decision to use Unicode braille characters (U+2800-U+28FF) for rendering. Impacts BrailleGrid documentation requirements.
+      </doc>
+    </docs>
+    <code>
+      <file path="src/lib.rs" kind="crate root" symbol="lib" lines="1-123" reason="Primary file to modify for AC1-AC3. Contains current re-exports, module declarations, Result alias, and crate-level documentation. Needs #![warn(missing_docs)] addition.">
+        Current exports: BrailleGrid, Color, TerminalRenderer, TerminalBackend, TerminalCapabilities, TerminalType, DotmaxError, ColorScheme, ColorSchemeBuilder, AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer, PrerenderedAnimation, various color scheme functions, color capability detection.
+      </file>
+      <file path="src/error.rs" kind="module" symbol="DotmaxError" lines="1-406" reason="AC4, AC5, AC7: Error module with comprehensive documentation. Has module-level docs. 18 error variants with documentation. May need # Examples section enhancement."/>
+      <file path="src/grid.rs" kind="module" symbol="BrailleGrid, Color" lines="large file" reason="AC4-AC7, AC9: Core types need documentation review. BrailleGrid and Color are primary public types requiring examples, error conditions, and thread safety notes."/>
+      <file path="src/render.rs" kind="module" symbol="TerminalRenderer, TerminalBackend, TerminalCapabilities, TerminalType" lines="1-847" reason="AC4-AC7, AC9: Terminal module has good documentation. TerminalRenderer is !Send (owns terminal). TerminalBackend trait needs documentation review."/>
+      <file path="src/animation/mod.rs" kind="module" symbol="FrameBuffer, FrameTimer, AnimationLoop, DifferentialRenderer, PrerenderedAnimation" lines="1-62" reason="AC4, AC6: Animation module has good overview documentation. Individual types need example verification."/>
+      <file path="src/color/mod.rs" kind="module" symbol="ColorScheme, ColorSchemeBuilder" lines="unknown" reason="AC4, AC6: Color module types need documentation review. ColorScheme and ColorSchemeBuilder should have examples."/>
+      <file path="src/primitives.rs" kind="module" symbol="drawing primitives" lines="unknown" reason="AC4, AC8: Drawing primitives module. Check if module-level docs exist and what types are exported."/>
+      <file path="src/density.rs" kind="module" symbol="DensitySet" lines="unknown" reason="AC4, AC8: Character density module. Check module-level docs."/>
+      <file path="src/image/mod.rs" kind="module" symbol="ImageRenderer (feature-gated)" lines="unknown" reason="AC4: Feature-gated image module. Check module-level docs exist."/>
+      <file path="src/utils/mod.rs" kind="module" symbol="terminal_caps" lines="unknown" reason="AC4: Utility module. Check if public types need documentation."/>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dep name="ratatui" version="0.29">Terminal UI framework - used by TerminalRenderer</dep>
+          <dep name="crossterm" version="0.29">Cross-platform terminal I/O - backend for ratatui</dep>
+          <dep name="thiserror" version="2.0">Error handling derive macros - used by DotmaxError</dep>
+          <dep name="tracing" version="0.1">Structured logging - used throughout library</dep>
+        </core>
+        <optional>
+          <dep name="image" version="0.25" feature="image">Image loading and processing</dep>
+          <dep name="imageproc" version="0.24" feature="image">Image processing algorithms</dep>
+          <dep name="resvg" version="0.38" feature="svg">SVG rasterization</dep>
+          <dep name="usvg" version="0.38" feature="svg">SVG parsing</dep>
+        </optional>
+        <dev>
+          <dep name="criterion" version="0.7">Benchmarking framework</dep>
+          <dep name="tracing-subscriber" version="0.3">Log output for tests</dep>
+          <dep name="tempfile" version="3.10">Temporary file handling for tests</dep>
+        </dev>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="architecture" type="api-design">
+      Only expose types via lib.rs re-exports. Internal helper types should be pub(crate) or private.
+    </constraint>
+    <constraint source="architecture" type="documentation">
+      Every public item needs rustdoc with: brief summary, longer explanation, # Examples, # Errors, # Panics sections as applicable.
+    </constraint>
+    <constraint source="tech-spec" type="thread-safety">
+      Document Send/Sync bounds: BrailleGrid is Send+Sync, TerminalRenderer is !Send (owns terminal), AnimationLoop is !Send.
+    </constraint>
+    <constraint source="tech-spec" type="naming">
+      Types use PascalCase, functions/methods use snake_case, constants use SCREAMING_SNAKE_CASE.
+    </constraint>
+    <constraint source="architecture" type="error-handling">
+      All public functions return Result&lt;T, DotmaxError&gt;. Zero panics in library code.
+    </constraint>
+    <constraint source="tech-spec" type="feature-flags">
+      Image module is feature-gated behind "image" flag. SVG is feature-gated behind "svg" flag.
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="BrailleGrid" kind="struct" signature="pub struct BrailleGrid" path="src/grid.rs">
+      Core rendering surface. Methods: new(), set_dot(), clear(), dimensions(), to_unicode_grid(), get_color(), set_color(). Send+Sync.
+    </interface>
+    <interface name="Color" kind="struct" signature="pub struct Color { pub r: u8, pub g: u8, pub b: u8 }" path="src/grid.rs">
+      RGB color representation. Copy + Clone.
+    </interface>
+    <interface name="TerminalRenderer" kind="struct" signature="pub struct TerminalRenderer" path="src/render.rs">
+      Terminal output management. Methods: new(), render(), clear(), get_terminal_size(), cleanup(), capabilities(). !Send (owns terminal).
+    </interface>
+    <interface name="TerminalBackend" kind="trait" signature="pub trait TerminalBackend" path="src/render.rs">
+      Abstraction for terminal I/O. Methods: size(), render(), clear(), capabilities().
+    </interface>
+    <interface name="DotmaxError" kind="enum" signature="pub enum DotmaxError" path="src/error.rs">
+      18 error variants covering all failure modes. Implements Error trait via thiserror.
+    </interface>
+    <interface name="ColorScheme" kind="struct" signature="pub struct ColorScheme" path="src/color/schemes.rs">
+      Intensity-to-color mapping. Clone.
+    </interface>
+    <interface name="ColorSchemeBuilder" kind="struct" signature="pub struct ColorSchemeBuilder" path="src/color/scheme_builder.rs">
+      Builder pattern for custom color schemes.
+    </interface>
+    <interface name="FrameBuffer" kind="struct" signature="pub struct FrameBuffer" path="src/animation/frame_buffer.rs">
+      Double-buffered frame management for animations. Send+Sync.
+    </interface>
+    <interface name="FrameTimer" kind="struct" signature="pub struct FrameTimer" path="src/animation/timing.rs">
+      Frame timing control for consistent animation rates.
+    </interface>
+    <interface name="AnimationLoop" kind="struct" signature="pub struct AnimationLoop" path="src/animation/loop_helper.rs">
+      High-level animation helper. !Send (owns TerminalRenderer).
+    </interface>
+    <interface name="AnimationLoopBuilder" kind="struct" signature="pub struct AnimationLoopBuilder" path="src/animation/loop_helper.rs">
+      Builder pattern for AnimationLoop configuration.
+    </interface>
+    <interface name="DifferentialRenderer" kind="struct" signature="pub struct DifferentialRenderer" path="src/animation/differential.rs">
+      Optimized rendering that only updates changed cells.
+    </interface>
+    <interface name="PrerenderedAnimation" kind="struct" signature="pub struct PrerenderedAnimation" path="src/animation/prerender.rs">
+      Pre-computed frame cache for animation playback.
+    </interface>
+    <interface name="Result&lt;T&gt;" kind="type alias" signature="pub type Result&lt;T&gt; = std::result::Result&lt;T, DotmaxError&gt;" path="src/lib.rs">
+      Convenience type alias for error handling.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Rust testing standards using #[cfg(test)] modules in each source file. Integration tests in tests/ directory.
+      Use `require_terminal!` macro for tests needing actual terminal. Doc tests must compile and pass via `cargo test --doc`.
+      Zero clippy warnings required (pedantic level). RUSTDOCFLAGS="-D warnings" for documentation validation.
+      Current status: 557+ library tests, 232+ doc tests passing. Zero clippy warnings.
+    </standards>
+    <locations>
+      <location>src/**/*.rs (inline #[cfg(test)] modules)</location>
+      <location>tests/*.rs (integration tests)</location>
+      <location>benches/*.rs (criterion benchmarks)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC5">Test missing_docs warning by running cargo doc and verifying zero warnings.</idea>
+      <idea ac="AC6">Run cargo test --doc to verify all rustdoc examples compile.</idea>
+      <idea ac="AC8">Compare cargo doc vs cargo doc --document-private-items output to identify leaked internal types.</idea>
+      <idea ac="AC9">Create compile-time test that asserts BrailleGrid: Send + Sync and TerminalRenderer: !Send.</idea>
+      <idea ac="ALL">Create integration test that uses only top-level re-exports (dotmax::*) to verify AC2-AC3.</idea>
+    </ideas>
+  </tests>
+</story-context>

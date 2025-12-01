@@ -48,7 +48,12 @@ pub enum DotmaxError {
     /// - `width > 0 && width <= 10,000`
     /// - `height > 0 && height <= 10,000`
     #[error("Invalid grid dimensions: width={width}, height={height}")]
-    InvalidDimensions { width: usize, height: usize },
+    InvalidDimensions {
+        /// The invalid width value
+        width: usize,
+        /// The invalid height value
+        height: usize,
+    },
 
     /// Coordinate access is outside grid boundaries
     ///
@@ -57,9 +62,13 @@ pub enum DotmaxError {
     /// - `y < height`
     #[error("Out of bounds access: ({x}, {y}) in grid of size ({width}, {height})")]
     OutOfBounds {
+        /// The X coordinate that was out of bounds
         x: usize,
+        /// The Y coordinate that was out of bounds
         y: usize,
+        /// The grid width
         width: usize,
+        /// The grid height
         height: usize,
     },
 
@@ -73,7 +82,10 @@ pub enum DotmaxError {
     /// 6 7
     /// ```
     #[error("Invalid dot index: {index} (must be 0-7)")]
-    InvalidDotIndex { index: u8 },
+    InvalidDotIndex {
+        /// The invalid dot index (must be 0-7)
+        index: u8,
+    },
 
     /// Terminal I/O error from underlying terminal backend
     ///
@@ -94,7 +106,12 @@ pub enum DotmaxError {
     /// This should rarely occur as braille Unicode range (U+2800–U+28FF) is
     /// well-defined, but may happen if cell data becomes corrupted.
     #[error("Unicode conversion failed for cell ({x}, {y})")]
-    UnicodeConversion { x: usize, y: usize },
+    UnicodeConversion {
+        /// The X coordinate of the cell
+        x: usize,
+        /// The Y coordinate of the cell
+        y: usize,
+    },
 
     /// Image loading failed (file not found, decode error, etc.)
     ///
@@ -108,7 +125,9 @@ pub enum DotmaxError {
     #[cfg(feature = "image")]
     #[error("Failed to load image from {path:?}: {source}")]
     ImageLoad {
+        /// Path to the image file
         path: std::path::PathBuf,
+        /// Underlying image loading error
         #[source]
         source: image::ImageError,
     },
@@ -119,7 +138,10 @@ pub enum DotmaxError {
     /// See [`crate::image::supported_formats`] for the list of valid formats.
     #[cfg(feature = "image")]
     #[error("Unsupported image format: {format}")]
-    UnsupportedFormat { format: String },
+    UnsupportedFormat {
+        /// The unsupported format name
+        format: String,
+    },
 
     /// Image dimensions exceed maximum limits
     ///
@@ -127,7 +149,12 @@ pub enum DotmaxError {
     /// memory exhaustion attacks.
     #[cfg(feature = "image")]
     #[error("Invalid image dimensions: {width}×{height} exceeds maximum (10,000×10,000)")]
-    InvalidImageDimensions { width: u32, height: u32 },
+    InvalidImageDimensions {
+        /// The image width in pixels
+        width: u32,
+        /// The image height in pixels
+        height: u32,
+    },
 
     /// Invalid parameter value provided to image processing function
     ///
@@ -141,9 +168,13 @@ pub enum DotmaxError {
     #[cfg(feature = "image")]
     #[error("Invalid {parameter_name}: {value} (valid range: {min}-{max})")]
     InvalidParameter {
+        /// Name of the invalid parameter
         parameter_name: String,
+        /// The invalid value provided
         value: String,
+        /// Minimum valid value
         min: String,
+        /// Maximum valid value
         max: String,
     },
 
@@ -166,7 +197,10 @@ pub enum DotmaxError {
     /// Valid thickness values must be at least 1. For braille resolution,
     /// recommended maximum is 10 dots.
     #[error("Invalid line thickness: {thickness} (must be ≥ 1)")]
-    InvalidThickness { thickness: u32 },
+    InvalidThickness {
+        /// The invalid thickness value
+        thickness: u32,
+    },
 
     /// Invalid polygon definition
     ///
@@ -174,7 +208,10 @@ pub enum DotmaxError {
     /// parameters (e.g., fewer than 3 vertices, empty vertex list).
     /// Polygons require at least 3 vertices to form a closed shape.
     #[error("Invalid polygon: {reason}")]
-    InvalidPolygon { reason: String },
+    InvalidPolygon {
+        /// The reason the polygon is invalid
+        reason: String,
+    },
 
     /// Density set cannot be empty
     ///
@@ -190,7 +227,10 @@ pub enum DotmaxError {
     /// than 256 characters. The limit ensures reasonable memory usage and
     /// mapping performance.
     #[error("Density set has too many characters: {count} (max 256)")]
-    TooManyCharacters { count: usize },
+    TooManyCharacters {
+        /// The number of characters in the set
+        count: usize,
+    },
 
     /// Intensity buffer size mismatch with grid dimensions
     ///
@@ -200,7 +240,12 @@ pub enum DotmaxError {
     #[error(
         "Intensity buffer size mismatch: expected {expected} (grid width × height), got {actual}"
     )]
-    BufferSizeMismatch { expected: usize, actual: usize },
+    BufferSizeMismatch {
+        /// Expected buffer size (grid width × height)
+        expected: usize,
+        /// Actual buffer size provided
+        actual: usize,
+    },
 
     /// Color scheme cannot have an empty color list
     ///

@@ -14,7 +14,7 @@
 //! ```
 //! use dotmax::{BrailleGrid, primitives::{draw_line, draw_circle, shapes::draw_rectangle}};
 //!
-//! let mut grid = BrailleGrid::new(80, 24); // 160×96 dots
+//! let mut grid = BrailleGrid::new(80, 24)?; // 160×96 dots
 //! draw_line(&mut grid, 0, 0, 159, 95)?; // Diagonal line
 //! draw_circle(&mut grid, 80, 48, 30)?; // Circle at center
 //! draw_rectangle(&mut grid, 10, 10, 50, 30)?; // Rectangle

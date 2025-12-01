@@ -1,15 +1,35 @@
-// grid.rs - Core BrailleGrid data structure extracted from crabmusic
-//
-// Extracted from: https://github.com/newjordan/crabmusic
-// Source files:
-//   - crabmusic/src/visualization/braille.rs (BrailleGrid struct, dot manipulation)
-//   - crabmusic/src/visualization/mod.rs (Color struct)
-//
-// Extraction strategy: Copy-Refactor-Test (ADR 0005)
-//   1. Copy working code from crabmusic
-//   2. Strip audio dependencies
-//   3. Add Result-based error handling (zero panics policy)
-//   4. Add comprehensive tests
+//! Core [`BrailleGrid`] data structure for terminal braille rendering.
+//!
+//! This module provides the central [`BrailleGrid`] type and [`Color`] struct
+//! for high-resolution terminal graphics using Unicode braille characters.
+//!
+//! # Overview
+//!
+//! Each terminal cell displays a braille character (U+2800-U+28FF) representing
+//! a 2×4 dot matrix. This gives 4× the resolution of ASCII art.
+//!
+//! # Examples
+//!
+//! ```
+//! use dotmax::BrailleGrid;
+//!
+//! // Create 80×24 grid (= 160×96 dot resolution)
+//! let mut grid = BrailleGrid::new(80, 24).unwrap();
+//!
+//! // Set individual dots
+//! grid.set_dot(0, 0).unwrap();  // Top-left
+//! grid.set_dot(159, 95).unwrap(); // Bottom-right
+//!
+//! // Get the grid dimensions
+//! let (width, height) = grid.dimensions();
+//! assert_eq!(width, 80);
+//! assert_eq!(height, 24);
+//! ```
+//!
+//! # Extraction Note
+//!
+//! This module was extracted from the [crabmusic](https://github.com/newjordan/crabmusic) project.
+//! See ADR 0005 (Copy-Refactor-Test strategy) for details.
 
 // Import error types from error module
 use crate::error::DotmaxError;
@@ -30,8 +50,11 @@ const MAX_GRID_HEIGHT: usize = 10_000;
 /// Extracted from crabmusic. Story 2.6 will implement full color rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Color {
+    /// Red component (0-255)
     pub r: u8,
+    /// Green component (0-255)
     pub g: u8,
+    /// Blue component (0-255)
     pub b: u8,
 }
 
@@ -77,13 +100,21 @@ impl Color {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrailleDot {
+    /// Top-left dot (position 1)
     Dot1 = 0b0000_0001,
+    /// Middle-left dot (position 2)
     Dot2 = 0b0000_0010,
+    /// Lower-left dot (position 3)
     Dot3 = 0b0000_0100,
+    /// Top-right dot (position 4)
     Dot4 = 0b0000_1000,
+    /// Middle-right dot (position 5)
     Dot5 = 0b0001_0000,
+    /// Lower-right dot (position 6)
     Dot6 = 0b0010_0000,
+    /// Bottom-left dot (position 7)
     Dot7 = 0b0100_0000,
+    /// Bottom-right dot (position 8)
     Dot8 = 0b1000_0000,
 }
 
@@ -158,6 +189,7 @@ pub fn dots_to_char(dots: u8) -> char {
 /// grid.set_dot(0, 0); // Top-left dot
 /// grid.set_dot(1, 0); // Top-right dot of first cell
 /// ```
+#[derive(Debug, Clone)]
 pub struct BrailleGrid {
     /// Width in terminal cells
     width: usize,
@@ -507,6 +539,63 @@ impl BrailleGrid {
 
         let index = cell_y * self.width + cell_x;
         self.patterns[index] == 0
+    }
+
+    // ========================================================================
+    // Story 6.4: Raw Pattern Access for Animation Serialization
+    // ========================================================================
+
+    /// Get raw access to the pattern buffer for serialization.
+    ///
+    /// **Story 6.4** - Enables efficient animation frame serialization.
+    ///
+    /// Returns a slice of the internal pattern buffer, where each byte
+    /// represents one braille cell's dot pattern (8 bits = 8 dots).
+    ///
+    /// # Returns
+    /// A byte slice of length `width * height` containing dot patterns.
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 5).unwrap();
+    /// grid.set_dot(0, 0).unwrap(); // Set top-left dot
+    ///
+    /// let patterns = grid.get_raw_patterns();
+    /// assert_eq!(patterns.len(), 50); // 10 * 5 cells
+    /// assert_eq!(patterns[0], 0b0000_0001); // First cell has dot 1 set
+    /// ```
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
+    /// Set raw pattern buffer from serialized data.
+    ///
+    /// **Story 6.4** - Enables efficient animation frame deserialization.
+    ///
+    /// Copies data into the internal pattern buffer. The data slice length
+    /// must match `width * height`. If the length doesn't match, excess data
+    /// is truncated or missing data is left unchanged.
+    ///
+    /// # Arguments
+    /// * `data` - Raw pattern bytes to copy into the grid
+    ///
+    /// # Examples
+    /// ```
+    /// use dotmax::BrailleGrid;
+    ///
+    /// let mut grid = BrailleGrid::new(10, 5).unwrap();
+    /// let mut patterns = vec![0u8; 50];
+    /// patterns[0] = 0b0000_0001; // Set dot 1 in first cell
+    ///
+    /// grid.set_raw_patterns(&patterns);
+    /// assert!(grid.get_char(0, 0) == '⠁'); // First cell shows dot 1
+    /// ```
+    pub fn set_raw_patterns(&mut self, data: &[u8]) {
+        let copy_len = data.len().min(self.patterns.len());
+        self.patterns[..copy_len].copy_from_slice(&data[..copy_len]);
     }
 
     // ========================================================================

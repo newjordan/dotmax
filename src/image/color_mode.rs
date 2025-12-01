@@ -978,7 +978,7 @@ mod tests {
         let color = Color::rgb(255, 0, 0);
         let intensity = rgb_to_grayscale_intensity(&color);
         // BT.709: 0.2126 * 255 ≈ 54
-        assert!(intensity >= 54 && intensity <= 55);
+        assert!((54..=55).contains(&intensity));
     }
 
     #[test]
@@ -986,7 +986,7 @@ mod tests {
         let color = Color::rgb(0, 255, 0);
         let intensity = rgb_to_grayscale_intensity(&color);
         // BT.709: 0.7152 * 255 ≈ 182
-        assert!(intensity >= 182 && intensity <= 183);
+        assert!((182..=183).contains(&intensity));
     }
 
     #[test]
@@ -994,7 +994,7 @@ mod tests {
         let color = Color::rgb(0, 0, 255);
         let intensity = rgb_to_grayscale_intensity(&color);
         // BT.709: 0.0722 * 255 ≈ 18
-        assert!(intensity >= 18 && intensity <= 19);
+        assert!((18..=19).contains(&intensity));
     }
 
     #[test]
@@ -1013,7 +1013,7 @@ mod tests {
     fn test_intensity_to_ansi256_mid() {
         let ansi = intensity_to_ansi256(128);
         // Mid intensity should map to mid-range (around 243-244)
-        assert!(ansi >= 243 && ansi <= 244);
+        assert!((243..=244).contains(&ansi));
     }
 
     #[test]

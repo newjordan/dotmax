@@ -210,8 +210,8 @@ fn main() -> Result<(), dotmax::DotmaxError> {
     let intensities = [0.0, 0.25, 0.5, 0.75, 1.0];
     for &intensity in &intensities {
         let color = fire_scheme.sample(intensity);
-        print!(
-            "  intensity={:.2} → \x1b[48;2;{};{};{}m    \x1b[0m RGB({:3}, {:3}, {:3})\n",
+        println!(
+            "  intensity={:.2} → \x1b[48;2;{};{};{}m    \x1b[0m RGB({:3}, {:3}, {:3})",
             intensity, color.r, color.g, color.b, color.r, color.g, color.b
         );
     }

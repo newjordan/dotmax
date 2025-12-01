@@ -1,0 +1,204 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>7</epicId>
+    <storyId>3</storyId>
+    <title>Optimize Hot Paths Based on Benchmark Data</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-25</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/7-3-optimize-hot-paths-based-on-benchmark-data.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>library maintainer meeting aggressive performance targets</asA>
+    <iWant>to profile and optimize identified bottlenecks based on benchmark data from Story 7.2</iWant>
+    <soThat>dotmax achieves &lt;20ms image renders (beating &lt;25ms by 20%), 60fps animation at &lt;10% CPU utilization, and &lt;5MB memory baseline with &lt;500KB per-frame overhead</soThat>
+    <tasks>
+      <task id="1" title="Set Up Profiling Infrastructure" ac="#1">
+        <subtask>1.1: Install and configure `cargo flamegraph`</subtask>
+        <subtask>1.2: Install memory profiler (valgrind or heaptrack based on platform)</subtask>
+        <subtask>1.3: Create profiling scripts for reproducible measurements</subtask>
+        <subtask>1.4: Document profiling environment (hardware, OS, Rust version)</subtask>
+        <subtask>1.5: Verify profiling tools work with feature flags</subtask>
+      </task>
+      <task id="2" title="Generate Flamegraph Profiles" ac="#1, #2">
+        <subtask>2.1: Run cargo flamegraph on image rendering example/benchmark</subtask>
+        <subtask>2.2: Run cargo flamegraph on animation example (60fps loop)</subtask>
+        <subtask>2.3: Save SVG flamegraphs to docs/profiling/</subtask>
+        <subtask>2.4: Analyze flamegraphs to identify hot functions</subtask>
+        <subtask>2.5: Create bottleneck summary table</subtask>
+      </task>
+      <task id="3" title="Identify and Document Top 3 Bottlenecks" ac="#2">
+        <subtask>3.1: Rank functions by cumulative time from flamegraph</subtask>
+        <subtask>3.2: Document file:line, % of time, root cause for each</subtask>
+        <subtask>3.3: Cross-reference with Story 7.2 benchmark results</subtask>
+        <subtask>3.4: Prioritize by impact vs. complexity</subtask>
+        <subtask>3.5: Create optimization plan document</subtask>
+      </task>
+      <task id="4" title="Optimize Bottleneck #1" ac="#3, #4, #8">
+        <subtask>4.1-4.7: Baseline, optimize, measure, document, verify no regression</subtask>
+      </task>
+      <task id="5" title="Optimize Bottleneck #2" ac="#3, #4, #8">
+        <subtask>5.1-5.7: Baseline, optimize, measure, document, verify no regression</subtask>
+      </task>
+      <task id="6" title="Optimize Bottleneck #3" ac="#3, #4, #8">
+        <subtask>6.1-6.7: Baseline, optimize, measure, document, verify no regression</subtask>
+      </task>
+      <task id="7" title="Validate Image Rendering Target" ac="#4">
+        <subtask>7.1-7.5: Run benchmarks, verify &lt;20ms, document results</subtask>
+      </task>
+      <task id="8" title="Validate Animation CPU Target" ac="#5">
+        <subtask>8.1-8.5: Create CPU test, measure &lt;10% at 60fps, document</subtask>
+      </task>
+      <task id="9" title="Validate Memory Targets" ac="#6, #7">
+        <subtask>9.1-9.6: Profile memory, verify &lt;5MB baseline, &lt;500KB/frame</subtask>
+      </task>
+      <task id="10" title="Create Optimization ADR" ac="#9">
+        <subtask>10.1-10.6: Create ADR with context, decisions, measurements</subtask>
+      </task>
+      <task id="11" title="Final Validation" ac="All">
+        <subtask>11.1-11.10: All benchmarks, targets, clippy, tests, ACs verified</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Profiling completed">
+      <item>Flamegraph generated for image rendering pipeline</item>
+      <item>Flamegraph generated for animation loop (60fps sustained)</item>
+      <item>Profile data saved as artifacts for reference</item>
+      <item>Profiling methodology documented</item>
+    </criterion>
+    <criterion id="AC2" title="Top 3 bottlenecks identified">
+      <item>Documented list of hotspots with percentage of total execution time</item>
+      <item>Each bottleneck includes: location (file:function), % of time, reason for being slow</item>
+      <item>Bottleneck identification backed by profiler evidence (not guesswork)</item>
+    </criterion>
+    <criterion id="AC3" title="Each optimization measured">
+      <item>Before/after benchmark comparison for each change</item>
+      <item>Improvement documented with specific percentage gain</item>
+      <item>No optimization without measurable improvement (measure-first philosophy)</item>
+    </criterion>
+    <criterion id="AC4" title="Image render &lt; 20ms">
+      <item>80x24 terminal benchmark mean execution time &lt; 20ms</item>
+      <item>Beat the 25ms target by 20% margin</item>
+      <item>Benchmark evidence documented in story completion notes</item>
+    </criterion>
+    <criterion id="AC5" title="Animation CPU &lt; 10%">
+      <item>60fps sustained at &lt; 10% single-core CPU utilization</item>
+      <item>CPU measurement methodology documented</item>
+      <item>Tested over 30+ second animation playback</item>
+    </criterion>
+    <criterion id="AC6" title="Memory baseline &lt; 5MB">
+      <item>Heap profiling confirms &lt; 5MB for core operations</item>
+      <item>Memory measurement methodology documented</item>
+    </criterion>
+    <criterion id="AC7" title="Per-frame overhead &lt; 500KB">
+      <item>Animation frame allocation &lt; 500KB per frame</item>
+      <item>Buffer reuse pattern validated (grid.clear() reuses, not reallocates)</item>
+      <item>Memory profiling evidence provided</item>
+    </criterion>
+    <criterion id="AC8" title="No performance regressions">
+      <item>All existing benchmarks maintain or improve performance</item>
+      <item>cargo bench --all-features shows no regressions &gt; 5%</item>
+      <item>Regression check documented</item>
+    </criterion>
+    <criterion id="AC9" title="Optimization ADR created">
+      <item>docs/adr/NNNN-performance-optimizations.md documents decisions</item>
+      <item>ADR includes: context, decision, consequences, measurements</item>
+      <item>Each significant optimization has rationale documented</item>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-7.md" title="Epic 7 Tech Spec" section="Story 7.3: Optimize Hot Paths Based on Benchmark Data" snippet="Defines AC7.3.1-AC7.3.9 for performance optimization including profiling, bottleneck identification, &lt;20ms image renders, &lt;10% CPU animation, &lt;5MB memory baseline."/>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Performance Considerations" snippet="Defines measure-first optimization strategy: &lt;25ms image-to-braille, 60fps minimum, &lt;5MB baseline memory, &lt;500KB per-frame overhead. ADR-0007 mandates benchmark proof before optimization."/>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Pattern 2: Image-to-Braille Conversion Pipeline" snippet="Stages: Load, Resize, Grayscale, Dither, Threshold, Map. Each stage needs separate benchmarking. Total pipeline target &lt;50ms."/>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Pattern 3: Buffer Reuse for Animation" snippet="FrameBuffer maintains two BrailleGrid buffers with O(1) swap operation. Target &lt;500KB per frame. grid.clear() reuses Vec, doesn't reallocate."/>
+      <doc path="docs/sprint-artifacts/7-2-implement-comprehensive-benchmarking-suite.md" title="Story 7.2 (Prerequisite)" section="Full Story" snippet="REQUIRED prerequisite. Provides baseline benchmarks: benches/core_rendering.rs, benches/image_processing.rs, benches/animation.rs. Status: in-progress."/>
+      <doc path="docs/adr/0001-use-braille-unicode-for-rendering.md" title="ADR 0001" section="Decision" snippet="Use Unicode braille (U+2800-U+28FF) for rendering. dots_to_char() converts 8-bit pattern to Unicode character."/>
+    </docs>
+    <code>
+      <file path="src/image/dither.rs" kind="module" symbol="floyd_steinberg, bayer, atkinson" lines="349-416, 451-484, 528-606" reason="Dithering algorithms are likely bottlenecks. Floyd-Steinberg has O(n) memory accesses with poor cache locality. Bayer is stateless/parallelizable."/>
+      <file path="src/image/resize.rs" kind="module" symbol="resize_to_terminal, select_resize_filter" lines="154-218, 332-343" reason="Image resizing is compute-intensive. Already has adaptive filter selection (Lanczos3 vs Triangle). Potential SIMD/parallel optimization."/>
+      <file path="src/grid.rs" kind="core" symbol="dots_to_char, to_unicode_grid, clear" lines="148-153, 638-650" reason="Unicode conversion called for every cell on every render. Pre-computed lookup table (256 entries) could eliminate char::from_u32 overhead."/>
+      <file path="src/animation/frame_buffer.rs" kind="module" symbol="swap_buffers, FrameBuffer" lines="195-197, 75-120" reason="Double-buffering implementation. swap_buffers() is O(1) std::mem::swap. Validate buffer reuse pattern for &lt;500KB per-frame."/>
+      <file path="src/render.rs" kind="core" symbol="TerminalRenderer, render" reason="Terminal rendering may have capability detection overhead. Should be cached at construction, not queried per render."/>
+      <file path="benches/core_rendering.rs" kind="benchmark" symbol="grid_creation, dot_operations, unicode_conversion" reason="Story 7.2 benchmarks. Use results to identify actual bottlenecks."/>
+      <file path="benches/image_processing.rs" kind="benchmark" symbol="image_load, image_resize, dither_algorithms, full_pipeline" reason="Story 7.2 benchmarks. Validate &lt;25ms (target &lt;20ms) for 80x24 terminal."/>
+      <file path="benches/animation.rs" kind="benchmark" symbol="frame_swap, differential_render, 60fps_sustained" reason="Story 7.2 benchmarks. Validate frame timing &lt;16.67ms for 60fps."/>
+      <file path="src/image/threshold.rs" kind="module" symbol="auto_threshold, BinaryImage" reason="Otsu thresholding may be compute-intensive for large images."/>
+      <file path="src/image/mapper.rs" kind="module" symbol="pixels_to_braille" reason="Final stage mapping pixels to braille dots. Called for every 2x4 block."/>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dep name="ratatui" version="0.29" purpose="Terminal UI framework"/>
+          <dep name="crossterm" version="0.29" purpose="Cross-platform terminal I/O"/>
+          <dep name="thiserror" version="2.0" purpose="Error handling derive macros"/>
+          <dep name="tracing" version="0.1" purpose="Structured logging"/>
+        </core>
+        <optional feature="image">
+          <dep name="image" version="0.25" purpose="Image loading (PNG, JPG, etc.)"/>
+          <dep name="imageproc" version="0.24" purpose="Image processing algorithms"/>
+        </optional>
+        <optional feature="svg">
+          <dep name="resvg" version="0.38" purpose="SVG rasterization"/>
+          <dep name="usvg" version="0.38" purpose="SVG parsing"/>
+        </optional>
+        <dev>
+          <dep name="criterion" version="0.7" purpose="Benchmarking framework with HTML reports"/>
+          <dep name="tracing-subscriber" version="0.3" purpose="Log output for tests"/>
+          <dep name="tempfile" version="3.10" purpose="Temporary file handling"/>
+        </dev>
+      </rust>
+      <tools>
+        <tool name="cargo-flamegraph" purpose="CPU profiling via flamegraphs" install="cargo install flamegraph"/>
+        <tool name="valgrind" purpose="Memory leak detection and profiling (Linux)" install="apt install valgrind"/>
+        <tool name="heaptrack" purpose="Heap memory profiling (Linux)" install="apt install heaptrack"/>
+      </tools>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="ADR-0007">Measure-First Performance Optimization: No optimization without benchmark proof. Use criterion for all performance work. Profile with flamegraph before optimizing.</constraint>
+    <constraint source="architecture.md">Buffer Reuse Pattern: grid.clear() must use self.dots.fill(0) to reuse Vec, never reallocate with vec![0; size].</constraint>
+    <constraint source="architecture.md">Zero-Copy Where Possible: Pass by reference (fn render(&amp;self, grid: &amp;BrailleGrid)) not owned values.</constraint>
+    <constraint source="tech-spec-epic-7.md">Story 7.2 is REQUIRED prerequisite. Do not begin optimization until Story 7.2 benchmarks are complete and baselines are established.</constraint>
+    <constraint source="architecture.md">Sync-Only API (ADR-0006): No async runtime dependency. CPU-bound work doesn't benefit from async.</constraint>
+    <constraint source="Cargo.toml">MSRV 1.70. All optimizations must work on stable Rust 1.70+.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="dots_to_char" kind="function" path="src/grid.rs:148" signature="pub fn dots_to_char(dots: u8) -&gt; char" notes="Converts 8-bit pattern to Unicode braille. Called for every cell. Inline hint present. Optimization candidate: 256-entry lookup table."/>
+    <interface name="to_unicode_grid" kind="method" path="src/grid.rs:638" signature="pub fn to_unicode_grid(&amp;self) -&gt; Vec&lt;Vec&lt;char&gt;&gt;" notes="Batch conversion for rendering. O(width x height). May benefit from pre-allocation."/>
+    <interface name="FrameBuffer::swap_buffers" kind="method" path="src/animation/frame_buffer.rs:195" signature="pub fn swap_buffers(&amp;mut self)" notes="O(1) std::mem::swap. Already optimal (~2.4ns per swap)."/>
+    <interface name="resize_to_terminal" kind="function" path="src/image/resize.rs:154" signature="pub fn resize_to_terminal(image: &amp;DynamicImage, term_width: u16, term_height: u16) -&gt; Result&lt;DynamicImage, DotmaxError&gt;" notes="Already has adaptive filter selection. Uses Lanczos3 for normal, Triangle for extreme aspect ratios."/>
+    <interface name="floyd_steinberg" kind="function" path="src/image/dither.rs:345" signature="pub fn floyd_steinberg(gray: &amp;GrayImage) -&gt; Result&lt;BinaryImage, DotmaxError&gt;" notes="Error diffusion to 4 neighbors per pixel. Primary optimization candidate for SIMD or parallel processing."/>
+    <interface name="DitheringMethod" kind="enum" path="src/image/dither.rs:133" signature="pub enum DitheringMethod { None, FloydSteinberg, Bayer, Atkinson }" notes="Algorithm selection. Bayer is fastest (stateless, parallelizable)."/>
+  </interfaces>
+
+  <tests>
+    <standards>Use criterion for all benchmarking. Benchmarks should use statistical analysis with multiple iterations. Avoid microbenchmark pitfalls (dead code elimination, cache effects). Use #[bench] with black_box() for hot paths. Memory profiling via valgrind or heaptrack on Linux. CPU profiling via cargo-flamegraph. Document test environment (CPU, RAM, OS, Rust version) in results.</standards>
+    <locations>
+      <location>benches/core_rendering.rs - Grid operations, unicode conversion</location>
+      <location>benches/image_processing.rs - Image pipeline timing (feature=image)</location>
+      <location>benches/animation.rs - Frame timing, 60fps validation</location>
+      <location>benches/rendering.rs - Core rendering benchmarks</location>
+      <location>benches/dithering.rs - Dithering algorithm comparison</location>
+      <location>benches/extreme_image_pipeline.rs - Large image benchmarks</location>
+      <location>docs/profiling/ - Flamegraph SVG outputs (to be created)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Create profiling script that runs flamegraph on examples/view_image and examples/bouncing_ball</idea>
+      <idea ac="AC2">Parse flamegraph SVG to extract function percentages; create bottleneck table in markdown</idea>
+      <idea ac="AC4">Run benches/image_processing.rs full_pipeline_80x24, verify mean &lt; 20ms</idea>
+      <idea ac="AC5">Create 30-second animation test, measure CPU with /proc/stat or htop</idea>
+      <idea ac="AC6">Run valgrind --tool=massif on core operations, verify peak &lt; 5MB</idea>
+      <idea ac="AC7">Profile animation loop, verify no allocations during frame iteration</idea>
+      <idea ac="AC8">Run cargo bench -- --save-baseline before, then --baseline before after changes</idea>
+      <idea ac="AC9">Create docs/adr/0002-performance-optimizations.md following template.md format</idea>
+    </ideas>
+  </tests>
+</story-context>

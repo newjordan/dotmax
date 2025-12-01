@@ -7,8 +7,40 @@ rust-version = "1.70"
 description = "High-performance terminal braille rendering for images, animations, and graphics"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/frosty40/dotmax"
+homepage = "https://github.com/frosty40/dotmax"
+documentation = "https://docs.rs/dotmax"
+readme = "README.md"
 keywords = ["terminal", "braille", "graphics", "cli", "visualization"]
 categories = ["command-line-interface", "graphics", "rendering"]
+exclude = [
+    # Hidden directories (dev tools and CI)
+    ".github/",
+    ".bmad/",
+    ".claude/",
+    ".augment/",
+    ".gemini/",
+    # Development documentation
+    "docs/sprint-artifacts/",
+    "docs/profiling/",
+    "docs/adr/",
+    "docs/*.yaml",
+    "docs/bmm-*",
+    "docs/*-2025-*.md",
+    "docs/PRD.md",
+    "docs/epics.md",
+    "docs/research-*.md",
+    "docs/implementation-*.md",
+    "docs/sprint-*.md",
+    # Test assets and fixtures (large images/files)
+    "tests/visual/",
+    "tests/assets/",
+    "tests/fixtures/",
+    "tests/test_assets/",
+    # Generated files
+    "*.context.xml",
+    # Planning docs
+    "BRAILLE_GRAPHICS_MASTER_PLAN.md",
+]
 
 [dependencies]
 # Core dependencies (always included)
@@ -31,6 +63,8 @@ svg = ["dep:resvg", "dep:usvg"]
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
 tracing-subscriber = "0.3"
+tempfile = "3.10"
+proptest = "1.4"
 
 [[bench]]
 name = "rendering"
@@ -51,6 +85,19 @@ harness = false
 [[bench]]
 name = "color_apply"
 harness = false
+
+[[bench]]
+name = "animation"
+harness = false
+
+[[bench]]
+name = "core_rendering"
+harness = false
+
+[[bench]]
+name = "image_processing"
+harness = false
+required-features = ["image"]
 
 # Examples requiring the 'image' feature
 [[example]]
@@ -141,7 +188,40 @@ required-features = ["image"]
 name = "generate_extreme_test_images"
 required-features = ["image"]
 
+# Animation examples (Epic 6, Story 6.6)
+[[example]]
+name = "bouncing_ball"
+path = "examples/animations/bouncing_ball.rs"
+
+[[example]]
+name = "loading_spinner"
+path = "examples/animations/loading_spinner.rs"
+
+[[example]]
+name = "waveform"
+path = "examples/animations/waveform.rs"
+
+[[example]]
+name = "fireworks"
+path = "examples/animations/fireworks.rs"
+
+[[example]]
+name = "clock"
+path = "examples/animations/clock.rs"
+
 [lints.clippy]
-all = "deny"
-pedantic = "warn"
-nursery = "warn"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Allow these pedantic lints that are common in examples (tutorial-style code)
+uninlined_format_args = "allow"    # println!("{}", x) is clearer for beginners
+doc_markdown = "allow"             # Type names don't need backticks in examples
+cast_precision_loss = "allow"      # f32/f64 casts are intentional
+cast_possible_truncation = "allow" # Numeric casts are intentional
+cast_possible_wrap = "allow"       # Signed/unsigned casts are intentional
+cast_sign_loss = "allow"           # Sign casts are intentional
+too_many_lines = "allow"           # Examples are often tutorial-style
+cast_lossless = "allow"            # Explicit casts are clearer
+unnecessary_cast = "allow"         # Explicit casts aid readability
+needless_pass_by_value = "allow"   # Clearer in examples
+imprecise_flops = "allow"          # Performance not critical in examples

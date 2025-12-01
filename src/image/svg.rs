@@ -111,7 +111,10 @@
 //! use dotmax::image::load_svg_from_bytes;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let svg_bytes = include_bytes!("../../tests/fixtures/svg/simple_circle.svg");
+//! // Example SVG content
+//! let svg_bytes = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+//!   <circle cx="50" cy="50" r="40" fill="black"/>
+//! </svg>"#;
 //! let img = load_svg_from_bytes(svg_bytes, 100, 100)?;
 //! println!("Loaded SVG from bytes: {}×{}", img.width(), img.height());
 //! # Ok(())
@@ -157,6 +160,7 @@ use usvg::{TreeParsing, TreePostProc};
 /// This limit prevents memory exhaustion from malicious or extremely large SVGs.
 /// SVGs exceeding these dimensions will return `DotmaxError::InvalidImageDimensions`.
 pub const MAX_SVG_WIDTH: u32 = 10_000;
+/// Maximum SVG height in pixels (prevents memory exhaustion)
 pub const MAX_SVG_HEIGHT: u32 = 10_000;
 
 /// Load an SVG from a file path and rasterize to specified dimensions

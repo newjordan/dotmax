@@ -287,8 +287,8 @@ fn calculate_fit_dimensions(src_w: u32, src_h: u32, target_w: u32, target_h: u32
 ///
 /// # Examples
 ///
-/// ```
-/// # use dotmax::image::resize::is_extreme_aspect_ratio;
+/// ```ignore
+/// // Function is private - examples shown for documentation purposes
 /// assert_eq!(is_extreme_aspect_ratio(10000, 4000), true);  // 2.5:1 ratio (panorama)
 /// assert_eq!(is_extreme_aspect_ratio(4000, 10000), true);  // 1:2.5 ratio (banner)
 /// assert_eq!(is_extreme_aspect_ratio(1920, 1080), false); // 16:9 ratio

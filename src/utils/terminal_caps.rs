@@ -403,8 +403,9 @@ mod tests {
 
     #[test]
     fn test_color_capability_clone() {
-        // Verify Clone derive works
+        // Verify Clone derive works (Copy types can also clone)
         let cap = ColorCapability::Ansi256;
+        #[allow(clippy::clone_on_copy)]
         let cloned = cap.clone();
         assert_eq!(cap, cloned);
     }

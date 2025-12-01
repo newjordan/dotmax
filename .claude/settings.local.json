@@ -95,7 +95,20 @@
       "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/5-5-apply-color-schemes-to-grayscale-intensity-buffers.context.xml\" ])",
       "Bash(RUSTDOCFLAGS=\"-D warnings\" cargo doc:*)",
       "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/6-1-implement-frame-buffer-and-double-buffering.md\" ])",
-      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/6-1-implement-frame-buffer-and-double-buffering.context.xml\" ])"
+      "Bash([ -f \"/mnt/e/dotmax/docs/sprint-artifacts/6-1-implement-frame-buffer-and-double-buffering.context.xml\" ])",
+      "Bash([:*)",
+      "SlashCommand(/bmad:bmm:workflows:story-ready)",
+      "Bash(timeout 300 cargo bench:*)",
+      "Bash(timeout 180 cargo bench:*)",
+      "Bash(done)",
+      "Bash(echo:*)",
+      "Bash(timeout 10 cargo run:*)",
+      "Bash(UPDATE_BASELINES=1 cargo test:*)",
+      "Bash(cargo tarpaulin:*)",
+      "Bash(git checkout:*)",
+      "Bash(export RUSTDOCFLAGS=\"-D warnings\":*)",
+      "Bash(cargo publish:*)",
+      "Bash(cargo package:*)"
     ],
     "deny": [],
     "ask": []

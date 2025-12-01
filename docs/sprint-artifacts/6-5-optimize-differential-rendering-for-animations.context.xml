@@ -1,0 +1,265 @@
+<story-context id="6-5-optimize-differential-rendering-for-animations" v="1.0">
+  <metadata>
+    <epicId>6</epicId>
+    <storyId>5</storyId>
+    <title>Optimize Differential Rendering for Animations</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/6-5-optimize-differential-rendering-for-animations.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer optimizing animation performance</asA>
+    <iWant>to render only changed cells between frames</iWant>
+    <soThat>CPU usage is minimal even at high frame rates</soThat>
+    <tasks>
+      <task id="1" title="Create DifferentialRenderer Module Structure">
+        <subtasks>
+          <subtask id="1.1">Create `src/animation/differential.rs`</subtask>
+          <subtask id="1.2">Add `pub mod differential;` to `src/animation/mod.rs`</subtask>
+          <subtask id="1.3">Add module-level rustdoc explaining differential rendering concept and performance benefits</subtask>
+          <subtask id="1.4">Import dependencies: `BrailleGrid`, `TerminalRenderer`, `DotmaxError`</subtask>
+          <subtask id="1.5">Import crossterm cursor: `crossterm::cursor::MoveTo`, `crossterm::QueuedCommand`</subtask>
+        </subtasks>
+      </task>
+      <task id="2" title="Define DifferentialRenderer Struct">
+        <subtasks>
+          <subtask id="2.1">Define struct with field: `last_frame: Option&lt;BrailleGrid&gt;`</subtask>
+          <subtask id="2.2">Implement `DifferentialRenderer::new() -> Self` with `last_frame: None`</subtask>
+          <subtask id="2.3">Implement `Default` trait for DifferentialRenderer</subtask>
+          <subtask id="2.4">Add rustdoc with struct-level documentation and examples</subtask>
+        </subtasks>
+      </task>
+      <task id="3" title="Implement Cell Comparison Logic">
+        <subtasks>
+          <subtask id="3.1">Create helper method `fn cells_differ(current: &amp;BrailleGrid, last: &amp;BrailleGrid, cell_x: usize, cell_y: usize) -> bool`</subtask>
+          <subtask id="3.2">Compare dots at (cell_x, cell_y) between current and last</subtask>
+          <subtask id="3.3">Compare colors at (cell_x, cell_y) if color support enabled</subtask>
+          <subtask id="3.4">Return true if either dots or colors differ</subtask>
+        </subtasks>
+      </task>
+      <task id="4" title="Implement render_diff() Method">
+        <subtasks>
+          <subtask id="4.1">Implement `pub fn render_diff(&amp;mut self, current: &amp;BrailleGrid, renderer: &amp;mut TerminalRenderer) -> Result&lt;(), DotmaxError&gt;`</subtask>
+          <subtask id="4.2">Check if `last_frame` is `None` - if so, render full frame and store current</subtask>
+          <subtask id="4.3">Check dimension mismatch - if different, log and render full frame</subtask>
+          <subtask id="4.4">Iterate over all cells comparing current to last_frame</subtask>
+          <subtask id="4.5">For changed cells: move cursor to position and output braille character with color</subtask>
+          <subtask id="4.6">Use `crossterm::cursor::MoveTo` for cursor positioning</subtask>
+          <subtask id="4.7">Clone current frame to `last_frame` after render</subtask>
+          <subtask id="4.8">Add rustdoc with usage example</subtask>
+        </subtasks>
+      </task>
+      <task id="5" title="Implement invalidate() Method">
+        <subtasks>
+          <subtask id="5.1">Implement `pub fn invalidate(&amp;mut self)`</subtask>
+          <subtask id="5.2">Set `self.last_frame = None`</subtask>
+          <subtask id="5.3">Add rustdoc explaining when to use invalidate (resize, mode change)</subtask>
+        </subtasks>
+      </task>
+      <task id="6" title="Implement Terminal Cursor Output">
+        <subtasks>
+          <subtask id="6.1">Create helper method `fn render_cell_at(&amp;self, x: usize, y: usize, grid: &amp;BrailleGrid, stdout: &amp;mut impl Write) -> Result&lt;(), DotmaxError&gt;`</subtask>
+          <subtask id="6.2">Move cursor to (x+1, y+1) using ANSI escape sequence (1-indexed terminal coordinates)</subtask>
+          <subtask id="6.3">Output braille character from `grid.cell_to_braille_char(x, y)`</subtask>
+          <subtask id="6.4">Apply color if grid has color at this cell</subtask>
+          <subtask id="6.5">Flush stdout after all changed cells rendered</subtask>
+        </subtasks>
+      </task>
+      <task id="7" title="Write Unit Tests">
+        <subtasks>
+          <subtask id="7.1">Create `#[cfg(test)] mod tests` in `differential.rs`</subtask>
+          <subtask id="7.2">Test `new()` creates renderer with `last_frame: None`</subtask>
+          <subtask id="7.3">Test first render populates `last_frame`</subtask>
+          <subtask id="7.4">Test identical frames produce zero changed cells</subtask>
+          <subtask id="7.5">Test single cell change detected correctly</subtask>
+          <subtask id="7.6">Test color-only change detected</subtask>
+          <subtask id="7.7">Test `invalidate()` clears `last_frame`</subtask>
+          <subtask id="7.8">Test dimension mismatch triggers full render</subtask>
+          <subtask id="7.9">Test Default trait implementation</subtask>
+          <subtask id="7.10">Minimum 8 unit tests covering all APIs</subtask>
+        </subtasks>
+      </task>
+      <task id="8" title="Add Benchmarks">
+        <subtasks>
+          <subtask id="8.1">Add differential rendering benchmarks to `benches/animation.rs`</subtask>
+          <subtask id="8.2">`bench_full_render` - baseline full frame render</subtask>
+          <subtask id="8.3">`bench_differential_render_static` - static background with small change</subtask>
+          <subtask id="8.4">`bench_differential_render_moving` - moving object simulation</subtask>
+          <subtask id="8.5">Calculate and verify 60-80% I/O reduction</subtask>
+          <subtask id="8.6">Document benchmark results in module rustdoc</subtask>
+        </subtasks>
+      </task>
+      <task id="9" title="Create Visual Example">
+        <subtasks>
+          <subtask id="9.1">Create `examples/differential_demo.rs`</subtask>
+          <subtask id="9.2">Draw static background (border, text, shapes)</subtask>
+          <subtask id="9.3">Animate small moving object (bouncing ball)</subtask>
+          <subtask id="9.4">Display real-time FPS and changed cell count each frame</subtask>
+          <subtask id="9.5">Show comparison mode: toggle between full render and differential</subtask>
+          <subtask id="9.6">Add Ctrl+C handler for graceful exit</subtask>
+          <subtask id="9.7">Add comments explaining differential rendering benefits</subtask>
+          <subtask id="9.8">Verify compiles: `cargo build --example differential_demo`</subtask>
+        </subtasks>
+      </task>
+      <task id="10" title="Update Module Exports">
+        <subtasks>
+          <subtask id="10.1">Export `DifferentialRenderer` from `src/animation/mod.rs`</subtask>
+          <subtask id="10.2">Re-export from `src/lib.rs`: `pub use animation::DifferentialRenderer;`</subtask>
+          <subtask id="10.3">Verify public API is accessible from crate root</subtask>
+        </subtasks>
+      </task>
+      <task id="11" title="Final Validation">
+        <subtasks>
+          <subtask id="11.1">Run full test suite: `cargo test --lib --all-features`</subtask>
+          <subtask id="11.2">Run clippy: `cargo clippy --lib --example differential_demo --bench animation -- -D warnings`</subtask>
+          <subtask id="11.3">Run rustdoc: `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`</subtask>
+          <subtask id="11.4">Run doc tests: `cargo test --doc animation::differential`</subtask>
+          <subtask id="11.5">Run benchmark: `cargo bench --bench animation -- differential`</subtask>
+          <subtask id="11.6">Manual test: Run differential_demo example</subtask>
+          <subtask id="11.7">Verify I/O reduction meets 60-80% target</subtask>
+          <subtask id="11.8">All ACs verified with evidence</subtask>
+        </subtasks>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="DifferentialRenderer::new() Creates Renderer">
+      <description>`DifferentialRenderer::new() -> Self` in `src/animation/differential.rs`. Initializes with `last_frame: None`. Constructor is infallible. Implements `Default` trait.</description>
+    </criterion>
+    <criterion id="AC2" title="render_diff() Compares Frames and Renders Only Changes">
+      <description>`pub fn render_diff(&amp;mut self, current: &amp;BrailleGrid, renderer: &amp;mut TerminalRenderer) -> Result&lt;(), DotmaxError&gt;`. Compares current frame to stored `last_frame`. Identifies cells with different dots OR different colors. Renders only changed cells using ANSI cursor positioning. Stores clone of current frame as `last_frame`.</description>
+    </criterion>
+    <criterion id="AC3" title="First Frame Renders Fully">
+      <description>When `last_frame` is `None`, render entire grid. After first render, `last_frame` is populated for subsequent diffs. No error or special handling required.</description>
+    </criterion>
+    <criterion id="AC4" title="invalidate() Forces Full Render on Next Call">
+      <description>`pub fn invalidate(&amp;mut self)` clears `last_frame` to `None`. Next `render_diff()` call will render entire grid. Useful for terminal resize, mode changes, or forced refresh.</description>
+    </criterion>
+    <criterion id="AC5" title="Terminal Resize Triggers Automatic Invalidation">
+      <description>`render_diff()` detects dimension mismatch between current and last_frame. If dimensions differ, invalidate automatically and render full frame. Log dimension change via `tracing::debug!`.</description>
+    </criterion>
+    <criterion id="AC6" title="60-80% I/O Reduction Verified in Benchmarks">
+      <description>Create benchmark comparing full render vs differential render. Test case: small moving object on static background. Measure terminal I/O operations. Target: 60-80% reduction in I/O. Benchmark in `benches/animation.rs`.</description>
+    </criterion>
+    <criterion id="AC7" title="Example differential_demo.rs Shows CPU Savings">
+      <description>Create `examples/differential_demo.rs`. Animates small moving object on static background. Shows real-time FPS and cell update count. Demonstrates I/O reduction vs full rendering. Graceful Ctrl+C exit. Compiles and runs: `cargo run --example differential_demo`.</description>
+    </criterion>
+    <criterion id="AC8" title="Zero Clippy Warnings in differential.rs">
+      <description>`cargo clippy --lib -- -D warnings` passes with zero warnings for animation module. No `#[allow(...)]` attributes except where justified. Follows Rust naming conventions.</description>
+    </criterion>
+    <criterion id="AC9" title="Rustdoc with Examples for All Public Methods">
+      <description>All public functions have `///` doc comments. Each method includes at least one `# Examples` code block. Examples compile via `cargo test --doc`. Module-level documentation explains differential rendering concept. Zero rustdoc warnings.</description>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Animation Module" snippet="Epic 6 delivers animation infrastructure. AnimationRenderer and FrameTimer manage buffer reuse and frame timing. src/animation.rs handles FrameBuffer, frame timing, loop management, and flicker-free rendering." />
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Tech Spec" section="Story 6.5: Differential Rendering" snippet="DifferentialRenderer compares current frame to cached last_frame. For each cell with different dots OR colors, outputs via ANSI cursor positioning. Target: 60-80% I/O reduction for typical animations." />
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Tech Spec" section="Differential Rendering Workflow" snippet="1. Compare current BrailleGrid with cached last_frame. 2. For each cell, if dots differ OR colors differ, add to changed_cells. 3. For each changed cell, move cursor and output character. 4. Store current as last_frame." />
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Tech Spec" section="APIs and Interfaces" snippet="DifferentialRenderer API: new() -> Self, render_diff(&amp;mut self, current, renderer) -> Result, invalidate(&amp;mut self). Stores last_frame: Option&lt;BrailleGrid&gt;." />
+      <doc path="docs/sprint-artifacts/6-3-implement-animation-loop-helper.md" title="Story 6.3" section="Dev Agent Record" snippet="AnimationLoop builder pattern established. Terminal cleanup patterns with guard pattern. Ctrl+C detection using crossterm event polling. Files: src/animation/loop_helper.rs, examples/simple_animation.rs." />
+      <doc path="docs/sprint-artifacts/6-2-implement-frame-timing-and-rate-control.md" title="Story 6.2" section="Dev Agent Record" snippet="FrameTimer::new(target_fps), FrameTimer::actual_fps(), Default trait pattern. Files: src/animation/timing.rs, examples/fps_control.rs." />
+      <doc path="docs/sprint-artifacts/6-1-implement-frame-buffer-and-double-buffering.md" title="Story 6.1" section="Dev Agent Record" snippet="BrailleGrid buffer structure, BrailleGrid::width(), BrailleGrid::height() dimension accessors. Module structure in src/animation/mod.rs. Files: src/animation/frame_buffer.rs." />
+    </docs>
+    <code>
+      <file path="src/animation/mod.rs" kind="module" symbol="animation" lines="1-60" reason="Animation module root - add `pub mod differential;` and export DifferentialRenderer" />
+      <file path="src/animation/frame_buffer.rs" kind="module" symbol="FrameBuffer" lines="1-443" reason="Double-buffering patterns to follow - FrameBuffer::new(), swap_buffers(), render() signatures" />
+      <file path="src/animation/loop_helper.rs" kind="module" symbol="AnimationLoop" lines="1-670" reason="Ctrl+C handling patterns (crossterm event polling), terminal cleanup guard pattern, Default trait implementation" />
+      <file path="src/animation/timing.rs" kind="module" symbol="FrameTimer" lines="1-300" reason="FrameTimer API patterns - for benchmark timing and FPS display in example" />
+      <file path="src/grid.rs" kind="core" symbol="BrailleGrid" lines="1-800" reason="Core buffer structure for frame comparison - width(), height(), dimensions(), cell_to_braille_char(), get_color(), clear()" />
+      <file path="src/render.rs" kind="core" symbol="TerminalRenderer" lines="1-847" reason="Terminal rendering - render(&amp;BrailleGrid), get_terminal_size(), cleanup(). Used as fallback for full render." />
+      <file path="src/error.rs" kind="core" symbol="DotmaxError" lines="1-406" reason="Error handling - DotmaxError::Terminal for I/O errors" />
+      <file path="src/lib.rs" kind="crate-root" symbol="dotmax" lines="1-123" reason="Add DifferentialRenderer to pub use animation::... exports" />
+      <file path="benches/animation.rs" kind="benchmark" symbol="criterion_group" lines="1-216" reason="Add differential rendering benchmarks - bench_full_render, bench_differential_render_static, bench_differential_render_moving" />
+    </code>
+    <dependencies>
+      <rust>
+        <crate name="ratatui" version="0.29" purpose="Terminal UI framework (already in deps)" />
+        <crate name="crossterm" version="0.29" purpose="Cross-platform terminal I/O - MoveTo cursor positioning" />
+        <crate name="thiserror" version="2.0" purpose="Error handling derive macros" />
+        <crate name="tracing" version="0.1" purpose="Structured logging for debug! dimension change messages" />
+        <crate name="criterion" version="0.7" purpose="Benchmarking (dev-dependency)" />
+      </rust>
+      <stdlib>
+        <module name="std::io::{Write, stdout}" purpose="Terminal output for cursor positioning and character rendering" />
+        <module name="std::mem::swap" purpose="Reference for O(1) swap pattern (not used directly here but conceptually)" />
+      </stdlib>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="architecture.md">Must achieve 60fps with &lt;10% single-core CPU (NFR-P2)</constraint>
+    <constraint source="architecture.md">Must reuse BrailleGrid buffers - &lt;500KB per-frame memory (NFR-P3)</constraint>
+    <constraint source="tech-spec-epic-6.md">Differential render savings: 60-80% I/O reduction</constraint>
+    <constraint source="ADR-0007">Measure-first optimization - no optimization without benchmark proof</constraint>
+    <constraint source="ADR-0006">Sync-only API - no async implementation</constraint>
+    <constraint source="conventions">Zero clippy warnings in new code</constraint>
+    <constraint source="conventions">All public APIs have rustdoc with examples</constraint>
+    <constraint source="conventions">Constructor is infallible (no Result) consistent with FrameTimer, PrerenderedAnimation</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="DifferentialRenderer" kind="struct">
+      <signature>pub struct DifferentialRenderer { last_frame: Option&lt;BrailleGrid&gt; }</signature>
+      <path>src/animation/differential.rs</path>
+    </interface>
+    <interface name="DifferentialRenderer::new" kind="constructor">
+      <signature>pub fn new() -> Self</signature>
+      <path>src/animation/differential.rs</path>
+    </interface>
+    <interface name="DifferentialRenderer::render_diff" kind="method">
+      <signature>pub fn render_diff(&amp;mut self, current: &amp;BrailleGrid, renderer: &amp;mut TerminalRenderer) -> Result&lt;(), DotmaxError&gt;</signature>
+      <path>src/animation/differential.rs</path>
+    </interface>
+    <interface name="DifferentialRenderer::invalidate" kind="method">
+      <signature>pub fn invalidate(&amp;mut self)</signature>
+      <path>src/animation/differential.rs</path>
+    </interface>
+    <interface name="BrailleGrid::cell_to_braille_char" kind="existing-api">
+      <signature>pub fn cell_to_braille_char(&amp;self, x: usize, y: usize) -> Result&lt;char, DotmaxError&gt;</signature>
+      <path>src/grid.rs:652</path>
+    </interface>
+    <interface name="BrailleGrid::get_color" kind="existing-api">
+      <signature>pub fn get_color(&amp;self, cell_x: usize, cell_y: usize) -> Option&lt;Color&gt;</signature>
+      <path>src/grid.rs:491</path>
+    </interface>
+    <interface name="crossterm::cursor::MoveTo" kind="external-api">
+      <signature>MoveTo(column: u16, row: u16)</signature>
+      <path>crossterm crate</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Dotmax uses Rust's built-in test framework with `#[cfg(test)] mod tests` in each module file. Unit tests are co-located with implementation. Integration tests in `tests/` directory. Benchmarks use criterion in `benches/` directory. All tests must pass with `cargo test --lib --all-features`. Clippy lints enforced with `cargo clippy -- -D warnings`. Rustdoc examples must compile via `cargo test --doc`. Examples must compile and run successfully.
+    </standards>
+    <locations>
+      <location>src/animation/differential.rs - #[cfg(test)] mod tests for unit tests</location>
+      <location>benches/animation.rs - criterion benchmarks for differential rendering</location>
+      <location>examples/differential_demo.rs - visual demo example</location>
+    </locations>
+    <ideas>
+      <idea acRef="AC1">Test `new()` creates DifferentialRenderer with `last_frame: None`</idea>
+      <idea acRef="AC1">Test Default trait returns same as new()</idea>
+      <idea acRef="AC2">Test render_diff with two identical frames produces zero terminal writes</idea>
+      <idea acRef="AC2">Test render_diff with single changed cell produces exactly one cursor move + one character</idea>
+      <idea acRef="AC2">Test color-only change is detected (dots same, color different)</idea>
+      <idea acRef="AC3">Test first call to render_diff populates last_frame</idea>
+      <idea acRef="AC3">Test first render writes full grid (all cells)</idea>
+      <idea acRef="AC4">Test invalidate() clears last_frame to None</idea>
+      <idea acRef="AC4">Test render_diff after invalidate renders full frame</idea>
+      <idea acRef="AC5">Test dimension mismatch (different width) triggers full render</idea>
+      <idea acRef="AC5">Test dimension mismatch (different height) triggers full render</idea>
+      <idea acRef="AC6">Benchmark: full_render vs differential_render - measure I/O ops</idea>
+      <idea acRef="AC6">Benchmark: static background with 5% changed cells - verify 60%+ reduction</idea>
+      <idea acRef="AC7">Example compiles: `cargo build --example differential_demo`</idea>
+      <idea acRef="AC7">Example runs and shows FPS counter</idea>
+      <idea acRef="AC8">cargo clippy passes with zero warnings on differential.rs</idea>
+      <idea acRef="AC9">cargo test --doc passes for animation::differential module</idea>
+    </ideas>
+  </tests>
+</story-context>

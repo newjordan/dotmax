@@ -56,7 +56,7 @@ use crate::primitives::draw_line;
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_circle};
 ///
-/// let mut grid = BrailleGrid::new(80, 24); // 160×96 dots
+/// let mut grid = BrailleGrid::new(80, 24)?; // 160×96 dots
 /// draw_circle(&mut grid, 80, 48, 30)?; // Circle at center, radius 30
 /// # Ok::<(), dotmax::DotmaxError>(())
 /// ```
@@ -125,7 +125,7 @@ pub fn draw_circle(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_circle_filled};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 /// draw_circle_filled(&mut grid, 80, 48, 20)?; // Filled circle
 /// # Ok::<(), dotmax::DotmaxError>(())
 /// ```
@@ -198,7 +198,7 @@ pub fn draw_circle_filled(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_circle_thick};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 /// draw_circle_thick(&mut grid, 80, 48, 25, 5)?; // Thick circle, thickness 5
 /// # Ok::<(), dotmax::DotmaxError>(())
 /// ```

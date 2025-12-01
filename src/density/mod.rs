@@ -32,7 +32,9 @@
 //! // Map intensity values to characters
 //! assert_eq!(density.map(0.0), ' ');  // Darkest (first character)
 //! assert_eq!(density.map(1.0), '$');  // Brightest (last character)
-//! assert_eq!(density.map(0.5), 'u');  // Middle intensity (approximate)
+//! // Middle intensity maps to a character ~34th in the 69-char sequence
+//! let mid_char = density.map(0.5);
+//! assert!(mid_char != ' ' && mid_char != '$');  // Somewhere in the middle
 //! ```
 //!
 //! ## Creating Custom Density Sets

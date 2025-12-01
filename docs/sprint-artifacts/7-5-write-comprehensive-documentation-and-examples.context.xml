@@ -1,0 +1,285 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>7</epicId>
+    <storyId>5</storyId>
+    <title>Write Comprehensive Documentation and Examples</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-26</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/7-5-write-comprehensive-documentation-and-examples.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer onboarding new users</asA>
+    <iWant>excellent documentation and examples</iWant>
+    <soThat>developers can integrate dotmax in &lt;5 minutes</soThat>
+    <tasks>
+      <task id="1" name="Audit README.md Against AC1" ac="1">
+        <subtask>1.1: Review current README.md structure</subtask>
+        <subtask>1.2: Verify project description is clear (what, why, who)</subtask>
+        <subtask>1.3: Update quick start code example if needed</subtask>
+        <subtask>1.4: Verify feature list completeness</subtask>
+        <subtask>1.5: Confirm performance section has benchmark results</subtask>
+        <subtask>1.6: Add GIF/PNG demo images (terminal recording or screenshots)</subtask>
+        <subtask>1.7: Add comparison to alternatives (drawille, Sixel, Kitty protocol)</subtask>
+        <subtask>1.8: Verify all links work (docs.rs, examples, crates.io badges)</subtask>
+      </task>
+      <task id="2" name="Create/Update Example Suite" ac="3,4">
+        <subtask>2.1: Verify hello_braille.rs exists and is minimal (~10 lines)</subtask>
+        <subtask>2.2: Verify load_image.rs demonstrates image rendering</subtask>
+        <subtask>2.3: Verify simple_animation.rs demonstrates basic animation</subtask>
+        <subtask>2.4: Verify color_schemes_demo.rs demonstrates color system</subtask>
+        <subtask>2.5: Verify shapes_demo.rs demonstrates drawing primitives</subtask>
+        <subtask>2.6: Create/update examples/README.md with categorized descriptions</subtask>
+        <subtask>2.7: Run cargo build --examples --all-features - verify all compile</subtask>
+        <subtask>2.8: Run cargo clippy --examples --all-features - verify zero warnings</subtask>
+      </task>
+      <task id="3" name="Create Getting Started Guide" ac="5">
+        <subtask>3.1: Create docs/getting_started.md file</subtask>
+        <subtask>3.2: Write installation section (cargo add, Cargo.toml)</subtask>
+        <subtask>3.3: Write First Render tutorial (hello world braille)</subtask>
+        <subtask>3.4: Write Rendering an Image section</subtask>
+        <subtask>3.5: Write Basic Animation section</subtask>
+        <subtask>3.6: Write Common Patterns section (grid reuse, color schemes)</subtask>
+        <subtask>3.7: Add links to examples and API docs</subtask>
+      </task>
+      <task id="4" name="Create Performance Guide" ac="6">
+        <subtask>4.1: Create docs/performance.md file</subtask>
+        <subtask>4.2: Document performance targets and benchmark results</subtask>
+        <subtask>4.3: Explain buffer reuse patterns (grid.clear() vs new())</subtask>
+        <subtask>4.4: Document image pipeline optimization tips</subtask>
+        <subtask>4.5: Document animation optimization (differential rendering)</subtask>
+        <subtask>4.6: Explain how to run benchmarks locally</subtask>
+        <subtask>4.7: Document profiling with flamegraph</subtask>
+      </task>
+      <task id="5" name="Create Troubleshooting Guide" ac="7">
+        <subtask>5.1: Create docs/troubleshooting.md file</subtask>
+        <subtask>5.2: Document Braille characters show as boxes issue</subtask>
+        <subtask>5.3: Document terminal Unicode compatibility issues</subtask>
+        <subtask>5.4: Document color support detection and fallbacks</subtask>
+        <subtask>5.5: Document platform-specific issues (Windows terminal, SSH, tmux)</subtask>
+        <subtask>5.6: Document image format support issues</subtask>
+        <subtask>5.7: Document SVG font rendering limitations</subtask>
+      </task>
+      <task id="6" name="Audit API Documentation" ac="2,8">
+        <subtask>6.1: Run RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features</subtask>
+        <subtask>6.2: Verify zero doc warnings (missing_docs enforced)</subtask>
+        <subtask>6.3: Review module-level docs for all public modules</subtask>
+        <subtask>6.4: Add/verify code examples in key type rustdocs</subtask>
+        <subtask>6.5: Run cargo test --doc - verify all doctests pass</subtask>
+        <subtask>6.6: Check for broken intra-doc links</subtask>
+      </task>
+      <task id="7" name="Create Visual Demo Assets" ac="1">
+        <subtask>7.1: Create terminal recording (GIF or PNG) of hello_braille example</subtask>
+        <subtask>7.2: Create terminal recording of image rendering</subtask>
+        <subtask>7.3: Create terminal recording of animation (if feasible)</subtask>
+        <subtask>7.4: Add images to README.md with alt text</subtask>
+        <subtask>7.5: Ensure images are reasonably sized (&lt;2MB each)</subtask>
+      </task>
+      <task id="8" name="Validate 5-Minute Integration" ac="9">
+        <subtask>8.1: Time fresh install to first render following docs</subtask>
+        <subtask>8.2: Identify any confusing steps or missing info</subtask>
+        <subtask>8.3: Update docs based on friction points found</subtask>
+        <subtask>8.4: Verify quick start code copy-pastes cleanly</subtask>
+        <subtask>8.5: Test with cargo add dotmax flow</subtask>
+      </task>
+      <task id="9" name="Final Validation" ac="all">
+        <subtask>9.1: Run cargo doc --no-deps --all-features - verify builds</subtask>
+        <subtask>9.2: Run cargo test --doc - verify all doctests pass</subtask>
+        <subtask>9.3: Run cargo build --examples --all-features - verify all compile</subtask>
+        <subtask>9.4: Run cargo clippy --examples --all-features - verify zero warnings</subtask>
+        <subtask>9.5: Review all new/updated docs for spelling and clarity</subtask>
+        <subtask>9.6: Verify all internal links work</subtask>
+        <subtask>9.7: Document all 9 ACs with evidence</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="README.md complete">
+      <requirement>Project description (what, why, who)</requirement>
+      <requirement>Quick start (install, 10-line example)</requirement>
+      <requirement>Feature list with explanations</requirement>
+      <requirement>Performance characteristics (benchmark results)</requirement>
+      <requirement>Browser-rendered example images (GIFs or PNGs)</requirement>
+      <requirement>Comparison to alternatives (drawille, protocols)</requirement>
+      <requirement>Links to docs.rs, examples, crates.io</requirement>
+      <requirement>License, contributing, acknowledgments</requirement>
+    </criterion>
+    <criterion id="AC2" title="docs.rs coverage 100%">
+      <requirement>cargo doc with #![warn(missing_docs)] passes</requirement>
+      <requirement>Every public item documented</requirement>
+      <requirement>Module-level documentation explains purpose</requirement>
+      <requirement>Examples for common operations in rustdoc</requirement>
+      <requirement>Links between related types</requirement>
+    </criterion>
+    <criterion id="AC3" title="Example suite complete">
+      <requirement>hello_braille.rs - Minimal (10 lines)</requirement>
+      <requirement>load_image.rs - Image rendering</requirement>
+      <requirement>animation_simple.rs - Basic animation</requirement>
+      <requirement>color_schemes.rs - Color demonstration</requirement>
+      <requirement>drawing_shapes.rs - Primitives</requirement>
+      <requirement>All in examples/README.md with descriptions</requirement>
+    </criterion>
+    <criterion id="AC4" title="All examples compile">
+      <requirement>cargo build --examples --all-features succeeds</requirement>
+      <requirement>Zero clippy warnings on examples</requirement>
+      <requirement>Examples run without errors</requirement>
+    </criterion>
+    <criterion id="AC5" title="Getting started guide exists">
+      <requirement>docs/getting_started.md with tutorial walkthrough</requirement>
+      <requirement>Step-by-step instructions for first render</requirement>
+      <requirement>Common patterns explained</requirement>
+    </criterion>
+    <criterion id="AC6" title="Performance guide exists">
+      <requirement>docs/performance.md with optimization tips</requirement>
+      <requirement>Benchmark interpretation</requirement>
+      <requirement>Buffer reuse patterns</requirement>
+    </criterion>
+    <criterion id="AC7" title="Troubleshooting guide exists">
+      <requirement>docs/troubleshooting.md with common issues</requirement>
+      <requirement>Terminal compatibility problems</requirement>
+      <requirement>Platform-specific notes</requirement>
+    </criterion>
+    <criterion id="AC8" title="Doctests pass">
+      <requirement>cargo test --doc exits 0</requirement>
+      <requirement>All code examples in rustdoc are tested</requirement>
+      <requirement>No broken examples</requirement>
+    </criterion>
+    <criterion id="AC9" title="5-minute integration achievable">
+      <requirement>New user can render image in &lt;5 minutes following docs</requirement>
+      <requirement>Clear path from install to first render</requirement>
+      <requirement>No ambiguity in quick start</requirement>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-7.md" title="Epic 7 Tech Spec" section="Story 7.5 ACs">
+        Authoritative acceptance criteria for documentation story. AC1-AC9 define README requirements, docs.rs coverage, example suite, getting started guide, performance guide, troubleshooting guide, doctests, and 5-minute integration target.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Documentation Format">
+        Documentation standards: rustdoc format with Examples, Errors, Panics sections. Module-level documentation explaining purpose. Every public item requires docs.
+      </doc>
+      <doc path="README.md" title="README.md" section="Full Document">
+        Current state: Has features, installation, quick start, animation section, logging, performance table. Missing: GIF/PNG visual demos, comparison to alternatives (drawille, Sixel).
+      </doc>
+      <doc path="docs/animation_guide.md" title="Animation Guide" section="Full Guide">
+        Comprehensive animation documentation already exists. Covers AnimationLoop, FrameTimer, FrameBuffer, PrerenderedAnimation, DifferentialRenderer. Can be referenced from getting_started.md.
+      </doc>
+      <doc path="docs/dependencies.md" title="Dependencies" section="Full Document">
+        Complete dependency justifications. Documents 4 core deps (ratatui, crossterm, thiserror, tracing) and 4 optional deps (image, imageproc, resvg, usvg).
+      </doc>
+      <doc path="docs/terminal-compatibility.md" title="Terminal Compatibility" section="Full Matrix">
+        Terminal detection and viewport handling. Documents Windows Terminal, WSL, PowerShell, macOS, Linux terminals. Source for troubleshooting guide content.
+      </doc>
+    </docs>
+    <code>
+      <artifact path="src/lib.rs" kind="module" symbol="lib" lines="1-139" reason="Public API surface - defines all re-exports and module structure. Task 6 will audit these docs."/>
+      <artifact path="examples/hello_braille.rs" kind="example" symbol="hello_braille" lines="1-68" reason="Existing example but too long (68 lines). AC3 requires ~10 lines minimal. Needs simplification or new minimal example."/>
+      <artifact path="examples/load_image.rs" kind="example" symbol="load_image" lines="1-113" reason="Existing image loading example. Demonstrates load_from_path, load_from_bytes, error handling. May need simplification for AC3."/>
+      <artifact path="examples/simple_animation.rs" kind="example" symbol="simple_animation" lines="1-29" reason="Good 29-line animation example. Demonstrates AnimationLoop with bouncing dot. Matches AC3 requirements."/>
+      <artifact path="examples/color_schemes_demo.rs" kind="example" symbol="color_schemes_demo" lines="1-92" reason="Color schemes visual demo. Shows all predefined schemes with gradient bars. Good for AC3."/>
+      <artifact path="examples/shapes_demo.rs" kind="example" symbol="shapes_demo" lines="1-159" reason="Comprehensive shapes demo with rectangles, polygons, triangles. Demonstrates draw_polygon, draw_rectangle functions."/>
+      <artifact path="examples/animations/" kind="directory" symbol="animation_examples" reason="5 animation examples: bouncing_ball, loading_spinner, waveform, fireworks, clock. All documented in animation_guide.md."/>
+    </code>
+    <dependencies>
+      <ecosystem name="rust" manifest="Cargo.toml">
+        <core>
+          <dep name="ratatui" version="0.29" purpose="Terminal UI framework"/>
+          <dep name="crossterm" version="0.29" purpose="Cross-platform terminal I/O"/>
+          <dep name="thiserror" version="2.0" purpose="Error handling derive macros"/>
+          <dep name="tracing" version="0.1" purpose="Structured logging"/>
+        </core>
+        <optional feature="image">
+          <dep name="image" version="0.25" purpose="Image loading (PNG, JPG, GIF, etc.)"/>
+          <dep name="imageproc" version="0.24" purpose="Image processing (dithering, threshold)"/>
+        </optional>
+        <optional feature="svg">
+          <dep name="resvg" version="0.38" purpose="SVG rasterization"/>
+          <dep name="usvg" version="0.38" purpose="SVG parsing"/>
+        </optional>
+        <dev>
+          <dep name="criterion" version="0.7" purpose="Benchmarking framework"/>
+          <dep name="tracing-subscriber" version="0.3" purpose="Log output for tests/examples"/>
+          <dep name="tempfile" version="3.10" purpose="Temp file handling in tests"/>
+          <dep name="proptest" version="1.4" purpose="Property-based testing"/>
+        </dev>
+      </ecosystem>
+      <metadata>
+        <msrv>1.70</msrv>
+        <license>MIT OR Apache-2.0</license>
+        <repository>https://github.com/frosty40/dotmax</repository>
+      </metadata>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="tech-spec-epic-7" type="documentation">
+      Every public item must have rustdoc with Examples, Errors, and Panics sections per architecture.md.
+    </constraint>
+    <constraint source="tech-spec-epic-7" type="quality">
+      #![warn(missing_docs)] must pass with zero warnings. cargo test --doc must exit 0.
+    </constraint>
+    <constraint source="tech-spec-epic-7" type="examples">
+      All examples must compile without warnings: cargo clippy --examples --all-features -- -D warnings
+    </constraint>
+    <constraint source="story-7.5" type="user-experience">
+      New user must be able to render image in under 5 minutes following documentation. Quick start must be unambiguous.
+    </constraint>
+    <constraint source="architecture" type="format">
+      Rustdoc format: Brief one-line summary, longer explanation, # Examples with working code, # Errors documenting conditions, # Panics if applicable.
+    </constraint>
+    <constraint source="ci" type="validation">
+      CI enforces: cargo fmt --check, cargo clippy --all-targets --all-features -- -D warnings, cargo test --all-features, cargo deny check.
+    </constraint>
+  </constraints>
+  <interfaces>
+    <interface name="BrailleGrid" kind="struct" signature="pub struct BrailleGrid" path="src/grid.rs">
+      Core type for braille rendering. Methods: new(width, height), set_dot(x, y), clear(), dimensions(), width(), height().
+    </interface>
+    <interface name="TerminalRenderer" kind="struct" signature="pub struct TerminalRenderer" path="src/render.rs">
+      Terminal output. Methods: new(), render(&amp;grid), get_terminal_size(), cleanup().
+    </interface>
+    <interface name="AnimationLoop" kind="struct" signature="pub struct AnimationLoop" path="src/animation/loop.rs">
+      High-level animation API. Builder: new(w, h).fps(60).on_frame(|frame, buffer| ...).run()
+    </interface>
+    <interface name="ColorScheme" kind="struct" signature="pub struct ColorScheme" path="src/color/schemes.rs">
+      Intensity-to-color mapping. Methods: sample(intensity), name(). Predefined: rainbow(), heat_map(), etc.
+    </interface>
+    <interface name="DotmaxError" kind="enum" signature="pub enum DotmaxError" path="src/error.rs">
+      Error type. Variants: Grid, Terminal, Image, Render, Io.
+    </interface>
+    <interface name="dotmax::Result" kind="type_alias" signature="pub type Result&lt;T&gt; = std::result::Result&lt;T, DotmaxError&gt;" path="src/lib.rs">
+      Convenience Result type for library users.
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+      Testing for Story 7.5 focuses on documentation validation rather than unit tests:
+      - cargo doc --no-deps --all-features must build without warnings
+      - cargo test --doc must pass (all rustdoc code examples compile and run)
+      - cargo build --examples --all-features must succeed
+      - cargo clippy --examples --all-features -- -D warnings must pass
+      - Manual validation: New user integration test timing (&lt;5 minutes)
+      - Link validation: All internal doc links must resolve
+    </standards>
+    <locations>
+      <location pattern="examples/*.rs" description="All 49 example files must compile"/>
+      <location pattern="examples/animations/*.rs" description="5 animation examples"/>
+      <location pattern="src/**/*.rs" description="All rustdoc examples in source"/>
+      <location pattern="docs/*.md" description="User guides (getting_started, performance, troubleshooting)"/>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Verify README.md contains all required sections: description, quick start, features, performance, visual demos, alternatives comparison, links</idea>
+      <idea ac="AC2">Run RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features and verify zero warnings</idea>
+      <idea ac="AC3">Verify hello_braille.rs is ~10 lines, load_image.rs shows image rendering, simple_animation.rs works, color_schemes_demo.rs shows colors, shapes_demo.rs shows primitives</idea>
+      <idea ac="AC4">Run cargo build --examples --all-features and cargo clippy --examples --all-features -- -D warnings</idea>
+      <idea ac="AC5">Verify docs/getting_started.md exists with installation, first render, image rendering, animation, common patterns sections</idea>
+      <idea ac="AC6">Verify docs/performance.md exists with benchmark results, buffer reuse patterns, optimization tips, profiling instructions</idea>
+      <idea ac="AC7">Verify docs/troubleshooting.md exists with braille boxes issue, Unicode compatibility, color support, platform notes</idea>
+      <idea ac="AC8">Run cargo test --doc and verify exit code 0</idea>
+      <idea ac="AC9">Time fresh cargo add dotmax to first render following docs - must be under 5 minutes</idea>
+    </ideas>
+  </tests>
+</story-context>

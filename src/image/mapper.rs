@@ -136,8 +136,8 @@ use super::threshold::BinaryImage;
 /// // Map to braille (80×24 cells)
 /// let grid = pixels_to_braille(&binary, 80, 24)?;
 ///
-/// assert_eq!(grid.width(), (binary.width + 1) / 2); // Ceiling division
-/// assert_eq!(grid.height(), (binary.height + 3) / 4); // Ceiling division
+/// assert_eq!(grid.width(), ((binary.width + 1) / 2) as usize); // Ceiling division
+/// assert_eq!(grid.height(), ((binary.height + 3) / 4) as usize); // Ceiling division
 /// # Ok(())
 /// # }
 /// ```

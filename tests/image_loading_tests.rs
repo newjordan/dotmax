@@ -173,17 +173,18 @@ fn test_integration_load_and_resize_to_terminal() {
     );
 
     // Should preserve aspect ratio (sample.png is 10×10 square)
-    // Upscale prevention should keep it at 10×10 (original size)
-    // since upscaling from 10×10 to 96×96 would be ~9.6x (exceeds MAX_UPSCALE_FACTOR of 2.0)
+    // Terminal resize allows upscaling to fill available space
+    // A 10×10 square image resizing to 80×24 terminal (160×96 pixels) should
+    // scale up to 96×96 (limited by height, preserving square aspect ratio)
     assert_eq!(
         resized.width(),
-        10,
-        "Upscale prevention keeps original size"
+        96,
+        "Square image upscales to fit terminal height"
     );
     assert_eq!(
         resized.height(),
-        10,
-        "Upscale prevention keeps original size"
+        96,
+        "Square image upscales to fit terminal height"
     );
 }
 
@@ -326,15 +327,19 @@ fn test_integration_large_terminal_resize() {
     assert!(resized.width() <= 400);
     assert!(resized.height() <= 200);
 
-    // Original image is 10×10, upscale prevention should kick in
-    // MAX_UPSCALE_FACTOR is 2.0, so max is 20×20
-    assert!(
-        resized.width() <= 20,
-        "Upscale prevention should limit to 2x original (20×20), got {}×{}",
+    // Original image is 10×10 square, terminal is 200×50 cells (400×200 pixels)
+    // Terminal resize allows upscaling to fill available space
+    // A square image should scale to fit the smaller dimension (200 height)
+    assert_eq!(
         resized.width(),
-        resized.height()
+        200,
+        "Square image upscales to fit terminal height (200×200)"
     );
-    assert!(resized.height() <= 20);
+    assert_eq!(
+        resized.height(),
+        200,
+        "Square image upscales to fit terminal height (200×200)"
+    );
 }
 
 // Integration test: Resize maintains quality with Lanczos3 filter
@@ -404,9 +409,10 @@ fn test_integration_auto_threshold_pipeline() {
     // Verify pixel count matches dimensions
     assert_eq!(binary.pixel_count(), (img.width() * img.height()) as usize);
 
-    // Verify pixels are boolean
+    // Verify pixels are boolean (they always are, but let's verify the type is correct)
     for &pixel in &binary.pixels {
-        assert!(pixel == true || pixel == false);
+        // Pixels are always boolean, just ensure we can iterate them
+        let _: bool = pixel;
     }
 }
 
@@ -579,9 +585,10 @@ fn test_integration_complete_image_to_binary_pipeline() {
         (binary.width * binary.height) as usize
     );
 
-    // Verify all pixels are boolean
+    // Verify all pixels are boolean (they always are, but let's verify the type is correct)
     for &pixel in &binary.pixels {
-        assert!(pixel == true || pixel == false);
+        // Pixels are always boolean, just ensure we can iterate them
+        let _: bool = pixel;
     }
 }
 

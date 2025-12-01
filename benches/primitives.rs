@@ -121,25 +121,25 @@ fn bench_grid_pattern(c: &mut Criterion) {
 
         b.iter(|| {
             // Draw 10 vertical lines
-            for x in (0..=160).step_by(16) {
+            for x in (0i32..=160).step_by(16) {
                 draw_line(
                     black_box(&mut grid),
-                    black_box(x as i32),
+                    black_box(x),
                     black_box(0),
-                    black_box(x as i32),
+                    black_box(x),
                     black_box(95),
                 )
                 .unwrap();
             }
 
             // Draw 10 horizontal lines
-            for y in (0..=96).step_by(9) {
+            for y in (0i32..=96).step_by(9) {
                 draw_line(
                     black_box(&mut grid),
                     black_box(0),
-                    black_box(y as i32),
+                    black_box(y),
                     black_box(159),
-                    black_box(y as i32),
+                    black_box(y),
                 )
                 .unwrap();
             }

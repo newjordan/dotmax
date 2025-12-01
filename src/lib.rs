@@ -1,5 +1,7 @@
 //! dotmax - High-performance terminal braille rendering
 //!
+#![warn(missing_docs)]
+//!
 //! This library provides braille-based rendering capabilities for terminal applications,
 //! enabling images, animations, and graphics in any terminal environment.
 //!
@@ -52,6 +54,20 @@
 //!
 //! For more information, see the [tracing documentation](https://docs.rs/tracing).
 //!
+//! # Thread Safety
+//!
+//! All types in dotmax are `Send` and `Sync` where possible:
+//!
+//! - [`BrailleGrid`]: `Send + Sync` (can be shared across threads)
+//! - [`Color`]: `Send + Sync + Copy` (trivially thread-safe)
+//! - [`ColorScheme`]: `Send + Sync` (immutable after creation)
+//! - [`DotmaxError`]: `Send + Sync` (can be propagated across threads)
+//! - [`TerminalRenderer`]: `Send` but **not** `Sync` (owns terminal handle)
+//!
+//! For concurrent rendering, create one [`TerminalRenderer`] per thread or use
+//! a mutex to serialize access. [`BrailleGrid`] buffers can be prepared in
+//! parallel and then rendered sequentially.
+//!
 //! # License
 //!
 //! Licensed under either of:
@@ -88,6 +104,9 @@ pub use color::scheme_builder::ColorSchemeBuilder;
 // Re-export color application functions (Epic 5, Story 5.5)
 pub use color::apply::{apply_color_scheme, apply_colors_to_grid};
 
+// Re-export animation types (Epic 6, Stories 6.1, 6.2, 6.3, 6.4, 6.5)
+pub use animation::{AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer, PrerenderedAnimation};
+
 /// Convenience type alias for Results using `DotmaxError`
 ///
 /// This allows writing `dotmax::Result<T>` instead of `Result<T, DotmaxError>`
@@ -106,6 +125,9 @@ pub mod density;
 
 // Color conversion (Epic 5)
 pub mod color;
+
+// Animation & frame management (Epic 6)
+pub mod animation;
 
 #[cfg(test)]
 mod tests {

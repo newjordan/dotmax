@@ -32,25 +32,39 @@ dotmax = "0.1"
 ## Quick Start
 
 ```rust
-use std::error::Error;
+use dotmax::{BrailleGrid, TerminalRenderer};
 
-fn main() -> Result<(), Box<dyn Error>> {
-    // Create a small braille grid (10 cells wide, 5 cells tall)
-    let mut grid = BrailleGrid::new(10, 5);
+fn main() -> Result<(), dotmax::DotmaxError> {
+    // Create a 20x10 braille grid (40 dots wide × 40 dots tall)
+    let mut grid = BrailleGrid::new(20, 10)?;
 
-    // Set some dots to spell "Hello"
-    grid.set_dot(0, 0, 0, true);
-    grid.set_dot(1, 0, 1, true);
-    grid.set_dot(2, 0, 2, true);
+    // Draw a diagonal line
+    for i in 0..40 {
+        grid.set_dot(i, i)?;
+    }
 
     // Render to terminal
-    grid.render()?;
+    let mut renderer = TerminalRenderer::new()?;
+    renderer.render(&grid)?;
 
     Ok(())
 }
 ```
 
-See [examples/](examples/) for more usage patterns.
+See [examples/](examples/) for more usage patterns including images, animations, and color schemes.
+
+## Visual Demo
+
+<!-- TODO: Add terminal screenshots/GIFs when published -->
+```
+┌────────────────────────────────────────────────────────────┐
+│  ⡀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀    Braille rendering provides    │
+│  ⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀    4x the resolution of ASCII    │
+│  ⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀    art. Each character cell      │
+│  ⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀    contains a 2×4 dot matrix.   │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                     │
+└────────────────────────────────────────────────────────────┘
+```
 
 ## Feature Flags
 
@@ -69,20 +83,82 @@ Enable features in your `Cargo.toml`:
 dotmax = { version = "0.1", features = ["image", "svg"] }
 ```
 
-## Examples
+## Animation
 
-See [examples/README.md](examples/README.md) for all available examples.
+Dotmax provides a comprehensive animation system for smooth, flicker-free terminal animations:
 
-Run examples with:
+```rust
+use dotmax::animation::AnimationLoop;
+
+fn main() -> Result<(), dotmax::DotmaxError> {
+    AnimationLoop::new(80, 24)
+        .fps(60)
+        .on_frame(|frame, buffer| {
+            // Calculate bouncing position
+            let x = (frame as usize * 2) % 160;
+            let y = 48;
+            buffer.set_dot(x, y)?;
+            Ok(true) // Continue animation
+        })
+        .run()
+}
+```
+
+### Animation Components
+
+| Component | Purpose |
+|-----------|---------|
+| `AnimationLoop` | High-level animation abstraction (recommended) |
+| `FrameTimer` | Consistent frame rate control |
+| `FrameBuffer` | Double-buffering for flicker-free updates |
+| `PrerenderedAnimation` | Cached frame sequences for looping |
+| `DifferentialRenderer` | Only render changed cells (90%+ savings) |
+
+### Animation Examples
 
 ```bash
+cargo run --example bouncing_ball    # Physics simulation
+cargo run --example loading_spinner  # Rotating indicators
+cargo run --example waveform         # Sine wave visualization
+cargo run --example fireworks        # Particle system
+cargo run --example clock            # Real-time analog clock
+```
+
+For comprehensive documentation, see [docs/animation_guide.md](docs/animation_guide.md).
+
+## Examples
+
+| Example | Description | Features |
+|---------|-------------|----------|
+| `hello_braille` | Minimal braille demo | - |
+| `load_image` | Load and display images | `image` |
+| `simple_animation` | Basic animation loop | - |
+| `color_schemes_demo` | Color scheme showcase | - |
+| `shapes_demo` | Drawing primitives | - |
+
+See [examples/README.md](examples/README.md) for all 49 examples.
+
+```bash
+# Core examples
 cargo run --example hello_braille
-cargo run --example render_image --features image  # Future
+cargo run --example simple_animation
+
+# Image rendering (requires feature)
+cargo run --example load_image --features image
+cargo run --example view_image --features image
+
+# Animation examples
+cargo run --example bouncing_ball
+cargo run --example fireworks
 ```
 
 ## Documentation
 
-API documentation: [docs.rs/dotmax](https://docs.rs/dotmax) (coming soon)
+- **API Reference**: [docs.rs/dotmax](https://docs.rs/dotmax)
+- **Getting Started**: [docs/getting_started.md](docs/getting_started.md)
+- **Animation Guide**: [docs/animation_guide.md](docs/animation_guide.md)
+- **Performance Guide**: [docs/performance.md](docs/performance.md)
+- **Troubleshooting**: [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ## Logging
 
@@ -161,12 +237,81 @@ For more information, see the [tracing documentation](https://docs.rs/tracing).
 
 ## Performance
 
-Dotmax is designed for "efficiency so fast, it's invisible":
+Dotmax is designed for "efficiency so fast, it's invisible". Here are the benchmark results:
 
-- **Image rendering**: <50ms target (25ms goal) for 80×24 terminals
-- **Animation**: 60fps minimum, 120fps target
-- **Memory**: <5MB baseline, <500KB per frame
+### Core Rendering
+
+| Operation | 80x24 Terminal | 200x50 Terminal |
+|-----------|----------------|-----------------|
+| Grid creation | ~173ns | ~743ns |
+| Grid clear | ~40ns | ~150ns |
+| Unicode conversion | ~1.7μs | ~7.1μs |
+| Full frame cycle | ~2.1μs | ~9.1μs |
+
+### Image Processing (`--features image`)
+
+| Operation | 800x600 Source | Target |
+|-----------|----------------|--------|
+| Resize to 80x24 | ~1.5ms | <10ms |
+| Full pipeline (resize + threshold + braille) | ~10ms | <25ms |
+| Floyd-Steinberg dithering | ~66μs | <15ms |
+| Load + render (with I/O) | ~6ms | <50ms |
+
+### Animation
+
+| Operation | 80x24 | 200x50 |
+|-----------|-------|--------|
+| Frame swap | ~23ns | ~23ns |
+| Single frame preparation | ~2.0μs | ~9.0μs |
+| 100 frames sustained | ~164μs | ~766μs |
+| **Per-frame budget** | **~1.6μs** | **~7.7μs** |
+
+60fps requires <16.67ms per frame. Dotmax achieves **~1.6μs** (10,000x faster than required).
+
+### Memory
+
+- **Baseline**: <5MB
+- **Per frame**: <500KB (80x24 grid)
 - **Binary size**: <2MB addition to your compiled binary
+
+### Running Benchmarks
+
+```bash
+# Core benchmarks (no features)
+cargo bench --bench core_rendering
+
+# Image processing benchmarks
+cargo bench --bench image_processing --features image
+
+# Animation benchmarks
+cargo bench --bench animation
+
+# All benchmarks
+cargo bench --all-features
+```
+
+## Comparison to Alternatives
+
+| Feature | dotmax | drawille (Python) | Sixel | Kitty Protocol |
+|---------|--------|-------------------|-------|----------------|
+| **Resolution** | 2×4 dots/char | 2×4 dots/char | True pixels | True pixels |
+| **Terminal Support** | Universal (Unicode) | Universal | Limited | Kitty only |
+| **Language** | Rust | Python | Various | Various |
+| **Performance** | ~2μs/frame | ~10ms/frame | Varies | Fast |
+| **Animation** | Built-in | Manual | Manual | Built-in |
+| **Colors** | RGB + Schemes | Limited | Full | Full |
+| **Dependencies** | Minimal | Minimal | Native | Native |
+
+**When to use dotmax:**
+- Need universal terminal compatibility (SSH, tmux, etc.)
+- Want Rust performance with zero-cost abstractions
+- Building CLI tools or TUI applications
+- Need smooth 60fps animations
+
+**When to use Sixel/Kitty:**
+- Control both ends (local terminal)
+- Need true pixel-level detail (photos)
+- Terminal supports the protocol
 
 ## Platform Support
 

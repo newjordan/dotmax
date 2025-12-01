@@ -5,82 +5,140 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2025-11-26
+
+Initial release of dotmax - a high-performance terminal braille rendering library for Rust.
 
 ### Added
-- Initial project structure and setup
-- **Terminal Color Capability Detection** (`src/utils/terminal_caps.rs`) - Epic 5 foundation (Story 5.1)
-  - `ColorCapability` enum with 4 variants: `Monochrome`, `Ansi16`, `Ansi256`, `TrueColor`
-  - `detect_color_capability()` function for automatic environment-based detection
-  - Checks `$COLORTERM` for "truecolor"/"24bit" → `TrueColor`
-  - Checks `$TERM` for "256color" → `Ansi256`, "color" → `Ansi16`
-  - Safe fallback to `Ansi256` (widely supported)
-  - `OnceLock` caching for <1ns repeated access after first detection
-  - Helper methods: `supports_color()`, `supports_truecolor()`
-  - Cross-platform support (Windows, Linux, macOS)
-  - 39 unit tests with comprehensive coverage
-  - `color_detection` example for visual validation
-  - Zero clippy warnings, zero rustdoc warnings
-- **Color Support for Drawing Primitives** (Story 4.5) - All drawing primitives now support RGB color
-  - `draw_line_colored()` - Colored line drawing with optional thickness
-  - `draw_circle_colored()` - Colored circles (outline or filled)
-  - `draw_rectangle_colored()` - Colored rectangles (outline or filled)
-  - `draw_polygon_colored()` - Colored polygons (open or closed paths)
-  - All colored functions use per-cell color storage (2×4 dots per colored cell)
-  - `colored_shapes` example demonstrating all colored primitive capabilities
-  - Full backward compatibility (non-colored functions unchanged)
-- **Character Density Rendering** (`src/density/`) - ASCII-art style intensity-to-character mapping
-  - `DensitySet` type for intensity-to-character mapping with validation
-  - Predefined density sets: ASCII (69 chars), Simple (10 chars), Blocks (5 chars), Braille (9 chars)
-  - Custom density set creation with validation (1-256 characters)
-  - `BrailleGrid::render_density()` API for rendering intensity buffers
-  - Comprehensive unit tests (13 test cases, 100% coverage)
-  - Integration tests for gradient patterns (horizontal, vertical, radial)
-  - `density_demo` example showcasing all density sets and gradient types
-  - Performance benchmarks for density mapping and grid rendering
-- Line drawing primitives using Bresenham's algorithm (`draw_line`, `draw_line_thick`)
-- Circle drawing primitives using Bresenham's midpoint circle algorithm (`draw_circle`, `draw_circle_filled`, `draw_circle_thick`)
-- **Rectangle and Polygon Drawing Primitives** (`src/primitives/shapes.rs`)
-  - Rectangle outline drawing (`draw_rectangle`)
-  - Filled rectangle support (`draw_rectangle_filled`) with scanline fill
-  - Thick rectangle borders (`draw_rectangle_thick`) with concentric approach
-  - Polygon outline drawing (`draw_polygon`) with automatic path closing
-  - Filled polygon support (`draw_polygon_filled`) using scanline fill algorithm with even-odd rule
-  - Support for arbitrary polygon vertex counts (≥3 vertices required)
-  - Handles non-convex and self-intersecting polygons correctly
-  - Comprehensive unit tests (25 test cases, 100% coverage)
-  - `shapes_demo` example demonstrating 21 shape variations
-  - Performance benchmarks for all rectangle and polygon operations
-- Primitives module (`src/primitives/`) with line, circle, and shape drawing capabilities
-- Support for all octants (horizontal, vertical, diagonal, arbitrary angles) for lines
-- 8-way symmetry for circles with integer-only arithmetic
-- Line and circle thickness support (thickness 1-10 recommended for braille resolution)
-- Filled circle support using scanline fill approach
-- Boundary clipping for primitives extending beyond grid bounds
-- Comprehensive unit tests for line drawing (8 test cases) and circle drawing (9 test cases)
-- `lines_demo` and `circles_demo` examples demonstrating various drawing techniques
-- Performance benchmarks for line and circle drawing primitives
-- Adaptive resize filter selection for extreme aspect ratio images
-- Comprehensive performance benchmarks for extreme image sizes
-- Integration tests for large and extreme aspect ratio images
 
-### Changed
-- Image resize algorithm now uses Triangle filter (3x faster) for extreme aspect ratios (>2.5:1)
-- Improved resize performance by 45% for extreme aspect ratio images (501ms → 276ms for 10000×4000 images)
+#### Epic 1: Foundation & Project Setup
+- Cargo project with optimal structure and dual MIT/Apache-2.0 licensing
+- GitHub Actions CI/CD pipeline with cross-platform testing (Windows, Linux, macOS)
+- Feature flags architecture for minimal binary size
+- Code quality tooling: Clippy, Rustfmt, cargo-deny, cargo-audit
+- Benchmarking infrastructure with Criterion
+- MSRV: Rust 1.70
+
+#### Epic 2: Core Braille Rendering Engine
+- `BrailleGrid` - Core rendering surface with 2x4 dot matrix per cell
+- Unicode braille character conversion (U+2800-U+28FF)
+- `TerminalRenderer` with ratatui/crossterm backend
+- `TerminalBackend` trait for custom backends
+- `DotmaxError` enum with comprehensive error handling (thiserror)
+- Terminal resize event handling
+- Color support for braille cells (RGB)
+- Debug logging with tracing integration
+- Proper viewport detection and rendering
+
+#### Epic 3: 2D Image Rendering Pipeline
+- Image loading from file paths and byte buffers (PNG, JPG, GIF, BMP, WebP, TIFF)
+- `ImageRenderer` with builder pattern
+- Resize with aspect ratio preservation
+- Multiple resize filters (Lanczos3, Triangle, CatmullRom, Gaussian, Nearest)
+- Adaptive filter selection for extreme aspect ratios (45% performance improvement)
+- Grayscale conversion using BT.709 coefficients
+- Otsu thresholding for automatic binary threshold detection
+- Threshold toggle control (auto/manual)
+- Dithering algorithms:
+  - Floyd-Steinberg (error diffusion)
+  - Bayer (ordered dithering, 2x2 to 8x8 matrices)
+  - Atkinson (Apple-style limited error diffusion)
+- Binary image to braille grid conversion
+- SVG vector graphics support with rasterization (resvg/usvg)
+- Font handling for SVG text elements
+- Color mode image rendering with RGB output
+- High-level `render_file()` and `render_bytes()` API
+
+#### Epic 4: Drawing Primitives & Density Rendering
+- Line drawing with Bresenham's algorithm
+- Line thickness support (1-10 recommended)
+- Circle drawing with midpoint circle algorithm (8-way symmetry)
+- Filled circles with scanline fill
+- Circle thickness support
+- Rectangle drawing (outline, filled, thick border)
+- Polygon drawing with automatic path closing
+- Filled polygons with even-odd scanline fill
+- Non-convex and self-intersecting polygon support
+- Boundary clipping for out-of-bounds primitives
+- Character density rendering (`DensitySet`)
+- Predefined density sets: ASCII (69 chars), Simple (10), Blocks (5), Braille (9)
+- Custom density set creation
+- Colored primitives: `draw_line_colored`, `draw_circle_colored`, `draw_rectangle_colored`, `draw_polygon_colored`
+
+#### Epic 5: Color System & Visual Schemes
+- Terminal color capability detection (`ColorCapability` enum)
+- Automatic environment-based detection ($COLORTERM, $TERM)
+- RGB to ANSI color conversion (16, 256, TrueColor)
+- 6 color schemes extracted from crabmusic:
+  - Plasma (vibrant pink-to-blue gradient)
+  - Neon (cyan to magenta)
+  - Sunset (warm yellow to deep red)
+  - Ocean (deep blue to light cyan)
+  - Forest (earth greens)
+  - Monochrome (grayscale gradient)
+- `ColorScheme` type for intensity-to-color mapping
+- `ColorSchemeBuilder` for custom scheme creation
+- `from_colors()` convenience constructor
+- Grayscale intensity buffer rendering with color schemes
+
+#### Epic 6: Animation & Frame Management
+- `FrameBuffer` with double-buffering for flicker-free updates
+- Buffer swap in ~23ns (450,000x faster than 1ms target)
+- `FrameTimer` for consistent frame rate control
+- Configurable FPS (1-240)
+- High-precision timing with spin-wait for accuracy
+- `AnimationLoop` high-level animation abstraction
+- Builder pattern with `fps()`, `on_frame()`, `run()`
+- `PrerenderedAnimation` for cached frame sequences
+- Frame caching for looping animations
+- `DifferentialRenderer` - only render changed cells (90%+ I/O savings)
+- Cell-level change tracking
+- 5 animation examples: bouncing_ball, loading_spinner, waveform, fireworks, clock
+
+#### Epic 7: API Design, Performance & Production Readiness
+- Public API surface design with organized module re-exports
+- `pub type Result<T>` alias for ergonomic error handling
+- Comprehensive rustdoc with `#![warn(missing_docs)]`
+- Thread safety documentation (Send/Sync bounds)
+- Comprehensive benchmarking suite:
+  - Core rendering benchmarks
+  - Image processing benchmarks
+  - Animation benchmarks
+- Performance optimization (profiled with flamegraph)
+- 925+ tests (66% increase from baseline):
+  - Unit tests in all modules
+  - Integration tests
+  - 28 property-based tests (proptest)
+  - 13 visual regression tests
+  - 232+ doc tests
+- CI coverage reporting with cargo-tarpaulin
+- Comprehensive documentation:
+  - Updated README with visual demos
+  - Getting started guide
+  - Performance guide
+  - Troubleshooting guide
+  - Animation guide
+- 49 examples covering all features
 
 ### Performance
-- Character density mapping: O(1) per cell, ~1μs per cell typical
-- Density grid rendering (80×24 terminal): <2ms measured, <10ms target
-- Density rendering scales linearly with grid size
-- Large images (4000×4000): 222ms total
-- Extreme wide (10000×4000): 725ms total (449ms load + 276ms resize)
-- Extreme tall (4000×10000): ~700ms total
-- All image sizes now meet <5s performance targets
 
-## [0.1.0] - Unreleased
+- Grid creation: ~173ns (80x24), ~743ns (200x50)
+- Unicode conversion: ~1.7us (80x24)
+- Image pipeline: ~7.9ms (vs 25ms target)
+- Animation frame: ~1.6us (10,000x faster than 60fps requirement)
+- Frame swap: ~23ns
+- Memory baseline: <5MB
+- Per-frame overhead: <500KB
+- Binary size: <2MB core
 
-### Added
-- Initial Cargo project initialization
-- Project directory structure (src/, examples/, tests/, benches/, docs/)
-- Dual MIT/Apache-2.0 licensing
-- Basic README and documentation placeholders
+### Platform Support
+
+- Windows x86_64
+- Linux x86_64
+- macOS x86_64 and ARM64
+
+### Links
+
+- Documentation: https://docs.rs/dotmax
+- Repository: https://github.com/frosty40/dotmax
+- crates.io: https://crates.io/crates/dotmax

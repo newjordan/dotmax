@@ -1,0 +1,330 @@
+<story-context id="6-3-implement-animation-loop-helper" v="1.0">
+  <metadata>
+    <epicId>6</epicId>
+    <storyId>3</storyId>
+    <title>Implement Animation Loop Helper</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/6-3-implement-animation-loop-helper.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer wanting easy animation creation</asA>
+    <iWant>a high-level animation loop abstraction</iWant>
+    <soThat>I can focus on frame generation, not timing/buffering boilerplate</soThat>
+    <tasks>
+      <task id="1" title="Create AnimationLoop Module Structure">
+        <subtask>1.1: Create src/animation/loop_helper.rs (avoiding Rust keyword loop)</subtask>
+        <subtask>1.2: Add pub mod loop_helper; to src/animation/mod.rs</subtask>
+        <subtask>1.3: Add module-level rustdoc explaining animation loop abstraction</subtask>
+        <subtask>1.4: Import dependencies: FrameBuffer, FrameTimer, TerminalRenderer, BrailleGrid, DotmaxError</subtask>
+      </task>
+      <task id="2" title="Implement AnimationLoopBuilder Struct">
+        <subtask>2.1: Define AnimationLoopBuilder struct with fields: width, height, target_fps</subtask>
+        <subtask>2.2: Implement AnimationLoop::new(width, height) -> AnimationLoopBuilder</subtask>
+        <subtask>2.3: Implement AnimationLoopBuilder::fps(self, fps: u32) -> Self</subtask>
+        <subtask>2.4: Validate FPS in range 1-240 (clamp or default)</subtask>
+        <subtask>2.5: Add default FPS of 60</subtask>
+        <subtask>2.6: Add rustdoc with builder pattern examples</subtask>
+      </task>
+      <task id="3" title="Implement on_frame() Method">
+        <subtask>3.1: Implement on_frame&lt;F&gt;(self, callback: F) -> AnimationLoop&lt;F&gt;</subtask>
+        <subtask>3.2: Define callback type: F: FnMut(u64, &amp;mut BrailleGrid) -> Result&lt;bool, DotmaxError&gt;</subtask>
+        <subtask>3.3: Store callback in AnimationLoop struct</subtask>
+        <subtask>3.4: Add rustdoc explaining callback parameters and return values</subtask>
+      </task>
+      <task id="4" title="Implement AnimationLoop Struct">
+        <subtask>4.1: Define AnimationLoop&lt;F&gt; struct with: width, height, target_fps, on_frame: F</subtask>
+        <subtask>4.2: Store callback using generic type parameter with FnMut bound</subtask>
+        <subtask>4.3: Add accessor methods: width(), height(), target_fps()</subtask>
+        <subtask>4.4: Add rustdoc with struct-level documentation</subtask>
+      </task>
+      <task id="5" title="Implement run() Method - Core Animation Loop">
+        <subtask>5.1: Add pub fn run(&amp;mut self) -> Result&lt;(), DotmaxError&gt;</subtask>
+        <subtask>5.2: Create FrameBuffer::new(self.width, self.height)</subtask>
+        <subtask>5.3: Create FrameTimer::new(self.target_fps)</subtask>
+        <subtask>5.4: Create TerminalRenderer::new() with terminal setup</subtask>
+        <subtask>5.5: Set up Ctrl+C signal handler using crossterm events</subtask>
+        <subtask>5.6: Implement animation loop with clear/draw/swap/render/wait pattern</subtask>
+        <subtask>5.7: Clean up terminal state on exit (any exit path)</subtask>
+        <subtask>5.8: Return Ok(()) on normal exit, Err(...) on error</subtask>
+      </task>
+      <task id="6" title="Implement Terminal Setup/Cleanup">
+        <subtask>6.1: Enter raw mode on animation start</subtask>
+        <subtask>6.2: Disable cursor visibility during animation</subtask>
+        <subtask>6.3: Clear screen on start</subtask>
+        <subtask>6.4: Restore cursor visibility on exit</subtask>
+        <subtask>6.5: Exit raw mode on exit</subtask>
+        <subtask>6.6: Use RAII guard pattern or manual cleanup in all exit paths</subtask>
+      </task>
+      <task id="7" title="Write Unit Tests">
+        <subtask>7.1: Create #[cfg(test)] mod tests in loop_helper.rs</subtask>
+        <subtask>7.2: Test builder creates with correct dimensions</subtask>
+        <subtask>7.3: Test builder with custom FPS</subtask>
+        <subtask>7.4: Test default FPS is 60</subtask>
+        <subtask>7.5: Test FPS clamping (0 -> 1, 1000 -> 240)</subtask>
+        <subtask>7.6: Test callback receives correct frame numbers</subtask>
+        <subtask>7.7: Test callback returning false stops loop</subtask>
+        <subtask>7.8: Test accessor methods return correct values</subtask>
+        <subtask>7.9: Minimum 8 unit tests covering builder and configuration</subtask>
+      </task>
+      <task id="8" title="Create Visual Example">
+        <subtask>8.1: Create examples/simple_animation.rs</subtask>
+        <subtask>8.2: Import necessary modules from dotmax</subtask>
+        <subtask>8.3: Implement simple animation (rotating line or bouncing dot)</subtask>
+        <subtask>8.4: Use AnimationLoop builder pattern</subtask>
+        <subtask>8.5: Keep total lines under 30</subtask>
+        <subtask>8.6: Add brief comment explaining the animation</subtask>
+        <subtask>8.7: Verify compiles: cargo build --example simple_animation</subtask>
+      </task>
+      <task id="9" title="Update Module Exports">
+        <subtask>9.1: Export AnimationLoop from src/animation/mod.rs</subtask>
+        <subtask>9.2: Export AnimationLoopBuilder from src/animation/mod.rs</subtask>
+        <subtask>9.3: Re-export from src/lib.rs: pub use animation::{AnimationLoop, AnimationLoopBuilder};</subtask>
+        <subtask>9.4: Verify public API is accessible from crate root</subtask>
+      </task>
+      <task id="10" title="Final Validation">
+        <subtask>10.1: Run full test suite: cargo test --lib --all-features</subtask>
+        <subtask>10.2: Run clippy: cargo clippy --lib --example simple_animation -- -D warnings</subtask>
+        <subtask>10.3: Run rustdoc: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps</subtask>
+        <subtask>10.4: Run doc tests: cargo test --doc</subtask>
+        <subtask>10.5: Count lines in example: wc -l examples/simple_animation.rs &lt; 30</subtask>
+        <subtask>10.6: Manual test: Run simple_animation example and verify animation</subtask>
+        <subtask>10.7: Test Ctrl+C gracefully stops animation</subtask>
+        <subtask>10.8: All ACs verified with evidence</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Builder Pattern API">
+      AnimationLoop::new(width: usize, height: usize) returns AnimationLoopBuilder.
+      Fluent builder API: .fps(60).on_frame(callback).run().
+      Builder validates parameters before run() is called.
+      Default FPS: 60 if not specified.
+    </criterion>
+    <criterion id="AC2" title="Callback Receives Frame Number and Mutable Back Buffer">
+      Callback signature: FnMut(u64, &amp;mut BrailleGrid) -> Result&lt;bool, DotmaxError&gt;.
+      First argument u64 is frame number (starts at 0, increments each frame).
+      Second argument is mutable reference to back buffer for drawing.
+      Return Ok(true) to continue animation, Ok(false) to stop.
+      Return Err(_) to stop with error.
+    </criterion>
+    <criterion id="AC3" title="Loop Handles Buffer Management Automatically">
+      Creates internal FrameBuffer with specified dimensions.
+      Clears back buffer before each frame callback.
+      Calls swap_buffers() after callback completes.
+      User never sees FrameBuffer directly (abstraction).
+    </criterion>
+    <criterion id="AC4" title="Loop Handles Timing Automatically">
+      Creates internal FrameTimer with specified FPS.
+      Calls wait_for_next_frame() after rendering.
+      Graceful frame dropping when behind schedule.
+      FPS configurable via builder (1-240 range).
+    </criterion>
+    <criterion id="AC5" title="Loop Handles Terminal Rendering Automatically">
+      Creates internal TerminalRenderer on run() call.
+      Renders front buffer to terminal each frame.
+      Cleans up terminal state on exit (even on error).
+      Handles terminal initialization/cleanup.
+    </criterion>
+    <criterion id="AC6" title="Ctrl+C Detection for Graceful Exit">
+      Detects Ctrl+C signal during animation.
+      Stops animation loop gracefully on Ctrl+C.
+      Cleans up terminal state before returning.
+      Returns Ok(()) when Ctrl+C detected (not an error).
+    </criterion>
+    <criterion id="AC7" title="Example simple_animation.rs in &lt;30 Lines">
+      Create examples/simple_animation.rs.
+      Demonstrates complete animation in &lt;30 lines of code.
+      Shows: rotating line or bouncing dot animation.
+      Includes FPS display using AnimationLoop APIs.
+      Compiles and runs with cargo run --example simple_animation.
+    </criterion>
+    <criterion id="AC8" title="Zero Clippy Warnings in loop.rs">
+      cargo clippy --lib -- -D warnings passes with zero warnings for animation module.
+      No #[allow(...)] attributes except where justified with comment.
+      Follows Rust naming conventions (snake_case functions, PascalCase types).
+    </criterion>
+    <criterion id="AC9" title="Rustdoc with Examples for All Public Methods">
+      All public functions have /// doc comments.
+      Each method includes at least one # Examples code block.
+      Examples compile via cargo test --doc.
+      Module-level documentation explains animation loop concept.
+      Zero rustdoc warnings: RUSTDOCFLAGS="-D warnings" cargo doc.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/architecture.md" title="dotmax Architecture Document" section="Pattern 3: Buffer Reuse for Animation">
+        AnimationLoop uses FrameBuffer for double-buffering and FrameTimer for consistent frame rates. Target 60fps with &lt;10% single-core CPU (NFR-P2). Memory target &lt;500KB per-frame overhead.
+      </doc>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Technical Specification" section="Story 6.3: Animation Loop Helper">
+        Authoritative specification for AnimationLoop builder API, callback signature, and loop workflow. Defines AC6.3.1-6.3.9 with detailed technical requirements.
+      </doc>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Technical Specification" section="APIs and Interfaces - AnimationLoop Builder API">
+        AnimationLoop::new(w, h) -> AnimationLoopBuilder. Builder methods: fps(), on_frame(), run(). AnimationLoop&lt;F&gt; generic over callback type.
+      </doc>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-6.md" title="Epic 6 Technical Specification" section="Workflows and Sequencing - Animation Loop Workflow">
+        1. Create FrameBuffer and FrameTimer. 2. Clear back buffer, call on_frame callback, swap buffers, render, wait for next frame. 3. Check Ctrl+C signal. 4. Repeat or exit.
+      </doc>
+    </docs>
+    <code>
+      <file path="src/animation/mod.rs" kind="module" symbol="animation" lines="1-56" reason="Animation module root - must add pub mod loop_helper and re-export AnimationLoop, AnimationLoopBuilder">
+        Currently exports FrameBuffer and FrameTimer. Story 6.3 adds AnimationLoop re-export.
+      </file>
+      <file path="src/animation/frame_buffer.rs" kind="struct" symbol="FrameBuffer" lines="1-443" reason="Required dependency - AnimationLoop creates internal FrameBuffer for double-buffering">
+        FrameBuffer::new(width, height), get_back_buffer(), swap_buffers(), render(&amp;mut renderer). Already implemented in Story 6.1.
+      </file>
+      <file path="src/animation/timing.rs" kind="struct" symbol="FrameTimer" lines="1-594" reason="Required dependency - AnimationLoop creates internal FrameTimer for frame rate control">
+        FrameTimer::new(target_fps), wait_for_next_frame(), actual_fps(), frame_time(), reset(). Already implemented in Story 6.2.
+      </file>
+      <file path="src/render.rs" kind="struct" symbol="TerminalRenderer" lines="273-579" reason="Required dependency - AnimationLoop creates TerminalRenderer for terminal output">
+        TerminalRenderer::new(), render(&amp;grid), cleanup(), get_terminal_size(). Handles raw mode, alternate screen, cleanup.
+      </file>
+      <file path="src/grid.rs" kind="struct" symbol="BrailleGrid" reason="Callback parameter type - user draws to &amp;mut BrailleGrid in on_frame callback">
+        BrailleGrid::new(w, h), set_dot(x, y), clear(), dimensions(). Core rendering buffer passed to callback.
+      </file>
+      <file path="src/error.rs" kind="enum" symbol="DotmaxError" lines="1-232" reason="Error handling - run() and callback return Result&lt;_, DotmaxError&gt;">
+        DotmaxError::Terminal, DotmaxError::TerminalBackend. Used for all fallible operations.
+      </file>
+      <file path="src/lib.rs" kind="module" symbol="lib" lines="1-123" reason="Must add re-export: pub use animation::{AnimationLoop, AnimationLoopBuilder}">
+        Currently re-exports FrameBuffer, FrameTimer. Story 6.3 adds AnimationLoop exports.
+      </file>
+      <file path="examples/animation_buffer.rs" kind="example" symbol="animation_buffer" lines="1-226" reason="Reference implementation - shows double-buffering workflow manually, AnimationLoop abstracts this">
+        Shows the manual pattern: clear back buffer, draw, swap, render, sleep. AnimationLoop encapsulates this pattern.
+      </file>
+      <file path="examples/fps_control.rs" kind="example" symbol="fps_control" lines="1-207" reason="Reference implementation - shows FrameTimer usage, AnimationLoop uses this internally">
+        Demonstrates FrameTimer::new(), wait_for_next_frame(), actual_fps(). AnimationLoop handles timing automatically.
+      </file>
+    </code>
+    <dependencies>
+      <rust>
+        <crate name="ratatui" version="0.29" purpose="Terminal UI framework - already in dependencies"/>
+        <crate name="crossterm" version="0.29" purpose="Cross-platform terminal I/O, event polling for Ctrl+C detection"/>
+        <crate name="thiserror" version="2.0" purpose="Error handling derive macros"/>
+        <crate name="tracing" version="0.1" purpose="Structured logging for debug messages"/>
+      </rust>
+      <stdlib>
+        <module name="std::time::Duration" purpose="For event::poll timeout"/>
+      </stdlib>
+      <internal>
+        <dependency name="FrameBuffer" path="src/animation/frame_buffer.rs" purpose="Double buffering (Story 6.1 - done)"/>
+        <dependency name="FrameTimer" path="src/animation/timing.rs" purpose="Frame rate control (Story 6.2 - in-progress, REQUIRED)"/>
+        <dependency name="TerminalRenderer" path="src/render.rs" purpose="Terminal output"/>
+        <dependency name="BrailleGrid" path="src/grid.rs" purpose="Rendering buffer"/>
+        <dependency name="DotmaxError" path="src/error.rs" purpose="Error handling"/>
+      </internal>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern" source="architecture.md">
+      Pattern 3: Buffer Reuse for Animation - AnimationLoop uses FrameBuffer for double-buffering, FrameTimer for timing. Target 60fps with &lt;10% CPU.
+    </constraint>
+    <constraint type="error-handling" source="architecture.md">
+      All public functions return Result&lt;T, DotmaxError&gt;. No panics in animation code.
+    </constraint>
+    <constraint type="sync-only" source="ADR 0006">
+      Sync-only API for MVP. No async runtime dependency. CPU-bound work doesn't benefit from async.
+    </constraint>
+    <constraint type="naming" source="architecture.md">
+      File: snake_case (loop_helper.rs). Types: PascalCase (AnimationLoop, AnimationLoopBuilder). Functions: snake_case.
+    </constraint>
+    <constraint type="documentation" source="architecture.md">
+      Every public item needs rustdoc with Examples section. Zero rustdoc warnings.
+    </constraint>
+    <constraint type="blocking-dependency" source="story-file">
+      Story 6.3 depends on Story 6.2 (FrameTimer) being completed. Story 6.2 is currently in-progress.
+    </constraint>
+    <constraint type="line-limit" source="AC7">
+      Example simple_animation.rs must be under 30 lines of code total.
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="AnimationLoop::new" kind="constructor" path="src/animation/loop_helper.rs">
+      pub fn new(width: usize, height: usize) -> AnimationLoopBuilder
+    </interface>
+    <interface name="AnimationLoopBuilder::fps" kind="builder-method" path="src/animation/loop_helper.rs">
+      pub fn fps(self, fps: u32) -> Self
+    </interface>
+    <interface name="AnimationLoopBuilder::on_frame" kind="builder-method" path="src/animation/loop_helper.rs">
+      pub fn on_frame&lt;F&gt;(self, callback: F) -> AnimationLoop&lt;F&gt; where F: FnMut(u64, &amp;mut BrailleGrid) -> Result&lt;bool, DotmaxError&gt;
+    </interface>
+    <interface name="AnimationLoop::run" kind="method" path="src/animation/loop_helper.rs">
+      pub fn run(&amp;mut self) -> Result&lt;(), DotmaxError&gt;
+    </interface>
+    <interface name="AnimationLoop::width" kind="accessor" path="src/animation/loop_helper.rs">
+      pub fn width(&amp;self) -> usize
+    </interface>
+    <interface name="AnimationLoop::height" kind="accessor" path="src/animation/loop_helper.rs">
+      pub fn height(&amp;self) -> usize
+    </interface>
+    <interface name="AnimationLoop::target_fps" kind="accessor" path="src/animation/loop_helper.rs">
+      pub fn target_fps(&amp;self) -> u32
+    </interface>
+    <interface name="FrameBuffer::new" kind="dependency-api" path="src/animation/frame_buffer.rs">
+      pub fn new(width: usize, height: usize) -> Self - Creates double-buffered frame system
+    </interface>
+    <interface name="FrameBuffer::get_back_buffer" kind="dependency-api" path="src/animation/frame_buffer.rs">
+      pub fn get_back_buffer(&amp;mut self) -> &amp;mut BrailleGrid - Returns mutable back buffer
+    </interface>
+    <interface name="FrameBuffer::swap_buffers" kind="dependency-api" path="src/animation/frame_buffer.rs">
+      pub fn swap_buffers(&amp;mut self) - O(1) pointer swap
+    </interface>
+    <interface name="FrameBuffer::render" kind="dependency-api" path="src/animation/frame_buffer.rs">
+      pub fn render(&amp;self, renderer: &amp;mut TerminalRenderer) -> Result&lt;(), DotmaxError&gt;
+    </interface>
+    <interface name="FrameTimer::new" kind="dependency-api" path="src/animation/timing.rs">
+      pub fn new(target_fps: u32) -> Self - Creates timer (FPS clamped 1-240)
+    </interface>
+    <interface name="FrameTimer::wait_for_next_frame" kind="dependency-api" path="src/animation/timing.rs">
+      pub fn wait_for_next_frame(&amp;mut self) - Blocks until next frame time
+    </interface>
+    <interface name="TerminalRenderer::new" kind="dependency-api" path="src/render.rs">
+      pub fn new() -> Result&lt;Self, DotmaxError&gt; - Sets up raw mode, alternate screen
+    </interface>
+    <interface name="TerminalRenderer::cleanup" kind="dependency-api" path="src/render.rs">
+      pub fn cleanup(&amp;mut self) -> Result&lt;(), DotmaxError&gt; - Restores terminal state
+    </interface>
+    <interface name="crossterm::event::poll" kind="external-api" path="crossterm">
+      fn poll(timeout: Duration) -> Result&lt;bool&gt; - Check for pending events (Ctrl+C detection)
+    </interface>
+    <interface name="crossterm::event::read" kind="external-api" path="crossterm">
+      fn read() -> Result&lt;Event&gt; - Read keyboard event (check for Ctrl+C)
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Unit tests use #[cfg(test)] mod tests in the same file (loop_helper.rs). Integration tests in tests/ directory.
+      All public APIs must have rustdoc examples that compile via cargo test --doc.
+      Clippy with -D warnings must pass. Zero rustdoc warnings required.
+      Minimum 8 unit tests covering builder configuration and accessor methods.
+      Tests requiring terminal use require_terminal! macro pattern from render.rs.
+    </standards>
+    <locations>
+      <location>src/animation/loop_helper.rs - Unit tests in #[cfg(test)] mod tests</location>
+      <location>examples/simple_animation.rs - Visual integration test (&lt;30 lines)</location>
+      <location>cargo test --doc - Doctests for all public methods</location>
+    </locations>
+    <ideas>
+      <idea acRef="AC1">Test AnimationLoop::new(80, 24) creates builder with correct dimensions</idea>
+      <idea acRef="AC1">Test builder default FPS is 60 when fps() not called</idea>
+      <idea acRef="AC1">Test builder fps(30) sets correct target</idea>
+      <idea acRef="AC1">Test FPS clamping: fps(0) -> 1, fps(1000) -> 240</idea>
+      <idea acRef="AC2">Test callback receives frame numbers 0, 1, 2, ... in sequence</idea>
+      <idea acRef="AC2">Test callback returning Ok(false) on frame 5 stops loop after 5 iterations</idea>
+      <idea acRef="AC2">Test callback returning Err stops loop and propagates error</idea>
+      <idea acRef="AC3">Test back buffer is cleared before each callback (verify empty grid)</idea>
+      <idea acRef="AC4">Test actual FPS is approximately target FPS (within tolerance)</idea>
+      <idea acRef="AC6">Test Ctrl+C detection returns Ok(()) not error (requires manual test)</idea>
+      <idea acRef="AC7">Verify simple_animation.rs compiles and line count &lt; 30</idea>
+      <idea acRef="AC8">cargo clippy --lib -- -D warnings passes</idea>
+      <idea acRef="AC9">RUSTDOCFLAGS="-D warnings" cargo doc --no-deps passes</idea>
+    </ideas>
+  </tests>
+</story-context>

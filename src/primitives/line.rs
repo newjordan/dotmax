@@ -53,7 +53,7 @@ use crate::grid::{BrailleGrid, Color};
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_line};
 ///
-/// let mut grid = BrailleGrid::new(80, 24); // 160×96 dots
+/// let mut grid = BrailleGrid::new(80, 24)?; // 160×96 dots
 ///
 /// // Horizontal line
 /// draw_line(&mut grid, 10, 10, 150, 10)?;
@@ -83,7 +83,7 @@ use crate::grid::{BrailleGrid, Color};
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_line};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Line partially off-grid: no error, visible portion renders correctly
 /// draw_line(&mut grid, -50, -50, 100, 100)?;
@@ -169,7 +169,7 @@ pub fn draw_line(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::draw_line_thick};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Thin line (thickness=1, same as draw_line)
 /// draw_line_thick(&mut grid, 10, 10, 150, 10, 1)?;

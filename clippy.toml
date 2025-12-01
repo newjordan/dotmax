@@ -1,0 +1,5 @@
+# Clippy configuration for dotmax
+# See https://doc.rust-lang.org/clippy/configuration.html
+
+# Allow longer functions in examples (they're often tutorial-style)
+too-many-lines-threshold = 200

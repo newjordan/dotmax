@@ -82,10 +82,9 @@ fn bench_grid_density_rendering(c: &mut Criterion) {
                 let mut grid = BrailleGrid::new(*w, *h).unwrap();
                 let density = DensitySet::ascii();
                 b.iter(|| {
-                    black_box(
-                        grid.render_density(black_box(grad), black_box(&density))
-                            .unwrap(),
-                    );
+                    grid.render_density(black_box(grad), black_box(&density))
+                        .unwrap();
+                    black_box(&grid);
                 });
             },
         );
@@ -117,10 +116,9 @@ fn bench_density_sets_comparison(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(name), &density, |b, d| {
             let mut grid = BrailleGrid::new(width, height).unwrap();
             b.iter(|| {
-                black_box(
-                    grid.render_density(black_box(&gradient), black_box(d))
-                        .unwrap(),
-                );
+                grid.render_density(black_box(&gradient), black_box(d))
+                    .unwrap();
+                black_box(&grid);
             });
         });
     }
@@ -165,10 +163,9 @@ fn bench_gradient_patterns(c: &mut Criterion) {
             let mut grid = BrailleGrid::new(width, height).unwrap();
             let density = DensitySet::ascii();
             b.iter(|| {
-                black_box(
-                    grid.render_density(black_box(grad), black_box(&density))
-                        .unwrap(),
-                );
+                grid.render_density(black_box(grad), black_box(&density))
+                    .unwrap();
+                black_box(&grid);
             });
         });
     }

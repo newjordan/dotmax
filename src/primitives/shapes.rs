@@ -55,7 +55,7 @@ use crate::primitives::line::{draw_line, draw_line_colored};
 /// ```
 /// use dotmax::{BrailleGrid, primitives::shapes::draw_rectangle};
 ///
-/// let mut grid = BrailleGrid::new(80, 24); // 160×96 dots
+/// let mut grid = BrailleGrid::new(80, 24)?; // 160×96 dots
 ///
 /// // Small rectangle
 /// draw_rectangle(&mut grid, 10, 10, 50, 30)?;
@@ -130,7 +130,7 @@ pub fn draw_rectangle(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::shapes::draw_rectangle_filled};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Filled rectangle (solid background)
 /// draw_rectangle_filled(&mut grid, 10, 10, 50, 30)?;
@@ -199,7 +199,7 @@ pub fn draw_rectangle_filled(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::shapes::draw_rectangle_thick};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Rectangle with 3-dot thick border
 /// draw_rectangle_thick(&mut grid, 10, 10, 60, 40, 3)?;
@@ -274,7 +274,7 @@ pub fn draw_rectangle_thick(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::shapes::draw_polygon};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Triangle (3 vertices)
 /// let triangle = [(40, 10), (20, 40), (60, 40)];
@@ -337,7 +337,7 @@ pub fn draw_polygon(grid: &mut BrailleGrid, vertices: &[(i32, i32)]) -> Result<(
 /// ```
 /// use dotmax::{BrailleGrid, primitives::shapes::draw_polygon_filled};
 ///
-/// let mut grid = BrailleGrid::new(80, 24);
+/// let mut grid = BrailleGrid::new(80, 24)?;
 ///
 /// // Filled triangle
 /// let triangle = [(40, 10), (20, 40), (60, 40)];

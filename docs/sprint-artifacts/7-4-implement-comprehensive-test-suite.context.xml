@@ -1,0 +1,301 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>7</epicId>
+    <storyId>4</storyId>
+    <title>Implement Comprehensive Test Suite</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-25</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/7-4-implement-comprehensive-test-suite.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer ensuring library correctness</asA>
+    <iWant>unit, integration, and property-based tests with comprehensive coverage</iWant>
+    <soThat>dotmax is rock-solid, regressions are caught immediately, and the library maintains quality during long maintenance pauses</soThat>
+    <tasks>
+      <task id="1" ac="3">Add proptest Dependency
+        <subtask id="1.1">Add `proptest = "1.4"` to `[dev-dependencies]` in Cargo.toml</subtask>
+        <subtask id="1.2">Verify `cargo test` still passes with new dependency</subtask>
+        <subtask id="1.3">Create `tests/property_tests.rs` file structure</subtask>
+      </task>
+      <task id="2" ac="3">Implement Property-Based Tests for Grid
+        <subtask id="2.1">Test `BrailleGrid::new()` never panics for valid dimensions</subtask>
+        <subtask id="2.2">Test `set_dot()` never panics for in-bounds coordinates</subtask>
+        <subtask id="2.3">Test `set_dot()` returns error for out-of-bounds (not panic)</subtask>
+        <subtask id="2.4">Test `clear()` maintains grid dimensions</subtask>
+        <subtask id="2.5">Test `to_char()` always produces valid Unicode braille</subtask>
+      </task>
+      <task id="3" ac="3">Implement Property-Based Tests for Color
+        <subtask id="3.1">Test RGB creation for all u8 values</subtask>
+        <subtask id="3.2">Test ANSI conversion produces valid ANSI codes</subtask>
+        <subtask id="3.3">Test color scheme interpolation is monotonic</subtask>
+        <subtask id="3.4">Test `ColorSchemeBuilder` produces valid schemes</subtask>
+      </task>
+      <task id="4" ac="3">Implement Property-Based Tests for Primitives
+        <subtask id="4.1">Test Bresenham line always includes start and end points</subtask>
+        <subtask id="4.2">Test circle drawing produces symmetric output</subtask>
+        <subtask id="4.3">Test rectangle corners are always set</subtask>
+        <subtask id="4.4">Test polygon with 3+ vertices doesn't panic</subtask>
+      </task>
+      <task id="5" ac="1">Audit Existing Unit Tests
+        <subtask id="5.1">Review `src/grid.rs` - document test coverage gaps</subtask>
+        <subtask id="5.2">Review `src/render.rs` - document test coverage gaps</subtask>
+        <subtask id="5.3">Review `src/image/*.rs` - document test coverage gaps</subtask>
+        <subtask id="5.4">Review `src/primitives.rs` - document test coverage gaps</subtask>
+        <subtask id="5.5">Review `src/color/*.rs` - document test coverage gaps</subtask>
+        <subtask id="5.6">Review `src/animation/*.rs` - document test coverage gaps</subtask>
+      </task>
+      <task id="6" ac="1,5">Add Missing Unit Tests
+        <subtask id="6.1">Add tests for grid edge cases (1x1, max dimensions)</subtask>
+        <subtask id="6.2">Add tests for render error conditions</subtask>
+        <subtask id="6.3">Add tests for image pipeline edge cases</subtask>
+        <subtask id="6.4">Add tests for primitive boundary conditions</subtask>
+        <subtask id="6.5">Add tests for color scheme edge cases</subtask>
+        <subtask id="6.6">Add tests for animation timing edge cases</subtask>
+      </task>
+      <task id="7" ac="4">Create Visual Regression Test Framework
+        <subtask id="7.1">Create `tests/visual/` directory</subtask>
+        <subtask id="7.2">Create baseline generation utility function</subtask>
+        <subtask id="7.3">Create comparison utility (text diff for braille output)</subtask>
+        <subtask id="7.4">Document baseline update procedure</subtask>
+      </task>
+      <task id="8" ac="4">Implement Visual Regression Tests
+        <subtask id="8.1">Create baseline for simple grid pattern</subtask>
+        <subtask id="8.2">Create baseline for known image render (test_image.png)</subtask>
+        <subtask id="8.3">Create baseline for drawing primitives output</subtask>
+        <subtask id="8.4">Create baseline for color scheme application</subtask>
+        <subtask id="8.5">Verify all baselines are stored as version-controlled files</subtask>
+      </task>
+      <task id="9" ac="2">Review and Enhance Integration Tests
+        <subtask id="9.1">Audit `tests/image_loading_tests.rs` for completeness</subtask>
+        <subtask id="9.2">Audit `tests/image_rendering_tests.rs` for completeness</subtask>
+        <subtask id="9.3">Add animation loop integration test if missing</subtask>
+        <subtask id="9.4">Add cross-platform behavior test if feasible</subtask>
+        <subtask id="9.5">Ensure integration tests cover error paths</subtask>
+      </task>
+      <task id="10" ac="9">Configure Coverage Reporting
+        <subtask id="10.1">Add `cargo-tarpaulin` to CI workflow</subtask>
+        <subtask id="10.2">Configure tarpaulin output format (Xml for CI, Html for local)</subtask>
+        <subtask id="10.3">Add coverage artifact upload to CI</subtask>
+        <subtask id="10.4">Verify coverage report generates successfully</subtask>
+        <subtask id="10.5">Document local coverage generation command</subtask>
+      </task>
+      <task id="11" ac="5,6">Measure and Improve Coverage
+        <subtask id="11.1">Run `cargo tarpaulin --all-features` locally</subtask>
+        <subtask id="11.2">Identify modules below 80% coverage</subtask>
+        <subtask id="11.3">Add tests for uncovered critical paths</subtask>
+        <subtask id="11.4">Re-run coverage until targets met</subtask>
+        <subtask id="11.5">Document final coverage percentages</subtask>
+      </task>
+      <task id="12" ac="all">Final Validation
+        <subtask id="12.1">Run `cargo test --all-features` - verify all pass</subtask>
+        <subtask id="12.2">Run `cargo test --no-default-features` - verify all pass</subtask>
+        <subtask id="12.3">Run `cargo clippy` - verify zero warnings</subtask>
+        <subtask id="12.4">Run coverage report - verify >70% overall, >80% core</subtask>
+        <subtask id="12.5">Verify property tests in `tests/property_tests.rs`</subtask>
+        <subtask id="12.6">Verify visual regression tests in `tests/visual/`</subtask>
+        <subtask id="12.7">Verify CI workflow includes coverage</subtask>
+        <subtask id="12.8">Document all 9 ACs with evidence</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Unit tests for all modules">
+      Each `src/*.rs` file has `#[cfg(test)]` module with unit tests. Grid operations, bounds checking, resize operations covered. Terminal color conversion, capability detection covered. Image pipeline stages tested (threshold, dithering). Drawing primitives (Bresenham) correctness verified. Color system (RGB, schemes, conversion) tested. Animation timing, buffer operations tested.
+    </criterion>
+    <criterion id="AC2" title="Integration tests exist">
+      `tests/` directory contains cross-module pipeline tests. Image pipeline integration: load → resize → dither → threshold → map. Animation loop integration: frame generation, timing, rendering. Cross-platform behavior validation.
+    </criterion>
+    <criterion id="AC3" title="Property-based tests added">
+      `proptest` crate added as dev dependency. Grid operations never panic (arbitrary width, height, coordinates). Color conversion roundtrip validation. Bresenham line endpoints correctness for all cases. Property tests use appropriate shrinking strategies.
+    </criterion>
+    <criterion id="AC4" title="Visual regression tests exist">
+      `tests/visual/` directory with baseline comparisons. Known images rendered to braille output. Baseline outputs stored as text files. Comparison detects rendering changes (intentional or bugs).
+    </criterion>
+    <criterion id="AC5" title="Core coverage > 80%">
+      `cargo tarpaulin` reports > 80% line coverage for `src/grid.rs`. `cargo tarpaulin` reports > 80% line coverage for `src/render.rs`. Critical paths (grid ops, unicode conversion) approach 100%.
+    </criterion>
+    <criterion id="AC6" title="Overall coverage > 70%">
+      Total project line coverage > 70%. Coverage report generated and interpretable. Uncovered lines are edge cases or unreachable code.
+    </criterion>
+    <criterion id="AC7" title="All tests pass">
+      `cargo test --all-features` exits with code 0. `cargo test --no-default-features` exits with code 0. All 557+ existing tests continue to pass.
+    </criterion>
+    <criterion id="AC8" title="No test warnings">
+      Tests compile without warnings (`cargo test` shows no warnings). Deprecated API usage in tests is updated. Dead code in tests is removed.
+    </criterion>
+    <criterion id="AC9" title="CI coverage reporting">
+      Coverage report generated in CI pipeline. Coverage artifact stored for download/inspection. Coverage badge or summary in CI logs.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-7.md" title="Epic 7 Tech Spec" section="Story 7.4, Test Strategy Summary, Test Levels, Test Categories" snippet="Authoritative acceptance criteria AC7.4.1-7.4.9, test framework decisions (proptest 1.4, cargo-tarpaulin), test levels (unit >80%, overall >70%), test categories (unit, integration, property, visual regression, performance, doc tests)"/>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Test Organization, Implementation Patterns" snippet="Tests in same file under `#[cfg(test)]`, test organization pattern, feature flag syntax, error handling with thiserror, logging with tracing"/>
+      <doc path="docs/adr/0002-performance-optimization-validation.md" title="Performance ADR" section="Full document" snippet="Performance targets already exceeded (9.1ms image, 1.41μs/frame), no optimization needed, validation methodology documented"/>
+      <doc path="docs/profiling/bottleneck-analysis.md" title="Profiling Analysis" section="Full document" snippet="Performance analysis findings, buffer reuse patterns, grid.clear() uses .fill(0), swap_buffers() pointer swap"/>
+      <doc path="docs/sprint-artifacts/7-3-optimize-hot-paths-based-on-benchmark-data.md" title="Story 7.3 Learnings" section="Dev Agent Record" snippet="557 tests currently passing, 232+ doc tests, zero clippy warnings, tests/image_loading_tests.rs modified"/>
+    </docs>
+    <code>
+      <file path="src/grid.rs" kind="core-module" symbol="BrailleGrid, Color, BrailleDot" lines="1-700" reason="Primary test target for AC1, AC5 - grid operations, bounds checking, resize, unicode conversion"/>
+      <file path="src/render.rs" kind="core-module" symbol="TerminalRenderer, TerminalBackend, TerminalCapabilities" lines="1-500" reason="Primary test target for AC1, AC5 - terminal rendering, color application"/>
+      <file path="src/error.rs" kind="core-module" symbol="DotmaxError" lines="1-100" reason="Error type validation for property tests"/>
+      <file path="src/image/mod.rs" kind="module" symbol="ImageRenderer, render_image_with_color" lines="1-1000" reason="Image pipeline tests, feature-gated tests"/>
+      <file path="src/image/loader.rs" kind="module" symbol="load_from_path, load_from_bytes" lines="1-200" reason="Image loading edge cases"/>
+      <file path="src/image/dither.rs" kind="module" symbol="apply_dithering, DitheringMethod" lines="1-300" reason="Dithering algorithm tests"/>
+      <file path="src/image/threshold.rs" kind="module" symbol="auto_threshold, otsu_threshold" lines="1-200" reason="Threshold algorithm tests"/>
+      <file path="src/image/convert.rs" kind="module" symbol="to_grayscale" lines="1-150" reason="Grayscale conversion tests"/>
+      <file path="src/image/resize.rs" kind="module" symbol="resize_to_dimensions, is_extreme_aspect_ratio" lines="1-300" reason="Resize algorithm tests, aspect ratio handling"/>
+      <file path="src/image/mapper.rs" kind="module" symbol="pixels_to_braille" lines="1-200" reason="Braille mapping tests"/>
+      <file path="src/image/svg.rs" kind="module" symbol="load_svg_from_path" lines="1-200" reason="SVG loading tests, feature-gated"/>
+      <file path="src/image/color_mode.rs" kind="module" symbol="ColorMode" lines="1-150" reason="Color mode tests"/>
+      <file path="src/primitives/mod.rs" kind="module" symbol="primitives module exports" lines="1-50" reason="Primitive drawing API"/>
+      <file path="src/primitives/line.rs" kind="module" symbol="draw_line, draw_line_thick, draw_line_colored" lines="1-200" reason="Bresenham line tests"/>
+      <file path="src/primitives/circle.rs" kind="module" symbol="draw_circle, draw_circle_filled, draw_circle_thick" lines="1-250" reason="Bresenham circle tests"/>
+      <file path="src/primitives/shapes.rs" kind="module" symbol="draw_rectangle, draw_polygon" lines="1-400" reason="Shape drawing tests"/>
+      <file path="src/color/mod.rs" kind="module" symbol="color module exports" lines="1-50" reason="Color system API"/>
+      <file path="src/color/convert.rs" kind="module" symbol="rgb_to_ansi_256, rgb_to_ansi_16" lines="1-200" reason="Color conversion tests"/>
+      <file path="src/color/schemes.rs" kind="module" symbol="ColorScheme, GRAYSCALE, HEAT_MAP" lines="1-300" reason="Color scheme tests"/>
+      <file path="src/color/scheme_builder.rs" kind="module" symbol="ColorSchemeBuilder" lines="1-200" reason="Builder pattern tests"/>
+      <file path="src/color/apply.rs" kind="module" symbol="apply_color_scheme" lines="1-200" reason="Color application tests"/>
+      <file path="src/animation/mod.rs" kind="module" symbol="animation module exports" lines="1-50" reason="Animation API"/>
+      <file path="src/animation/frame_buffer.rs" kind="module" symbol="FrameBuffer, swap_buffers" lines="1-200" reason="Frame buffer tests"/>
+      <file path="src/animation/timing.rs" kind="module" symbol="FrameTimer, TargetFps" lines="1-200" reason="Frame timing tests"/>
+      <file path="src/animation/loop_helper.rs" kind="module" symbol="AnimationLoop" lines="1-300" reason="Animation loop tests"/>
+      <file path="src/animation/differential.rs" kind="module" symbol="DifferentialRenderer" lines="1-250" reason="Differential rendering tests"/>
+      <file path="src/animation/prerender.rs" kind="module" symbol="FrameCache" lines="1-200" reason="Pre-rendering tests"/>
+      <file path="src/density/mod.rs" kind="module" symbol="DensityRenderer, DensitySet" lines="1-300" reason="Density rendering tests"/>
+      <file path="src/utils/mod.rs" kind="module" symbol="terminal_caps" lines="1-100" reason="Terminal capability detection tests"/>
+      <file path="tests/integration_tests.rs" kind="integration-test" symbol="integration tests" lines="1-591" reason="Existing integration tests to audit and enhance (AC2)"/>
+      <file path="tests/image_rendering_tests.rs" kind="integration-test" symbol="image pipeline tests" lines="1-929" reason="Existing image tests to audit (AC2)"/>
+      <file path="tests/image_loading_tests.rs" kind="integration-test" symbol="image loading tests" lines="1-200" reason="Existing loading tests to audit"/>
+      <file path="tests/density_integration_tests.rs" kind="integration-test" symbol="density tests" lines="1-100" reason="Existing density tests"/>
+      <file path="benches/core_rendering.rs" kind="benchmark" symbol="core benchmarks" lines="1-200" reason="Reference for performance validation"/>
+      <file path="benches/animation.rs" kind="benchmark" symbol="animation benchmarks" lines="1-200" reason="Animation performance validation"/>
+    </code>
+    <dependencies>
+      <rust>
+        <core>
+          <dep name="ratatui" version="0.29" purpose="Terminal UI framework"/>
+          <dep name="crossterm" version="0.29" purpose="Cross-platform terminal I/O"/>
+          <dep name="thiserror" version="2.0" purpose="Error handling derive macros"/>
+          <dep name="tracing" version="0.1" purpose="Structured logging"/>
+        </core>
+        <optional>
+          <dep name="image" version="0.25" feature="image" purpose="Image loading"/>
+          <dep name="imageproc" version="0.24" feature="image" purpose="Image processing"/>
+          <dep name="resvg" version="0.38" feature="svg" purpose="SVG rasterization"/>
+          <dep name="usvg" version="0.38" feature="svg" purpose="SVG parsing"/>
+        </optional>
+        <dev>
+          <dep name="criterion" version="0.7" purpose="Benchmarking framework"/>
+          <dep name="tracing-subscriber" version="0.3" purpose="Log output for tests"/>
+          <dep name="tempfile" version="3.10" purpose="Temporary file handling"/>
+          <dep name="proptest" version="1.4" purpose="Property-based testing (TO BE ADDED)"/>
+        </dev>
+      </rust>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="testing" source="tech-spec-epic-7.md">Use proptest 1.4 for property-based tests (better shrinking than quickcheck)</constraint>
+    <constraint type="testing" source="tech-spec-epic-7.md">Use cargo-tarpaulin for coverage reporting (XML for CI, HTML for local)</constraint>
+    <constraint type="coverage" source="tech-spec-epic-7.md">Core modules (grid.rs, render.rs) must have >80% line coverage</constraint>
+    <constraint type="coverage" source="tech-spec-epic-7.md">Overall project coverage must be >70%</constraint>
+    <constraint type="testing" source="architecture.md">Tests go in #[cfg(test)] modules in same file as implementation</constraint>
+    <constraint type="testing" source="architecture.md">Integration tests go in tests/ directory</constraint>
+    <constraint type="ci" source="tech-spec-epic-7.md">CI must run tests on stable + MSRV (1.70) across Windows, Linux, macOS</constraint>
+    <constraint type="quality" source="tech-spec-epic-7.md">Zero clippy warnings, zero test warnings</constraint>
+    <constraint type="stability" source="story">All 557+ existing tests must continue to pass</constraint>
+    <constraint type="feature-gates" source="architecture.md">Image tests require `--features image`, SVG tests require `--features image,svg`</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="BrailleGrid" kind="struct" path="src/grid.rs">
+      <signature>pub struct BrailleGrid { width: usize, height: usize, dots: Vec&lt;u8&gt;, colors: Option&lt;Vec&lt;Color&gt;&gt; }</signature>
+      <methods>new(width, height) -> Result, set_dot(x, y) -> Result, clear(), resize(w, h) -> Result, dimensions() -> (usize, usize), to_unicode_grid() -> Vec&lt;Vec&lt;char&gt;&gt;, enable_color_support(), set_cell_color(x, y, Color) -> Result, get_color(x, y) -> Option&lt;Color&gt;, clear_colors()</methods>
+    </interface>
+    <interface name="Color" kind="struct" path="src/grid.rs">
+      <signature>pub struct Color { pub r: u8, pub g: u8, pub b: u8 }</signature>
+      <methods>rgb(r, g, b) -> Self, black() -> Self, white() -> Self</methods>
+    </interface>
+    <interface name="TerminalRenderer" kind="struct" path="src/render.rs">
+      <signature>pub struct TerminalRenderer { backend, capabilities }</signature>
+      <methods>new() -> Result, render(&amp;BrailleGrid) -> Result, clear() -> Result, cleanup() -> Result, get_terminal_size() -> Result&lt;(u16, u16)&gt;, capabilities() -> TerminalCapabilities</methods>
+    </interface>
+    <interface name="DotmaxError" kind="enum" path="src/error.rs">
+      <signature>pub enum DotmaxError { ImageLoad, InvalidDimensions, Terminal, ... }</signature>
+    </interface>
+    <interface name="ColorScheme" kind="struct" path="src/color/schemes.rs">
+      <signature>pub struct ColorScheme { name: String, colors: Vec&lt;Color&gt; }</signature>
+      <methods>new(name, colors), get_color(intensity: f32) -> Color</methods>
+    </interface>
+    <interface name="ColorSchemeBuilder" kind="struct" path="src/color/scheme_builder.rs">
+      <signature>pub struct ColorSchemeBuilder</signature>
+      <methods>new() -> Self, name(String) -> Self, add_color(Color) -> Self, from_colors(Vec&lt;Color&gt;) -> Self, build() -> Result&lt;ColorScheme&gt;</methods>
+    </interface>
+    <interface name="FrameBuffer" kind="struct" path="src/animation/frame_buffer.rs">
+      <signature>pub struct FrameBuffer { front: BrailleGrid, back: BrailleGrid }</signature>
+      <methods>new(width, height) -> Result, swap_buffers(), front() -> &amp;BrailleGrid, back_mut() -> &amp;mut BrailleGrid</methods>
+    </interface>
+    <interface name="FrameTimer" kind="struct" path="src/animation/timing.rs">
+      <signature>pub struct FrameTimer { target_fps: TargetFps, last_frame: Instant }</signature>
+      <methods>new(fps) -> Self, wait_for_next_frame(), elapsed() -> Duration</methods>
+    </interface>
+    <interface name="AnimationLoop" kind="struct" path="src/animation/loop_helper.rs">
+      <signature>pub struct AnimationLoop</signature>
+      <methods>new(width, height, fps) -> Result, run&lt;F&gt;(frame_fn) -> Result, stop()</methods>
+    </interface>
+    <interface name="draw_line" kind="function" path="src/primitives/line.rs">
+      <signature>pub fn draw_line(grid: &amp;mut BrailleGrid, x0: usize, y0: usize, x1: usize, y1: usize) -> Result&lt;(), DotmaxError&gt;</signature>
+    </interface>
+    <interface name="draw_circle" kind="function" path="src/primitives/circle.rs">
+      <signature>pub fn draw_circle(grid: &amp;mut BrailleGrid, cx: usize, cy: usize, r: usize) -> Result&lt;(), DotmaxError&gt;</signature>
+    </interface>
+    <interface name="draw_rectangle" kind="function" path="src/primitives/shapes.rs">
+      <signature>pub fn draw_rectangle(grid: &amp;mut BrailleGrid, x: usize, y: usize, width: usize, height: usize) -> Result&lt;(), DotmaxError&gt;</signature>
+    </interface>
+    <interface name="draw_polygon" kind="function" path="src/primitives/shapes.rs">
+      <signature>pub fn draw_polygon(grid: &amp;mut BrailleGrid, points: &amp;[(usize, usize)]) -> Result&lt;(), DotmaxError&gt;</signature>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows Rust standard practices: unit tests in #[cfg(test)] modules within source files, integration tests in tests/ directory, doc tests inline in rustdoc comments. Property-based tests use proptest 1.4 with shrinking strategies. Coverage measured via cargo-tarpaulin. All tests must pass on stable Rust and MSRV 1.70. Tests requiring terminal use `require_terminal!` macro to skip gracefully in CI. Feature-gated code tested with `--features image` and `--features image,svg`.
+    </standards>
+    <locations>
+      <location pattern="src/**/*.rs" type="unit" description="Unit tests in #[cfg(test)] modules"/>
+      <location pattern="tests/*.rs" type="integration" description="Integration tests"/>
+      <location pattern="tests/property_tests.rs" type="property" description="Property-based tests (TO BE CREATED)"/>
+      <location pattern="tests/visual/" type="visual-regression" description="Visual regression tests (TO BE CREATED)"/>
+      <location pattern="benches/*.rs" type="benchmark" description="Performance benchmarks"/>
+    </locations>
+    <ideas>
+      <idea ac="1">Unit test edge cases: BrailleGrid 1x1, max 10000x10000, zero dimensions (error), dot at corners</idea>
+      <idea ac="1">Unit test Color: RGB boundary values (0,0,0), (255,255,255), (128,128,128)</idea>
+      <idea ac="1">Unit test render: terminal too small error, cleanup after error</idea>
+      <idea ac="2">Integration test: full image pipeline with all dithering methods</idea>
+      <idea ac="2">Integration test: animation loop with frame timing validation</idea>
+      <idea ac="3">Property test: BrailleGrid::new(w, h) where w,h in 1..1000 never panics</idea>
+      <idea ac="3">Property test: set_dot(x, y) where x &lt; width*2 and y &lt; height*4 never panics</idea>
+      <idea ac="3">Property test: Color::rgb(r, g, b) for any u8 values creates valid color</idea>
+      <idea ac="3">Property test: draw_line(grid, x0, y0, x1, y1) always includes endpoints</idea>
+      <idea ac="3">Property test: draw_circle symmetry - dots at (cx+r, cy) implies dots at (cx-r, cy)</idea>
+      <idea ac="4">Visual regression: checkerboard grid pattern baseline</idea>
+      <idea ac="4">Visual regression: sample.png rendered with FloydSteinberg baseline</idea>
+      <idea ac="4">Visual regression: circle/rectangle primitives baseline</idea>
+      <idea ac="4">Visual regression: HEAT_MAP color scheme application baseline</idea>
+      <idea ac="5">Coverage: ensure grid.rs set_dot, clear, resize branches covered</idea>
+      <idea ac="5">Coverage: ensure render.rs render, clear, cleanup branches covered</idea>
+      <idea ac="6">Coverage: ensure image pipeline error paths covered</idea>
+      <idea ac="7">Test: `cargo test --all-features` succeeds with 0 failures</idea>
+      <idea ac="7">Test: `cargo test --no-default-features` succeeds with 0 failures</idea>
+      <idea ac="8">Test: no warnings during compilation</idea>
+      <idea ac="9">CI: coverage report uploaded as artifact</idea>
+    </ideas>
+  </tests>
+</story-context>

@@ -1,109 +1,176 @@
-# dotmax Examples
+# Dotmax Examples
 
-This directory contains runnable examples demonstrating how to use dotmax for terminal braille rendering.
+This directory contains 49 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
 
-## Available Examples
+## Quick Start
 
-| Example | Description | Features Required | Difficulty |
-|---------|-------------|-------------------|------------|
-| `hello_braille.rs` | Minimal braille grid creation and rendering | `default` | Beginner |
-| `simple_image.rs` | Load and render PNG image with automatic resize handling | `image` | Beginner |
-| `image_browser.rs` | Interactive image viewer with settings controls and resize support | `image,svg` | Intermediate |
+### Minimal Examples (No Features Required)
+
+| Example | Description | Lines |
+|---------|-------------|-------|
+| `hello_braille` | Basic braille grid rendering | ~65 |
+| `simple_animation` | Bouncing dot animation with `AnimationLoop` | ~30 |
+| `shapes_demo` | Drawing rectangles, polygons, triangles | ~160 |
+| `color_schemes_demo` | All predefined color schemes | ~90 |
+
+```bash
+cargo run --example hello_braille
+cargo run --example simple_animation
+```
+
+## Example Categories
+
+### Core Rendering
+- **`hello_braille.rs`** - Basic braille grid and dots
+- **`braille_mapping_demo.rs`** - Unicode braille character mapping
+- **`terminal_debug.rs`** - Debug terminal detection and viewport
+- **`logging_demo.rs`** - Enable tracing/logging
+
+### Image Rendering (`--features image`)
+
+| Example | Description |
+|---------|-------------|
+| `load_image` | Load images from files and byte buffers |
+| `view_image` | Interactive image viewer with resize support |
+| `simple_image` | Minimal image rendering |
+| `color_image` | Colored image rendering with schemes |
+| `resize_image` | Image resizing with different filters |
+| `dither_comparison` | Compare dithering algorithms |
+| `threshold_demo` | Otsu vs fixed threshold |
+| `image_browser` | Full-featured image browser |
+
+```bash
+cargo run --example load_image --features image
+cargo run --example view_image --features image -- path/to/image.png
+cargo run --example dither_comparison --features image
+```
+
+### SVG Rendering (`--features svg`)
+
+- **`svg_demo.rs`** - Load and render SVG files
+- **`svg_font_quality.rs`** - SVG text rendering examples
+- **`save_svg_raster.rs`** - Export SVG to raster image
+
+```bash
+cargo run --example svg_demo --features svg
+```
+
+### Animation
+
+| Example | Description | Location |
+|---------|-------------|----------|
+| `simple_animation` | Basic bouncing dot | `examples/` |
+| `animation_buffer` | Double-buffering | `examples/` |
+| `fps_control` | Frame timing | `examples/` |
+| `prerendered_demo` | Cached sequences | `examples/` |
+| `differential_demo` | Optimized rendering | `examples/` |
+
+**Animation Gallery** (`examples/animations/`):
+- **`bouncing_ball.rs`** - Physics simulation with gravity
+- **`loading_spinner.rs`** - Multiple spinner styles
+- **`waveform.rs`** - Sine wave visualization
+- **`fireworks.rs`** - Particle system demo
+- **`clock.rs`** - Real-time analog clock
+
+```bash
+cargo run --example bouncing_ball
+cargo run --example fireworks
+cargo run --example clock
+```
+
+### Drawing Primitives
+
+- **`lines_demo.rs`** - Bresenham line drawing
+- **`circles_demo.rs`** - Circle algorithm
+- **`circles_demo_simple.rs`** - Simplified circles
+- **`shapes_demo.rs`** - Rectangles, polygons, filled shapes
+- **`shapes_demo_simple.rs`** - Simplified shapes
+- **`colored_shapes.rs`** - Colored primitives
+- **`density_demo.rs`** - Character density rendering
+
+```bash
+cargo run --example shapes_demo
+cargo run --example circles_demo
+cargo run --example lines_demo
+```
+
+### Color System
+
+- **`color_demo.rs`** - Basic color support
+- **`color_schemes_demo.rs`** - All 6 predefined schemes
+- **`custom_scheme.rs`** - Create custom color schemes
+- **`color_detection.rs`** - Terminal color capability detection
+- **`color_conversion_demo.rs`** - RGB to ANSI conversion
+- **`heatmap.rs`** - Heatmap visualization
+
+```bash
+cargo run --example color_schemes_demo
+cargo run --example custom_scheme
+cargo run --example heatmap
+```
+
+## Feature Requirements
+
+| Feature | Examples | Enable With |
+|---------|----------|-------------|
+| Core | `hello_braille`, `simple_animation`, `shapes_demo` | (default) |
+| Image | `load_image`, `view_image`, `dither_comparison` | `--features image` |
+| SVG | `svg_demo`, `svg_font_quality` | `--features svg` |
+| All | `image_browser`, `color_image` | `--all-features` |
 
 ## Running Examples
 
-Run any example using:
-
 ```bash
-cargo run --example <example_name>
-```
-
-For example:
-
-```bash
-# Run the hello braille example
+# Core (no features needed)
 cargo run --example hello_braille
+cargo run --example simple_animation
+cargo run --example shapes_demo
+
+# Image rendering
+cargo run --example load_image --features image
+cargo run --example view_image --features image -- image.png
+
+# SVG rendering
+cargo run --example svg_demo --features svg
+
+# All features
+cargo run --example image_browser --all-features
 ```
 
-### Feature Flags
+## Interactive Controls
 
-Some examples require optional features. Enable them with the `--features` flag:
+Most interactive examples support:
+- **`q`** or **`Ctrl+C`** - Exit
+- **Terminal resize** - Auto re-render
+- **Arrow keys** - Navigate (where applicable)
+
+## Debugging
+
+Enable debug logging to see internal operations:
 
 ```bash
-# Examples with image rendering (available in Epic 3+)
-cargo run --example render_image --features image
-
-# Examples with SVG support (available in Epic 3+)
-cargo run --example svg_graphics --features svg
+RUST_LOG=dotmax=debug cargo run --example hello_braille
 ```
 
-## Future Examples
+## Adding New Examples
 
-The following examples will be added in upcoming epics:
+Examples should follow these guidelines:
 
-- **Epic 3: 2D Image Rendering**
-  - `render_image.rs` - Load and render PNG/JPG images as braille
-  - `dithering_comparison.rs` - Compare Floyd-Steinberg, Bayer, and Atkinson dithering
-  - `svg_graphics.rs` - Render SVG files to terminal
+1. **Minimal** - Focus on demonstrating one feature
+2. **Documented** - Include `//!` doc comments at the top
+3. **Runnable** - Must compile with `cargo clippy --examples`
+4. **Practical** - Show real-world usage patterns
 
-- **Epic 4: Drawing Primitives**
-  - `draw_shapes.rs` - Lines, circles, rectangles, polygons
-  - `density_rendering.rs` - Character density-based shading
+## Test Fixtures
 
-- **Epic 5: Color System**
-  - `color_schemes.rs` - Demonstrate all 6+ color schemes
-  - `custom_colors.rs` - Create custom color mappings
+Image examples use fixtures in `tests/fixtures/images/`:
+- `sample.png` - Standard test image
+- `large.jpg` - High-resolution test
+- `wide.png` - Extreme aspect ratio
+- `tall.png` - Extreme aspect ratio
 
-- **Epic 6: Animation**
-  - `spinning_cube.rs` - Animated 3D wireframe cube
-  - `bouncing_ball.rs` - Physics-based animation
-  - `video_playback.rs` - Play video files in terminal
+## See Also
 
-## Automatic Terminal Resize Handling
-
-All interactive examples (those with event loops) support automatic re-rendering when the terminal window is resized. When you resize your terminal:
-
-- The image automatically scales to fit the new dimensions
-- Aspect ratio is preserved (no distortion)
-- No manual refresh or restart required
-- Performance is optimized (typically <50ms re-render)
-
-**Implementation Pattern:**
-
-```rust
-use crossterm::event::{self, Event};
-use std::time::Duration;
-
-loop {
-    if event::poll(Duration::from_millis(100))? {
-        match event::read()? {
-            Event::Resize(width, height) => {
-                // Re-render with new terminal dimensions
-                render_image(image_path)?;
-            }
-            Event::Key(key) => {
-                // Handle keyboard input
-            }
-            _ => {}
-        }
-    }
-}
-```
-
-This pattern ensures your terminal applications remain responsive and visually correct regardless of window size changes. See `simple_image.rs` and `image_browser.rs` for complete working examples.
-
-## Example Guidelines
-
-All examples in this repository follow these principles:
-
-1. **Minimal** - Each example focuses on demonstrating one feature or use case
-2. **Commented** - Inline comments explain key steps and API usage
-3. **Runnable** - All examples compile and run successfully in CI
-4. **Practical** - Examples show real-world usage patterns, not toy code
-5. **Responsive** - Interactive examples handle terminal resize events automatically
-
-## Getting Help
-
-- Read the [main documentation](https://docs.rs/dotmax) (coming soon)
-- See the [root README](../README.md) for installation and quick start
-- Check the [architecture docs](../docs/architecture.md) for design decisions
+- [Animation Guide](../docs/animation_guide.md) - Comprehensive animation documentation
+- [Getting Started](../docs/getting_started.md) - Tutorial walkthrough
+- [API Reference](https://docs.rs/dotmax) - Full API documentation

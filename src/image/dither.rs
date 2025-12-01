@@ -643,7 +643,8 @@ mod tests {
         // Test Debug
         assert_eq!(format!("{:?}", method1), "FloydSteinberg");
 
-        // Test Clone
+        // Test Clone (Copy types can also clone)
+        #[allow(clippy::clone_on_copy)]
         let method1_clone = method1.clone();
         assert_eq!(method1, method1_clone);
 

@@ -751,6 +751,7 @@ impl ImageRenderer {
     /// - Dithering method
     /// - Threshold value
     #[instrument(skip(self))]
+    #[allow(clippy::too_many_lines)]
     pub fn render(&mut self) -> Result<BrailleGrid, DotmaxError> {
         // Validate image is loaded
         let img = self
@@ -952,10 +953,11 @@ impl Default for ImageRenderer {
 /// # use std::path::Path;
 /// # fn main() -> Result<(), dotmax::DotmaxError> {
 /// # let path = Path::new("image.png");
-/// ImageRenderer::new()
+/// let grid = ImageRenderer::new()
 ///     .load_from_path(path)?
 ///     .resize_to_terminal()?
-///     .render()
+///     .render()?;
+/// # Ok(())
 /// # }
 /// ```
 ///
@@ -982,7 +984,8 @@ impl Default for ImageRenderer {
 ///
 /// # fn main() -> Result<(), dotmax::DotmaxError> {
 /// let grid = render_image_simple(Path::new("logo.png"))?;
-/// println!("{}", grid);
+/// // Grid is now ready for rendering via TerminalRenderer
+/// let unicode = grid.to_unicode_grid();
 /// # Ok(())
 /// # }
 /// ```
