@@ -14,3 +14,41 @@ Cargo.lock
 # Editor swap files
 *.swp
 *.swo
+
+# AI/IDE assistant configurations (keep locally, don't publish)
+.augment/
+.bmad/
+.claude/
+.gemini/
+.aider*
+.cursor/
+.continue/
+
+# Planning and sprint artifacts (internal development docs)
+docs/PRD.md
+docs/epics.md
+docs/sprint-artifacts/
+docs/bmm-*.yaml
+docs/bmm-*.md
+docs/research-*.md
+docs/implementation-readiness-*.md
+docs/sprint-change-proposal-*.md
+docs/profiling/
+
+# Reference repos
+crabmusic/
+
+# Temporary test files
+test_*.rs
+svg_raster_output.png
+BRAILLE_GRAPHICS_MASTER_PLAN.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large test images (keep locally for benchmarking)
+tests/fixtures/images/tiger_huge.png
+tests/fixtures/images/viper_4k.png
+tests/fixtures/images/viper_ultra_tall.png
+tests/fixtures/images/viper_ultra_wide.png
