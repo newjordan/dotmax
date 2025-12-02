@@ -1,6 +1,6 @@
 [package]
 name = "dotmax"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Frosty"]
 edition = "2021"
 rust-version = "1.70"
