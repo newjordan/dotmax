@@ -77,6 +77,8 @@
 
 mod detect;
 #[cfg(feature = "image")]
+pub mod apng;
+#[cfg(feature = "image")]
 pub mod gif;
 mod router;
 
@@ -84,6 +86,10 @@ mod router;
 pub use detect::{detect_format, detect_format_from_bytes, ImageFormat, MediaFormat, VideoCodec};
 #[cfg(feature = "image")]
 pub use detect::{is_animated_gif, is_animated_gif_from_bytes};
+#[cfg(feature = "image")]
+pub use detect::{is_animated_png, is_animated_png_from_bytes};
+#[cfg(feature = "image")]
+pub use apng::{ApngFrame, ApngPlayer, BlendOp, DisposeOp};
 #[cfg(feature = "image")]
 pub use gif::{DisposalMethod, GifFrame, GifPlayer};
 pub use router::{MediaContent, MediaPlayer};

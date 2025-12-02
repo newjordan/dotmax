@@ -128,6 +128,25 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **License**: MIT OR Apache-2.0
 - **Estimated Binary Size Impact**: +150KB
 
+### png (0.18) - Behind `image` Feature
+
+- **Purpose**: PNG decoding with APNG (Animated PNG) animation support
+- **Why Required**:
+  - Story 9.3 requires animated PNG (APNG) support with frame timing and blend operations
+  - Provides APNG-specific APIs: animation_control(), frame_control(), BlendOp, DisposeOp
+  - Streaming decode for memory-efficient multi-frame playback
+  - Already a transitive dependency of `image` crate; direct dependency needed for APNG APIs
+- **Why Feature-Gated**:
+  - Part of animation/media system, not needed for static image rendering
+  - Bundled with `image` feature since it extends image capabilities
+- **Alternatives Considered**:
+  - `image` crate alone: No APNG animation API, only reads first frame
+  - `apng` crate: Encoder-focused, limited decoder support
+  - Direct `png` usage provides full APNG specification compliance
+- **Rationale for Version**: 0.18 is latest stable with full APNG support
+- **License**: MIT OR Apache-2.0
+- **Estimated Binary Size Impact**: ~0KB (already included via image crate dependency tree)
+
 ### resvg (0.38) - Behind `svg` Feature
 
 - **Purpose**: SVG rasterization (vector graphics to bitmap conversion)
@@ -199,9 +218,9 @@ These dependencies are **only used during development/testing** and do NOT impac
 | Category | Count | Counts Toward Core Limit? |
 |----------|-------|---------------------------|
 | Core (always included) | **4** | ✅ Yes |
-| Optional (feature-gated) | 5 | ❌ No |
+| Optional (feature-gated) | 6 | ❌ No |
 | Dev (tests/benchmarks) | 2 | ❌ No |
-| **Total Direct Dependencies** | **11** | **4 count toward NFR-D1** |
+| **Total Direct Dependencies** | **12** | **4 count toward NFR-D1** |
 
 **NFR-D1 Compliance**: ✅ Core library has exactly 4 direct dependencies (<10 limit)
 
@@ -275,4 +294,4 @@ ratatui = "0.29"  # Allows 0.29.x patches, blocks 0.30.x
 
 ---
 
-**Last Updated**: 2025-11-17 (Story 1.3 Implementation)
+**Last Updated**: 2025-12-02 (Story 9.3 - Added png crate for APNG support)

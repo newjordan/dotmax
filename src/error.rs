@@ -308,6 +308,24 @@ pub enum DotmaxError {
         /// Error message
         message: String,
     },
+
+    /// APNG decoding or playback error
+    ///
+    /// This error is returned when an APNG file cannot be decoded or played back.
+    /// Common causes include:
+    /// - Corrupted APNG file or invalid chunk structure
+    /// - Missing or invalid animation control (acTL) chunk
+    /// - Missing or invalid frame control (fcTL) chunks
+    /// - Memory allocation failure during decode
+    /// - Frame decode errors
+    #[cfg(feature = "image")]
+    #[error("APNG error for {path:?}: {message}")]
+    ApngError {
+        /// Path to the APNG file
+        path: std::path::PathBuf,
+        /// Error message
+        message: String,
+    },
 }
 
 #[cfg(test)]

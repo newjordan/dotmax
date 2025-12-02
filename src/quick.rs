@@ -433,11 +433,8 @@ pub fn show_file(path: impl AsRef<std::path::Path>) -> Result<()> {
             play_animated_gif(path)
         }
         MediaFormat::AnimatedPng => {
-            // Placeholder for Story 9.3
-            Err(DotmaxError::FormatError {
-                format: "animated PNG (APNG playback not yet implemented - coming in Story 9.3)"
-                    .to_string(),
-            })
+            // Route to APNG playback (Story 9.3)
+            play_animated_png(path)
         }
         MediaFormat::Video(codec) => {
             // Placeholder for Story 9.4
@@ -534,11 +531,10 @@ pub fn load_file(path: impl AsRef<std::path::Path>) -> Result<crate::media::Medi
             Ok(MediaContent::Animated(Box::new(player)))
         }
         MediaFormat::AnimatedPng => {
-            // Placeholder for Story 9.3
-            Err(DotmaxError::FormatError {
-                format: "animated PNG (APNG playback not yet implemented - coming in Story 9.3)"
-                    .to_string(),
-            })
+            // Load animated PNG player (Story 9.3)
+            use crate::media::ApngPlayer;
+            let player = ApngPlayer::new(path)?;
+            Ok(MediaContent::Animated(Box::new(player)))
         }
         MediaFormat::Video(codec) => {
             // Placeholder for Story 9.4
@@ -576,6 +572,70 @@ fn play_animated_gif(path: impl AsRef<std::path::Path>) -> Result<()> {
     use std::time::{Duration, Instant};
 
     let mut player = GifPlayer::new(path)?;
+
+    // Enter raw mode and alternate screen
+    terminal::enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+    let mut renderer = TerminalRenderer::new()?;
+
+    // Play frames
+    let result = (|| -> Result<()> {
+        while let Some(frame_result) = player.next_frame() {
+            let (grid, delay) = frame_result?;
+
+            // Render frame
+            renderer.render(&grid)?;
+
+            // Wait for frame duration, checking for keypress
+            let deadline = Instant::now() + delay;
+            while Instant::now() < deadline {
+                // Check for keypress with short timeout
+                if event::poll(Duration::from_millis(10))? {
+                    if let Event::Key(key_event) = event::read()? {
+                        // Stop on any key (except modifiers alone)
+                        if !matches!(key_event.code, KeyCode::Modifier(_)) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Animation complete - wait for final keypress
+        wait_for_key()?;
+        Ok(())
+    })();
+
+    // Cleanup - always restore terminal state
+    execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+
+    result
+}
+
+// ============================================================================
+// Animated PNG Helper Functions (Story 9.3)
+// ============================================================================
+
+/// Plays an animated PNG (APNG) file in the terminal.
+///
+/// This function:
+/// 1. Creates an ApngPlayer for the file
+/// 2. Initializes the terminal (raw mode, alternate screen)
+/// 3. Plays frames with correct timing until keypress or loop completion
+/// 4. Cleans up terminal state
+#[cfg(feature = "image")]
+fn play_animated_png(path: impl AsRef<std::path::Path>) -> Result<()> {
+    use crate::media::{ApngPlayer, MediaPlayer};
+    use crossterm::event::{self, Event, KeyCode};
+    use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::{cursor, execute};
+    use std::io::stdout;
+    use std::time::{Duration, Instant};
+
+    let mut player = ApngPlayer::new(path)?;
 
     // Enter raw mode and alternate screen
     terminal::enable_raw_mode()?;

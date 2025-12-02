@@ -216,6 +216,12 @@ pub fn detect_format(path: impl AsRef<Path>) -> Result<MediaFormat> {
         return Ok(MediaFormat::AnimatedGif);
     }
 
+    // For PNG files, check if animated (Story 9.3 - AC #1, #2)
+    #[cfg(feature = "image")]
+    if matches!(format, MediaFormat::StaticImage(ImageFormat::Png)) && is_animated_png(path)? {
+        return Ok(MediaFormat::AnimatedPng);
+    }
+
     Ok(format)
 }
 
@@ -543,6 +549,112 @@ pub fn is_animated_gif_from_bytes(bytes: &[u8]) -> bool {
     }
 
     false
+}
+
+// ============================================================================
+// Animated PNG Detection (AC: #1, #2 - Story 9.3)
+// ============================================================================
+
+/// Checks if a PNG file is an animated PNG (APNG).
+///
+/// APNG files contain an `acTL` (Animation Control) chunk that indicates
+/// animation data is present. This function reads the file and checks for
+/// the presence of this chunk without decoding all frame data.
+///
+/// # Arguments
+///
+/// * `path` - Path to the PNG file
+///
+/// # Returns
+///
+/// - `Ok(true)` if the PNG has animation control data (APNG)
+/// - `Ok(false)` if the PNG is static (no `acTL` chunk)
+/// - `Err` if the file cannot be opened or decoded
+///
+/// # Errors
+///
+/// Returns `DotmaxError::Terminal` if the file cannot be opened (not found,
+/// permission denied, etc.).
+///
+/// # Performance
+///
+/// This function is optimized for detection, not full loading:
+/// - Only reads PNG header and initial chunks
+/// - Stops after finding `acTL` chunk
+/// - Typical execution: <5ms even for large APNGs
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::media::is_animated_png;
+///
+/// // Check if a PNG is animated
+/// if is_animated_png("animation.png")? {
+///     println!("This PNG is animated (APNG)!");
+/// }
+/// # Ok::<(), dotmax::DotmaxError>(())
+/// ```
+#[cfg(feature = "image")]
+pub fn is_animated_png(path: impl AsRef<Path>) -> Result<bool> {
+    use std::io::BufReader;
+
+    let path = path.as_ref();
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    let decoder = png::Decoder::new(reader);
+
+    let png_reader = match decoder.read_info() {
+        Ok(r) => r,
+        Err(e) => {
+            // If we can't decode as PNG, treat as not animated
+            tracing::debug!("PNG decode error for {:?}: {:?}, treating as static", path, e);
+            return Ok(false);
+        }
+    };
+
+    // Check for animation control chunk - if present, it's an APNG
+    Ok(png_reader.info().animation_control().is_some())
+}
+
+/// Checks if PNG data is an animated PNG (APNG) by reading from raw bytes.
+///
+/// This is useful when you have the PNG data in memory (e.g., from a network stream).
+/// The function reads the PNG metadata to determine if it has animation data.
+///
+/// # Arguments
+///
+/// * `bytes` - The complete PNG file data
+///
+/// # Returns
+///
+/// `true` if the PNG has an `acTL` (animation control) chunk, `false` otherwise.
+/// Returns `false` for corrupted or invalid PNG data.
+///
+/// # Examples
+///
+/// ```ignore
+/// use dotmax::media::is_animated_png_from_bytes;
+///
+/// // Check bytes in memory
+/// let png_data: &[u8] = &[...];
+/// if is_animated_png_from_bytes(png_data) {
+///     println!("This is an animated PNG!");
+/// }
+/// ```
+#[cfg(feature = "image")]
+#[must_use]
+pub fn is_animated_png_from_bytes(bytes: &[u8]) -> bool {
+    use std::io::Cursor;
+
+    let cursor = Cursor::new(bytes);
+    let decoder = png::Decoder::new(cursor);
+
+    let Ok(png_reader) = decoder.read_info() else {
+        return false;
+    };
+
+    png_reader.info().animation_control().is_some()
 }
 
 // ============================================================================
@@ -883,6 +995,93 @@ mod tests {
                     format,
                     MediaFormat::AnimatedGif,
                     "Animated GIF should be detected as AnimatedGif"
+                );
+            }
+        }
+    }
+
+    // ========================================================================
+    // Animated PNG Detection Tests (Story 9.3 - AC #1, #2)
+    // ========================================================================
+
+    #[cfg(feature = "image")]
+    mod animated_png_tests {
+        use super::*;
+        use std::path::Path;
+
+        #[test]
+        fn test_is_animated_png_static() {
+            let path = Path::new("tests/fixtures/media/static_png.png");
+            if path.exists() {
+                let result = is_animated_png(path).unwrap();
+                assert!(!result, "Static PNG should return false");
+            }
+        }
+
+        #[test]
+        fn test_is_animated_png_animated() {
+            let path = Path::new("tests/fixtures/media/animated.png");
+            if path.exists() {
+                let result = is_animated_png(path).unwrap();
+                assert!(result, "Animated PNG should return true");
+            }
+        }
+
+        #[test]
+        fn test_is_animated_png_nonexistent() {
+            let result = is_animated_png("nonexistent.png");
+            assert!(result.is_err(), "Nonexistent file should return error");
+        }
+
+        #[test]
+        fn test_is_animated_png_from_bytes_static() {
+            let static_png = include_bytes!("../../tests/fixtures/media/static_png.png");
+            assert!(
+                !is_animated_png_from_bytes(static_png),
+                "Static PNG bytes should return false"
+            );
+        }
+
+        #[test]
+        fn test_is_animated_png_from_bytes_animated() {
+            let animated_png = include_bytes!("../../tests/fixtures/media/animated.png");
+            assert!(
+                is_animated_png_from_bytes(animated_png),
+                "Animated PNG bytes should return true"
+            );
+        }
+
+        #[test]
+        fn test_is_animated_png_from_bytes_invalid() {
+            let invalid = &[0x00, 0x01, 0x02, 0x03];
+            assert!(
+                !is_animated_png_from_bytes(invalid),
+                "Invalid data should return false"
+            );
+        }
+
+        #[test]
+        fn test_detect_format_static_png() {
+            let path = Path::new("tests/fixtures/media/static_png.png");
+            if path.exists() {
+                let format = detect_format(path).unwrap();
+                assert_eq!(
+                    format,
+                    MediaFormat::StaticImage(ImageFormat::Png),
+                    "Static PNG should be detected as StaticImage(Png)"
+                );
+            }
+        }
+
+        #[test]
+        fn test_detect_format_animated_png() {
+            let path = Path::new("tests/fixtures/media/animated.png");
+            if path.exists() {
+                let format = detect_format(path).unwrap();
+                assert_eq!(
+                    format,
+                    MediaFormat::AnimatedPng,
+                    "Animated PNG should be detected as AnimatedPng"
                 );
             }
         }

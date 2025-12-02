@@ -53,12 +53,13 @@ tracing = "0.1"          # Structured logging
 image = { version = "0.25", optional = true }
 imageproc = { version = "0.24", optional = true }
 gif = { version = "0.13", optional = true }
+png = { version = "0.18", optional = true }  # For APNG animation support
 resvg = { version = "0.38", optional = true }
 usvg = { version = "0.38", optional = true }
 
 [features]
 default = []
-image = ["dep:image", "dep:imageproc", "dep:gif"]
+image = ["dep:image", "dep:imageproc", "dep:gif", "dep:png"]
 svg = ["dep:resvg", "dep:usvg"]
 
 [dev-dependencies]
@@ -205,6 +206,14 @@ required-features = ["image"]
 
 [[example]]
 name = "animated_gif"
+required-features = ["image"]
+
+[[example]]
+name = "generate_apng_fixtures"
+required-features = ["image"]
+
+[[example]]
+name = "animated_apng"
 required-features = ["image"]
 
 # Animation examples (Epic 6, Story 6.6)
