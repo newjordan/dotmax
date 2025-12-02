@@ -31,6 +31,39 @@ dotmax = "0.1"
 
 ## Quick Start
 
+### One-Liner Image Display
+
+```rust
+use dotmax::quick;
+
+fn main() -> Result<(), dotmax::DotmaxError> {
+    // Display any image in your terminal - that's it!
+    quick::show_image("photo.png")?;
+    Ok(())
+}
+```
+
+### Using the Prelude
+
+```rust
+use dotmax::prelude::*;
+
+fn main() -> Result<(), DotmaxError> {
+    // Create a terminal-sized grid
+    let mut grid = grid()?;
+
+    // Draw shapes using primitives
+    draw_circle(&mut grid, 80, 48, 30)?;
+    draw_line(&mut grid, 0, 0, 160, 96)?;
+
+    // Display and wait for keypress
+    show(&grid)?;
+    Ok(())
+}
+```
+
+### Manual Control
+
 ```rust
 use dotmax::{BrailleGrid, TerminalRenderer};
 
@@ -126,17 +159,44 @@ cargo run --example clock            # Real-time analog clock
 
 For comprehensive documentation, see [docs/animation_guide.md](docs/animation_guide.md).
 
+## Prelude & Quick API
+
+Dotmax provides two convenience modules for rapid development:
+
+### Prelude Module
+
+Import everything you need with one line:
+
+```rust
+use dotmax::prelude::*;
+```
+
+Includes: `BrailleGrid`, `TerminalRenderer`, `Color`, drawing primitives (`draw_line`, `draw_circle`, etc.), animation types, color schemes, and quick functions.
+
+### Quick Module
+
+One-liner functions for common tasks:
+
+| Function | Description |
+|----------|-------------|
+| `quick::grid()` | Create terminal-sized grid |
+| `quick::grid_sized(w, h)` | Create grid with explicit size |
+| `quick::show(&grid)` | Display grid, wait for keypress |
+| `quick::show_image(path)` | Load and display image (one line!) |
+| `quick::load_image(path)` | Load image into grid for manipulation |
+
 ## Examples
 
 | Example | Description | Features |
 |---------|-------------|----------|
 | `hello_braille` | Minimal braille demo | - |
+| `quick_demo` | Quick API showcase | - |
 | `load_image` | Load and display images | `image` |
 | `simple_animation` | Basic animation loop | - |
 | `color_schemes_demo` | Color scheme showcase | - |
 | `shapes_demo` | Drawing primitives | - |
 
-See [examples/README.md](examples/README.md) for all 49 examples.
+See [examples/README.md](examples/README.md) for all examples.
 
 ```bash
 # Core examples
