@@ -274,6 +274,40 @@ pub enum DotmaxError {
     /// Valid intensity values must satisfy: `0.0 <= intensity <= 1.0`
     #[error("Invalid intensity value: {0} (must be 0.0-1.0)")]
     InvalidIntensity(f32),
+
+    /// Unsupported or unknown media format
+    ///
+    /// This error is returned when attempting to display or load a file
+    /// with an unsupported or unrecognized format. The format detection
+    /// system could not identify the file type from magic bytes or extension.
+    ///
+    /// Supported formats include:
+    /// - Static images: PNG, JPEG, GIF, BMP, WebP, TIFF
+    /// - Vector graphics: SVG (requires `svg` feature)
+    /// - Animated: GIF, APNG (future)
+    /// - Video: MP4, MKV, AVI, WebM (future)
+    #[error("Unsupported media format: {format}. Supported formats: PNG, JPEG, GIF, BMP, WebP, TIFF, SVG")]
+    FormatError {
+        /// Description of the detected or unknown format
+        format: String,
+    },
+
+    /// GIF decoding or playback error
+    ///
+    /// This error is returned when a GIF file cannot be decoded or played back.
+    /// Common causes include:
+    /// - Corrupted GIF file
+    /// - Invalid GIF structure
+    /// - Memory allocation failure during decode
+    /// - Frame decode errors
+    #[cfg(feature = "image")]
+    #[error("GIF error for {path:?}: {message}")]
+    GifError {
+        /// Path to the GIF file
+        path: std::path::PathBuf,
+        /// Error message
+        message: String,
+    },
 }
 
 #[cfg(test)]
@@ -446,5 +480,31 @@ mod tests {
         assert!(msg.contains("0.0"));
         assert!(msg.contains("2.0"));
         assert!(msg.contains("Invalid"));
+    }
+
+    // ========================================================================
+    // Story 9.1: FormatError Tests (AC: #6)
+    // ========================================================================
+
+    #[test]
+    fn test_format_error_includes_format_name() {
+        let err = DotmaxError::FormatError {
+            format: "unknown format".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("unknown format"));
+        assert!(msg.contains("Unsupported media format"));
+    }
+
+    #[test]
+    fn test_format_error_includes_supported_formats() {
+        let err = DotmaxError::FormatError {
+            format: "xyz".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("PNG"));
+        assert!(msg.contains("JPEG"));
+        assert!(msg.contains("GIF"));
+        assert!(msg.contains("SVG"));
     }
 }

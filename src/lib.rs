@@ -119,6 +119,10 @@ pub type Result<T> = std::result::Result<T, DotmaxError>;
 #[cfg(feature = "image")]
 pub mod image;
 
+// Media format detection and routing (Epic 9)
+#[cfg(feature = "image")]
+pub mod media;
+
 // Drawing primitives (Epic 4)
 pub mod primitives;
 

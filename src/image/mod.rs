@@ -354,6 +354,47 @@ impl ImageRenderer {
         Ok(self)
     }
 
+    /// Loads an image from an RGBA image buffer.
+    ///
+    /// This method is useful for loading images from memory when you already
+    /// have the decoded RGBA pixel data (e.g., from GIF frame decoding).
+    ///
+    /// # Arguments
+    ///
+    /// * `img` - RGBA image buffer
+    ///
+    /// # Returns
+    ///
+    /// Returns `Self` for method chaining.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::ImageRenderer;
+    /// use image::RgbaImage;
+    ///
+    /// // Create a 100x100 red image
+    /// let img = RgbaImage::from_fn(100, 100, |_, _| {
+    ///     image::Rgba([255, 0, 0, 255])
+    /// });
+    ///
+    /// let renderer = ImageRenderer::new().load_from_rgba(img);
+    /// ```
+    #[must_use]
+    pub fn load_from_rgba(mut self, img: image::RgbaImage) -> Self {
+        info!(
+            "Loaded RGBA image, dimensions: {}x{}",
+            img.width(),
+            img.height()
+        );
+        self.image = Some(DynamicImage::ImageRgba8(img));
+        // Invalidate cache when new image loaded
+        self.cached_resized = None;
+        self.cached_original_resized = None;
+        self.cached_dimensions = None;
+        self
+    }
+
     /// Loads an SVG image from a file path and rasterizes it to the specified dimensions.
     ///
     /// This method is only available when the `svg` feature is enabled.

@@ -359,6 +359,295 @@ pub fn load_image_sized(
 }
 
 // ============================================================================
+// Universal Media Functions (AC: #1, #5, #8) - Story 9.1
+// ============================================================================
+
+/// Loads and displays any supported media file.
+///
+/// This is the universal entry point for media display. It automatically
+/// detects the file format using magic bytes and routes to the appropriate
+/// renderer.
+///
+/// # Supported Formats
+///
+/// - **Static Images**: PNG, JPEG, GIF (static), BMP, WebP, TIFF
+/// - **Vector Graphics**: SVG (requires `svg` feature)
+/// - **Animated** (future): Animated GIF, APNG
+/// - **Video** (future): MP4, MKV, AVI, WebM
+///
+/// # Arguments
+///
+/// * `path` - Path to any supported media file
+///
+/// # Errors
+///
+/// - `DotmaxError::Terminal` - File not found or read error
+/// - `DotmaxError::FormatError` - Unsupported or unknown format
+/// - `DotmaxError::ImageLoad` - Image decode error
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::quick;
+///
+/// // Display any image - format auto-detected
+/// quick::show_file("photo.png")?;
+/// quick::show_file("picture.jpg")?;
+/// quick::show_file("diagram.svg")?;  // Requires 'svg' feature
+/// # Ok::<(), dotmax::DotmaxError>(())
+/// ```
+///
+/// # Format Detection
+///
+/// Format is detected by reading the first 16 bytes (magic bytes) of the file.
+/// If magic bytes are inconclusive, the file extension is used as a fallback.
+/// This detection is fast (<5ms) regardless of file size.
+#[cfg(feature = "image")]
+pub fn show_file(path: impl AsRef<std::path::Path>) -> Result<()> {
+    use crate::media::{detect_format, MediaFormat};
+    use crate::DotmaxError;
+
+    let path = path.as_ref();
+    let format = detect_format(path)?;
+
+    match format {
+        MediaFormat::StaticImage(_) => {
+            // Route to existing show_image() implementation
+            show_image(path)
+        }
+        MediaFormat::Svg => {
+            // Route to SVG rendering (if feature enabled)
+            #[cfg(feature = "svg")]
+            {
+                show_svg(path)
+            }
+            #[cfg(not(feature = "svg"))]
+            {
+                Err(DotmaxError::FormatError {
+                    format: "SVG (requires 'svg' feature)".to_string(),
+                })
+            }
+        }
+        MediaFormat::AnimatedGif => {
+            // Route to animated GIF playback (Story 9.2)
+            play_animated_gif(path)
+        }
+        MediaFormat::AnimatedPng => {
+            // Placeholder for Story 9.3
+            Err(DotmaxError::FormatError {
+                format: "animated PNG (APNG playback not yet implemented - coming in Story 9.3)"
+                    .to_string(),
+            })
+        }
+        MediaFormat::Video(codec) => {
+            // Placeholder for Story 9.4
+            Err(DotmaxError::FormatError {
+                format: format!(
+                    "video ({}) (video playback not yet implemented - coming in Story 9.4)",
+                    codec
+                ),
+            })
+        }
+        MediaFormat::Unknown => Err(DotmaxError::FormatError {
+            format: "unknown format".to_string(),
+        }),
+    }
+}
+
+/// Loads any supported media file into a [`crate::media::MediaContent`] for handling.
+///
+/// This function detects the file format and loads it into the appropriate
+/// variant of [`crate::media::MediaContent`]:
+/// - Static images → `MediaContent::Static(BrailleGrid)`
+/// - Animated content → `MediaContent::Animated(Box<dyn MediaPlayer>)` (future)
+///
+/// Use this when you need programmatic access to the loaded content rather
+/// than immediate display.
+///
+/// # Arguments
+///
+/// * `path` - Path to any supported media file
+///
+/// # Returns
+///
+/// [`crate::media::MediaContent`] containing the loaded media, ready for rendering or
+/// further processing.
+///
+/// # Errors
+///
+/// - `DotmaxError::Terminal` - File not found or read error
+/// - `DotmaxError::FormatError` - Unsupported or unknown format
+/// - `DotmaxError::ImageLoad` - Image decode error
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::quick;
+/// use dotmax::media::MediaContent;
+///
+/// let content = quick::load_file("image.png")?;
+///
+/// match content {
+///     MediaContent::Static(grid) => {
+///         println!("Loaded static image: {}x{}", grid.width(), grid.height());
+///         quick::show(&grid)?;
+///     }
+///     MediaContent::Animated(mut player) => {
+///         println!("Loaded animation with {:?} frames", player.frame_count());
+///         // Play frames...
+///     }
+/// }
+/// # Ok::<(), dotmax::DotmaxError>(())
+/// ```
+#[cfg(feature = "image")]
+pub fn load_file(path: impl AsRef<std::path::Path>) -> Result<crate::media::MediaContent> {
+    use crate::media::{detect_format, MediaContent, MediaFormat};
+    use crate::DotmaxError;
+
+    let path = path.as_ref();
+    let format = detect_format(path)?;
+
+    match format {
+        MediaFormat::StaticImage(_) => {
+            // Load via existing load_image() and wrap in MediaContent::Static
+            let grid = load_image(path)?;
+            Ok(MediaContent::Static(grid))
+        }
+        MediaFormat::Svg => {
+            // Load SVG (if feature enabled)
+            #[cfg(feature = "svg")]
+            {
+                let grid = load_svg(path)?;
+                Ok(MediaContent::Static(grid))
+            }
+            #[cfg(not(feature = "svg"))]
+            {
+                Err(DotmaxError::FormatError {
+                    format: "SVG (requires 'svg' feature)".to_string(),
+                })
+            }
+        }
+        MediaFormat::AnimatedGif => {
+            // Load animated GIF player (Story 9.2)
+            use crate::media::GifPlayer;
+            let player = GifPlayer::new(path)?;
+            Ok(MediaContent::Animated(Box::new(player)))
+        }
+        MediaFormat::AnimatedPng => {
+            // Placeholder for Story 9.3
+            Err(DotmaxError::FormatError {
+                format: "animated PNG (APNG playback not yet implemented - coming in Story 9.3)"
+                    .to_string(),
+            })
+        }
+        MediaFormat::Video(codec) => {
+            // Placeholder for Story 9.4
+            Err(DotmaxError::FormatError {
+                format: format!(
+                    "video ({}) (video playback not yet implemented - coming in Story 9.4)",
+                    codec
+                ),
+            })
+        }
+        MediaFormat::Unknown => Err(DotmaxError::FormatError {
+            format: "unknown format".to_string(),
+        }),
+    }
+}
+
+// ============================================================================
+// Animated GIF Helper Functions (Story 9.2)
+// ============================================================================
+
+/// Plays an animated GIF file in the terminal.
+///
+/// This function:
+/// 1. Creates a GifPlayer for the file
+/// 2. Initializes the terminal (raw mode, alternate screen)
+/// 3. Plays frames with correct timing until keypress or loop completion
+/// 4. Cleans up terminal state
+#[cfg(feature = "image")]
+fn play_animated_gif(path: impl AsRef<std::path::Path>) -> Result<()> {
+    use crate::media::{GifPlayer, MediaPlayer};
+    use crossterm::event::{self, Event, KeyCode};
+    use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::{cursor, execute};
+    use std::io::stdout;
+    use std::time::{Duration, Instant};
+
+    let mut player = GifPlayer::new(path)?;
+
+    // Enter raw mode and alternate screen
+    terminal::enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+    let mut renderer = TerminalRenderer::new()?;
+
+    // Play frames
+    let result = (|| -> Result<()> {
+        while let Some(frame_result) = player.next_frame() {
+            let (grid, delay) = frame_result?;
+
+            // Render frame
+            renderer.render(&grid)?;
+
+            // Wait for frame duration, checking for keypress
+            let deadline = Instant::now() + delay;
+            while Instant::now() < deadline {
+                // Check for keypress with short timeout
+                if event::poll(Duration::from_millis(10))? {
+                    if let Event::Key(key_event) = event::read()? {
+                        // Stop on any key (except modifiers alone)
+                        if !matches!(key_event.code, KeyCode::Modifier(_)) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Animation complete - wait for final keypress
+        wait_for_key()?;
+        Ok(())
+    })();
+
+    // Cleanup - always restore terminal state
+    execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+
+    result
+}
+
+// ============================================================================
+// SVG Helper Functions
+// ============================================================================
+
+/// Shows an SVG file in the terminal.
+#[cfg(all(feature = "image", feature = "svg"))]
+fn show_svg(path: impl AsRef<std::path::Path>) -> Result<()> {
+    let grid = load_svg(path)?;
+    show(&grid)
+}
+
+/// Loads an SVG file into a BrailleGrid.
+#[cfg(all(feature = "image", feature = "svg"))]
+fn load_svg(path: impl AsRef<std::path::Path>) -> Result<BrailleGrid> {
+    use crate::image::ImageRenderer;
+
+    let (w, h) = terminal_size();
+    // SVG rasterization needs target dimensions for proper resolution
+    // Use dot dimensions for crisp rendering (2x4 dots per cell)
+    let target_width = (w * 2) as u32;
+    let target_height = (h * 4) as u32;
+
+    ImageRenderer::new()
+        .load_svg_from_path(path.as_ref(), target_width, target_height)?
+        .resize(w, h, true)?
+        .render()
+}
+
+// ============================================================================
 // Tests (AC: #2, #3, #4, #5, #6, #8)
 // ============================================================================
 
@@ -484,4 +773,71 @@ mod tests {
     // Note: show() and show_image() require a terminal and are tested
     // via integration tests and examples rather than unit tests.
     // See tests/quick_test.rs and examples/quick_demo.rs
+
+    // ========================================================================
+    // Universal Media Function Tests (Story 9.1)
+    // ========================================================================
+
+    #[cfg(feature = "image")]
+    mod media_tests {
+        use super::*;
+        use crate::DotmaxError;
+        use std::path::Path;
+
+        #[test]
+        fn test_load_file_png_returns_static_content() {
+            // Use test fixture if available
+            let test_image = Path::new("tests/fixtures/images/sample.png");
+            if test_image.exists() {
+                let result = load_file(test_image);
+                assert!(result.is_ok(), "load_file should succeed for PNG: {:?}", result.err());
+
+                let content = result.unwrap();
+                match content {
+                    crate::media::MediaContent::Static(grid) => {
+                        assert!(grid.width() > 0);
+                        assert!(grid.height() > 0);
+                    }
+                    _ => panic!("Expected Static variant for PNG"),
+                }
+            }
+        }
+
+        #[test]
+        fn test_load_file_nonexistent_fails() {
+            let result = load_file("nonexistent_file_12345.png");
+            assert!(result.is_err(), "load_file should fail for nonexistent file");
+        }
+
+        #[test]
+        fn test_load_file_unknown_format_returns_format_error() {
+            // Create a temp file with unknown content
+            use std::io::Write;
+            let temp_dir = std::env::temp_dir();
+            let temp_file = temp_dir.join("test_unknown.xyz");
+
+            // Write some garbage bytes
+            let mut file = std::fs::File::create(&temp_file).unwrap();
+            file.write_all(&[0x00, 0x00, 0x00, 0x00]).unwrap();
+            drop(file);
+
+            let result = load_file(&temp_file);
+            assert!(result.is_err(), "load_file should fail for unknown format");
+
+            if let Err(DotmaxError::FormatError { format }) = result {
+                assert!(format.contains("unknown"), "Error should mention unknown format");
+            } else {
+                panic!("Expected FormatError for unknown format");
+            }
+
+            // Cleanup
+            let _ = std::fs::remove_file(&temp_file);
+        }
+
+        #[test]
+        fn test_show_file_nonexistent_fails() {
+            let result = show_file("nonexistent_file_12345.png");
+            assert!(result.is_err(), "show_file should fail for nonexistent file");
+        }
+    }
 }

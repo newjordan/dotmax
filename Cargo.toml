@@ -6,8 +6,8 @@ edition = "2021"
 rust-version = "1.70"
 description = "High-performance terminal braille rendering for images, animations, and graphics"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/frosty40/dotmax"
-homepage = "https://github.com/frosty40/dotmax"
+repository = "https://github.com/newjordan/dotmax"
+homepage = "https://github.com/newjordan/dotmax"
 documentation = "https://docs.rs/dotmax"
 readme = "README.md"
 keywords = ["terminal", "braille", "graphics", "cli", "visualization"]
@@ -52,12 +52,13 @@ tracing = "0.1"          # Structured logging
 # Optional dependencies (feature-gated)
 image = { version = "0.25", optional = true }
 imageproc = { version = "0.24", optional = true }
+gif = { version = "0.13", optional = true }
 resvg = { version = "0.38", optional = true }
 usvg = { version = "0.38", optional = true }
 
 [features]
 default = []
-image = ["dep:image", "dep:imageproc"]
+image = ["dep:image", "dep:imageproc", "dep:gif"]
 svg = ["dep:resvg", "dep:usvg"]
 
 [dev-dependencies]
@@ -65,6 +66,7 @@ criterion = { version = "0.7", features = ["html_reports"] }
 tracing-subscriber = "0.3"
 tempfile = "3.10"
 proptest = "1.4"
+static_assertions = "1.1"
 
 [[bench]]
 name = "rendering"
@@ -102,6 +104,11 @@ required-features = ["image"]
 [[bench]]
 name = "quick"
 harness = false
+
+[[bench]]
+name = "media_detection"
+harness = false
+required-features = ["image"]
 
 # Examples requiring the 'image' feature
 [[example]]
@@ -190,6 +197,14 @@ required-features = ["image"]
 
 [[example]]
 name = "generate_extreme_test_images"
+required-features = ["image"]
+
+[[example]]
+name = "universal_media"
+required-features = ["image"]
+
+[[example]]
+name = "animated_gif"
 required-features = ["image"]
 
 # Animation examples (Epic 6, Story 6.6)

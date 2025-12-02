@@ -111,6 +111,23 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **License**: MIT
 - **Estimated Binary Size Impact**: +500KB
 
+### gif (0.13) - Behind `image` Feature
+
+- **Purpose**: Animated GIF decoding for frame-by-frame playback
+- **Why Required**:
+  - Story 9.2 requires animated GIF support with timing/disposal methods
+  - Provides streaming decode (memory efficient for large animations)
+  - Handles NETSCAPE loop extension for loop count
+- **Why Feature-Gated**:
+  - Part of animation/media system, not needed for static image rendering
+  - Bundled with `image` feature since it extends image capabilities
+- **Alternatives Considered**:
+  - `image` crate alone: Only decodes first frame of animated GIFs
+  - Manual parsing: GIF format is complex (LZW, disposal methods, extensions)
+- **Rationale for Version**: 0.13 is latest stable
+- **License**: MIT OR Apache-2.0
+- **Estimated Binary Size Impact**: +150KB
+
 ### resvg (0.38) - Behind `svg` Feature
 
 - **Purpose**: SVG rasterization (vector graphics to bitmap conversion)
@@ -182,9 +199,9 @@ These dependencies are **only used during development/testing** and do NOT impac
 | Category | Count | Counts Toward Core Limit? |
 |----------|-------|---------------------------|
 | Core (always included) | **4** | ✅ Yes |
-| Optional (feature-gated) | 4 | ❌ No |
+| Optional (feature-gated) | 5 | ❌ No |
 | Dev (tests/benchmarks) | 2 | ❌ No |
-| **Total Direct Dependencies** | **10** | **4 count toward NFR-D1** |
+| **Total Direct Dependencies** | **11** | **4 count toward NFR-D1** |
 
 **NFR-D1 Compliance**: ✅ Core library has exactly 4 direct dependencies (<10 limit)
 
