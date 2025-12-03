@@ -436,14 +436,18 @@ pub fn show_file(path: impl AsRef<std::path::Path>) -> Result<()> {
             // Route to APNG playback (Story 9.3)
             play_animated_png(path)
         }
-        MediaFormat::Video(codec) => {
-            // Placeholder for Story 9.4
-            Err(DotmaxError::FormatError {
-                format: format!(
-                    "video ({}) (video playback not yet implemented - coming in Story 9.4)",
-                    codec
-                ),
-            })
+        MediaFormat::Video(_codec) => {
+            // Route to video playback (Story 9.4)
+            #[cfg(feature = "video")]
+            {
+                play_video(path)
+            }
+            #[cfg(not(feature = "video"))]
+            {
+                Err(DotmaxError::FormatError {
+                    format: "video (requires 'video' feature and FFmpeg libraries)".to_string(),
+                })
+            }
         }
         MediaFormat::Unknown => Err(DotmaxError::FormatError {
             format: "unknown format".to_string(),
@@ -536,14 +540,20 @@ pub fn load_file(path: impl AsRef<std::path::Path>) -> Result<crate::media::Medi
             let player = ApngPlayer::new(path)?;
             Ok(MediaContent::Animated(Box::new(player)))
         }
-        MediaFormat::Video(codec) => {
-            // Placeholder for Story 9.4
-            Err(DotmaxError::FormatError {
-                format: format!(
-                    "video ({}) (video playback not yet implemented - coming in Story 9.4)",
-                    codec
-                ),
-            })
+        MediaFormat::Video(_codec) => {
+            // Load video player (Story 9.4)
+            #[cfg(feature = "video")]
+            {
+                use crate::media::VideoPlayer;
+                let player = VideoPlayer::new(path)?;
+                Ok(MediaContent::Animated(Box::new(player)))
+            }
+            #[cfg(not(feature = "video"))]
+            {
+                Err(DotmaxError::FormatError {
+                    format: "video (requires 'video' feature and FFmpeg libraries)".to_string(),
+                })
+            }
         }
         MediaFormat::Unknown => Err(DotmaxError::FormatError {
             format: "unknown format".to_string(),
@@ -668,6 +678,70 @@ fn play_animated_png(path: impl AsRef<std::path::Path>) -> Result<()> {
         }
 
         // Animation complete - wait for final keypress
+        wait_for_key()?;
+        Ok(())
+    })();
+
+    // Cleanup - always restore terminal state
+    execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+
+    result
+}
+
+// ============================================================================
+// Video Playback Helper Functions (Story 9.4)
+// ============================================================================
+
+/// Plays a video file in the terminal.
+///
+/// This function:
+/// 1. Creates a VideoPlayer for the file using FFmpeg
+/// 2. Initializes the terminal (raw mode, alternate screen)
+/// 3. Plays frames with correct timing until keypress or video completion
+/// 4. Cleans up terminal state
+#[cfg(feature = "video")]
+fn play_video(path: impl AsRef<std::path::Path>) -> Result<()> {
+    use crate::media::{MediaPlayer, VideoPlayer};
+    use crossterm::event::{self, Event, KeyCode};
+    use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::{cursor, execute};
+    use std::io::stdout;
+    use std::time::{Duration, Instant};
+
+    let mut player = VideoPlayer::new(path)?;
+
+    // Enter raw mode and alternate screen
+    terminal::enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+    let mut renderer = TerminalRenderer::new()?;
+
+    // Play frames
+    let result = (|| -> Result<()> {
+        while let Some(frame_result) = player.next_frame() {
+            let (grid, delay) = frame_result?;
+
+            // Render frame
+            renderer.render(&grid)?;
+
+            // Wait for frame duration, checking for keypress
+            let deadline = Instant::now() + delay;
+            while Instant::now() < deadline {
+                // Check for keypress with short timeout
+                if event::poll(Duration::from_millis(10))? {
+                    if let Event::Key(key_event) = event::read()? {
+                        // Stop on any key (except modifiers alone)
+                        if !matches!(key_event.code, KeyCode::Modifier(_)) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Video complete - wait for final keypress
         wait_for_key()?;
         Ok(())
     })();

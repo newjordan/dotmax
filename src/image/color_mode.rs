@@ -101,8 +101,9 @@ use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;
 
 use crate::image::{
-    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering, apply_threshold,
-    auto_threshold, pixels_to_braille, to_grayscale, DitheringMethod,
+    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering,
+    apply_dithering_with_custom_threshold, apply_threshold, auto_threshold, pixels_to_braille,
+    to_grayscale, DitheringMethod,
 };
 use crate::{BrailleGrid, Color, DotmaxError};
 
@@ -784,16 +785,32 @@ pub fn render_image_with_color(
     }
 
     // Step 3: Convert to binary using same logic as monochrome pipeline
-    let binary = if let Some(threshold_value) = threshold {
-        debug!("Applying manual threshold: {}", threshold_value);
-        apply_threshold(&gray, threshold_value)
-    } else if dithering == DitheringMethod::None {
-        debug!("Applying automatic Otsu thresholding");
-        let gray_dynamic = DynamicImage::ImageLuma8(gray);
-        auto_threshold(&gray_dynamic)
+    // Dithering and threshold can be combined - threshold controls the midpoint
+    let binary = if dithering == DitheringMethod::None {
+        // No dithering - use threshold only
+        if let Some(threshold_value) = threshold {
+            debug!("Applying manual threshold (no dithering): {}", threshold_value);
+            apply_threshold(&gray, threshold_value)
+        } else {
+            debug!("Applying automatic Otsu thresholding (no dithering)");
+            let gray_dynamic = DynamicImage::ImageLuma8(gray);
+            auto_threshold(&gray_dynamic)
+        }
     } else {
-        debug!("Applying {:?} dithering", dithering);
-        apply_dithering(&gray, dithering)?
+        // Dithering enabled - can be combined with manual threshold
+        if let Some(threshold_value) = threshold {
+            debug!(
+                "Applying {:?} dithering with manual threshold: {}",
+                dithering, threshold_value
+            );
+            apply_dithering_with_custom_threshold(&gray, dithering, Some(threshold_value))?
+        } else {
+            debug!(
+                "Applying {:?} dithering with default threshold (127)",
+                dithering
+            );
+            apply_dithering(&gray, dithering)?
+        }
     };
 
     // Step 4: Map pixels to braille dots

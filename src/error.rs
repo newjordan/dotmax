@@ -326,6 +326,26 @@ pub enum DotmaxError {
         /// Error message
         message: String,
     },
+
+    /// Video decoding or playback error
+    ///
+    /// This error is returned when a video file cannot be decoded or played back.
+    /// Common causes include:
+    /// - File not found or cannot be opened
+    /// - No video stream found in container
+    /// - Unsupported video codec
+    /// - FFmpeg initialization failure
+    /// - Frame decode errors
+    ///
+    /// Requires the `video` feature and FFmpeg system libraries.
+    #[cfg(feature = "video")]
+    #[error("Video error for {path:?}: {message}")]
+    VideoError {
+        /// Path to the video file
+        path: std::path::PathBuf,
+        /// Error message
+        message: String,
+    },
 }
 
 #[cfg(test)]

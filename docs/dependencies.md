@@ -182,6 +182,31 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **License**: MPL-2.0
 - **Estimated Binary Size Impact**: Included in `resvg` estimate
 
+### ffmpeg-next (7.0) - Behind `video` Feature
+
+- **Purpose**: FFmpeg bindings for video decoding and playback
+- **Why Required**:
+  - Story 9.4 requires video playback support (MP4, MKV, AVI, WebM)
+  - Provides frame-by-frame video decoding with timing information
+  - Supports all major video codecs: H.264, H.265/HEVC, VP9, AV1
+  - Industry standard for video processing (FFmpeg powers VLC, YouTube, etc.)
+- **Why Feature-Gated**:
+  - Requires system FFmpeg libraries (not pure Rust)
+  - Large dependency - users must explicitly opt-in
+  - Video support is advanced use case, not core functionality
+- **Alternatives Considered**:
+  - `gstreamer-rs`: Also requires system libraries, less ubiquitous than FFmpeg
+  - `video-rs`: Higher-level but less flexible
+  - Pure Rust decoders: No comprehensive option exists for all codecs
+  - `ffmpeg-next` is well-maintained fork with modern API
+- **System Requirements**:
+  - Linux: `libavcodec-dev libavformat-dev libavutil-dev libswscale-dev`
+  - macOS: `brew install ffmpeg`
+  - Windows: FFmpeg binaries in PATH
+- **Rationale for Version**: 7.0 supports FFmpeg 6.x/7.x
+- **License**: LGPL-2.1+ (FFmpeg itself), crate is MIT
+- **Estimated Binary Size Impact**: +2MB (mostly from FFmpeg system libs)
+
 ---
 
 ## Dev Dependencies
@@ -218,9 +243,9 @@ These dependencies are **only used during development/testing** and do NOT impac
 | Category | Count | Counts Toward Core Limit? |
 |----------|-------|---------------------------|
 | Core (always included) | **4** | ✅ Yes |
-| Optional (feature-gated) | 6 | ❌ No |
+| Optional (feature-gated) | 7 | ❌ No |
 | Dev (tests/benchmarks) | 2 | ❌ No |
-| **Total Direct Dependencies** | **12** | **4 count toward NFR-D1** |
+| **Total Direct Dependencies** | **13** | **4 count toward NFR-D1** |
 
 **NFR-D1 Compliance**: ✅ Core library has exactly 4 direct dependencies (<10 limit)
 
@@ -294,4 +319,4 @@ ratatui = "0.29"  # Allows 0.29.x patches, blocks 0.30.x
 
 ---
 
-**Last Updated**: 2025-12-02 (Story 9.3 - Added png crate for APNG support)
+**Last Updated**: 2025-12-02 (Story 9.4 - Added ffmpeg-next for video playback)

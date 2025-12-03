@@ -81,6 +81,8 @@ pub mod apng;
 #[cfg(feature = "image")]
 pub mod gif;
 mod router;
+#[cfg(feature = "video")]
+pub mod video;
 
 // Public re-exports
 pub use detect::{detect_format, detect_format_from_bytes, ImageFormat, MediaFormat, VideoCodec};
@@ -93,3 +95,5 @@ pub use apng::{ApngFrame, ApngPlayer, BlendOp, DisposeOp};
 #[cfg(feature = "image")]
 pub use gif::{DisposalMethod, GifFrame, GifPlayer};
 pub use router::{MediaContent, MediaPlayer};
+#[cfg(feature = "video")]
+pub use video::VideoPlayer;

@@ -276,6 +276,8 @@ pub struct TerminalRenderer {
     last_size: (u16, u16),
     /// Detected terminal type for viewport handling
     terminal_type: TerminalType,
+    /// Whether this is the first render (clear needed) or subsequent (skip clear for performance)
+    first_render: bool,
 }
 
 impl TerminalRenderer {
@@ -362,6 +364,7 @@ impl TerminalRenderer {
             terminal,
             last_size: (width, height),
             terminal_type,
+            first_render: true,
         })
     }
 
@@ -398,10 +401,13 @@ impl TerminalRenderer {
             "Rendering BrailleGrid to terminal"
         );
 
-        // ISSUE #2 FIX: Clear the terminal buffer before rendering to ensure
+        // ISSUE #2 FIX: Clear the terminal buffer on FIRST render only to ensure
         // ratatui's differential rendering has a clean baseline.
-        // Without this, stale buffer data can cause incomplete initial renders.
-        self.terminal.clear()?;
+        // Skip clear on subsequent renders to avoid flashing during video playback.
+        if self.first_render {
+            self.terminal.clear()?;
+            self.first_render = false;
+        }
 
         // Convert grid to Unicode characters using Story 2.2 functionality
         let unicode_grid = grid.to_unicode_grid();
