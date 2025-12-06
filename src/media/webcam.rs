@@ -1025,18 +1025,9 @@ impl WebcamPlayer {
 
     /// Converts the decoded frame to a BrailleGrid.
     ///
-    /// Optimized pipeline with temporal coherence:
-    /// 1. FFmpeg scaler already resizes to terminal pixel dimensions
-    /// 2. Direct RGB→grayscale conversion (no RGBA intermediate)
-    /// 3. Reuse pre-allocated buffers
-    /// 4. Apply temporal coherence (hysteresis + frame blending)
-    /// 5. Convert to braille grid
+    /// Uses ImageRenderer for proper dithering and color handling.
     fn frame_to_grid(&mut self) -> Result<BrailleGrid> {
-        use crate::image::{
-            apply_dithering_with_custom_threshold, otsu_threshold, pixels_to_braille,
-            DitheringMethod,
-        };
-        use crate::image::color_mode::{extract_cell_colors, ColorSamplingStrategy};
+        use crate::image::ImageRenderer;
 
         // Scale to RGB24 at terminal dimensions (FFmpeg hardware-accelerated)
         self.scaler
@@ -1053,114 +1044,55 @@ impl WebcamPlayer {
         let target_width = (self.terminal_width * 2) as u32;
         let target_height = (self.terminal_height * 4) as u32;
 
-        // Fast path: if stride matches width*3, data is contiguous
-        let row_bytes = (target_width as usize) * 3;
-        let rgb_data: &[u8] = if stride as usize == row_bytes {
-            // Contiguous data - use directly without copy
-            &data[..row_bytes * (target_height as usize)]
-        } else {
-            // Non-contiguous - copy row by row into buffer
-            let expected_size = (target_width * target_height * 3) as usize;
-            if self.rgb_buffer.len() != expected_size {
-                self.rgb_buffer.resize(expected_size, 0);
-            }
+        // Copy RGB data into reusable buffer (avoids per-frame allocation)
+        let expected_size = (target_width * target_height * 3) as usize;
+        if self.rgb_buffer.len() != expected_size {
+            self.rgb_buffer.resize(expected_size, 0);
+        }
 
-            let mut offset = 0;
-            for y in 0..target_height {
-                let row_start = (y as usize) * (stride as usize);
-                self.rgb_buffer[offset..offset + row_bytes]
-                    .copy_from_slice(&data[row_start..row_start + row_bytes]);
-                offset += row_bytes;
-            }
-            &self.rgb_buffer
-        };
+        let mut offset = 0;
+        for y in 0..target_height {
+            let row_start = (y as usize) * (stride as usize);
+            let row_len = (target_width as usize) * 3;
+            self.rgb_buffer[offset..offset + row_len]
+                .copy_from_slice(&data[row_start..row_start + row_len]);
+            offset += row_len;
+        }
 
-        // Create RGB image - we need ownership for the image crate
-        let img = image::RgbImage::from_raw(target_width, target_height, rgb_data.to_vec())
+        // Create RGB image from pre-scaled frame data
+        let img = image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
             .ok_or_else(|| DotmaxError::WebcamError {
                 device: self.device_id.clone(),
                 message: "Failed to create image from frame data".to_string(),
             })?;
 
-        let dynamic_img = image::DynamicImage::ImageRgb8(img);
+        // Convert to RGBA for ImageRenderer
+        let rgba_img = image::DynamicImage::ImageRgb8(img).into_rgba8();
 
-        // Convert to grayscale for braille pattern generation
-        let mut gray = crate::image::to_grayscale(&dynamic_img);
+        // Use ImageRenderer - NO RESIZE needed, frame is already at correct size
+        let mut renderer = ImageRenderer::new()
+            .load_from_rgba(rgba_img)
+            .resize(self.terminal_width, self.terminal_height, false)? // false = don't preserve aspect, already correct
+            .dithering(self.dithering)
+            .color_mode(self.color_mode);
 
-        // Apply brightness/contrast/gamma adjustments if needed
+        // Apply manual threshold if set
+        if let Some(t) = self.threshold {
+            renderer = renderer.threshold(t);
+        }
+
+        // Apply adjustments (these return Result, so we chain with ?)
         if (self.brightness - 1.0).abs() > f32::EPSILON {
-            gray = crate::image::adjust_brightness(&gray, self.brightness)?;
+            renderer = renderer.brightness(self.brightness)?;
         }
         if (self.contrast - 1.0).abs() > f32::EPSILON {
-            gray = crate::image::adjust_contrast(&gray, self.contrast)?;
+            renderer = renderer.contrast(self.contrast)?;
         }
         if (self.gamma - 1.0).abs() > f32::EPSILON {
-            gray = crate::image::adjust_gamma(&gray, self.gamma)?;
+            renderer = renderer.gamma(self.gamma)?;
         }
 
-        // Determine threshold value
-        let threshold_value = self.threshold.unwrap_or_else(|| otsu_threshold(&gray));
-
-        // Apply temporal coherence (frame blending + hysteresis)
-        // This stabilizes the grayscale before binary conversion
-        let stabilized = self.temporal_coherence.process_grayscale(&gray, threshold_value);
-
-        // Apply dithering (if enabled) or use temporally-stabilized binary
-        use crate::image::BinaryImage;
-
-        let binary = match self.dithering {
-            DitheringMethod::None => {
-                // Already binary from temporal coherence - convert to BinaryImage
-                BinaryImage::from_grayscale(&stabilized)
-            }
-            _ => {
-                // For dithering with temporal coherence
-                let config = self.temporal_coherence.config();
-                if config.frame_blend_enabled && !config.hysteresis_enabled {
-                    // Frame blending only: use blended gray with dithering
-                    apply_dithering_with_custom_threshold(&gray, self.dithering, self.threshold)?
-                } else {
-                    // Hysteresis enabled: use stabilized binary - convert to BinaryImage
-                    BinaryImage::from_grayscale(&stabilized)
-                }
-            }
-        };
-
-        // Convert binary image to braille grid
-        let grid_width = (target_width as usize) / 2;
-        let grid_height = (target_height as usize) / 4;
-        let mut grid = pixels_to_braille(&binary, grid_width, grid_height)?;
-
-        // Apply colors if not monochrome mode
-        match self.color_mode {
-            ColorMode::Monochrome => {}
-            ColorMode::TrueColor | ColorMode::Grayscale => {
-                // Extract colors from original RGB image
-                let colors = extract_cell_colors(
-                    &dynamic_img,
-                    grid_width,
-                    grid_height,
-                    ColorSamplingStrategy::Average,
-                );
-
-                // Enable color support and apply colors to grid
-                grid.enable_color_support();
-                for (idx, color) in colors.into_iter().enumerate() {
-                    let x = idx % grid_width;
-                    let y = idx / grid_width;
-
-                    // For grayscale mode, convert color to gray
-                    let final_color = if self.color_mode == ColorMode::Grayscale {
-                        let gray_val = ((color.r as u32 + color.g as u32 + color.b as u32) / 3) as u8;
-                        crate::Color { r: gray_val, g: gray_val, b: gray_val }
-                    } else {
-                        color
-                    };
-
-                    let _ = grid.set_cell_color(x, y, final_color);
-                }
-            }
-        }
+        let grid = renderer.render()?;
 
         Ok(grid)
     }
