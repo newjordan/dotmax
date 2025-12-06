@@ -145,6 +145,25 @@ pub trait MediaPlayer: Send + std::fmt::Debug {
     /// - `Some(n)` - Loop `n` times then stop
     /// - `None` - Loop behavior not specified (default to once)
     fn loop_count(&self) -> Option<u16>;
+
+    /// Handles terminal resize events.
+    ///
+    /// Call this method when the terminal size changes to update the
+    /// internal rendering dimensions. Subsequent frames will be rendered
+    /// at the new size.
+    ///
+    /// # Arguments
+    ///
+    /// * `width` - New terminal width in cells
+    /// * `height` - New terminal height in cells
+    ///
+    /// # Default Implementation
+    ///
+    /// The default implementation does nothing. Players that cache terminal
+    /// dimensions should override this method.
+    fn handle_resize(&mut self, _width: usize, _height: usize) {
+        // Default: do nothing. Players can override to update their dimensions.
+    }
 }
 
 // ============================================================================

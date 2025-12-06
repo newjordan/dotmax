@@ -83,6 +83,8 @@ pub mod gif;
 mod router;
 #[cfg(feature = "video")]
 pub mod video;
+#[cfg(feature = "video")]
+pub mod webcam;
 
 // Public re-exports
 pub use detect::{detect_format, detect_format_from_bytes, ImageFormat, MediaFormat, VideoCodec};
@@ -97,3 +99,5 @@ pub use gif::{DisposalMethod, GifFrame, GifPlayer};
 pub use router::{MediaContent, MediaPlayer};
 #[cfg(feature = "video")]
 pub use video::VideoPlayer;
+#[cfg(feature = "video")]
+pub use webcam::{list_webcams, WebcamDevice, WebcamDeviceId, WebcamPlayer, WebcamPlayerBuilder};

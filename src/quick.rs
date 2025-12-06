@@ -754,6 +754,136 @@ fn play_video(path: impl AsRef<std::path::Path>) -> Result<()> {
 }
 
 // ============================================================================
+// Webcam Helper Functions (Story 9.6)
+// ============================================================================
+
+/// Displays the default webcam in the terminal.
+///
+/// This function:
+/// 1. Opens the default system webcam
+/// 2. Initializes the terminal (raw mode, alternate screen)
+/// 3. Displays live feed at 30fps target until keypress
+/// 4. Cleans up terminal state
+///
+/// # Errors
+///
+/// - `DotmaxError::CameraNotFound` - No webcam detected
+/// - `DotmaxError::CameraInUse` - Camera is in use by another application
+/// - `DotmaxError::CameraPermissionDenied` - No permission to access camera
+/// - `DotmaxError::WebcamError` - Other webcam errors
+/// - `DotmaxError::Terminal` - Terminal I/O errors
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::quick;
+///
+/// // One-liner webcam display!
+/// quick::show_webcam()?;
+/// # Ok::<(), dotmax::DotmaxError>(())
+/// ```
+#[cfg(feature = "video")]
+pub fn show_webcam() -> Result<()> {
+    use crate::media::WebcamPlayer;
+    play_webcam_internal(WebcamPlayer::new()?)
+}
+
+/// Displays a specific webcam in the terminal.
+///
+/// Accepts device selection by:
+/// - Index: `show_webcam_device(0)` for first camera
+/// - Path: `show_webcam_device("/dev/video1")` (Linux)
+/// - Name: `show_webcam_device("FaceTime HD Camera")` (macOS/Windows)
+///
+/// # Arguments
+///
+/// * `device` - Device identifier (index, path, or name)
+///
+/// # Errors
+///
+/// - `DotmaxError::CameraNotFound` - Specified device not found
+/// - `DotmaxError::CameraInUse` - Camera is in use
+/// - `DotmaxError::CameraPermissionDenied` - No permission
+/// - `DotmaxError::WebcamError` - Other webcam errors
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::quick;
+///
+/// // By index
+/// quick::show_webcam_device(0)?;
+///
+/// // By path (Linux)
+/// quick::show_webcam_device("/dev/video1")?;
+///
+/// // By name (macOS/Windows)
+/// quick::show_webcam_device("HD Pro Webcam C920")?;
+/// # Ok::<(), dotmax::DotmaxError>(())
+/// ```
+#[cfg(feature = "video")]
+pub fn show_webcam_device(device: impl Into<crate::media::WebcamDeviceId>) -> Result<()> {
+    use crate::media::WebcamPlayer;
+    play_webcam_internal(WebcamPlayer::from_device(device)?)
+}
+
+/// Internal function for webcam playback loop.
+#[cfg(feature = "video")]
+fn play_webcam_internal(mut player: crate::media::WebcamPlayer) -> Result<()> {
+    use crate::media::MediaPlayer;
+    use crossterm::event::{self, Event, KeyCode};
+    use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::{cursor, execute};
+    use std::io::stdout;
+    use std::time::{Duration, Instant};
+
+    // Enter raw mode and alternate screen
+    terminal::enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+    let mut renderer = TerminalRenderer::new()?;
+
+    // Play frames
+    let result = (|| -> Result<()> {
+        while let Some(frame_result) = player.next_frame() {
+            let (grid, delay) = frame_result?;
+
+            // Render frame
+            renderer.render(&grid)?;
+
+            // Wait for frame duration, checking for keypress and resize
+            let deadline = Instant::now() + delay;
+            while Instant::now() < deadline {
+                // Check for events with short timeout
+                if event::poll(Duration::from_millis(5))? {
+                    match event::read()? {
+                        Event::Key(key_event) => {
+                            // Stop on any key (except modifiers alone)
+                            if !matches!(key_event.code, KeyCode::Modifier(_)) {
+                                return Ok(());
+                            }
+                        }
+                        Event::Resize(w, h) => {
+                            // Handle terminal resize
+                            player.handle_resize(w as usize, h as usize);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(())
+    })();
+
+    // Cleanup - always restore terminal state
+    execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+
+    result
+}
+
+// ============================================================================
 // SVG Helper Functions
 // ============================================================================
 

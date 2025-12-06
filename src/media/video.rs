@@ -838,6 +838,46 @@ impl MediaPlayer for VideoPlayer {
     fn loop_count(&self) -> Option<u16> {
         Some(1)
     }
+
+    /// Updates terminal dimensions for subsequent frame rendering.
+    ///
+    /// Call this when the terminal is resized to ensure frames are
+    /// rendered at the correct size. This recreates the FFmpeg scaler
+    /// with the new target dimensions.
+    fn handle_resize(&mut self, width: usize, height: usize) {
+        if self.terminal_width == width && self.terminal_height == height {
+            return; // No change
+        }
+
+        self.terminal_width = width;
+        self.terminal_height = height;
+
+        // Calculate new target pixel dimensions
+        let target_pixel_width = (width * 2) as u32;
+        let target_pixel_height = (height * 4) as u32;
+
+        // Recreate scaler with new dimensions
+        match ScalingContext::get(
+            self.decoder.format(),
+            self.width,
+            self.height,
+            Pixel::RGB24,
+            target_pixel_width,
+            target_pixel_height,
+            Flags::BILINEAR,
+        ) {
+            Ok(new_scaler) => {
+                self.scaler = SendableScaler(new_scaler);
+                // Resize the RGB buffer to match
+                let rgb_buffer_size = (target_pixel_width * target_pixel_height * 3) as usize;
+                self.rgb_buffer.resize(rgb_buffer_size, 0);
+                tracing::debug!("VideoPlayer resized to {}x{}", width, height);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to resize video scaler: {}", e);
+            }
+        }
+    }
 }
 
 // ============================================================================

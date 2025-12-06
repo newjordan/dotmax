@@ -1,111 +1,167 @@
 # dotmax
 
-High-performance terminal braille rendering for Rust.
+Render anything in terminal braille. Images, GIFs, videos, webcam - one line of code.
 
 [![Crates.io](https://img.shields.io/crates/v/dotmax.svg)](https://crates.io/crates/dotmax)
 [![Documentation](https://docs.rs/dotmax/badge.svg)](https://docs.rs/dotmax)
 [![License](https://img.shields.io/crates/l/dotmax.svg)](https://github.com/newjordan/dotmax#license)
 
-## Quick Start
+## Install
 
 ```bash
 cargo add dotmax --features image
 ```
 
+## One-Line Usage
+
 ```rust
 use dotmax::quick;
 
-fn main() -> Result<(), dotmax::DotmaxError> {
-    quick::show_file("photo.png")?;  // Any image, SVG, or animated GIF
-    Ok(())
-}
+quick::show_file("photo.png")?;    // Any image
+quick::show_file("cat.gif")?;      // Animated GIF (plays automatically)
+quick::show_file("movie.mp4")?;    // Video (requires 'video' feature)
+quick::show_webcam()?;             // Live webcam (requires 'video' feature)
 ```
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| `default` | Core braille rendering (shapes, animations) |
-| `image` | PNG, JPG, GIF (static + animated), BMP, WebP, TIFF |
-| `svg` | SVG vector graphics |
+| Feature | What it enables | Install |
+|---------|-----------------|---------|
+| `image` | PNG, JPG, GIF, APNG, BMP, WebP, TIFF | `cargo add dotmax --features image` |
+| `svg` | SVG vector graphics | `cargo add dotmax --features svg` |
+| `video` | Video + webcam (needs FFmpeg) | `cargo add dotmax --features video` |
 
 ```toml
+# Cargo.toml - pick what you need
 [dependencies]
-dotmax = { version = "0.1", features = ["image", "svg"] }
+dotmax = { version = "0.1", features = ["image"] }           # Images only
+dotmax = { version = "0.1", features = ["image", "svg"] }    # Images + SVG
+dotmax = { version = "0.1", features = ["video"] }           # Video + webcam
 ```
 
-## Usage
+**Video feature requires FFmpeg installed on your system.**
 
-### Prelude (import everything)
+## Quick API Reference
 
 ```rust
-use dotmax::prelude::*;
+use dotmax::quick;
+
+// Display (blocks until keypress or video ends)
+quick::show_file("any.png")?;           // Auto-detect format
+quick::show_image("photo.jpg")?;        // Static image only
+quick::show_webcam()?;                  // Default webcam
+quick::show_webcam_device(0)?;          // Webcam by index
+quick::show_webcam_device("/dev/video1")?;  // Webcam by path
+
+// Load without displaying
+let grid = quick::load_image("photo.png")?;  // Returns BrailleGrid
+quick::show(&grid)?;                         // Display manually
+
+// Create empty grid
+let mut grid = quick::grid()?;  // Terminal-sized
 ```
 
-Includes: `BrailleGrid`, `TerminalRenderer`, `Color`, drawing primitives, animation types, color schemes, and quick functions.
-
-### Quick API
-
-| Function | Description |
-|----------|-------------|
-| `quick::show_file(path)` | Display any media (auto-detects format, plays animations) |
-| `quick::show_image(path)` | Display static image |
-| `quick::load_file(path)` | Load media into `MediaContent` for manual control |
-| `quick::grid()` | Create terminal-sized grid |
-| `quick::show(&grid)` | Display grid, wait for keypress |
-
-### One-liner display
-
-```rust
-quick::show_file("animation.gif")?;  // Auto-detects format, plays animations
-quick::show_image("photo.jpg")?;     // Static image display
-```
-
-### Drawing primitives
+## Drawing Primitives
 
 ```rust
 use dotmax::prelude::*;
 
 let mut grid = grid()?;
-draw_circle(&mut grid, 80, 48, 30)?;
-draw_line(&mut grid, 0, 0, 160, 96)?;
+draw_line(&mut grid, 0, 0, 100, 50)?;
+draw_circle(&mut grid, 50, 25, 20)?;
+draw_rectangle(&mut grid, 10, 10, 80, 40)?;
 show(&grid)?;
 ```
 
-### Animation
+## Animation Loop
 
 ```rust
 use dotmax::animation::AnimationLoop;
 
 AnimationLoop::new(80, 24)
-    .fps(60)
-    .on_frame(|frame, buffer| {
-        buffer.set_dot((frame * 2) % 160, 48)?;
-        Ok(true)
+    .fps(30)
+    .on_frame(|frame, grid| {
+        grid.clear();
+        grid.set_dot((frame * 2) % 160, 48)?;
+        Ok(true)  // Return false to stop
     })
     .run()?;
 ```
+
+## Examples
+
+```bash
+# Basic (no features needed)
+cargo run --example hello_braille
+cargo run --example bouncing_ball
+cargo run --example shapes_demo
+
+# Images
+cargo run --example load_image --features image
+cargo run --example dither_comparison --features image
+
+# Animated GIF/APNG
+cargo run --example animated_gif --features image -- your.gif
+cargo run --example animated_apng --features image -- your.apng
+
+# Video (needs FFmpeg)
+cargo run --example video_player --features video -- your.mp4
+
+# Webcam (needs FFmpeg + camera)
+cargo run --example webcam_viewer --features video
+cargo run --example webcam_tuner --features video   # Interactive settings
+```
+
+## Tuners
+
+Tuners let you **find the best render settings visually**. Adjust dithering, brightness, contrast, etc. in real-time and see the results instantly.
+
+### Why use a tuner?
+
+Different images/videos look best with different settings. Instead of guessing values in code, use the tuner to experiment live, then copy the settings you like.
+
+### Webcam Tuner
+
+```bash
+cargo run --example webcam_tuner --features video
+```
+
+### Video/Image Tuner
+
+```bash
+cargo run --example render_tuner --features video -- your_video.mp4
+cargo run --example render_tuner --features image -- your_image.png
+```
+
+### Tuner Controls
+
+| Key | Action |
+|-----|--------|
+| D | Cycle dithering (Floyd/Bayer/Atkinson/None) |
+| T | Toggle threshold (Auto/Manual) |
+| +/- | Adjust threshold ±10 |
+| [/] | Adjust threshold ±1 |
+| B/b | Brightness +/- |
+| C/c | Contrast +/- |
+| G/g | Gamma +/- |
+| M | Toggle color mode (Mono/Color) |
+| R | Reset all settings |
+| H | Help |
+| Q | Quit |
+
+### What the settings do
+
+- **Dithering**: How dots are distributed. Floyd-Steinberg = smooth gradients, Bayer = patterned, Atkinson = high contrast, None = pure threshold
+- **Threshold**: Brightness cutoff for black vs white. Auto (Otsu) calculates optimal value. Manual lets you pick 0-255
+- **Brightness/Contrast/Gamma**: Standard image adjustments. Useful for dark or washed-out sources
 
 ## Performance
 
 | Operation | Time |
 |-----------|------|
 | Frame render (80×24) | ~2μs |
-| Image pipeline | ~10ms |
-| Animation frame budget | 1.6μs (10,000× faster than 60fps requires) |
-
-## Examples
-
-```bash
-cargo run --example bouncing_ball
-cargo run --example load_image --features image
-cargo run --example animated_gif --features image
-```
-
-## Documentation
-
-- [API Reference](https://docs.rs/dotmax)
-- [Animation Guide](docs/animation_guide.md)
+| Image load + render | ~10ms |
+| 60fps animation budget | 16.6ms (we use 1.6μs) |
 
 ## License
 

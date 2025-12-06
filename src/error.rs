@@ -282,11 +282,11 @@ pub enum DotmaxError {
     /// system could not identify the file type from magic bytes or extension.
     ///
     /// Supported formats include:
-    /// - Static images: PNG, JPEG, GIF, BMP, WebP, TIFF
+    /// - Static images: PNG, JPEG, GIF (single frame), BMP, WebP, TIFF
     /// - Vector graphics: SVG (requires `svg` feature)
-    /// - Animated: GIF, APNG (future)
-    /// - Video: MP4, MKV, AVI, WebM (future)
-    #[error("Unsupported media format: {format}. Supported formats: PNG, JPEG, GIF, BMP, WebP, TIFF, SVG")]
+    /// - Animated: GIF (multi-frame), APNG
+    /// - Video: MP4, MKV, AVI, WebM (requires `video` feature)
+    #[error("Unsupported media format: {format}. Supported: static (PNG, JPEG, GIF, BMP, WebP, TIFF), vector (SVG), animated (GIF, APNG), video (MP4, MKV, AVI, WebM)")]
     FormatError {
         /// Description of the detected or unknown format
         format: String,
@@ -345,6 +345,82 @@ pub enum DotmaxError {
         path: std::path::PathBuf,
         /// Error message
         message: String,
+    },
+
+    /// Webcam capture error
+    ///
+    /// This error is returned when a webcam cannot be accessed or captured from.
+    /// Common causes include:
+    /// - No webcam detected on the system
+    /// - Camera is in use by another application
+    /// - Permission denied to access camera
+    /// - Invalid device ID or path
+    /// - FFmpeg device capture initialization failure
+    ///
+    /// Requires the `video` feature and FFmpeg system libraries.
+    #[cfg(feature = "video")]
+    #[error("Webcam error for {device}: {message}")]
+    WebcamError {
+        /// Device identifier (path, name, or index)
+        device: String,
+        /// Error message
+        message: String,
+    },
+
+    /// Camera device not found
+    ///
+    /// This error is returned when the specified camera device cannot be found.
+    /// The error includes a list of available cameras to help the user select
+    /// a valid device.
+    ///
+    /// # Remediation
+    ///
+    /// - Check the device path/name is correct
+    /// - Use `list_webcams()` to see available devices
+    /// - Ensure the camera is connected and recognized by the OS
+    #[cfg(feature = "video")]
+    #[error("Camera not found: {device}. Available cameras: {}", if available.is_empty() { "none detected".to_string() } else { available.join(", ") })]
+    CameraNotFound {
+        /// The device that was requested but not found
+        device: String,
+        /// List of available camera names/paths
+        available: Vec<String>,
+    },
+
+    /// Camera permission denied
+    ///
+    /// This error is returned when the application lacks permission to access
+    /// the camera. This is common on systems with privacy controls.
+    ///
+    /// # Remediation
+    ///
+    /// - **Linux**: Add user to `video` group (`sudo usermod -aG video $USER`)
+    /// - **macOS**: Grant camera access in System Preferences > Security & Privacy
+    /// - **Windows**: Grant camera access in Settings > Privacy > Camera
+    #[cfg(feature = "video")]
+    #[error("Camera permission denied: {device}. {hint}")]
+    CameraPermissionDenied {
+        /// The device that permission was denied for
+        device: String,
+        /// Platform-specific remediation hint
+        hint: String,
+    },
+
+    /// Camera is in use by another application
+    ///
+    /// This error is returned when the camera is exclusively locked by another
+    /// process. Most cameras can only be used by one application at a time.
+    ///
+    /// # Remediation
+    ///
+    /// - Close other applications that might be using the camera
+    /// - Check for video conferencing apps (Zoom, Teams, Meet, etc.)
+    /// - Check for other terminal applications using the camera
+    #[cfg(feature = "video")]
+    #[error("Camera in use: {device}. Close other applications that may be using the camera (video conferencing, browsers, etc.)")]
+    CameraInUse {
+        /// The device that is in use
+        device: String,
     },
 }
 
@@ -540,9 +616,85 @@ mod tests {
             format: "xyz".to_string(),
         };
         let msg = format!("{err}");
+        // Static formats
         assert!(msg.contains("PNG"));
         assert!(msg.contains("JPEG"));
         assert!(msg.contains("GIF"));
+        // Vector formats
         assert!(msg.contains("SVG"));
+        // Animated formats
+        assert!(msg.contains("APNG"));
+        // Video formats
+        assert!(msg.contains("MP4"));
+        assert!(msg.contains("MKV"));
+    }
+
+    // ========================================================================
+    // Story 9.6: Webcam Error Tests (AC: #7)
+    // ========================================================================
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn test_webcam_error_includes_device_and_message() {
+        let err = DotmaxError::WebcamError {
+            device: "/dev/video0".to_string(),
+            message: "Failed to open device".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("/dev/video0"));
+        assert!(msg.contains("Failed to open device"));
+        assert!(msg.contains("Webcam error"));
+    }
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn test_camera_not_found_includes_device_and_available_list() {
+        let err = DotmaxError::CameraNotFound {
+            device: "/dev/video5".to_string(),
+            available: vec!["/dev/video0".to_string(), "/dev/video1".to_string()],
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("/dev/video5"));
+        assert!(msg.contains("/dev/video0"));
+        assert!(msg.contains("/dev/video1"));
+        assert!(msg.contains("Camera not found"));
+        assert!(msg.contains("Available cameras"));
+    }
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn test_camera_not_found_empty_available_list() {
+        let err = DotmaxError::CameraNotFound {
+            device: "camera0".to_string(),
+            available: vec![],
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("camera0"));
+        assert!(msg.contains("none detected"));
+    }
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn test_camera_permission_denied_includes_hint() {
+        let err = DotmaxError::CameraPermissionDenied {
+            device: "/dev/video0".to_string(),
+            hint: "Add user to video group".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("/dev/video0"));
+        assert!(msg.contains("Add user to video group"));
+        assert!(msg.contains("permission denied"));
+    }
+
+    #[cfg(feature = "video")]
+    #[test]
+    fn test_camera_in_use_includes_remediation() {
+        let err = DotmaxError::CameraInUse {
+            device: "Integrated Camera".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("Integrated Camera"));
+        assert!(msg.contains("in use"));
+        assert!(msg.contains("Close other applications"));
     }
 }

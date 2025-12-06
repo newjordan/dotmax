@@ -46,12 +46,21 @@
 //! - Built-in schemes: [`heat_map`], [`rainbow`], [`grayscale`], [`monochrome`],
 //!   [`blue_purple`], [`cyan_magenta`], [`green_yellow`]
 //!
+//! ## Universal Media (with `image` feature)
+//!
+//! - [`show_file`]: Display any media file (auto-detects format, plays animations)
+//! - [`load_file`]: Load media into [`MediaContent`] for manual control
+//! - [`MediaContent`]: Enum for static images vs animated content
+//! - [`MediaPlayer`]: Trait for animated media playback (GIF, APNG, video)
+//!
 //! # Feature-Gated Exports
 //!
 //! With the `image` feature enabled, also includes:
 //!
 //! - `ImageRenderer`: High-level image-to-braille rendering
 //! - `DitheringMethod`: Dithering algorithm selection
+//! - `show_file`, `load_file`: Universal media display functions
+//! - `MediaContent`, `MediaPlayer`: Media types for animation control
 //!
 //! # Note on `Result`
 //!
@@ -106,6 +115,39 @@
 //!     .dithering(DitheringMethod::FloydSteinberg)
 //!     .render()?;
 //! ```
+//!
+//! ## Universal Media Display (with `image` feature)
+//!
+//! The easiest way to display any media file:
+//!
+//! ```ignore
+//! use dotmax::prelude::*;
+//!
+//! // One function handles everything - images, GIFs, videos
+//! show_file("photo.png")?;       // Static image
+//! show_file("animation.gif")?;   // Plays animated GIF
+//! show_file("movie.mp4")?;       // Video (requires 'video' feature)
+//! ```
+//!
+//! For manual control over animated content:
+//!
+//! ```ignore
+//! use dotmax::prelude::*;
+//!
+//! match load_file("animation.gif")? {
+//!     MediaContent::Static(grid) => {
+//!         // Single frame - render once
+//!         show(&grid)?;
+//!     }
+//!     MediaContent::Animated(mut player) => {
+//!         // Frame-by-frame control
+//!         while let Some(Ok((frame, delay))) = player.next_frame() {
+//!             // Custom rendering logic here
+//!             std::thread::sleep(delay);
+//!         }
+//!     }
+//! }
+//! ```
 
 // ============================================================================
 // Core Types (AC: #2)
@@ -158,7 +200,24 @@ pub use crate::image::{DitheringMethod, ImageRenderer};
 pub use crate::quick::{grid, grid_sized, show};
 
 #[cfg(feature = "image")]
-pub use crate::quick::{load_image, load_image_sized, show_image};
+pub use crate::quick::{load_file, load_image, load_image_sized, show_file, show_image};
+
+// ============================================================================
+// Media Types - Feature-Gated (Epic 9: Universal Media Rendering)
+// ============================================================================
+
+#[cfg(feature = "image")]
+pub use crate::media::{MediaContent, MediaPlayer};
+
+// ============================================================================
+// Webcam Types - Feature-Gated (Story 9.6)
+// ============================================================================
+
+#[cfg(feature = "video")]
+pub use crate::media::{list_webcams, WebcamDevice, WebcamDeviceId, WebcamPlayer, WebcamPlayerBuilder};
+
+#[cfg(feature = "video")]
+pub use crate::quick::{show_webcam, show_webcam_device};
 
 // ============================================================================
 // Tests (AC: #7)
@@ -254,6 +313,59 @@ mod tests {
 
         // Test DitheringMethod
         let _method = DitheringMethod::FloydSteinberg;
+    }
+
+    #[test]
+    #[cfg(feature = "image")]
+    fn test_media_types_accessible() {
+        // Test MediaContent enum variants are accessible
+        // We can't easily construct them without real files, but we can verify
+        // the types are exported and pattern matching compiles
+
+        fn _pattern_match_media_content(content: MediaContent) {
+            match content {
+                MediaContent::Static(_grid) => {}
+                MediaContent::Animated(_player) => {}
+            }
+        }
+
+        // Test MediaPlayer trait is accessible as a trait bound
+        fn _accepts_media_player<T: MediaPlayer>(_player: T) {}
+
+        // Test show_file and load_file functions are accessible
+        // (just verify they exist, don't call them without real files)
+        let _show_file_fn: fn(&str) -> crate::Result<()> =
+            |path| show_file(path);
+        let _load_file_fn: fn(&str) -> crate::Result<MediaContent> =
+            |path| load_file(path);
+    }
+
+    #[test]
+    #[cfg(feature = "video")]
+    fn test_webcam_types_accessible() {
+        // Test WebcamDevice
+        let device = WebcamDevice::new("/dev/video0", "Test Camera", "Test description");
+        assert_eq!(device.id, "/dev/video0");
+
+        // Test WebcamDeviceId conversions
+        let _id1: WebcamDeviceId = 0.into();
+        let _id2: WebcamDeviceId = "/dev/video0".into();
+        let _id3 = WebcamDeviceId::Default;
+
+        // Test list_webcams exists and returns Vec
+        let _devices: Vec<WebcamDevice> = list_webcams();
+
+        // Test WebcamPlayerBuilder chain methods compile
+        let _builder = WebcamPlayerBuilder::new()
+            .device(0)
+            .resolution(1280, 720)
+            .fps(30);
+
+        // Test show_webcam and show_webcam_device functions exist
+        // (just verify they exist as function pointers, don't call them)
+        let _show_fn: fn() -> crate::Result<()> = show_webcam;
+        let _show_device_fn: fn(usize) -> crate::Result<()> =
+            |idx| show_webcam_device(idx);
     }
 
     #[test]

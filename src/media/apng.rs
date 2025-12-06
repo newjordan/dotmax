@@ -793,6 +793,16 @@ impl MediaPlayer for ApngPlayer {
     fn loop_count(&self) -> Option<u16> {
         self.apng_loop_count
     }
+
+    /// Updates terminal dimensions for subsequent frame rendering.
+    ///
+    /// Call this when the terminal is resized to ensure frames are
+    /// rendered at the correct size.
+    fn handle_resize(&mut self, width: usize, height: usize) {
+        self.terminal_width = width;
+        self.terminal_height = height;
+        tracing::debug!("ApngPlayer resized to {}x{}", width, height);
+    }
 }
 
 // ============================================================================

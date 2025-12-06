@@ -1,6 +1,6 @@
 # Dotmax Examples
 
-This directory contains 49 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
+This directory contains 52 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
 
 ## Quick Start
 
@@ -53,6 +53,21 @@ cargo run --example dither_comparison --features image
 
 ```bash
 cargo run --example svg_demo --features svg
+```
+
+### Video & Webcam (`--features video`)
+
+| Example | Description |
+|---------|-------------|
+| `webcam_viewer` | Simple webcam display (one line!) |
+| `webcam_selector` | Select from available cameras |
+| `webcam_tuner` | **Interactive settings tuner** - adjust dithering, threshold, brightness, contrast, gamma in real-time |
+| `render_tuner` | Tune render settings for images/videos |
+
+```bash
+cargo run --example webcam_viewer --features video
+cargo run --example webcam_tuner --features video
+cargo run --example render_tuner --features video -- video.mp4
 ```
 
 ### Animation
@@ -116,6 +131,7 @@ cargo run --example heatmap
 | Core | `hello_braille`, `simple_animation`, `shapes_demo` | (default) |
 | Image | `load_image`, `view_image`, `dither_comparison` | `--features image` |
 | SVG | `svg_demo`, `svg_font_quality` | `--features svg` |
+| Video | `webcam_viewer`, `webcam_tuner`, `render_tuner` | `--features video` |
 | All | `image_browser`, `color_image` | `--all-features` |
 
 ## Running Examples
