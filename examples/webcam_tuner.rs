@@ -29,14 +29,14 @@
 //! | `Q`/`Esc` | Quit                                        |
 
 use dotmax::image::{ColorMode, DitheringMethod};
-use dotmax::media::{MediaPlayer, WebcamPlayer};
+use dotmax::media::{list_webcams, MediaPlayer, WebcamPlayer};
 use dotmax::BrailleGrid;
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use std::fmt::Write as FmtWrite;
-use std::io::{stdout, Write};
+use std::io::{stdin, stdout, Write};
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -169,20 +169,88 @@ impl TunerState {
 // ============================================================================
 
 fn main() -> dotmax::Result<()> {
-    println!("Starting webcam tuner...");
-    println!("Press 'h' or '?' for help, 'q' to quit.");
-    println!();
+    println!("=== Webcam Tuner ===\n");
+
+    // Select camera before starting
+    let camera_index = select_camera()?;
+
+    println!("\nStarting webcam tuner...");
+    println!("Press 'h' or '?' for help, 'q' to quit.\n");
 
     // Brief pause for user to read
     std::thread::sleep(Duration::from_millis(500));
 
-    run_webcam_tuner()
+    run_webcam_tuner(camera_index)
+}
+
+/// Lists available cameras and prompts user to select one.
+/// Returns the selected camera index.
+fn select_camera() -> dotmax::Result<usize> {
+    let cameras = list_webcams();
+
+    if cameras.is_empty() {
+        println!("No webcams detected on this system.");
+        println!("\nTroubleshooting:");
+        println!("  - Ensure a webcam is connected");
+        println!("  - On Linux: check that /dev/video* devices exist");
+        println!("  - On macOS: grant camera access in System Preferences");
+        println!("  - On Windows: ensure camera drivers are installed");
+        return Err(dotmax::DotmaxError::CameraNotFound {
+            device: "any".to_string(),
+            available: vec![],
+        });
+    }
+
+    // If only one camera, use it automatically
+    if cameras.len() == 1 {
+        println!("Found camera: {}", cameras[0].name);
+        return Ok(0);
+    }
+
+    // Display available cameras
+    println!("Available webcams:\n");
+    for (i, cam) in cameras.iter().enumerate() {
+        println!("  [{i}] {}", cam.name);
+        if !cam.description.is_empty() {
+            println!("      {}", cam.description);
+        }
+    }
+    println!();
+
+    // Get user selection
+    loop {
+        print!("Select camera (0-{}): ", cameras.len() - 1);
+        stdout().flush()?;
+
+        let mut input = String::new();
+        stdin().read_line(&mut input)?;
+        let input = input.trim();
+
+        // Default to first camera on empty input
+        if input.is_empty() {
+            println!("Using camera 0: {}", cameras[0].name);
+            return Ok(0);
+        }
+
+        match input.parse::<usize>() {
+            Ok(idx) if idx < cameras.len() => {
+                println!("Using camera {idx}: {}", cameras[idx].name);
+                return Ok(idx);
+            }
+            Ok(idx) => {
+                println!("Invalid selection: {idx}. Please enter 0-{}.", cameras.len() - 1);
+            }
+            Err(_) => {
+                println!("Please enter a number.");
+            }
+        }
+    }
 }
 
 /// Main tuner loop.
-fn run_webcam_tuner() -> dotmax::Result<()> {
-    // Open webcam with default settings
-    let mut player = WebcamPlayer::new()?;
+fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
+    // Open selected webcam by index (library handles platform-specific lookup)
+    let mut player = WebcamPlayer::from_device(camera_index)?;
 
     // Enter raw mode and alternate screen
     terminal::enable_raw_mode()?;
@@ -198,18 +266,23 @@ fn run_webcam_tuner() -> dotmax::Result<()> {
     let result = (|| -> dotmax::Result<()> {
         loop {
             // Handle input (non-blocking with short timeout)
-            while event::poll(Duration::from_millis(10))? {
-                if let Event::Key(key) = event::read()? {
-                    match handle_key_event(key, &mut state) {
-                        KeyAction::Continue => {
-                            // Apply updated settings to player
-                            state.apply_to_player(&mut player);
+            // Only process key Press events, not Release or Repeat to avoid multiple triggers
+            while event::poll(Duration::from_millis(1))? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        match handle_key_event(key, &mut state) {
+                            KeyAction::Continue => {
+                                // Apply updated settings to player
+                                state.apply_to_player(&mut player);
+                            }
+                            KeyAction::Quit => return Ok(()),
+                            KeyAction::None => {}
                         }
-                        KeyAction::Quit => return Ok(()),
-                        KeyAction::None => {}
                     }
-                } else if let Event::Resize(w, h) = event::read()? {
-                    player.handle_resize(w as usize, h as usize);
+                    Event::Resize(w, h) => {
+                        player.handle_resize(w as usize, h as usize);
+                    }
+                    _ => {} // Ignore key release/repeat events
                 }
             }
 
@@ -380,22 +453,26 @@ fn render_frame(
     let hud_height = if state.show_help { 8 } else { 3 };
     let max_grid_lines = (term_height as usize).saturating_sub(hud_height);
 
-    // Move cursor to top
+    // Move cursor to top-left and hide it during render
     execute!(stdout, cursor::MoveTo(0, 0))?;
 
-    // Render grid lines
+    // Render grid lines - use exact positioning to avoid jitter
     let grid_lines = grid.height().min(max_grid_lines);
     for y in 0..grid_lines {
+        // Move to exact line position to prevent drift
+        execute!(stdout, cursor::MoveTo(0, y as u16))?;
         render_grid_line(stdout, grid, y, term_width as usize)?;
     }
 
     // Clear any remaining lines between grid and HUD
-    let clear_lines = max_grid_lines.saturating_sub(grid_lines);
-    for _ in 0..clear_lines {
-        write!(stdout, "{}\r\n", " ".repeat(term_width as usize))?;
+    for y in grid_lines..max_grid_lines {
+        execute!(stdout, cursor::MoveTo(0, y as u16))?;
+        write!(stdout, "{}", " ".repeat(term_width as usize))?;
     }
 
-    // Render HUD
+    // Render HUD at fixed position from bottom
+    let hud_start = max_grid_lines as u16;
+    execute!(stdout, cursor::MoveTo(0, hud_start))?;
     render_hud(stdout, state, fps, term_width)?;
 
     stdout.flush()?;
@@ -429,13 +506,13 @@ fn render_grid_line(
         output.push(ch);
     }
 
-    // Reset color and pad line
+    // Reset color and pad line (no newline - cursor positioning handles that)
     output.push_str("\x1b[0m");
     if width < max_width {
         output.push_str(&" ".repeat(max_width - width));
     }
 
-    write!(stdout, "{}\r\n", output)?;
+    write!(stdout, "{}", output)?;
     Ok(())
 }
 
@@ -463,8 +540,12 @@ fn render_hud(
             " Press any key to dismiss this help ",
         ];
 
-        for line in &help_lines {
-            write!(stdout, "{}{}{}\r\n", inv_on, pad(line, width), inv_off)?;
+        for (i, line) in help_lines.iter().enumerate() {
+            execute!(stdout, cursor::MoveToNextLine(1))?;
+            if i == 0 {
+                // First line, cursor already positioned
+            }
+            write!(stdout, "{}{}{}", inv_on, pad(line, width), inv_off)?;
         }
     } else {
         // Compact status line (AC: #1, #2-7)
@@ -496,9 +577,11 @@ fn render_hud(
             " Using default settings "
         };
 
-        write!(stdout, "{}{}{}\r\n", inv_on, pad(&line1, width), inv_off)?;
-        write!(stdout, "{}{}{}\r\n", inv_on, pad(&line2, width), inv_off)?;
-        write!(stdout, "{}{}{}\r\n", inv_on, pad(line3, width), inv_off)?;
+        write!(stdout, "{}{}{}", inv_on, pad(&line1, width), inv_off)?;
+        execute!(stdout, cursor::MoveToNextLine(1))?;
+        write!(stdout, "{}{}{}", inv_on, pad(&line2, width), inv_off)?;
+        execute!(stdout, cursor::MoveToNextLine(1))?;
+        write!(stdout, "{}{}{}", inv_on, pad(line3, width), inv_off)?;
     }
 
     Ok(())

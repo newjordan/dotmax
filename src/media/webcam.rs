@@ -74,7 +74,7 @@
 
 use std::time::Duration;
 
-use crate::image::{ColorMode, DitheringMethod, ImageRenderer};
+use crate::image::{ColorMode, DitheringMethod};
 use crate::{BrailleGrid, DotmaxError, Result};
 
 use super::MediaPlayer;
@@ -284,38 +284,146 @@ fn get_v4l2_device_name(device_path: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// macOS: Query AVFoundation devices.
+/// macOS: Query AVFoundation devices using FFmpeg.
 #[cfg(target_os = "macos")]
 fn list_webcams_macos() -> Vec<WebcamDevice> {
-    // On macOS, FFmpeg's avfoundation input lists devices when queried with -list_devices
-    // For now, we'll return common device indices
-    // A more robust implementation would use CoreMediaIO or AVFoundation APIs
+    // Use FFmpeg to enumerate AVFoundation devices
+    // Run: ffmpeg -f avfoundation -list_devices true -i ""
+    // This outputs device names to stderr
 
+    use std::process::Command;
+
+    let output = Command::new("ffmpeg")
+        .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
+        .output();
+
+    let stderr = match output {
+        Ok(out) => String::from_utf8_lossy(&out.stderr).to_string(),
+        Err(_) => return vec![],
+    };
+
+    parse_avfoundation_device_list(&stderr)
+}
+
+/// Parse FFmpeg avfoundation device list output.
+#[cfg(target_os = "macos")]
+fn parse_avfoundation_device_list(output: &str) -> Vec<WebcamDevice> {
     let mut devices = Vec::new();
+    let mut in_video_section = false;
 
-    // Check if device 0 exists (most common case)
-    // This is a simplified approach - in production, we'd query AVFoundation
-    devices.push(WebcamDevice {
-        id: "0".to_string(),
-        name: "Default Camera".to_string(),
-        description: "AVFoundation device 0".to_string(),
-    });
+    for line in output.lines() {
+        // Look for AVFoundation video devices section
+        // Format: [AVFoundation ...] AVFoundation video devices:
+        if line.contains("AVFoundation video devices") {
+            in_video_section = true;
+            continue;
+        }
+
+        // Stop at audio devices section
+        if line.contains("AVFoundation audio devices") {
+            break;
+        }
+
+        if !in_video_section {
+            continue;
+        }
+
+        // Parse device lines
+        // Format: [AVFoundation ...] [0] FaceTime HD Camera
+        if let Some(bracket_start) = line.find('[') {
+            if let Some(bracket_end) = line.find(']') {
+                // Check if this is a device index line (not the header)
+                let inside_bracket = &line[bracket_start + 1..bracket_end];
+                if let Ok(index) = inside_bracket.parse::<usize>() {
+                    // Get the device name after the bracket
+                    let name = line[bracket_end + 1..].trim().to_string();
+                    if !name.is_empty() {
+                        devices.push(WebcamDevice {
+                            id: index.to_string(),
+                            name: name.clone(),
+                            description: format!("AVFoundation device {index}"),
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     devices
 }
 
-/// Windows: Query DirectShow devices.
+/// Windows: Query DirectShow devices using FFmpeg.
 #[cfg(target_os = "windows")]
 fn list_webcams_windows() -> Vec<WebcamDevice> {
-    // On Windows, FFmpeg's dshow input can list devices
-    // For now, return a placeholder - a more robust implementation
-    // would use Windows Media Foundation or DirectShow enumeration
+    // Use FFmpeg to enumerate DirectShow devices
+    // Run: ffmpeg -list_devices true -f dshow -i dummy
+    // This outputs device names to stderr
+    //
+    // We need to hide the console window to prevent a flash when running from GUI apps
 
-    vec![WebcamDevice {
-        id: "video=Integrated Camera".to_string(),
-        name: "Integrated Camera".to_string(),
-        description: "DirectShow video device".to_string(),
-    }]
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let output = Command::new("ffmpeg")
+        .args(["-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    match output {
+        Ok(out) => {
+            // FFmpeg outputs device list to stderr
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            tracing::debug!("FFmpeg dshow output ({} bytes): {}", stderr.len(),
+                if stderr.len() > 200 { &stderr[..200] } else { &stderr });
+            parse_dshow_device_list(&stderr)
+        }
+        Err(e) => {
+            tracing::debug!("Failed to run ffmpeg for device enumeration: {}", e);
+            vec![]
+        }
+    }
+}
+
+/// Parse FFmpeg dshow device list output.
+#[cfg(target_os = "windows")]
+fn parse_dshow_device_list(output: &str) -> Vec<WebcamDevice> {
+    let mut devices = Vec::new();
+
+    for line in output.lines() {
+        // Skip alternative name lines
+        if line.contains("Alternative name") {
+            continue;
+        }
+
+        // Look for video devices: [dshow @ ...] "Device Name" (video)
+        // Also accept (none) as some virtual cameras report this
+        if !line.contains("(video)") && !line.contains("(none)") {
+            continue;
+        }
+
+        // Extract device name from quotes
+        // Format: [dshow @ 0000028e9c143cc0] "USB 2.0 Camera" (video)
+        if let Some(start) = line.find('"') {
+            if let Some(end) = line.rfind('"') {
+                if end > start {
+                    let name = line[start + 1..end].to_string();
+
+                    devices.push(WebcamDevice {
+                        id: format!("video={}", name),
+                        name: name.clone(),
+                        description: "DirectShow video device".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    devices
 }
 
 // ============================================================================
@@ -526,14 +634,17 @@ impl WebcamPlayer {
     ) -> Result<Self> {
         let device_str = device_id.to_string();
 
+        // Build device URL BEFORE initializing FFmpeg library
+        // This is important on Windows where we spawn ffmpeg subprocess to enumerate devices
+        // and the ffmpeg library initialization can interfere with that
+        let (device_url, input_format) = build_device_url(&device_id)?;
+        tracing::debug!("Opening device URL: {} with format: {}", device_url, input_format);
+
         // Initialize FFmpeg
         ffmpeg::init().map_err(|e| DotmaxError::WebcamError {
             device: device_str.clone(),
             message: format!("FFmpeg initialization failed: {e}"),
         })?;
-
-        // Build device URL and format for current platform
-        let (device_url, _input_format) = build_device_url(&device_id)?;
 
         // Create input options
         let mut options = ffmpeg::Dictionary::new();
@@ -554,9 +665,40 @@ impl WebcamPlayer {
             options.set("input_format", "mjpeg"); // Prefer MJPEG for better performance
         }
 
-        // Open device
-        let input_context = ffmpeg::format::input_with_dictionary(&device_url, options)
+        #[cfg(target_os = "windows")]
+        {
+            // Increase real-time buffer size to prevent overflow warnings
+            // Default is ~3MB, increase to 100MB for smoother capture
+            options.set("rtbufsize", "100M");
+            // Use lower latency settings
+            options.set("fflags", "nobuffer");
+            options.set("flags", "low_delay");
+        }
+
+        // Find the input format by iterating over video devices
+        let format = ffmpeg::device::input::video()
+            .find(|f| f.name() == input_format)
+            .ok_or_else(|| {
+                DotmaxError::WebcamError {
+                    device: device_str.clone(),
+                    message: format!("Input format '{}' not found - FFmpeg may not support webcam capture on this platform", input_format),
+                }
+            })?;
+
+        // Open device with the correct input format and options
+        let context = ffmpeg::format::open_with(&device_url, &format, options)
             .map_err(|e| map_ffmpeg_error(&device_str, e))?;
+
+        // Extract input context from the generic context
+        let input_context = match context {
+            ffmpeg::format::context::Context::Input(input) => input,
+            _ => {
+                return Err(DotmaxError::WebcamError {
+                    device: device_str,
+                    message: "Unexpected output context when opening webcam".to_string(),
+                });
+            }
+        };
 
         // Find video stream
         let video_stream = input_context
@@ -838,8 +980,14 @@ impl WebcamPlayer {
     }
 
     /// Converts the decoded frame to a BrailleGrid.
+    ///
+    /// Optimized pipeline:
+    /// 1. FFmpeg scaler already resizes to terminal pixel dimensions
+    /// 2. Direct RGB→grayscale conversion (no RGBA intermediate)
+    /// 3. Reuse pre-allocated buffers
+    /// 4. Skip redundant resize in ImageRenderer
     fn frame_to_grid(&mut self) -> Result<BrailleGrid> {
-        // Scale to RGB24 at terminal dimensions
+        // Scale to RGB24 at terminal dimensions (FFmpeg hardware-accelerated)
         self.scaler
             .0
             .run(&self.decoded_frame, &mut self.rgb_frame)
@@ -848,62 +996,132 @@ impl WebcamPlayer {
                 message: format!("Frame scaling error: {e}"),
             })?;
 
-        // Get RGB data
+        // Get RGB data directly from FFmpeg frame
         let data = self.rgb_frame.data(0);
         let stride = self.rgb_frame.stride(0);
         let target_width = (self.terminal_width * 2) as u32;
         let target_height = (self.terminal_height * 4) as u32;
 
-        // Copy RGB data into reusable buffer
-        let expected_size = (target_width * target_height * 3) as usize;
-        if self.rgb_buffer.len() != expected_size {
-            self.rgb_buffer.resize(expected_size, 0);
-        }
+        // Fast path: if stride matches width*3, data is contiguous
+        let row_bytes = (target_width as usize) * 3;
+        let rgb_data: &[u8] = if stride as usize == row_bytes {
+            // Contiguous data - use directly without copy
+            &data[..row_bytes * (target_height as usize)]
+        } else {
+            // Non-contiguous - copy row by row into buffer
+            let expected_size = (target_width * target_height * 3) as usize;
+            if self.rgb_buffer.len() != expected_size {
+                self.rgb_buffer.resize(expected_size, 0);
+            }
 
-        let mut offset = 0;
-        for y in 0..target_height {
-            let row_start = (y as usize) * stride;
-            let row_len = (target_width as usize) * 3;
-            self.rgb_buffer[offset..offset + row_len]
-                .copy_from_slice(&data[row_start..row_start + row_len]);
-            offset += row_len;
-        }
+            let mut offset = 0;
+            for y in 0..target_height {
+                let row_start = (y as usize) * (stride as usize);
+                self.rgb_buffer[offset..offset + row_bytes]
+                    .copy_from_slice(&data[row_start..row_start + row_bytes]);
+                offset += row_bytes;
+            }
+            &self.rgb_buffer
+        };
 
-        // Create RGB image from frame data
-        let img =
-            image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
-                .ok_or_else(|| DotmaxError::WebcamError {
-                    device: self.device_id.clone(),
-                    message: "Failed to create image from frame data".to_string(),
-                })?;
+        // Create RGB image - we need ownership for the image crate
+        let img = image::RgbImage::from_raw(target_width, target_height, rgb_data.to_vec())
+            .ok_or_else(|| DotmaxError::WebcamError {
+                device: self.device_id.clone(),
+                message: "Failed to create image from frame data".to_string(),
+            })?;
 
-        // Convert to RGBA for ImageRenderer
-        let rgba_img = image::DynamicImage::ImageRgb8(img).into_rgba8();
+        let dynamic_img = image::DynamicImage::ImageRgb8(img);
 
-        // Use ImageRenderer
-        let mut renderer = ImageRenderer::new()
-            .load_from_rgba(rgba_img)
-            .resize(self.terminal_width, self.terminal_height, false)?
-            .dithering(self.dithering)
-            .color_mode(self.color_mode);
+        // Convert to grayscale for braille pattern generation
+        let gray = crate::image::to_grayscale(&dynamic_img);
 
-        // Apply manual threshold if set
-        if let Some(t) = self.threshold {
-            renderer = renderer.threshold(t);
-        }
+        // Apply brightness/contrast/gamma adjustments if needed
+        let adjusted_gray = self.apply_adjustments(gray)?;
 
-        // Apply adjustments
+        // Apply dithering and convert to braille
+        self.gray_to_braille_grid_with_color(adjusted_gray, &dynamic_img, target_width, target_height)
+    }
+
+    /// Applies brightness, contrast, and gamma adjustments to grayscale image.
+    #[inline]
+    fn apply_adjustments(&self, mut gray: image::GrayImage) -> Result<image::GrayImage> {
         if (self.brightness - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.brightness(self.brightness)?;
+            gray = crate::image::adjust_brightness(&gray, self.brightness)?;
         }
         if (self.contrast - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.contrast(self.contrast)?;
+            gray = crate::image::adjust_contrast(&gray, self.contrast)?;
         }
         if (self.gamma - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.gamma(self.gamma)?;
+            gray = crate::image::adjust_gamma(&gray, self.gamma)?;
+        }
+        Ok(gray)
+    }
+
+    /// Converts grayscale image to BrailleGrid using configured dithering, with color support.
+    fn gray_to_braille_grid_with_color(
+        &self,
+        gray: image::GrayImage,
+        rgb_image: &image::DynamicImage,
+        width: u32,
+        height: u32,
+    ) -> Result<BrailleGrid> {
+        use crate::image::{
+            apply_dithering_with_custom_threshold, apply_threshold, otsu_threshold,
+            pixels_to_braille, DitheringMethod,
+        };
+        use crate::image::color_mode::{extract_cell_colors, ColorSamplingStrategy};
+
+        // Get binary image via dithering or thresholding
+        let binary = match self.dithering {
+            DitheringMethod::None => {
+                // Simple thresholding
+                let thresh = self.threshold.unwrap_or_else(|| otsu_threshold(&gray));
+                apply_threshold(&gray, thresh)
+            }
+            _ => {
+                // Apply dithering algorithm
+                apply_dithering_with_custom_threshold(&gray, self.dithering, self.threshold)?
+            }
+        };
+
+        // Convert to braille grid (dimensions in braille cells = pixels / 2x4)
+        let grid_width = (width as usize) / 2;
+        let grid_height = (height as usize) / 4;
+        let mut grid = pixels_to_braille(&binary, grid_width, grid_height)?;
+
+        // Apply colors if not monochrome mode
+        match self.color_mode {
+            ColorMode::Monochrome => {}
+            ColorMode::TrueColor | ColorMode::Grayscale => {
+                // Extract colors from original RGB image
+                let colors = extract_cell_colors(
+                    rgb_image,
+                    grid_width,
+                    grid_height,
+                    ColorSamplingStrategy::Average,
+                );
+
+                // Enable color support and apply colors to grid
+                grid.enable_color_support();
+                for (idx, color) in colors.into_iter().enumerate() {
+                    let x = idx % grid_width;
+                    let y = idx / grid_width;
+
+                    // For grayscale mode, convert color to gray
+                    let final_color = if self.color_mode == ColorMode::Grayscale {
+                        let gray_val = ((color.r as u32 + color.g as u32 + color.b as u32) / 3) as u8;
+                        crate::Color { r: gray_val, g: gray_val, b: gray_val }
+                    } else {
+                        color
+                    };
+
+                    let _ = grid.set_cell_color(x, y, final_color);
+                }
+            }
         }
 
-        renderer.render()
+        Ok(grid)
     }
 
     /// Calculates the delay for frame timing.
@@ -1175,8 +1393,32 @@ fn build_device_url(device_id: &WebcamDeviceId) -> Result<(String, &'static str)
     #[cfg(target_os = "windows")]
     {
         let device_name = match device_id {
-            WebcamDeviceId::Default => "video=Integrated Camera".to_string(),
-            WebcamDeviceId::Index(i) => format!("video=@device_pnp_\\\\?\\usb#vid_*&pid_*#*#{{*}}:{i}"),
+            WebcamDeviceId::Default => {
+                // Get the first available camera
+                let devices = list_webcams();
+                if devices.is_empty() {
+                    return Err(DotmaxError::CameraNotFound {
+                        device: "default".to_string(),
+                        available: vec![],
+                    });
+                }
+                devices[0].id.clone()
+            }
+            WebcamDeviceId::Index(i) => {
+                // Look up device by index from enumerated list
+                let devices = list_webcams();
+                tracing::debug!("Windows device lookup: index={}, found {} devices", i, devices.len());
+                if *i >= devices.len() {
+                    // Re-enumerate for error message (the first call may have failed transiently)
+                    let devices_retry = list_webcams();
+                    let available: Vec<String> = devices_retry.iter().map(|d| d.name.clone()).collect();
+                    return Err(DotmaxError::CameraNotFound {
+                        device: format!("index:{i}"),
+                        available,
+                    });
+                }
+                devices[*i].id.clone()
+            }
             WebcamDeviceId::Path(p) => {
                 if p.starts_with("video=") {
                     p.clone()
