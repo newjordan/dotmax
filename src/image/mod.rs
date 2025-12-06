@@ -120,6 +120,7 @@ pub mod mapper;
 pub mod resize;
 #[cfg(feature = "svg")]
 pub mod svg;
+pub mod temporal;
 pub mod threshold;
 
 // Re-export public types and functions for convenience

@@ -74,6 +74,7 @@
 
 use std::time::Duration;
 
+use crate::image::temporal::{TemporalCoherence, TemporalConfig};
 use crate::image::{ColorMode, DitheringMethod};
 use crate::{BrailleGrid, DotmaxError, Result};
 
@@ -529,6 +530,9 @@ pub struct WebcamPlayer {
 
     /// Color mode.
     color_mode: ColorMode,
+
+    /// Temporal coherence processor for reducing flicker.
+    temporal_coherence: TemporalCoherence,
 }
 
 impl std::fmt::Debug for WebcamPlayer {
@@ -795,6 +799,8 @@ impl WebcamPlayer {
             contrast: settings.contrast,
             gamma: settings.gamma,
             color_mode: settings.color_mode,
+            // Use webcam preset for temporal coherence (more aggressive smoothing for sensor noise)
+            temporal_coherence: TemporalCoherence::new(TemporalConfig::webcam()),
         })
     }
 
@@ -936,6 +942,44 @@ impl WebcamPlayer {
         self.color_mode = mode;
     }
 
+    // ========== Temporal Coherence Settings ==========
+
+    /// Returns a reference to the temporal coherence configuration.
+    #[must_use]
+    pub fn temporal_config(&self) -> &TemporalConfig {
+        self.temporal_coherence.config()
+    }
+
+    /// Updates the temporal coherence configuration at runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - New temporal coherence settings
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// use dotmax::image::temporal::TemporalConfig;
+    ///
+    /// let mut player = WebcamPlayer::new()?;
+    ///
+    /// // Use less aggressive smoothing
+    /// player.set_temporal_config(TemporalConfig::video());
+    ///
+    /// // Or disable temporal processing entirely
+    /// player.set_temporal_config(TemporalConfig::disabled());
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
+    pub fn set_temporal_config(&mut self, config: TemporalConfig) {
+        self.temporal_coherence.set_config(config);
+    }
+
+    /// Resets temporal coherence state (clears history).
+    pub fn reset_temporal_state(&mut self) {
+        self.temporal_coherence.reset();
+    }
+
     /// Decodes the next frame from the webcam.
     fn decode_next_frame(&mut self) -> Option<Result<()>> {
         // Try to receive a decoded frame
@@ -981,12 +1025,19 @@ impl WebcamPlayer {
 
     /// Converts the decoded frame to a BrailleGrid.
     ///
-    /// Optimized pipeline:
+    /// Optimized pipeline with temporal coherence:
     /// 1. FFmpeg scaler already resizes to terminal pixel dimensions
     /// 2. Direct RGB→grayscale conversion (no RGBA intermediate)
     /// 3. Reuse pre-allocated buffers
-    /// 4. Skip redundant resize in ImageRenderer
+    /// 4. Apply temporal coherence (hysteresis + frame blending)
+    /// 5. Convert to braille grid
     fn frame_to_grid(&mut self) -> Result<BrailleGrid> {
+        use crate::image::{
+            apply_dithering_with_custom_threshold, otsu_threshold, pixels_to_braille,
+            DitheringMethod,
+        };
+        use crate::image::color_mode::{extract_cell_colors, ColorSamplingStrategy};
+
         // Scale to RGB24 at terminal dimensions (FFmpeg hardware-accelerated)
         self.scaler
             .0
@@ -1034,18 +1085,9 @@ impl WebcamPlayer {
         let dynamic_img = image::DynamicImage::ImageRgb8(img);
 
         // Convert to grayscale for braille pattern generation
-        let gray = crate::image::to_grayscale(&dynamic_img);
+        let mut gray = crate::image::to_grayscale(&dynamic_img);
 
         // Apply brightness/contrast/gamma adjustments if needed
-        let adjusted_gray = self.apply_adjustments(gray)?;
-
-        // Apply dithering and convert to braille
-        self.gray_to_braille_grid_with_color(adjusted_gray, &dynamic_img, target_width, target_height)
-    }
-
-    /// Applies brightness, contrast, and gamma adjustments to grayscale image.
-    #[inline]
-    fn apply_adjustments(&self, mut gray: image::GrayImage) -> Result<image::GrayImage> {
         if (self.brightness - 1.0).abs() > f32::EPSILON {
             gray = crate::image::adjust_brightness(&gray, self.brightness)?;
         }
@@ -1055,39 +1097,38 @@ impl WebcamPlayer {
         if (self.gamma - 1.0).abs() > f32::EPSILON {
             gray = crate::image::adjust_gamma(&gray, self.gamma)?;
         }
-        Ok(gray)
-    }
 
-    /// Converts grayscale image to BrailleGrid using configured dithering, with color support.
-    fn gray_to_braille_grid_with_color(
-        &self,
-        gray: image::GrayImage,
-        rgb_image: &image::DynamicImage,
-        width: u32,
-        height: u32,
-    ) -> Result<BrailleGrid> {
-        use crate::image::{
-            apply_dithering_with_custom_threshold, apply_threshold, otsu_threshold,
-            pixels_to_braille, DitheringMethod,
-        };
-        use crate::image::color_mode::{extract_cell_colors, ColorSamplingStrategy};
+        // Determine threshold value
+        let threshold_value = self.threshold.unwrap_or_else(|| otsu_threshold(&gray));
 
-        // Get binary image via dithering or thresholding
+        // Apply temporal coherence (frame blending + hysteresis)
+        // This stabilizes the grayscale before binary conversion
+        let stabilized = self.temporal_coherence.process_grayscale(&gray, threshold_value);
+
+        // Apply dithering (if enabled) or use temporally-stabilized binary
+        use crate::image::BinaryImage;
+
         let binary = match self.dithering {
             DitheringMethod::None => {
-                // Simple thresholding
-                let thresh = self.threshold.unwrap_or_else(|| otsu_threshold(&gray));
-                apply_threshold(&gray, thresh)
+                // Already binary from temporal coherence - convert to BinaryImage
+                BinaryImage::from_grayscale(&stabilized)
             }
             _ => {
-                // Apply dithering algorithm
-                apply_dithering_with_custom_threshold(&gray, self.dithering, self.threshold)?
+                // For dithering with temporal coherence
+                let config = self.temporal_coherence.config();
+                if config.frame_blend_enabled && !config.hysteresis_enabled {
+                    // Frame blending only: use blended gray with dithering
+                    apply_dithering_with_custom_threshold(&gray, self.dithering, self.threshold)?
+                } else {
+                    // Hysteresis enabled: use stabilized binary - convert to BinaryImage
+                    BinaryImage::from_grayscale(&stabilized)
+                }
             }
         };
 
-        // Convert to braille grid (dimensions in braille cells = pixels / 2x4)
-        let grid_width = (width as usize) / 2;
-        let grid_height = (height as usize) / 4;
+        // Convert binary image to braille grid
+        let grid_width = (target_width as usize) / 2;
+        let grid_height = (target_height as usize) / 4;
         let mut grid = pixels_to_braille(&binary, grid_width, grid_height)?;
 
         // Apply colors if not monochrome mode
@@ -1096,7 +1137,7 @@ impl WebcamPlayer {
             ColorMode::TrueColor | ColorMode::Grayscale => {
                 // Extract colors from original RGB image
                 let colors = extract_cell_colors(
-                    rgb_image,
+                    &dynamic_img,
                     grid_width,
                     grid_height,
                     ColorSamplingStrategy::Average,
@@ -1232,7 +1273,9 @@ struct RenderSettings {
 impl Default for RenderSettings {
     fn default() -> Self {
         Self {
-            dithering: DitheringMethod::FloydSteinberg,
+            // Use Bayer dithering for webcam - it's deterministic (same input = same output)
+            // which reduces temporal flicker compared to error-diffusion methods like Floyd-Steinberg
+            dithering: DitheringMethod::Bayer,
             threshold: None,
             brightness: 1.0,
             contrast: 1.0,
@@ -1574,7 +1617,8 @@ mod tests {
     #[test]
     fn test_render_settings_default() {
         let settings = RenderSettings::default();
-        assert_eq!(settings.dithering, DitheringMethod::FloydSteinberg);
+        // Default is Bayer for webcam (deterministic, reduces temporal flicker)
+        assert_eq!(settings.dithering, DitheringMethod::Bayer);
         assert_eq!(settings.threshold, None);
         assert!((settings.brightness - 1.0).abs() < f32::EPSILON);
         assert!((settings.contrast - 1.0).abs() < f32::EPSILON);

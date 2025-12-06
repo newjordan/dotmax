@@ -59,6 +59,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::image::temporal::{TemporalCoherence, TemporalConfig};
 use crate::image::{ColorMode, DitheringMethod, ImageRenderer};
 use crate::{BrailleGrid, DotmaxError, Result};
 
@@ -193,6 +194,9 @@ pub struct VideoPlayer {
 
     /// Color mode for rendering (Monochrome, Grayscale, or TrueColor).
     color_mode: ColorMode,
+
+    /// Temporal coherence processor for reducing flicker.
+    temporal_coherence: TemporalCoherence,
 }
 
 impl std::fmt::Debug for VideoPlayer {
@@ -365,12 +369,16 @@ impl VideoPlayer {
             eof_sent: false,
             rgb_buffer: vec![0u8; rgb_buffer_size],
             // Render settings - sensible defaults
-            dithering: DitheringMethod::FloydSteinberg,
+            // Use Bayer dithering for video - it's deterministic (same input = same output)
+            // which reduces temporal flicker compared to error-diffusion methods like Floyd-Steinberg
+            dithering: DitheringMethod::Bayer,
             threshold: None, // Auto (Otsu)
             brightness: 1.0,
             contrast: 1.0,
             gamma: 1.0,
             color_mode: ColorMode::Monochrome,
+            // Temporal coherence with video preset
+            temporal_coherence: TemporalCoherence::new(TemporalConfig::video()),
         })
     }
 
@@ -638,6 +646,58 @@ impl VideoPlayer {
         self.color_mode = mode;
     }
 
+    // ========== Temporal Coherence Settings ==========
+
+    /// Returns a reference to the temporal coherence configuration.
+    #[must_use]
+    pub fn temporal_config(&self) -> &TemporalConfig {
+        self.temporal_coherence.config()
+    }
+
+    /// Updates the temporal coherence configuration at runtime.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - New temporal coherence settings
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// use dotmax::image::temporal::TemporalConfig;
+    ///
+    /// let mut player = VideoPlayer::new("video.mp4")?;
+    ///
+    /// // Use more aggressive smoothing
+    /// player.set_temporal_config(TemporalConfig::webcam());
+    ///
+    /// // Or disable temporal processing entirely
+    /// player.set_temporal_config(TemporalConfig::disabled());
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
+    pub fn set_temporal_config(&mut self, config: TemporalConfig) {
+        self.temporal_coherence.set_config(config);
+    }
+
+    /// Sets the temporal coherence configuration using builder pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Temporal coherence configuration
+    #[must_use]
+    pub fn temporal_coherence(mut self, config: TemporalConfig) -> Self {
+        self.temporal_coherence.set_config(config);
+        self
+    }
+
+    /// Resets temporal coherence state (clears history).
+    ///
+    /// Call this when seeking in the video to prevent artifacts from
+    /// blending unrelated frames.
+    pub fn reset_temporal_state(&mut self) {
+        self.temporal_coherence.reset();
+    }
+
     /// Decodes the next frame from the video.
     fn decode_next_frame(&mut self) -> Option<Result<()>> {
         if self.playback_ended {
@@ -696,7 +756,21 @@ impl VideoPlayer {
     }
 
     /// Converts the decoded frame to a BrailleGrid.
+    ///
+    /// This method performs the full rendering pipeline:
+    /// 1. FFmpeg scaling to terminal pixel dimensions
+    /// 2. RGB to grayscale conversion
+    /// 3. Brightness/contrast/gamma adjustments
+    /// 4. Temporal coherence processing (hysteresis + frame blending)
+    /// 5. Dithering or thresholding
+    /// 6. Binary to braille grid conversion
     fn frame_to_grid(&mut self) -> Result<BrailleGrid> {
+        use crate::image::{
+            adjust_brightness, adjust_contrast, adjust_gamma,
+            apply_dithering_with_custom_threshold, otsu_threshold, pixels_to_braille,
+            to_grayscale, DitheringMethod,
+        };
+
         // Scale to RGB24 at terminal dimensions (done by FFmpeg, very fast)
         self.scaler
             .0
@@ -727,41 +801,90 @@ impl VideoPlayer {
             offset += row_len;
         }
 
-        // Create RGB image from pre-scaled frame data (uses buffer, no allocation)
-        let img =
+        // Create RGB image from pre-scaled frame data
+        let rgb_img =
             image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
                 .ok_or_else(|| DotmaxError::VideoError {
                     path: self.path.clone(),
                     message: "Failed to create image from frame data".to_string(),
                 })?;
 
-        // Convert to RGBA for ImageRenderer
-        let rgba_img = image::DynamicImage::ImageRgb8(img).into_rgba8();
+        let dynamic_img = image::DynamicImage::ImageRgb8(rgb_img);
 
-        // Use ImageRenderer - NO RESIZE needed, frame is already at correct size
-        let mut renderer = ImageRenderer::new()
-            .load_from_rgba(rgba_img)
-            .resize(self.terminal_width, self.terminal_height, false)? // false = don't preserve aspect, already correct
-            .dithering(self.dithering)
-            .color_mode(self.color_mode);
+        // For color modes, use ImageRenderer (temporal coherence less critical for color)
+        if self.color_mode != ColorMode::Monochrome {
+            let rgba_img = dynamic_img.into_rgba8();
+            let mut renderer = ImageRenderer::new()
+                .load_from_rgba(rgba_img)
+                .resize(self.terminal_width, self.terminal_height, false)?
+                .dithering(self.dithering)
+                .color_mode(self.color_mode);
 
-        // Apply manual threshold if set
-        if let Some(t) = self.threshold {
-            renderer = renderer.threshold(t);
+            if let Some(t) = self.threshold {
+                renderer = renderer.threshold(t);
+            }
+            if (self.brightness - 1.0).abs() > f32::EPSILON {
+                renderer = renderer.brightness(self.brightness)?;
+            }
+            if (self.contrast - 1.0).abs() > f32::EPSILON {
+                renderer = renderer.contrast(self.contrast)?;
+            }
+            if (self.gamma - 1.0).abs() > f32::EPSILON {
+                renderer = renderer.gamma(self.gamma)?;
+            }
+
+            return renderer.render();
         }
 
-        // Apply adjustments (these return Result, so we chain with ?)
+        // ===== Monochrome path with temporal coherence =====
+
+        // Step 1: Convert to grayscale
+        let mut gray = to_grayscale(&dynamic_img);
+
+        // Step 2: Apply brightness/contrast/gamma adjustments
         if (self.brightness - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.brightness(self.brightness)?;
+            gray = adjust_brightness(&gray, self.brightness)?;
         }
         if (self.contrast - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.contrast(self.contrast)?;
+            gray = adjust_contrast(&gray, self.contrast)?;
         }
         if (self.gamma - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.gamma(self.gamma)?;
+            gray = adjust_gamma(&gray, self.gamma)?;
         }
 
-        let grid = renderer.render()?;
+        // Step 3: Determine threshold value
+        let threshold_value = self.threshold.unwrap_or_else(|| otsu_threshold(&gray));
+
+        // Step 4: Apply temporal coherence (frame blending + hysteresis)
+        // This stabilizes the grayscale before binary conversion
+        let stabilized = self.temporal_coherence.process_grayscale(&gray, threshold_value);
+
+        // Step 5: Apply dithering (if enabled) or use temporally-stabilized binary
+        use crate::image::BinaryImage;
+
+        let binary = match self.dithering {
+            DitheringMethod::None => {
+                // Already binary from temporal coherence - convert to BinaryImage
+                BinaryImage::from_grayscale(&stabilized)
+            }
+            _ => {
+                // For dithering, we apply dithering to the temporally-stabilized grayscale
+                // Use the pre-blended gray (before hysteresis) for best dithering quality
+                let config = self.temporal_coherence.config();
+                if config.frame_blend_enabled && !config.hysteresis_enabled {
+                    // Frame blending only: use blended gray with dithering
+                    apply_dithering_with_custom_threshold(&gray, self.dithering, self.threshold)?
+                } else {
+                    // Hysteresis enabled: binary is already good - convert to BinaryImage
+                    BinaryImage::from_grayscale(&stabilized)
+                }
+            }
+        };
+
+        // Step 6: Convert binary image to braille grid
+        let cell_width = target_width as usize / 2;
+        let cell_height = target_height as usize / 4;
+        let grid = pixels_to_braille(&binary, cell_width, cell_height)?;
 
         Ok(grid)
     }
@@ -824,6 +947,9 @@ impl MediaPlayer for VideoPlayer {
         self.current_frame = 0;
         self.playback_ended = false;
         self.eof_sent = false;
+
+        // Reset temporal coherence state (important when seeking/looping)
+        self.temporal_coherence.reset();
     }
 
     /// Returns the estimated total number of frames.

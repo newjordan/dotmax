@@ -130,6 +130,26 @@ impl BinaryImage {
             false
         }
     }
+
+    /// Creates a BinaryImage from a GrayImage where non-zero pixels are black.
+    ///
+    /// This is useful for converting the output of temporal coherence processing
+    /// (which produces 0/255 grayscale) to a binary image.
+    ///
+    /// # Arguments
+    ///
+    /// * `gray` - Grayscale image where 255 = white (off), 0 = black (on) or vice-versa
+    ///   Convention: pixels > 0 are treated as "on" (black in braille)
+    pub fn from_grayscale(gray: &image::GrayImage) -> Self {
+        let width = gray.width();
+        let height = gray.height();
+        let pixels: Vec<bool> = gray.pixels().map(|p| p.0[0] > 0).collect();
+        Self {
+            width,
+            height,
+            pixels,
+        }
+    }
 }
 
 /// Calculate the optimal threshold value using Otsu's method
