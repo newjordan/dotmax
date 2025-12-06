@@ -162,6 +162,51 @@ impl TunerState {
         player.set_gamma(self.gamma);
         player.set_color_mode(self.color_mode);
     }
+
+    /// Prints the final settings as code that can be copy-pasted.
+    fn print_final_settings(&self) {
+        println!("\n╔══════════════════════════════════════════════════════════════╗");
+        println!("║                    FINAL TUNER SETTINGS                      ║");
+        println!("╠══════════════════════════════════════════════════════════════╣");
+        println!("║                                                              ║");
+        println!("║  Dithering:   {:15}                               ║", self.dithering_name());
+        println!("║  Threshold:   {:15}                               ║", self.threshold_display());
+        println!("║  Brightness:  {:15.2}                               ║", self.brightness);
+        println!("║  Contrast:    {:15.2}                               ║", self.contrast);
+        println!("║  Gamma:       {:15.2}                               ║", self.gamma);
+        println!("║  Color Mode:  {:15}                               ║", self.color_mode_name());
+        println!("║                                                              ║");
+        println!("╠══════════════════════════════════════════════════════════════╣");
+        println!("║  Copy-paste code:                                            ║");
+        println!("╚══════════════════════════════════════════════════════════════╝");
+        println!();
+        println!("// WebcamPlayer settings:");
+        println!("let player = WebcamPlayer::builder()");
+        println!("    .dithering(DitheringMethod::{:?})", self.dithering);
+        if self.use_otsu {
+            println!("    .threshold(None)  // Auto (Otsu)");
+        } else {
+            println!("    .threshold(Some({}))", self.manual_threshold);
+        }
+        println!("    .brightness({:.2})", self.brightness);
+        println!("    .contrast({:.2})", self.contrast);
+        println!("    .gamma({:.2})", self.gamma);
+        println!("    .color_mode(ColorMode::{:?})", self.color_mode);
+        println!("    .build()?;");
+        println!();
+        println!("// Or apply to existing player:");
+        println!("player.set_dithering(DitheringMethod::{:?});", self.dithering);
+        if self.use_otsu {
+            println!("player.set_threshold(None);");
+        } else {
+            println!("player.set_threshold(Some({}));", self.manual_threshold);
+        }
+        println!("player.set_brightness({:.2});", self.brightness);
+        println!("player.set_contrast({:.2});", self.contrast);
+        println!("player.set_gamma({:.2});", self.gamma);
+        println!("player.set_color_mode(ColorMode::{:?});", self.color_mode);
+        println!();
+    }
 }
 
 // ============================================================================
@@ -275,7 +320,14 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
                                 // Apply updated settings to player
                                 state.apply_to_player(&mut player);
                             }
-                            KeyAction::Quit => return Ok(()),
+                            KeyAction::Quit => {
+                                // Cleanup terminal before printing
+                                execute!(stdout, LeaveAlternateScreen)?;
+                                crossterm::terminal::disable_raw_mode()?;
+                                // Print final settings
+                                state.print_final_settings();
+                                return Ok(());
+                            }
                             KeyAction::None => {}
                         }
                     }
