@@ -216,6 +216,7 @@ impl TunerState {
 fn main() -> dotmax::Result<()> {
     println!("=== Webcam Tuner ===\n");
 
+
     // Select camera before starting
     let camera_index = select_camera()?;
 
@@ -297,6 +298,15 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
     // Open selected webcam by index (library handles platform-specific lookup)
     let mut player = WebcamPlayer::from_device(camera_index)?;
 
+    // Print camera info before entering alternate screen
+    println!(
+        "Camera: {}x{} @ {:.1} fps (reported)",
+        player.width(),
+        player.height(),
+        player.fps()
+    );
+    std::thread::sleep(Duration::from_millis(1000));
+
     // Enter raw mode and alternate screen
     terminal::enable_raw_mode()?;
     let mut stdout = stdout();
@@ -340,7 +350,7 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
 
             // Get next frame
             match player.next_frame() {
-                Some(Ok((grid, delay))) => {
+                Some(Ok((grid, _delay))) => {
                     // Calculate FPS
                     let frame_elapsed = last_frame_time.elapsed();
                     last_frame_time = Instant::now();
@@ -350,18 +360,8 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
                     // Render frame and HUD
                     render_frame(&mut stdout, &grid, &state, avg_fps)?;
 
-                    // Wait for frame timing (but respect user input)
-                    let render_time = last_frame_time.elapsed();
-                    if render_time < delay {
-                        // Sleep for remaining time, checking for events periodically
-                        let sleep_time = delay - render_time;
-                        let sleep_deadline = Instant::now() + sleep_time;
-                        while Instant::now() < sleep_deadline {
-                            if event::poll(Duration::from_millis(5))? {
-                                break; // Process event on next iteration
-                            }
-                        }
-                    }
+                    // Poll briefly for user input
+                    let _ = event::poll(Duration::from_millis(1));
                 }
                 Some(Err(e)) => return Err(e),
                 None => {
@@ -376,6 +376,7 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
     // Cleanup - always restore terminal state
     execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
     terminal::disable_raw_mode()?;
+
 
     result
 }
@@ -524,8 +525,7 @@ fn render_frame(
 
     // Render HUD at fixed position from bottom
     let hud_start = max_grid_lines as u16;
-    execute!(stdout, cursor::MoveTo(0, hud_start))?;
-    render_hud(stdout, state, fps, term_width)?;
+    render_hud(stdout, state, fps, term_width, hud_start)?;
 
     stdout.flush()?;
     Ok(())
@@ -574,10 +574,13 @@ fn render_hud(
     state: &TunerState,
     fps: f64,
     term_width: u16,
+    start_row: u16,
 ) -> dotmax::Result<()> {
     let inv_on = "\x1b[7m"; // Inverse video
     let inv_off = "\x1b[0m";
     let width = term_width as usize;
+
+    execute!(stdout, cursor::MoveTo(0, start_row))?;
 
     if state.show_help {
         // Help overlay (AC: #9)

@@ -653,15 +653,38 @@ impl WebcamPlayer {
         // Create input options
         let mut options = ffmpeg::Dictionary::new();
 
-        // Set requested resolution if specified
-        if let Some((width, height)) = requested_resolution {
-            options.set("video_size", &format!("{width}x{height}"));
-        }
+        // Calculate optimal capture resolution based on terminal size
+        // Braille cells are 2x4 pixels, so terminal of 200x50 = 400x200 pixels needed
+        // Request slightly higher to allow for aspect ratio adjustment
+        let (term_width, term_height) = crossterm::terminal::size()
+            .map(|(w, h)| (w as u32, h as u32))
+            .unwrap_or((80, 24));
 
-        // Set requested frame rate if specified
-        if let Some(fps) = requested_fps {
-            options.set("framerate", &fps.to_string());
-        }
+        // Target pixels needed (with some headroom)
+        let needed_width = term_width * 2;
+        let needed_height = term_height * 4;
+
+        // Pick the smallest standard resolution that covers our needs
+        // Common webcam resolutions: 320x240, 640x480, 1280x720, 1920x1080
+        // NOTE: Lower resolution = faster capture on most webcams
+        let optimal_resolution = if let Some((w, h)) = requested_resolution {
+            (w, h)
+        } else {
+            // Always use 320x240 for maximum FPS - terminal doesn't need more
+            // A 200x50 terminal only needs 400x200 pixels, 320x240 is plenty
+            (320, 240)
+        };
+
+        options.set("video_size", &format!("{}x{}", optimal_resolution.0, optimal_resolution.1));
+        tracing::info!(
+            "Terminal {}x{} needs {}x{} pixels, requesting {}x{} capture",
+            term_width, term_height, needed_width, needed_height,
+            optimal_resolution.0, optimal_resolution.1
+        );
+
+        // Set requested frame rate - default to 30fps for responsiveness
+        let target_fps = requested_fps.unwrap_or(30);
+        options.set("framerate", &target_fps.to_string());
 
         // Platform-specific options
         #[cfg(target_os = "linux")]
@@ -671,10 +694,14 @@ impl WebcamPlayer {
 
         #[cfg(target_os = "windows")]
         {
-            // Increase real-time buffer size to prevent overflow warnings
-            // Default is ~3MB, increase to 100MB for smoother capture
-            options.set("rtbufsize", "100M");
-            // Use lower latency settings
+            // Force MJPEG codec - most webcams support 30fps with MJPEG at all resolutions
+            // while raw YUV formats are often limited to lower fps due to USB bandwidth
+            // IMPORTANT: vcodec must come BEFORE the -i input in ffmpeg, which means
+            // we set it as an input option here
+            options.set("vcodec", "mjpeg");
+            // Keep buffer small to avoid frame queueing
+            options.set("rtbufsize", "10M");
+            // Low latency settings
             options.set("fflags", "nobuffer");
             options.set("flags", "low_delay");
         }
@@ -981,16 +1008,22 @@ impl WebcamPlayer {
     }
 
     /// Decodes the next frame from the webcam.
+    ///
+    /// Drains any queued frames from the decoder to always return the freshest frame.
     fn decode_next_frame(&mut self) -> Option<Result<()>> {
-        // Try to receive a decoded frame
+        // First, drain any already-decoded frames to get the freshest one
+        // This prevents frame queue buildup when we can't keep up with camera FPS
+        let mut got_frame = false;
         loop {
-            // First, try to receive from decoder
             match self.decoder.receive_frame(&mut self.decoded_frame) {
                 Ok(()) => {
-                    return Some(Ok(()));
+                    got_frame = true;
+                    // Keep draining - we want the LATEST frame
+                    continue;
                 }
                 Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => {
-                    // Decoder needs more data
+                    // No more frames queued in decoder
+                    break;
                 }
                 Err(e) => {
                     return Some(Err(DotmaxError::WebcamError {
@@ -999,7 +1032,15 @@ impl WebcamPlayer {
                     }));
                 }
             }
+        }
 
+        // If we got a frame from draining, use it
+        if got_frame {
+            return Some(Ok(()));
+        }
+
+        // Need to feed more packets to the decoder
+        loop {
             // Read next packet from device
             let mut found_video_packet = false;
             for (stream, packet) in self.input_context.packets() {
@@ -1013,21 +1054,42 @@ impl WebcamPlayer {
             }
 
             if !found_video_packet {
-                // No packet available - for live streams this shouldn't happen
-                // but we'll handle it gracefully
                 return Some(Err(DotmaxError::WebcamError {
                     device: self.device_id.clone(),
                     message: "Webcam stream ended unexpectedly".to_string(),
                 }));
+            }
+
+            // Try to get a frame after feeding the packet
+            match self.decoder.receive_frame(&mut self.decoded_frame) {
+                Ok(()) => {
+                    return Some(Ok(()));
+                }
+                Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => {
+                    // Need more packets
+                    continue;
+                }
+                Err(e) => {
+                    return Some(Err(DotmaxError::WebcamError {
+                        device: self.device_id.clone(),
+                        message: format!("Frame decode error: {e}"),
+                    }));
+                }
             }
         }
     }
 
     /// Converts the decoded frame to a BrailleGrid.
     ///
-    /// Uses ImageRenderer for proper dithering and color handling.
+    /// Optimized pipeline for real-time webcam rendering:
+    /// - Direct grayscale conversion from RGB (no RGBA intermediate)
+    /// - In-place dithering on pre-allocated buffer
+    /// - Skips ImageRenderer overhead for maximum FPS
     fn frame_to_grid(&mut self) -> Result<BrailleGrid> {
-        use crate::image::ImageRenderer;
+        use crate::image::{
+            apply_dithering, apply_dithering_with_custom_threshold, apply_threshold,
+            pixels_to_braille, render_image_with_color, DitheringMethod,
+        };
 
         // Scale to RGB24 at terminal dimensions (FFmpeg hardware-accelerated)
         self.scaler
@@ -1043,56 +1105,129 @@ impl WebcamPlayer {
         let stride = self.rgb_frame.stride(0);
         let target_width = (self.terminal_width * 2) as u32;
         let target_height = (self.terminal_height * 4) as u32;
+        let pixel_count = (target_width * target_height) as usize;
 
-        // Copy RGB data into reusable buffer (avoids per-frame allocation)
-        let expected_size = (target_width * target_height * 3) as usize;
-        if self.rgb_buffer.len() != expected_size {
-            self.rgb_buffer.resize(expected_size, 0);
+        // For color modes, use the full pipeline
+        if self.color_mode != crate::image::ColorMode::Monochrome {
+            // Copy RGB data into buffer (needed for color rendering)
+            let expected_size = pixel_count * 3;
+            if self.rgb_buffer.len() != expected_size {
+                self.rgb_buffer.resize(expected_size, 0);
+            }
+
+            let mut offset = 0;
+            for y in 0..target_height {
+                let row_start = (y as usize) * stride;
+                let row_len = (target_width as usize) * 3;
+                self.rgb_buffer[offset..offset + row_len]
+                    .copy_from_slice(&data[row_start..row_start + row_len]);
+                offset += row_len;
+            }
+
+            // Create RGB image without cloning - swap buffer
+            let buffer = std::mem::take(&mut self.rgb_buffer);
+            let img = image::RgbImage::from_raw(target_width, target_height, buffer)
+                .ok_or_else(|| DotmaxError::WebcamError {
+                    device: self.device_id.clone(),
+                    message: "Failed to create image from frame data".to_string(),
+                })?;
+
+            let dynamic_img = image::DynamicImage::ImageRgb8(img);
+            let grid = render_image_with_color(
+                &dynamic_img,
+                self.color_mode,
+                self.terminal_width,
+                self.terminal_height,
+                self.dithering,
+                self.threshold,
+                self.brightness,
+                self.contrast,
+                self.gamma,
+            )?;
+
+            // Recover buffer for reuse
+            if let image::DynamicImage::ImageRgb8(rgb) = dynamic_img {
+                self.rgb_buffer = rgb.into_raw();
+            }
+
+            return Ok(grid);
         }
 
-        let mut offset = 0;
-        for y in 0..target_height {
-            let row_start = (y as usize) * (stride as usize);
-            let row_len = (target_width as usize) * 3;
-            self.rgb_buffer[offset..offset + row_len]
-                .copy_from_slice(&data[row_start..row_start + row_len]);
-            offset += row_len;
+        // FAST PATH: Monochrome mode - direct grayscale conversion
+        // Convert RGB to grayscale directly, avoiding intermediate allocations
+        // Use luminance formula: Y = 0.299*R + 0.587*G + 0.114*B
+
+        // Ensure grayscale buffer exists (reuse between frames)
+        if self.rgb_buffer.len() != pixel_count {
+            self.rgb_buffer.resize(pixel_count, 0);
         }
 
-        // Create RGB image from pre-scaled frame data
-        let img = image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
+        // Pre-compute adjustment flags outside the loop
+        let apply_brightness = (self.brightness - 1.0).abs() > f32::EPSILON;
+        let apply_contrast = (self.contrast - 1.0).abs() > f32::EPSILON;
+        let apply_gamma = (self.gamma - 1.0).abs() > f32::EPSILON;
+        let inv_gamma = if apply_gamma { 1.0 / self.gamma } else { 1.0 };
+
+        // Direct RGB→grayscale conversion from FFmpeg frame data
+        // Using mul_add for better floating-point performance
+        for y in 0..target_height as usize {
+            let row_start = y * stride;
+            let out_row_start = y * (target_width as usize);
+            for x in 0..target_width as usize {
+                let px_offset = row_start + x * 3;
+                let r = data[px_offset] as f32;
+                let g = data[px_offset + 1] as f32;
+                let b = data[px_offset + 2] as f32;
+
+                // Luminance using mul_add for FMA optimization
+                let mut luma = 0.114f32.mul_add(b, 0.299f32.mul_add(r, 0.587 * g));
+
+                // Brightness (multiply)
+                if apply_brightness {
+                    luma *= self.brightness;
+                }
+
+                // Contrast (scale from mid-point) using mul_add
+                if apply_contrast {
+                    luma = self.contrast.mul_add(luma - 128.0, 128.0);
+                }
+
+                // Gamma (power function) - only if not 1.0
+                if apply_gamma {
+                    luma = 255.0 * (luma / 255.0).powf(inv_gamma);
+                }
+
+                self.rgb_buffer[out_row_start + x] = luma.clamp(0.0, 255.0) as u8;
+            }
+        }
+
+        // Create grayscale image from buffer (no allocation - reuse buffer)
+        let gray_buffer = std::mem::take(&mut self.rgb_buffer);
+        let gray = image::GrayImage::from_raw(target_width, target_height, gray_buffer)
             .ok_or_else(|| DotmaxError::WebcamError {
                 device: self.device_id.clone(),
-                message: "Failed to create image from frame data".to_string(),
+                message: "Failed to create grayscale image".to_string(),
             })?;
 
-        // Convert to RGBA for ImageRenderer
-        let rgba_img = image::DynamicImage::ImageRgb8(img).into_rgba8();
+        // Apply dithering or thresholding
+        // Note: For auto_threshold without dithering, we compute Otsu and apply manually
+        // to avoid cloning the grayscale image
+        let binary = if self.dithering == DitheringMethod::None {
+            let threshold_val = self.threshold.unwrap_or_else(|| {
+                crate::image::otsu_threshold(&gray)
+            });
+            apply_threshold(&gray, threshold_val)
+        } else if let Some(t) = self.threshold {
+            apply_dithering_with_custom_threshold(&gray, self.dithering, Some(t))?
+        } else {
+            apply_dithering(&gray, self.dithering)?
+        };
 
-        // Use ImageRenderer - NO RESIZE needed, frame is already at correct size
-        let mut renderer = ImageRenderer::new()
-            .load_from_rgba(rgba_img)
-            .resize(self.terminal_width, self.terminal_height, false)? // false = don't preserve aspect, already correct
-            .dithering(self.dithering)
-            .color_mode(self.color_mode);
+        // Recover buffer for next frame
+        self.rgb_buffer = gray.into_raw();
 
-        // Apply manual threshold if set
-        if let Some(t) = self.threshold {
-            renderer = renderer.threshold(t);
-        }
-
-        // Apply adjustments (these return Result, so we chain with ?)
-        if (self.brightness - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.brightness(self.brightness)?;
-        }
-        if (self.contrast - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.contrast(self.contrast)?;
-        }
-        if (self.gamma - 1.0).abs() > f32::EPSILON {
-            renderer = renderer.gamma(self.gamma)?;
-        }
-
-        let grid = renderer.render()?;
+        // Map to braille grid
+        let grid = pixels_to_braille(&binary, self.terminal_width, self.terminal_height)?;
 
         Ok(grid)
     }
