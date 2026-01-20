@@ -228,10 +228,6 @@ name = "video_player"
 required-features = ["video"]
 
 [[example]]
-name = "test_video_decode"
-required-features = ["video"]
-
-[[example]]
 name = "render_tuner"
 required-features = ["image"]
 
