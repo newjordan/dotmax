@@ -6,6 +6,39 @@ Render anything in terminal braille. Images, GIFs, videos, webcam - one line of 
 [![Documentation](https://docs.rs/dotmax/badge.svg)](https://docs.rs/dotmax)
 [![License](https://img.shields.io/crates/l/dotmax.svg)](https://github.com/newjordan/dotmax#license)
 
+## Gallery
+
+### Color Rendering
+
+| | |
+|---|---|
+| ![Color Tiger](docs/examples/color_tiger.png) | ![Viper Color](docs/examples/viper_ascII_art.png) |
+| Full-color image rendering with braille dots | Color rendering with tuner overlay |
+| ![Snake Closeup](docs/examples/snake_color_closeup.png) | ![Medium Tiger](docs/examples/med_tiger.png) |
+| High-detail color closeup | Medium-resolution color render |
+
+### Monochrome & Pixel Sizes
+
+| | |
+|---|---|
+| ![8px ASCII Tiger](docs/examples/8px_ascii_tiger.png) | ![Small Pixel Tiger](docs/examples/small_pixel_tiger.png) |
+| 8px monochrome braille | Small pixel density |
+| ![Small Snake](docs/examples/small_px_snake.png) | ![Large Pixel Shading](docs/examples/large_pixel_shadingenabled.png) |
+| Small pixel snake render | Large pixel with shading enabled |
+| ![Snake Large Pixel](docs/examples/snake_large_pixel.png) | ![GIF Playback](docs/examples/gottem.png) |
+| Large pixel monochrome | Animated GIF playback in terminal |
+
+### 3D, Audio & More
+
+| | |
+|---|---|
+| ![Sphere Wireframe](docs/examples/sphere.png) | ![Sphere IO](docs/examples/sphere_io.png) |
+| 3D sphere wireframe (OBJ rendering) | Sphere with I/O overlay |
+| ![Snake Head OBJ](docs/examples/snake_head_obj.png) | ![Audio Spectrograph](docs/examples/audio_spetrophasia.png) |
+| 3D snake head model | Audio spectrograph visualization |
+| ![Grid Formation](docs/examples/grid_formation.png) | |
+| Grid/oscilloscope formation | |
+
 ## Install
 
 ```bash
