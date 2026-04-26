@@ -135,6 +135,14 @@ pub mod color;
 // Animation & frame management (Epic 6)
 pub mod animation;
 
+// CPU raytracer with braille output (ported from crabmusic)
+#[cfg(feature = "raytracer")]
+pub mod raytracer;
+
+// Chess board rendering (ported from dotchess)
+#[cfg(feature = "chess")]
+pub mod chess;
+
 #[cfg(test)]
 mod tests {
     #[test]

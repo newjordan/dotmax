@@ -106,7 +106,86 @@ use image::GrayImage;
 use tracing::debug;
 
 use crate::error::DotmaxError;
-use crate::image::threshold::{auto_threshold, BinaryImage};
+use crate::image::threshold::{apply_threshold, auto_threshold, otsu_threshold, BinaryImage};
+
+/// Per-frame jitter parameters for ambient/temporal dithering.
+///
+/// Passing a non-zero `intensity` makes any dithering algorithm produce a
+/// slightly different binary pattern for the same input image — the variation
+/// is keyed off `seed`, so animating `seed` (e.g., from a frame counter or the
+/// system clock) makes a still image visibly evolve frame-to-frame.
+///
+/// # Fields
+///
+/// - `seed`: 64-bit seed. Different seeds → different patterns. Same seed →
+///   reproducible output (still useful for testing).
+/// - `intensity`: 0.0 disables jitter (algorithms behave identically to the
+///   non-jittered variants). 1.0 is full ambient noise. Sensible defaults are
+///   in the 0.25–0.75 range.
+#[derive(Debug, Clone, Copy)]
+pub struct JitterParams {
+    /// 64-bit seed driving the noise pattern. Different seeds → different
+    /// patterns; advancing it per frame produces the ambient/temporal effect.
+    pub seed: u64,
+    /// Noise intensity in 0.0..=1.0. 0.0 disables jitter entirely.
+    pub intensity: f32,
+}
+
+impl JitterParams {
+    /// Disabled jitter — equivalent to deterministic dithering.
+    pub const NONE: Self = Self {
+        seed: 0,
+        intensity: 0.0,
+    };
+
+    /// New jitter with a seed and intensity in 0.0..=1.0.
+    #[must_use]
+    pub fn new(seed: u64, intensity: f32) -> Self {
+        Self {
+            seed,
+            intensity: intensity.clamp(0.0, 1.0),
+        }
+    }
+
+    /// True iff jitter is active (intensity > 0).
+    #[inline]
+    #[must_use]
+    pub fn enabled(self) -> bool {
+        self.intensity > 0.0
+    }
+}
+
+impl Default for JitterParams {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+/// Inline 64-bit xorshift hash mixing (x, y, seed) into a u32.
+///
+/// Cheap, stateless, and good enough for noise injection. Used by the
+/// jittered dither paths to drive blue-noise-like per-pixel perturbation
+/// without pulling in a `rand` dependency.
+#[inline]
+fn hash_xy_seed(x: u32, y: u32, seed: u64) -> u32 {
+    let mut h = seed
+        .wrapping_add((x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .wrapping_add((y as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9));
+    h ^= h >> 30;
+    h = h.wrapping_mul(0x94D0_49BB_1331_11EB);
+    h ^= h >> 27;
+    h = h.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= h >> 31;
+    (h ^ (h >> 32)) as u32
+}
+
+/// Symmetric jitter in (-1.0, 1.0) for a given (x, y, seed) triple.
+#[inline]
+fn jitter_signed(x: u32, y: u32, seed: u64) -> f32 {
+    // Map u32 to (-1.0, 1.0). The +1 avoids ever returning exactly -1.
+    let v = hash_xy_seed(x, y, seed) as f64;
+    ((v / (u32::MAX as f64)) * 2.0 - 1.0) as f32
+}
 
 /// Dithering algorithm selection.
 ///
@@ -281,25 +360,70 @@ pub fn apply_dithering_with_custom_threshold(
     method: DitheringMethod,
     threshold: Option<u8>,
 ) -> Result<BinaryImage, DotmaxError> {
-    let threshold_value = threshold.unwrap_or(THRESHOLD);
+    apply_dithering_jittered(gray, method, threshold, JitterParams::NONE)
+}
+
+/// Apply dithering with both a custom threshold and per-frame jitter.
+///
+/// When `jitter.intensity > 0.0`, each algorithm injects bounded noise keyed
+/// off `jitter.seed` so the same input produces visibly different output for
+/// different seeds — that's the knob for ambient / temporal dithering. With
+/// `JitterParams::NONE` this function behaves identically to
+/// [`apply_dithering_with_custom_threshold`].
+///
+/// If `threshold` is `None`, the threshold is derived from Otsu's method on
+/// the input image. (Previously Floyd-Steinberg / Atkinson silently used a
+/// hardcoded 127 in that case, which produced fully-black or fully-white
+/// output for any image whose tonal range didn't straddle 127 — the most
+/// common cause of "the image isn't loading.")
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::InvalidParameter`] if image dimensions are 0.
+pub fn apply_dithering_jittered(
+    gray: &GrayImage,
+    method: DitheringMethod,
+    threshold: Option<u8>,
+    jitter: JitterParams,
+) -> Result<BinaryImage, DotmaxError> {
+    // Bug fix: when no manual threshold is set, prefer Otsu over the fixed
+    // midpoint so FS / Atkinson don't collapse high-contrast images into a
+    // solid block.
+    let threshold_value = threshold.unwrap_or_else(|| {
+        if matches!(method, DitheringMethod::FloydSteinberg | DitheringMethod::Atkinson) {
+            otsu_threshold(gray)
+        } else {
+            THRESHOLD
+        }
+    });
 
     debug!(
-        "Applying {:?} dithering to {}×{} image with threshold {}",
+        "Applying {:?} dithering to {}×{} image (threshold {}, jitter intensity={:.2}, seed={})",
         method,
         gray.width(),
         gray.height(),
-        threshold_value
+        threshold_value,
+        jitter.intensity,
+        jitter.seed,
     );
 
     match method {
         DitheringMethod::None => {
-            // Use auto_threshold from threshold module (Otsu + binary conversion)
-            let binary = auto_threshold(&image::DynamicImage::ImageLuma8(gray.clone()));
-            Ok(binary)
+            if jitter.enabled() {
+                // Random-noise threshold: produces a stippled blue-noise-like
+                // result that re-stipples per seed.
+                Ok(noise_threshold_jittered(gray, threshold_value, jitter))
+            } else if let Some(t) = threshold {
+                Ok(apply_threshold(gray, t))
+            } else {
+                Ok(auto_threshold(&image::DynamicImage::ImageLuma8(gray.clone())))
+            }
         }
-        DitheringMethod::FloydSteinberg => floyd_steinberg_with_threshold(gray, threshold_value),
-        DitheringMethod::Bayer => bayer(gray), // Bayer uses its own matrix-based threshold
-        DitheringMethod::Atkinson => atkinson_with_threshold(gray, threshold_value),
+        DitheringMethod::FloydSteinberg => {
+            floyd_steinberg_jittered(gray, threshold_value, jitter)
+        }
+        DitheringMethod::Bayer => bayer_jittered(gray, threshold_value, jitter),
+        DitheringMethod::Atkinson => atkinson_jittered(gray, threshold_value, jitter),
     }
 }
 
@@ -343,12 +467,21 @@ pub fn apply_dithering_with_custom_threshold(
 /// # }
 /// ```
 pub fn floyd_steinberg(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
-    floyd_steinberg_with_threshold(gray, THRESHOLD)
+    floyd_steinberg_jittered(gray, THRESHOLD, JitterParams::NONE)
 }
 
+#[allow(dead_code)] // kept for crate-internal callers / tests
 fn floyd_steinberg_with_threshold(
     gray: &GrayImage,
     threshold: u8,
+) -> Result<BinaryImage, DotmaxError> {
+    floyd_steinberg_jittered(gray, threshold, JitterParams::NONE)
+}
+
+fn floyd_steinberg_jittered(
+    gray: &GrayImage,
+    threshold: u8,
+    jitter: JitterParams,
 ) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
@@ -362,51 +495,69 @@ fn floyd_steinberg_with_threshold(
         });
     }
 
-    debug!("Floyd-Steinberg dithering {}×{} image", width, height);
+    debug!(
+        "Floyd-Steinberg dithering {}×{} image (jitter intensity {:.2})",
+        width, height, jitter.intensity
+    );
 
-    // Create error buffer (accumulated errors from previous pixels)
-    // Using f32 for precision with fractional coefficients
     let mut errors = vec![0.0f32; width * height];
     let mut binary = BinaryImage::new(width as u32, height as u32);
 
+    // Per-pixel input perturbation magnitude. ±32 at intensity=1.0 is enough
+    // to dissolve uniform regions into stipple without losing edges.
+    let noise_amp = 32.0 * jitter.intensity;
+
+    // Toggle serpentine direction across alternating frames so the diffusion
+    // grain itself shifts. Even rows always go left-to-right; odd rows flip
+    // when the seed's low bit is set.
+    let serpentine_flip = (jitter.seed & 1) != 0;
+
     for y in 0..height {
-        for x in 0..width {
+        let row_reversed = serpentine_flip && (y & 1 == 1);
+        let xs: Box<dyn Iterator<Item = usize>> = if row_reversed {
+            Box::new((0..width).rev())
+        } else {
+            Box::new(0..width)
+        };
+
+        for x in xs {
             let pixel_idx = y * width + x;
             let old_pixel = gray.get_pixel(x as u32, y as u32)[0] as f32;
-            let new_pixel = old_pixel + errors[pixel_idx];
+            let mut new_pixel = old_pixel + errors[pixel_idx];
 
-            // Apply threshold
-            let output_value = if new_pixel >= threshold as f32 {
-                255.0
-            } else {
-                0.0
-            };
-            binary.set_pixel(x as u32, y as u32, output_value == 255.0);
-
-            // Calculate quantization error
-            let quant_error = new_pixel - output_value;
-
-            // Diffuse error to neighbors (with boundary checks)
-            // Right pixel (x+1, y): 7/16
-            if x + 1 < width {
-                errors[pixel_idx + 1] += quant_error * 7.0 / 16.0;
+            if jitter.enabled() {
+                new_pixel += jitter_signed(x as u32, y as u32, jitter.seed) * noise_amp;
             }
 
-            // Bottom row neighbors (y+1)
+            let output_value = if new_pixel >= threshold as f32 { 255.0 } else { 0.0 };
+            binary.set_pixel(x as u32, y as u32, output_value == 255.0);
+
+            let quant_error = new_pixel - output_value;
+
+            // Mirror the neighbour offsets when traversing right-to-left so the
+            // serpentine sweep diffuses error in the direction of travel.
+            let dx_forward: isize = if row_reversed { -1 } else { 1 };
+
+            // "Right" neighbour in the direction of travel
+            let nx = x as isize + dx_forward;
+            if nx >= 0 && (nx as usize) < width {
+                errors[pixel_idx.wrapping_add_signed(dx_forward)] += quant_error * 7.0 / 16.0;
+            }
+
             if y + 1 < height {
                 let next_row_idx = (y + 1) * width;
 
-                // Bottom-left (x-1, y+1): 3/16
-                if x > 0 {
-                    errors[next_row_idx + x - 1] += quant_error * 3.0 / 16.0;
+                // Diagonal "behind"
+                let nx_back = x as isize - dx_forward;
+                if nx_back >= 0 && (nx_back as usize) < width {
+                    errors[next_row_idx + nx_back as usize] += quant_error * 3.0 / 16.0;
                 }
 
-                // Bottom (x, y+1): 5/16
                 errors[next_row_idx + x] += quant_error * 5.0 / 16.0;
 
-                // Bottom-right (x+1, y+1): 1/16
-                if x + 1 < width {
-                    errors[next_row_idx + x + 1] += quant_error * 1.0 / 16.0;
+                // Diagonal "ahead"
+                if nx >= 0 && (nx as usize) < width {
+                    errors[next_row_idx + nx as usize] += quant_error * 1.0 / 16.0;
                 }
             }
         }
@@ -449,6 +600,14 @@ fn floyd_steinberg_with_threshold(
 /// # }
 /// ```
 pub fn bayer(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
+    bayer_jittered(gray, THRESHOLD, JitterParams::NONE)
+}
+
+fn bayer_jittered(
+    gray: &GrayImage,
+    threshold: u8,
+    jitter: JitterParams,
+) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
 
@@ -461,22 +620,42 @@ pub fn bayer(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
         });
     }
 
-    debug!("Bayer dithering {}×{} image", width, height);
+    debug!(
+        "Bayer dithering {}×{} image (jitter intensity {:.2})",
+        width, height, jitter.intensity
+    );
+
+    // Offset the matrix lookup per frame so the same image visibly shifts.
+    let (off_x, off_y) = if jitter.enabled() {
+        (
+            (jitter.seed & 0x7) as usize,
+            ((jitter.seed >> 3) & 0x7) as usize,
+        )
+    } else {
+        (0, 0)
+    };
+
+    // Normalize the manual threshold around the matrix midpoint (32/64) so a
+    // user-supplied threshold biases the whole pattern up or down.
+    let threshold_bias = (threshold as f32 / 255.0) - 0.5;
+
+    // Per-pixel symmetric noise on the comparison value.
+    let noise_amp = 0.18 * jitter.intensity;
 
     let mut binary = BinaryImage::new(width as u32, height as u32);
 
     for y in 0..height {
         for x in 0..width {
             let pixel_value = gray.get_pixel(x as u32, y as u32)[0];
+            let bayer_threshold =
+                BAYER_MATRIX_8X8[(y + off_y) % 8][(x + off_x) % 8] as f32 / 64.0;
 
-            // Get Bayer threshold for this position (normalized to 0.0-1.0)
-            let bayer_threshold = BAYER_MATRIX_8X8[y % 8][x % 8] as f32 / 64.0;
+            let mut comparison = pixel_value as f32 / 255.0 + threshold_bias;
+            if jitter.enabled() {
+                comparison += jitter_signed(x as u32, y as u32, jitter.seed) * noise_amp;
+            }
 
-            // Compare normalized pixel value to Bayer threshold
-            let normalized_pixel = pixel_value as f32 / 255.0;
-            let output = normalized_pixel > bayer_threshold;
-
-            binary.set_pixel(x as u32, y as u32, output);
+            binary.set_pixel(x as u32, y as u32, comparison > bayer_threshold);
         }
     }
 
@@ -526,10 +705,19 @@ pub fn bayer(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
 /// # }
 /// ```
 pub fn atkinson(gray: &GrayImage) -> Result<BinaryImage, DotmaxError> {
-    atkinson_with_threshold(gray, THRESHOLD)
+    atkinson_jittered(gray, THRESHOLD, JitterParams::NONE)
 }
 
+#[allow(dead_code)]
 fn atkinson_with_threshold(gray: &GrayImage, threshold: u8) -> Result<BinaryImage, DotmaxError> {
+    atkinson_jittered(gray, threshold, JitterParams::NONE)
+}
+
+fn atkinson_jittered(
+    gray: &GrayImage,
+    threshold: u8,
+    jitter: JitterParams,
+) -> Result<BinaryImage, DotmaxError> {
     let width = gray.width() as usize;
     let height = gray.height() as usize;
 
@@ -542,67 +730,100 @@ fn atkinson_with_threshold(gray: &GrayImage, threshold: u8) -> Result<BinaryImag
         });
     }
 
-    debug!("Atkinson dithering {}×{} image", width, height);
+    debug!(
+        "Atkinson dithering {}×{} image (jitter intensity {:.2})",
+        width, height, jitter.intensity
+    );
 
-    // Create error buffer (accumulated errors from previous pixels)
     let mut errors = vec![0.0f32; width * height];
     let mut binary = BinaryImage::new(width as u32, height as u32);
 
+    let noise_amp = 28.0 * jitter.intensity;
+    let serpentine_flip = (jitter.seed & 1) != 0;
+
     for y in 0..height {
-        for x in 0..width {
+        let row_reversed = serpentine_flip && (y & 1 == 1);
+        let xs: Box<dyn Iterator<Item = usize>> = if row_reversed {
+            Box::new((0..width).rev())
+        } else {
+            Box::new(0..width)
+        };
+
+        for x in xs {
             let pixel_idx = y * width + x;
             let old_pixel = gray.get_pixel(x as u32, y as u32)[0] as f32;
-            let new_pixel = old_pixel + errors[pixel_idx];
+            let mut new_pixel = old_pixel + errors[pixel_idx];
 
-            // Apply threshold
-            let output_value = if new_pixel >= threshold as f32 {
-                255.0
-            } else {
-                0.0
-            };
+            if jitter.enabled() {
+                new_pixel += jitter_signed(x as u32, y as u32, jitter.seed) * noise_amp;
+            }
+
+            let output_value = if new_pixel >= threshold as f32 { 255.0 } else { 0.0 };
             binary.set_pixel(x as u32, y as u32, output_value == 255.0);
 
-            // Calculate quantization error
             let quant_error = new_pixel - output_value;
+            let dx_forward: isize = if row_reversed { -1 } else { 1 };
 
-            // Diffuse 1/8 of error to 6 neighbors (total: 6/8, discard 2/8)
-            // Right pixel (x+1, y): 1/8
-            if x + 1 < width {
-                errors[pixel_idx + 1] += quant_error / 8.0;
+            // +1 in direction of travel
+            let nx1 = x as isize + dx_forward;
+            if nx1 >= 0 && (nx1 as usize) < width {
+                errors[(y * width).wrapping_add_signed(nx1)] += quant_error / 8.0;
+            }
+            // +2 in direction of travel
+            let nx2 = x as isize + 2 * dx_forward;
+            if nx2 >= 0 && (nx2 as usize) < width {
+                errors[(y * width).wrapping_add_signed(nx2)] += quant_error / 8.0;
             }
 
-            // Two-right pixel (x+2, y): 1/8
-            if x + 2 < width {
-                errors[pixel_idx + 2] += quant_error / 8.0;
-            }
-
-            // Bottom row neighbors (y+1)
             if y + 1 < height {
                 let next_row_idx = (y + 1) * width;
-
-                // Bottom-left (x-1, y+1): 1/8
-                if x > 0 {
-                    errors[next_row_idx + x - 1] += quant_error / 8.0;
+                let nx_back = x as isize - dx_forward;
+                if nx_back >= 0 && (nx_back as usize) < width {
+                    errors[next_row_idx + nx_back as usize] += quant_error / 8.0;
                 }
-
-                // Bottom (x, y+1): 1/8
                 errors[next_row_idx + x] += quant_error / 8.0;
-
-                // Bottom-right (x+1, y+1): 1/8
-                if x + 1 < width {
-                    errors[next_row_idx + x + 1] += quant_error / 8.0;
+                if nx1 >= 0 && (nx1 as usize) < width {
+                    errors[next_row_idx + nx1 as usize] += quant_error / 8.0;
                 }
             }
 
-            // Two-down pixel (x, y+2): 1/8
             if y + 2 < height {
-                let two_rows_idx = (y + 2) * width;
-                errors[two_rows_idx + x] += quant_error / 8.0;
+                errors[(y + 2) * width + x] += quant_error / 8.0;
             }
         }
     }
 
     Ok(binary)
+}
+
+/// Pure noise-thresholding: per-pixel random comparison around `threshold`.
+///
+/// Used by `DitheringMethod::None` whenever jitter is enabled — produces a
+/// stipple pattern that fully reshuffles per seed instead of a hard binary
+/// step.
+fn noise_threshold_jittered(
+    gray: &GrayImage,
+    threshold: u8,
+    jitter: JitterParams,
+) -> BinaryImage {
+    let width = gray.width();
+    let height = gray.height();
+    let mut binary = BinaryImage::new(width, height);
+
+    // Map threshold to a comparison level in 0..1, then bias each pixel by
+    // signed noise scaled by intensity.
+    let level = threshold as f32 / 255.0;
+    let amp = 0.5 * jitter.intensity; // up to ±0.5 — enough to fully randomize
+
+    for (i, p) in gray.pixels().enumerate() {
+        let x = (i as u32) % width;
+        let y = (i as u32) / width;
+        let v = p[0] as f32 / 255.0;
+        let cmp = v + jitter_signed(x, y, jitter.seed) * amp;
+        binary.pixels[i] = cmp >= level;
+    }
+
+    binary
 }
 
 #[cfg(test)]

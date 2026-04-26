@@ -220,7 +220,7 @@ pub fn otsu_threshold(gray: &GrayImage) -> u8 {
         .sum();
 
     let mut max_variance = 0.0;
-    let mut best_threshold = 0u8;
+    let mut best_threshold = 127u8; // Default fallback for uniform images
 
     let mut weight_background = 0.0;
     let mut sum_background = 0.0;
@@ -255,9 +255,18 @@ pub fn otsu_threshold(gray: &GrayImage) -> u8 {
         }
     }
 
-    debug!("Calculated Otsu threshold: {}", best_threshold);
+    debug!("Calculated Otsu threshold base: {}", best_threshold);
 
-    best_threshold
+    // Otsu picks the optimal *separator* value (the upper bound of the
+    // background class). Since our thresholding comparison is `pixel >= threshold`,
+    // we return `best_threshold + 2` to provide a small noise floor. This
+    // prevents low-level artifacts (like those from contrast stretching)
+    // from being rendered as dots.
+    if max_variance > 0.0 {
+        best_threshold.saturating_add(2)
+    } else {
+        127 // Fallback for perfectly uniform images
+    }
 }
 
 /// Convert a grayscale image to binary using a threshold value
@@ -570,22 +579,22 @@ mod tests {
     fn test_otsu_all_black() {
         let img = create_uniform_gray_image(10, 10, 0);
         let threshold = otsu_threshold(&img);
-        assert_eq!(threshold, 0, "All black should return threshold 0");
+        assert_eq!(threshold, 127, "All black should return default fallback 127");
     }
 
     #[test]
     fn test_otsu_all_white() {
         let img = create_uniform_gray_image(10, 10, 255);
         let threshold = otsu_threshold(&img);
-        assert_eq!(threshold, 0, "All white has no variance, returns 0");
+        assert_eq!(threshold, 127, "All white has no variance, returns default fallback 127");
     }
 
     #[test]
     fn test_otsu_uniform_gray() {
         let img = create_uniform_gray_image(10, 10, 128);
         let threshold = otsu_threshold(&img);
-        // Uniform images have no variance, threshold will be 0
-        assert_eq!(threshold, 0);
+        // Uniform images have no variance, threshold will be default 127
+        assert_eq!(threshold, 127);
     }
 
     #[test]
@@ -601,11 +610,10 @@ mod tests {
 
         let threshold = otsu_threshold(&img);
         // For bimodal distribution (50 and 200), Otsu returns the first threshold
-        // that achieves maximum variance. This will be at value 50 (the lower peak).
-        // Any threshold from 50 to 199 achieves the same variance.
+        // that achieves maximum variance (50), plus 2 for our noise-floor logic.
         assert_eq!(
-            threshold, 50,
-            "Bimodal distribution returns first optimal threshold (lower peak)"
+            threshold, 52,
+            "Bimodal distribution returns optimal threshold (lower peak + 2)"
         );
     }
 

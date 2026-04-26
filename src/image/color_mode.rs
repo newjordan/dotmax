@@ -101,9 +101,8 @@ use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;
 
 use crate::image::{
-    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering,
-    apply_dithering_with_custom_threshold, apply_threshold, auto_threshold, pixels_to_braille,
-    to_grayscale, DitheringMethod,
+    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering_jittered,
+    pixels_to_braille, to_grayscale, DitheringMethod, JitterParams,
 };
 use crate::{BrailleGrid, Color, DotmaxError};
 
@@ -734,6 +733,36 @@ pub fn render_image_with_color(
     contrast: f32,
     gamma: f32,
 ) -> Result<BrailleGrid, DotmaxError> {
+    render_image_with_color_jittered(
+        image,
+        mode,
+        cell_width,
+        cell_height,
+        dithering,
+        threshold,
+        brightness,
+        contrast,
+        gamma,
+        JitterParams::NONE,
+    )
+}
+
+/// Same as [`render_image_with_color`] but accepts per-frame jitter parameters
+/// for ambient (temporal) dithering. With `JitterParams::NONE` it is identical
+/// to the deterministic entry point.
+#[allow(clippy::too_many_arguments)]
+pub fn render_image_with_color_jittered(
+    image: &DynamicImage,
+    mode: ColorMode,
+    cell_width: usize,
+    cell_height: usize,
+    dithering: DitheringMethod,
+    threshold: Option<u8>,
+    brightness: f32,
+    contrast: f32,
+    gamma: f32,
+    jitter: JitterParams,
+) -> Result<BrailleGrid, DotmaxError> {
     const EPSILON: f32 = 0.001;
 
     let pixel_width = cell_width * 2; // 2 pixels per cell width
@@ -770,48 +799,24 @@ pub fn render_image_with_color(
     // Step 2: Convert to grayscale and apply adjustments (same as monochrome pipeline)
     let mut gray = to_grayscale(image);
 
-    // Apply adjustments (brightness/contrast/gamma) if not default
     if (brightness - 1.0).abs() > EPSILON {
-        gray = adjust_brightness(&gray, brightness)?;
-        debug!("Applied brightness adjustment: {}", brightness);
+        let b = brightness.clamp(0.0, 2.0);
+        gray = adjust_brightness(&gray, b)?;
+        debug!("Applied brightness adjustment: {}", b);
     }
     if (contrast - 1.0).abs() > EPSILON {
-        gray = adjust_contrast(&gray, contrast)?;
-        debug!("Applied contrast adjustment: {}", contrast);
+        let c = contrast.clamp(0.0, 2.0);
+        gray = adjust_contrast(&gray, c)?;
+        debug!("Applied contrast adjustment: {}", c);
     }
     if (gamma - 1.0).abs() > EPSILON {
-        gray = adjust_gamma(&gray, gamma)?;
-        debug!("Applied gamma adjustment: {}", gamma);
+        let g = gamma.clamp(0.1, 3.0);
+        gray = adjust_gamma(&gray, g)?;
+        debug!("Applied gamma adjustment: {}", g);
     }
 
-    // Step 3: Convert to binary using same logic as monochrome pipeline
-    // Dithering and threshold can be combined - threshold controls the midpoint
-    let binary = if dithering == DitheringMethod::None {
-        // No dithering - use threshold only
-        if let Some(threshold_value) = threshold {
-            debug!("Applying manual threshold (no dithering): {}", threshold_value);
-            apply_threshold(&gray, threshold_value)
-        } else {
-            debug!("Applying automatic Otsu thresholding (no dithering)");
-            let gray_dynamic = DynamicImage::ImageLuma8(gray);
-            auto_threshold(&gray_dynamic)
-        }
-    } else {
-        // Dithering enabled - can be combined with manual threshold
-        if let Some(threshold_value) = threshold {
-            debug!(
-                "Applying {:?} dithering with manual threshold: {}",
-                dithering, threshold_value
-            );
-            apply_dithering_with_custom_threshold(&gray, dithering, Some(threshold_value))?
-        } else {
-            debug!(
-                "Applying {:?} dithering with default threshold (127)",
-                dithering
-            );
-            apply_dithering(&gray, dithering)?
-        }
-    };
+    // Step 3: Convert to binary using shared jittered dither pipeline.
+    let binary = apply_dithering_jittered(&gray, dithering, threshold, jitter)?;
 
     // Step 4: Map pixels to braille dots
     let mut grid = pixels_to_braille(&binary, actual_cell_width, actual_cell_height)?;

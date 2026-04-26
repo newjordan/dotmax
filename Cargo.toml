@@ -57,12 +57,18 @@ png = { version = "0.18", optional = true }  # For APNG animation support
 resvg = { version = "0.38", optional = true }
 usvg = { version = "0.38", optional = true }
 ffmpeg-next = { version = "7.0", optional = true }  # For video playback
+anyhow = { version = "1.0", optional = true }       # Error handling for raytracer loaders
+gltf = { version = "1.4", optional = true }         # glTF/GLB loading for raytracer
+shakmaty = { version = "0.28", optional = true }    # Chess game logic for chess module
+pgn-reader = { version = "0.27", optional = true }  # PGN parsing for chess module
 
 [features]
 default = []
 image = ["dep:image", "dep:imageproc", "dep:gif", "dep:png"]
 svg = ["dep:resvg", "dep:usvg"]
 video = ["dep:ffmpeg-next", "image"]  # Video requires image for frame rendering
+raytracer = ["dep:anyhow", "dep:gltf"]  # CPU raytracer with braille output
+chess = ["dep:shakmaty", "dep:pgn-reader"]  # Chess board rendering
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
@@ -70,6 +76,11 @@ tracing-subscriber = "0.3"
 tempfile = "3.10"
 proptest = "1.4"
 static_assertions = "1.1"
+
+[[bin]]
+name = "dotmax-braille"
+path = "src/bin/dotmax_braille.rs"
+required-features = ["image"]
 
 [[bench]]
 name = "rendering"
@@ -255,6 +266,31 @@ path = "examples/animations/fireworks.rs"
 [[example]]
 name = "clock"
 path = "examples/animations/clock.rs"
+
+# Raytracer examples
+[[example]]
+name = "raytrace_sphere"
+required-features = ["raytracer"]
+
+[[example]]
+name = "zone_stream"
+required-features = ["raytracer", "image", "chess"]
+
+[[example]]
+name = "zone_stream_canvas_1"
+required-features = ["raytracer", "image", "chess"]
+
+[[example]]
+name = "zone_stream_canvas_2"
+required-features = ["raytracer", "image", "chess"]
+
+[[example]]
+name = "zone_stream_canvas_3"
+required-features = ["raytracer", "image", "chess"]
+
+[[example]]
+name = "purple_rain"
+required-features = ["raytracer", "image"]
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

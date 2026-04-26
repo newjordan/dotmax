@@ -225,16 +225,8 @@ enum Formation {
     /// Wireframe cube on BLACK background — kept for future use.
     #[allow(dead_code)]
     RaytraceCube,
-    /// ATM panel — top-corner balance display with bordered frame.
-    Atm,
-    /// "ENTER AGENT" slot — labeled panel for one player.
-    AgentSlot { player: u8 },
     /// Live chess board rendered via dotmax::chess from a shakmaty position.
     ChessBoard,
-    /// Big "[ CASH OUT ]" payout button.
-    PayoutButton,
-    /// Live text input — captures typing, shows prompt + buffer + cursor.
-    TerminalInput,
 }
 
 /// Important UI text (labels, balance digits, button text) is bright WHITE
@@ -256,6 +248,14 @@ struct ImageAsset {
     name: &'static str,
     variants: Vec<ImageVariant>,   // one per dither method
     luma: Vec<u8>,                 // raw pattern bytes from first variant — pipe payload
+    // Each image breathes at its own slow rate within the panel so the
+    // visible scale of the subject drifts over time and is different per
+    // image. scale = base + amp * sin(cursor * rate + phase). Rates are
+    // chosen so a full cycle takes ~10–35 seconds.
+    scale_base: f32,
+    scale_amp: f32,
+    scale_rate: f32,
+    scale_phase: f32,
 }
 
 const DITHER_METHODS: &[DitheringMethod] = &[
@@ -288,25 +288,98 @@ fn load_image(path: &str, name: &'static str, cells_w: usize, cells_h: usize) ->
         }
         variants.push(ImageVariant { cells, w: gw, h: gh });
     }
-    Some(ImageAsset { name, variants, luma: luma.unwrap_or_default() })
+    Some(ImageAsset {
+        name,
+        variants,
+        luma: luma.unwrap_or_default(),
+        scale_base: 1.0,
+        scale_amp: 0.0,
+        scale_rate: 0.0,
+        scale_phase: 0.0,
+    })
+}
+
+/// Stable per-asset hash so each image gets fixed render-size and breath
+/// parameters across runs (and runs match across machines).
+fn asset_hash(name: &str) -> u32 {
+    let mut h: u32 = 2166136261;
+    for b in name.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(16777619);
+    }
+    h
+}
+
+/// Per-asset intrinsic render size (cells). Heavy variation so different
+/// animals fill the same panel at very different apparent sizes.
+fn asset_render_size(h: u32) -> (usize, usize) {
+    match (h >> 5) & 0x7 {
+        0 => (104, 52),
+        1 => (88, 44),
+        2 => (72, 36),
+        3 => (64, 32),
+        4 => (56, 28),
+        5 => (48, 24),
+        6 => (40, 20),
+        _ => (32, 16),
+    }
+}
+
+/// Per-asset breath: slow scale oscillation, different rate/phase per
+/// image. cursor accumulates at flow_rate=48/sec, so a rate of 0.0035 ≈
+/// 35-second period and 0.012 ≈ 10-second period.
+fn asset_breath(h: u32) -> (f32, f32, f32, f32) {
+    let r1 = ((h >> 3) & 0xFFFF) as f32 / 65535.0;
+    let r2 = ((h >> 11) & 0xFFFF) as f32 / 65535.0;
+    let r3 = ((h >> 17) & 0xFFFF) as f32 / 65535.0;
+    let r4 = ((h.rotate_left(7)) & 0xFFFF) as f32 / 65535.0;
+    let scale_base  = 0.75 + r1 * 0.70;            // 0.75 .. 1.45
+    let scale_amp   = 0.14 + r2 * 0.32;            // 0.14 .. 0.46
+    let scale_rate  = 0.0035 + r3 * 0.0090;        // ~10–35s period
+    let scale_phase = r4 * std::f32::consts::TAU;
+    (scale_base, scale_amp, scale_rate, scale_phase)
 }
 
 fn load_image_assets() -> Vec<ImageAsset> {
-    // Heavy on tigers, snakes, rabbits. A little frog. Some grifter.
+    // Tigers, snakes, rabbits, frogs, grifter — plus the full animal
+    // bestiary from purple_rain/. No skylines, no palms — animals only.
     let candidates: &[(&str, &str, &'static str)] = &[
-        ("tests/fixtures/images/tiger_small.png",      "./tests/fixtures/images/tiger_small.png",      "TIGER"),
-        ("tests/fixtures/images/tiger_1.png",          "./tests/fixtures/images/tiger_1.png",          "TIGR2"),
-        ("tests/fixtures/images/viper3.png",           "./tests/fixtures/images/viper3.png",           "VIPER"),
-        ("tests/fixtures/images/viper_head_3.png",     "./tests/fixtures/images/viper_head_3.png",     "VHEAD"),
-        ("tests/fixtures/images/extras/snakedesk.png", "./tests/fixtures/images/extras/snakedesk.png", "SNAKE"),
-        ("tests/fixtures/images/extras/rabbit.png",    "./tests/fixtures/images/extras/rabbit.png",    "RABT"),
-        ("tests/fixtures/images/extras/grifter.jpg",   "./tests/fixtures/images/extras/grifter.jpg",   "GRFTR"),
-        ("tests/fixtures/images/extras/frog_01.png",   "./tests/fixtures/images/extras/frog_01.png",   "FROG"),
-        ("tests/fixtures/images/extras/frog_02.png",   "./tests/fixtures/images/extras/frog_02.png",   "FROG2"),
+        ("tests/fixtures/images/tiger_small.png",        "./tests/fixtures/images/tiger_small.png",        "TIGER"),
+        ("tests/fixtures/images/tiger_1.png",            "./tests/fixtures/images/tiger_1.png",            "TIGR2"),
+        ("tests/fixtures/images/viper3.png",             "./tests/fixtures/images/viper3.png",             "VIPER"),
+        ("tests/fixtures/images/viper_head_3.png",       "./tests/fixtures/images/viper_head_3.png",       "VHEAD"),
+        ("tests/fixtures/images/extras/snakedesk.png",   "./tests/fixtures/images/extras/snakedesk.png",   "SNAKE"),
+        ("tests/fixtures/images/extras/rabbit.png",      "./tests/fixtures/images/extras/rabbit.png",      "RABT"),
+        ("tests/fixtures/images/extras/grifter.jpg",     "./tests/fixtures/images/extras/grifter.jpg",     "GRFTR"),
+        ("tests/fixtures/images/extras/frog_01.png",     "./tests/fixtures/images/extras/frog_01.png",     "FROG"),
+        ("tests/fixtures/images/extras/frog_02.png",     "./tests/fixtures/images/extras/frog_02.png",     "FROG2"),
+        ("tests/fixtures/images/purple_rain/bear.png",      "./tests/fixtures/images/purple_rain/bear.png",      "BEAR"),
+        ("tests/fixtures/images/purple_rain/dolphins.png",  "./tests/fixtures/images/purple_rain/dolphins.png",  "DLPHN"),
+        ("tests/fixtures/images/purple_rain/elephant.png",  "./tests/fixtures/images/purple_rain/elephant.png",  "ELPHT"),
+        ("tests/fixtures/images/purple_rain/fox.png",       "./tests/fixtures/images/purple_rain/fox.png",       "FOX"),
+        ("tests/fixtures/images/purple_rain/horse.png",     "./tests/fixtures/images/purple_rain/horse.png",     "HORSE"),
+        ("tests/fixtures/images/purple_rain/jellyfish.png", "./tests/fixtures/images/purple_rain/jellyfish.png", "JELLY"),
+        ("tests/fixtures/images/purple_rain/octopus.png",   "./tests/fixtures/images/purple_rain/octopus.png",   "OCTO"),
+        ("tests/fixtures/images/purple_rain/owl.png",       "./tests/fixtures/images/purple_rain/owl.png",       "OWL"),
+        ("tests/fixtures/images/purple_rain/panther.png",   "./tests/fixtures/images/purple_rain/panther.png",   "PANTH"),
+        ("tests/fixtures/images/purple_rain/raven.png",     "./tests/fixtures/images/purple_rain/raven.png",     "RAVEN"),
+        ("tests/fixtures/images/purple_rain/shark.png",     "./tests/fixtures/images/purple_rain/shark.png",     "SHARK"),
+        ("tests/fixtures/images/purple_rain/snake.png",     "./tests/fixtures/images/purple_rain/snake.png",     "SNK2"),
+        ("tests/fixtures/images/purple_rain/stag.png",      "./tests/fixtures/images/purple_rain/stag.png",      "STAG"),
+        ("tests/fixtures/images/purple_rain/whale.png",     "./tests/fixtures/images/purple_rain/whale.png",     "WHALE"),
+        ("tests/fixtures/images/purple_rain/wolf.png",      "./tests/fixtures/images/purple_rain/wolf.png",      "WOLF"),
     ];
     let mut out = Vec::new();
     for &(p1, p2, name) in candidates {
-        if let Some(a) = load_image(p1, name, 64, 32).or_else(|| load_image(p2, name, 64, 32)) {
+        let h = asset_hash(name);
+        let (cw, ch) = asset_render_size(h);
+        let loaded = load_image(p1, name, cw, ch).or_else(|| load_image(p2, name, cw, ch));
+        if let Some(mut a) = loaded {
+            let (sb, sa, sr, sp) = asset_breath(h);
+            a.scale_base = sb;
+            a.scale_amp = sa;
+            a.scale_rate = sr;
+            a.scale_phase = sp;
             out.push(a);
         }
     }
@@ -402,19 +475,12 @@ struct Scene {
     streamers: Vec<Streamer>,
     /// Edge-anchored noise injection feeds.
     noise_feeds: Vec<NoiseFeed>,
-    /// Rects that streamers/feeds skip — cube window + UI rects (ATM,
-    /// AgentSlots, ChessBoard, PayoutButton, TerminalInput).
+    /// Rects that streamers/feeds skip — cube window + chess board.
     protected_rects: Vec<Rect>,
-    /// Live chess game played by random legal moves — the betting subject.
+    /// Live chess game played by random legal moves.
     chess_pos: Chess,
     /// Cursor value when last chess move was played.
     chess_last_move_at: f32,
-    /// ATM balance — visible on the panel.
-    balance: u32,
-    /// Cursor when balance last ticked (jitters every ~0.3s with ±2% swings).
-    balance_last_tick: f32,
-    /// Live text input from the keyboard.
-    input_buffer: String,
     /// Active short-lived image fragments blasted on top of the scene.
     glitch_inserts: Vec<GlitchInsertion>,
     /// Cursor when the last glitch insert was spawned.
@@ -433,8 +499,6 @@ struct PaintCtx<'a> {
     adjacency: &'a [Vec<u16>],
     assets: &'a [ImageAsset],
     chess_pos: &'a Chess,
-    balance: u32,
-    input_buffer: &'a str,
 }
 
 // ───────────────────────── scene construction ─────────────────────────
@@ -513,48 +577,14 @@ fn build_scene(w: i32, h: i32) -> Scene {
     };
 
     let panel_w = (w / 7).clamp(18, 28);
-    let panel_h = (h / 9).clamp(4, 6);
-
-    let ui_atm     = Rect { x: w - panel_w - 1, y: 1, w: panel_w, h: panel_h };
-    let ui_agent_a = Rect { x: 1, y: 1, w: panel_w, h: panel_h };
-    let ui_agent_b = Rect {
-        x: w - panel_w - 1,
-        y: ui_atm.y + ui_atm.h + 1,
-        w: panel_w,
-        h: panel_h,
-    };
-    let ui_payout = Rect {
-        x: w - panel_w - 1,
-        y: ui_agent_b.y + ui_agent_b.h + 1,
-        w: panel_w,
-        h: panel_h.min(4),
-    };
-
-    let term_h = 3_i32;
-    let term_w = (chess_w + 4).min(w - 4);
-    let ui_term = Rect {
-        x: (w - term_w) / 2,
-        y: h - term_h - 1,
-        w: term_w,
-        h: term_h,
-    };
 
     // ─── Dedicated SNAKE image slots ─── carved next to the chess board so
-    // the vipers stay visible and big.  Tall narrow strips on each side.
-    let img_left_h = (ui_term.y - (ui_agent_a.y + ui_agent_a.h) - 2).max(8);
-    let ui_viper = Rect {
-        x: 1,
-        y: ui_agent_a.y + ui_agent_a.h + 1,
-        w: panel_w,
-        h: img_left_h,
-    };
-    let img_right_h = (ui_term.y - (ui_payout.y + ui_payout.h) - 2).max(6);
-    let ui_vhead = Rect {
-        x: w - panel_w - 1,
-        y: ui_payout.y + ui_payout.h + 1,
-        w: panel_w,
-        h: img_right_h,
-    };
+    // the vipers stay visible and big. Tall narrow strips on each side,
+    // running the full height of the canvas now that the HUD is gone.
+    let strip_y = 1_i32;
+    let strip_h = (h - 2).max(8);
+    let ui_viper = Rect { x: 1, y: strip_y, w: panel_w, h: strip_h };
+    let ui_vhead = Rect { x: w - panel_w - 1, y: strip_y, w: panel_w, h: strip_h };
 
     // Sort the surviving zones by area for asset/formation assignment.
     let mut sorted_by_area: Vec<usize> = (0..zones.len())
@@ -575,7 +605,7 @@ fn build_scene(w: i32, h: i32) -> Scene {
         }
     }
 
-    let _ui_rects = [ui_atm, ui_agent_a, ui_agent_b, ui_chess, ui_payout, ui_term, ui_viper, ui_vhead];
+    let _ui_rects = [ui_chess, ui_viper, ui_vhead];
     // NOTE: fib zones are NOT filtered — chaos paints under everything,
     // and UI re-paints on top of the chaos in a final pass (see render()).
 
@@ -594,12 +624,7 @@ fn build_scene(w: i32, h: i32) -> Scene {
         });
         *tap += (rect.w * rect.h) as i64;
     };
-    push_ui(ui_atm,     Formation::Atm,                       &mut tap_accum);
-    push_ui(ui_agent_a, Formation::AgentSlot { player: 0 },   &mut tap_accum);
-    push_ui(ui_agent_b, Formation::AgentSlot { player: 1 },   &mut tap_accum);
     push_ui(ui_chess,   Formation::ChessBoard,                &mut tap_accum);
-    push_ui(ui_payout,  Formation::PayoutButton,              &mut tap_accum);
-    push_ui(ui_term,    Formation::TerminalInput,             &mut tap_accum);
     // SCARY SNAKES — guaranteed visible at decent size.
     let viper_idx = if assets.len() > 1 { 1 } else { 0 };
     let vhead_idx = if assets.len() > 2 { 2 } else { viper_idx };
@@ -665,9 +690,6 @@ fn build_scene(w: i32, h: i32) -> Scene {
         protected_rects,
         chess_pos: Chess::default(),
         chess_last_move_at: 0.0,
-        balance: 42_069,
-        balance_last_tick: 0.0,
-        input_buffer: String::new(),
         glitch_inserts: Vec::new(),
         last_glitch_spawn: 0.0,
         dither_flows: {
@@ -710,15 +732,6 @@ fn tick(scene: &mut Scene, dt: f32) {
             scene.chess_pos.play_unchecked(mv);
         }
     }
-    // Balance tick — every ~14 cursor units (~0.3s) jitter by ±~2%.
-    if scene.cursor - scene.balance_last_tick > 14.0 {
-        scene.balance_last_tick = scene.cursor;
-        let pct = (r_f32() - 0.5) * 0.04;            // ±2%
-        let delta = (scene.balance as f32 * pct) as i64;
-        let new_bal = (scene.balance as i64 + delta).max(100);
-        scene.balance = new_bal as u32;
-    }
-
     // Tick wandering dither flows.
     let w = scene.w;
     let h = scene.h;
@@ -1406,11 +1419,19 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
     // Width of the bright sweep front as a fraction of the total sweep distance.
     const FRONT_BAND: f32 = 0.035;
 
-    // Native-resolution scrolling: image is sampled 1:1 from braille cells
-    // and wraps modularly. The frame stays fixed; the image scrolls inside
-    // it. No warping — aspect ratio preserved.
+    // Native-resolution scrolling: image is sampled from braille cells
+    // and wraps modularly. The frame stays fixed; the image scrolls and
+    // breathes (slow per-asset scale oscillation) inside it. Aspect
+    // ratio preserved — same scale on both axes.
     let scroll_x = (zone.pulse * 1.7) as i32;
     let scroll_y = (zone.pulse * 0.9) as i32;
+
+    let breath = asset.scale_base
+        + asset.scale_amp * (ctx.cursor * asset.scale_rate + asset.scale_phase).sin();
+    let scale = breath.clamp(0.45, 2.4);
+    let inv_scale = 1.0 / scale;
+    let cx = (zw as f32 - 1.0) * 0.5;
+    let cy = (zh as f32 - 1.0) * 0.5;
 
     for ry in 0..zh {
         let mut tear_dx = 0_i32;
@@ -1434,8 +1455,12 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
 
             let vw = variant.w as i32;
             let vh = variant.h as i32;
-            let srx = (rx + tear_dx + scroll_x).rem_euclid(vw.max(1)) as usize;
-            let sry = (ry + scroll_y).rem_euclid(vh.max(1)) as usize;
+            // Scale around panel center so the breath grows from the
+            // middle, then offset by scroll/tear and modular-wrap.
+            let sx_f = (rx as f32 - cx) * inv_scale + cx + (tear_dx + scroll_x) as f32;
+            let sy_f = (ry as f32 - cy) * inv_scale + cy + scroll_y as f32;
+            let srx = (sx_f.floor() as i32).rem_euclid(vw.max(1)) as usize;
+            let sry = (sy_f.floor() as i32).rem_euclid(vh.max(1)) as usize;
             let img_ch = variant.cells.get(sry).and_then(|row| row.get(srx)).copied().unwrap_or(' ');
 
             let h = ihash(rx, ry, pulse_i);
@@ -1571,69 +1596,7 @@ fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     }
 }
 
-// ─────────────── betting UI formations ───────────────
-
-fn paint_box_border(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, intensity: f32) {
-    let zw = zone.rect.w;
-    let zh = zone.rect.h;
-    if zw < 2 || zh < 2 { return; }
-    for x in 1..zw - 1 {
-        put(grid, zone.rect.x + x, zone.rect.y, '─', UI_WHITE, intensity, zone_id);
-        put(grid, zone.rect.x + x, zone.rect.y + zh - 1, '─', UI_WHITE, intensity, zone_id);
-    }
-    for y in 1..zh - 1 {
-        put(grid, zone.rect.x, zone.rect.y + y, '│', UI_WHITE, intensity, zone_id);
-        put(grid, zone.rect.x + zw - 1, zone.rect.y + y, '│', UI_WHITE, intensity, zone_id);
-    }
-    put(grid, zone.rect.x, zone.rect.y, '┌', UI_WHITE, intensity, zone_id);
-    put(grid, zone.rect.x + zw - 1, zone.rect.y, '┐', UI_WHITE, intensity, zone_id);
-    put(grid, zone.rect.x, zone.rect.y + zh - 1, '└', UI_WHITE, intensity, zone_id);
-    put(grid, zone.rect.x + zw - 1, zone.rect.y + zh - 1, '┘', UI_WHITE, intensity, zone_id);
-}
-
-fn put_str(grid: &mut [Vec<PxCell>], x: i32, y: i32, s: &str, color: (u8, u8, u8), i: f32, oid: u16, max_x: i32) {
-    let mut cx = x;
-    for ch in s.chars() {
-        if cx >= max_x { break; }
-        put(grid, cx, y, ch, color, i, oid);
-        cx += 1;
-    }
-}
-
-/// Atm — top-corner balance display.
-fn paint_atm(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, balance: u32, cursor: f32) {
-    paint_fill(grid, zone, zone_id, ' ', 0.05);
-    paint_box_border(grid, zone, zone_id, 1.0);
-    let ix = zone.rect.x + 2;
-    let max_x = zone.rect.x + zone.rect.w - 1;
-    put_str(grid, ix, zone.rect.y + 1, "ATM ::", UI_WHITE, 1.0, zone_id, max_x);
-    let bal = format!("$ {:08}", balance);
-    put_str(grid, ix, zone.rect.y + 2, &bal, UI_WHITE, 1.0, zone_id, max_x);
-    // Tiny cursor indicator
-    let blink = ((cursor * 0.5) as i32) % 2 == 0;
-    if blink && zone.rect.h >= 4 {
-        put_str(grid, ix, zone.rect.y + 3, "● ONLINE", (255, 90, 90), 1.0, zone_id, max_x);
-    } else if zone.rect.h >= 4 {
-        put_str(grid, ix, zone.rect.y + 3, "○ ONLINE", (200, 60, 60), 0.9, zone_id, max_x);
-    }
-}
-
-/// AgentSlot — labeled "ENTER AGENT" panel for a single player.
-fn paint_agent_slot(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, player: u8, scene_input: &str) {
-    paint_fill(grid, zone, zone_id, ' ', 0.05);
-    paint_box_border(grid, zone, zone_id, 0.9);
-    let ix = zone.rect.x + 2;
-    let max_x = zone.rect.x + zone.rect.w - 1;
-    let label = if player == 0 { "AGENT P1" } else { "AGENT P2" };
-    put_str(grid, ix, zone.rect.y + 1, label, UI_WHITE, 1.0, zone_id, max_x);
-    let prompt = "[ENTER AGENT >]";
-    put_str(grid, ix, zone.rect.y + 2, prompt, (255, 110, 110), 1.0, zone_id, max_x);
-    // Show typed input under P1 only (one buffer for the demo).
-    if player == 0 && !scene_input.is_empty() && zone.rect.h >= 4 {
-        let truncated: String = scene_input.chars().take((zone.rect.w - 4) as usize).collect();
-        put_str(grid, ix, zone.rect.y + 3, &truncated, UI_WHITE, 1.0, zone_id, max_x);
-    }
-}
+// ─────────────── chess UI formation ───────────────
 
 /// Live chess board — converts shakmaty position to braille via dotmax::chess.
 /// During global dither sweeps, a sacred sweep-front cuts across the board so
@@ -1684,52 +1647,6 @@ fn paint_chess_board(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, pos: &
     }
 }
 
-/// Big "[ CASH OUT ]" payout button. Solid block frame, white centered text.
-fn paint_payout_button(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, cursor: f32) {
-    let zw = zone.rect.w;
-    let zh = zone.rect.h;
-    paint_fill(grid, zone, zone_id, ' ', 0.0);
-    // Solid block border
-    for x in 0..zw {
-        put(grid, zone.rect.x + x, zone.rect.y, '█', UI_WHITE, 1.0, zone_id);
-        put(grid, zone.rect.x + x, zone.rect.y + zh - 1, '█', UI_WHITE, 1.0, zone_id);
-    }
-    for y in 0..zh {
-        put(grid, zone.rect.x, zone.rect.y + y, '█', UI_WHITE, 1.0, zone_id);
-        put(grid, zone.rect.x + zw - 1, zone.rect.y + y, '█', UI_WHITE, 1.0, zone_id);
-    }
-    // Pulsing label
-    let text = "[ CASH OUT ]";
-    let len = text.chars().count() as i32;
-    let mid_y = zone.rect.y + zh / 2;
-    let mid_x = zone.rect.x + (zw - len) / 2;
-    let pulse = ((cursor * 0.05).sin() + 1.0) * 0.5; // 0..1
-    let color = (255, (60.0 + pulse * 60.0) as u8, (60.0 + pulse * 60.0) as u8);
-    put_str(grid, mid_x, mid_y, text, color, 1.0, zone_id, zone.rect.x + zw - 1);
-}
-
-/// Live terminal input — prompt + buffer + blinking cursor.
-fn paint_terminal_input(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, buffer: &str, cursor: f32) {
-    paint_fill(grid, zone, zone_id, ' ', 0.05);
-    paint_box_border(grid, zone, zone_id, 0.9);
-    let ix = zone.rect.x + 2;
-    let mid_y = zone.rect.y + zone.rect.h / 2;
-    let max_x = zone.rect.x + zone.rect.w - 1;
-    let prompt = "INPUT> ";
-    put_str(grid, ix, mid_y, prompt, UI_WHITE, 1.0, zone_id, max_x);
-    let mut bx = ix + prompt.chars().count() as i32;
-    for ch in buffer.chars() {
-        if bx >= max_x - 1 { break; }
-        put(grid, bx, mid_y, ch, UI_WHITE, 1.0, zone_id);
-        bx += 1;
-    }
-    // Blinking cursor block
-    let blink = ((cursor / 24.0) as i32) % 2 == 0;
-    if blink && bx < max_x {
-        put(grid, bx, mid_y, '█', UI_WHITE, 1.0, zone_id);
-    }
-}
-
 // ─────────────── formation dispatch ───────────────
 
 fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &PaintCtx) {
@@ -1746,11 +1663,7 @@ fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &Pa
         Formation::ProbField         => paint_prob_field(grid, zone, zone_id, ctx),
         Formation::ImagePanel { asset } => paint_image_panel(grid, zone, zone_id, asset, ctx),
         Formation::RaytraceCube      => paint_raytrace_cube(grid, zone, zone_id),
-        Formation::Atm               => paint_atm(grid, zone, zone_id, ctx.balance, ctx.cursor),
-        Formation::AgentSlot { player } => paint_agent_slot(grid, zone, zone_id, player, ctx.input_buffer),
         Formation::ChessBoard        => paint_chess_board(grid, zone, zone_id, ctx.chess_pos, ctx.cursor),
-        Formation::PayoutButton      => paint_payout_button(grid, zone, zone_id, ctx.cursor),
-        Formation::TerminalInput     => paint_terminal_input(grid, zone, zone_id, ctx.input_buffer, ctx.cursor),
     }
 }
 
@@ -2276,18 +2189,11 @@ fn apply_edge_morph(grid: &mut [Vec<PxCell>], scene: &Scene) {
     }
 }
 
-/// Whether a formation is part of the betting UI overlay (paints LAST so it
+/// Whether a formation is the chess board overlay (paints LAST so it
 /// stays on top of the chaos, but uses normal `put` so chaos can still bleed
 /// through cells where its intensity beats the UI's).
 fn is_ui_formation(f: &Formation) -> bool {
-    matches!(
-        f,
-        Formation::Atm
-            | Formation::AgentSlot { .. }
-            | Formation::ChessBoard
-            | Formation::PayoutButton
-            | Formation::TerminalInput
-    )
+    matches!(f, Formation::ChessBoard)
 }
 
 fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
@@ -2299,8 +2205,6 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
         adjacency: &scene.adjacency,
         assets: &scene.assets,
         chess_pos: &scene.chess_pos,
-        balance: scene.balance,
-        input_buffer: &scene.input_buffer,
     };
     // 1) NON-UI formations first — fib zones, image panels, anything that
     //    forms the chaotic substrate.
@@ -2402,16 +2306,7 @@ fn main() -> io::Result<()> {
                         // Toggles moved to Ctrl-modified so plain f/r are typeable.
                         (KeyCode::Char('f'), m) if m.contains(KeyModifiers::CONTROL) => scene.flipped = !scene.flipped,
                         (KeyCode::Char('r'), m) if m.contains(KeyModifiers::CONTROL) => scene.reversed = !scene.reversed,
-                        // Backspace edits the live input buffer.
-                        (KeyCode::Backspace, _) => { scene.input_buffer.pop(); }
-                        // Enter clears the buffer (treats it as "submit").
-                        (KeyCode::Enter, _) => { scene.input_buffer.clear(); }
-                        // Plain printable chars (no Ctrl) → input buffer.
-                        (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) => {
-                            if scene.input_buffer.chars().count() < 30 {
-                                scene.input_buffer.push(c);
-                            }
-                        }
+                        (KeyCode::Char('q'), _) => break,
                         _ => {}
                     }
                 }

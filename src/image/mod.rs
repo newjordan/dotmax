@@ -124,9 +124,14 @@ pub mod temporal;
 pub mod threshold;
 
 // Re-export public types and functions for convenience
-pub use color_mode::{render_image_with_color, ColorMode, ColorSamplingStrategy};
+pub use color_mode::{
+    render_image_with_color, render_image_with_color_jittered, ColorMode, ColorSamplingStrategy,
+};
 pub use convert::to_grayscale;
-pub use dither::{apply_dithering, apply_dithering_with_custom_threshold, DitheringMethod};
+pub use dither::{
+    apply_dithering, apply_dithering_jittered, apply_dithering_with_custom_threshold,
+    DitheringMethod, JitterParams,
+};
 pub use loader::{load_from_bytes, load_from_path, supported_formats};
 pub use mapper::pixels_to_braille;
 pub use resize::{resize_to_dimensions, resize_to_terminal};
@@ -142,7 +147,28 @@ pub use threshold::{
 use crate::{BrailleGrid, DotmaxError};
 use image::DynamicImage;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{debug, info, instrument};
+
+/// Process-wide fallback seed source for ambient dithering.
+///
+/// Each call increments a counter; combined with the renderer's own frame
+/// counter this guarantees that two renderers created back-to-back still
+/// produce different ambient noise patterns. The starting value is mixed with
+/// the system clock so different processes don't collide either.
+static AMBIENT_GLOBAL_SEED: AtomicU64 = AtomicU64::new(0);
+
+fn next_global_seed_offset() -> u64 {
+    AMBIENT_GLOBAL_SEED.fetch_add(1, Ordering::Relaxed)
+}
+
+fn clock_seed() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0xA5A5_5A5A_5A5A_A5A5)
+}
 
 /// Resize mode configuration for [`ImageRenderer`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +241,18 @@ pub struct ImageRenderer {
     brightness: f32,
     contrast: f32,
     gamma: f32,
+    /// Ambient dithering intensity in 0.0..=1.0. 0.0 keeps the renderer fully
+    /// deterministic; >0.0 injects per-frame noise into the dither and gently
+    /// modulates contrast/brightness/gamma/threshold so consecutive `render()`
+    /// calls produce visibly different output even for a static input image.
+    ambient_intensity: f32,
+    /// Optional explicit seed. When `None`, the seed is drawn from the system
+    /// clock + a process-global counter on first render and then advances per
+    /// render call (so each frame evolves).
+    ambient_seed: Option<u64>,
+    /// Frame counter advanced by every `render()` call. Combined with
+    /// `ambient_seed` to make a unique per-frame jitter seed.
+    frame_counter: u64,
     /// ISSUE #3 FIX: Cache for resized image to enable fast re-renders
     /// when only adjustments (brightness/contrast/gamma) change
     cached_resized: Option<DynamicImage>,
@@ -256,10 +294,83 @@ impl ImageRenderer {
             brightness: 1.0,
             contrast: 1.0,
             gamma: 1.0,
+            ambient_intensity: 0.0,
+            ambient_seed: None,
+            frame_counter: 0,
             cached_resized: None,
             cached_original_resized: None,
             cached_dimensions: None,
         }
+    }
+
+    /// Enable ambient (temporal) dithering at the given intensity.
+    ///
+    /// `intensity` is clamped to 0.0..=1.0. With ambient enabled, every call
+    /// to [`render`](Self::render) advances an internal frame counter and
+    /// injects bounded noise into the dither pipeline plus gentle modulation
+    /// of contrast / brightness / gamma / threshold. Same input image →
+    /// different braille output per frame, so a still image visibly evolves
+    /// instead of locking to a single static pattern.
+    ///
+    /// 0.0 disables ambient and restores fully deterministic output.
+    /// 0.25–0.6 is a calm shimmer; 1.0 is heavy stipple churn.
+    #[must_use]
+    pub fn ambient(mut self, intensity: f32) -> Self {
+        self.ambient_intensity = intensity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Pin the ambient seed so the dither sequence is reproducible.
+    ///
+    /// Each `render()` call still advances the frame counter — pin the seed
+    /// when you want a deterministic animation (e.g., generating a fixed set
+    /// of frames for a preview). Pass `None` (or call [`unpin_ambient_seed`]
+    /// — see below) to fall back to clock-driven seeding.
+    #[must_use]
+    pub fn ambient_seed(mut self, seed: u64) -> Self {
+        self.ambient_seed = Some(seed);
+        self
+    }
+
+    /// Set the frame counter used for ambient seeding.
+    ///
+    /// Useful when driving the renderer from an external animation clock —
+    /// pass the frame index and you'll get a deterministic, evolving output
+    /// per frame.
+    #[must_use]
+    pub fn ambient_frame(mut self, frame: u64) -> Self {
+        self.frame_counter = frame;
+        self
+    }
+
+    /// Compute the JitterParams for the current frame and advance the counter.
+    fn next_jitter(&mut self) -> JitterParams {
+        if self.ambient_intensity <= 0.0 {
+            return JitterParams::NONE;
+        }
+        let base = self
+            .ambient_seed
+            .unwrap_or_else(|| clock_seed() ^ next_global_seed_offset().wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        // Mix in the frame counter so each render advances the pattern.
+        let mut s = base ^ self.frame_counter.wrapping_mul(0xD1B5_4A32_D192_ED03);
+        s ^= s >> 33;
+        s = s.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+        s ^= s >> 33;
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+        JitterParams::new(s, self.ambient_intensity)
+    }
+
+    /// Apply ambient modulation to a base parameter (e.g. contrast).
+    ///
+    /// Produces a frame-dependent variation in roughly `base * (1 ± amp)`.
+    fn modulated(base: f32, jitter: JitterParams, amp: f32, freq: u64) -> f32 {
+        if !jitter.enabled() {
+            return base;
+        }
+        // Cheap deterministic wave: hash the seed to a phase, take cosine.
+        let phase = (jitter.seed.wrapping_mul(freq) >> 32) as u32 as f32 / u32::MAX as f32;
+        let wave = (phase * std::f32::consts::TAU).cos();
+        base * (1.0 + amp * jitter.intensity * wave)
     }
 
     /// Loads an image from a file path.
@@ -878,22 +989,37 @@ impl ImageRenderer {
             resized
         };
 
+        // Frame-by-frame jitter: advances the seed each render so consecutive
+        // calls visibly evolve. JitterParams::NONE when ambient_intensity=0.
+        let jitter = self.next_jitter();
+
+        // Ambient modulation of the user-set tone curve. Each parameter gets
+        // its own frequency multiplier so they don't all wiggle in lock-step.
+        let modulated_brightness = Self::modulated(self.brightness, jitter, 0.10, 0x9E37_79B9);
+        let modulated_contrast = Self::modulated(self.contrast, jitter, 0.18, 0x6B5F_7A91);
+        let modulated_gamma = Self::modulated(self.gamma, jitter, 0.12, 0xC2B2_AE3D);
+        let modulated_threshold = self.threshold.map(|t| {
+            let m = Self::modulated(t as f32, jitter, 0.18, 0xA24B_AED4);
+            m.clamp(0.0, 255.0) as u8
+        });
+
         // ISSUE #1 FIX: Pass all rendering settings to color pipeline
         // to ensure consistent behavior across color modes
         if self.color_mode != ColorMode::Monochrome {
             info!("Using color rendering pipeline for {:?}", self.color_mode);
             let cell_width = target_width_pixels as usize / 2;
             let cell_height = target_height_pixels as usize / 4;
-            return render_image_with_color(
+            return render_image_with_color_jittered(
                 &resized,
                 self.color_mode,
                 cell_width,
                 cell_height,
                 self.dithering,
-                self.threshold,
-                self.brightness,
-                self.contrast,
-                self.gamma,
+                modulated_threshold,
+                modulated_brightness,
+                modulated_contrast,
+                modulated_gamma,
+                jitter,
             );
         }
 
@@ -903,50 +1029,31 @@ impl ImageRenderer {
 
         // Apply adjustments (with epsilon for float comparison)
         const EPSILON: f32 = 0.001;
-        if (self.brightness - 1.0).abs() > EPSILON {
-            gray = adjust_brightness(&gray, self.brightness)?;
-            debug!("Applied brightness adjustment: {}", self.brightness);
+        if (modulated_brightness - 1.0).abs() > EPSILON {
+            // adjust_brightness clamps to 0.0..=2.0 and errors otherwise; modulation
+            // can push the value slightly out of range, so clamp before applying.
+            let b = modulated_brightness.clamp(0.0, 2.0);
+            gray = adjust_brightness(&gray, b)?;
+            debug!("Applied brightness adjustment: {}", b);
         }
-        if (self.contrast - 1.0).abs() > EPSILON {
-            gray = adjust_contrast(&gray, self.contrast)?;
-            debug!("Applied contrast adjustment: {}", self.contrast);
+        if (modulated_contrast - 1.0).abs() > EPSILON {
+            let c = modulated_contrast.clamp(0.0, 2.0);
+            gray = adjust_contrast(&gray, c)?;
+            debug!("Applied contrast adjustment: {}", c);
         }
-        if (self.gamma - 1.0).abs() > EPSILON {
-            gray = adjust_gamma(&gray, self.gamma)?;
-            debug!("Applied gamma adjustment: {}", self.gamma);
+        if (modulated_gamma - 1.0).abs() > EPSILON {
+            let g = modulated_gamma.clamp(0.1, 3.0);
+            gray = adjust_gamma(&gray, g)?;
+            debug!("Applied gamma adjustment: {}", g);
         }
 
-        // Convert to binary (dithering or threshold)
-        let binary = if self.dithering == DitheringMethod::None {
-            // No dithering - use threshold only
-            if let Some(threshold_value) = self.threshold {
-                debug!(
-                    "Applying manual threshold (no dithering): {}",
-                    threshold_value
-                );
-                apply_threshold(&gray, threshold_value)
-            } else {
-                debug!("Applying automatic Otsu thresholding (no dithering)");
-                // auto_threshold takes DynamicImage, need to convert gray back
-                let gray_dynamic = DynamicImage::ImageLuma8(gray);
-                auto_threshold(&gray_dynamic)
-            }
-        } else {
-            // Dithering enabled - can be combined with manual threshold
-            if let Some(threshold_value) = self.threshold {
-                debug!(
-                    "Applying {:?} dithering with manual threshold: {}",
-                    self.dithering, threshold_value
-                );
-                apply_dithering_with_custom_threshold(&gray, self.dithering, Some(threshold_value))?
-            } else {
-                debug!(
-                    "Applying {:?} dithering with default threshold (127)",
-                    self.dithering
-                );
-                apply_dithering(&gray, self.dithering)?
-            }
-        };
+        // Convert to binary (dithering or threshold) with jitter.
+        let binary = apply_dithering_jittered(
+            &gray,
+            self.dithering,
+            modulated_threshold,
+            jitter,
+        )?;
 
         // Map to braille grid
         let cell_width = target_width_pixels as usize / 2;
