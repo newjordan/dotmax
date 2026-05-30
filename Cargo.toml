@@ -31,6 +31,8 @@ exclude = [
     "docs/research-*.md",
     "docs/implementation-*.md",
     "docs/sprint-*.md",
+    "docs/progress_loader_sheet.html",
+    "docs/examples/*.png",
     # Test assets and fixtures (large images/files)
     "tests/visual/",
     "tests/assets/",
