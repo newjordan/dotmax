@@ -409,8 +409,13 @@ impl TerminalRenderer {
             self.first_render = false;
         }
 
-        // Convert grid to Unicode characters using Story 2.2 functionality
-        let unicode_grid = grid.to_unicode_grid();
+        // Convert grid to Unicode characters via `get_char`, which honors
+        // explicit glyphs set with `set_char` (block elements, shading, density
+        // characters) and falls back to the braille dot pattern otherwise.
+        // Behaviour is identical to `to_unicode_grid` for pure dot grids.
+        let unicode_grid: Vec<Vec<char>> = (0..grid.height())
+            .map(|y| (0..grid.width()).map(|x| grid.get_char(x, y)).collect())
+            .collect();
 
         self.terminal.draw(|frame| {
             let area = frame.area();
