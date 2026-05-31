@@ -33,6 +33,8 @@ exclude = [
     "docs/sprint-*.md",
     "docs/progress_loader_sheet.html",
     "docs/examples/*.png",
+    # Community website assets and generated frontend files
+    "site/",
     # Test assets and fixtures (large images/files)
     "tests/visual/",
     "tests/assets/",
