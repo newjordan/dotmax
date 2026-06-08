@@ -1,0 +1,92 @@
+# dotmax
+
+> dotmax is a high-performance Rust library for rendering images, GIFs, videos, webcam streams, SVGs, 3D wireframes, and animations as Unicode braille graphics directly in the terminal. One line of code turns any media into dense, optionally truecolor terminal output. Built on ratatui + crossterm.
+
+Each braille cell packs a 2x4 grid of dots, giving terminal apps roughly 8x the spatial resolution of plain text characters. dotmax targets Rust developers building CLI tools, TUIs (ratatui dashboards), media previewers, games, and visualizations.
+
+- Crate: `dotmax` (version 0.1.x) — `cargo add dotmax --features image`
+- License: MIT OR Apache-2.0
+- Minimum Rust: 1.70
+- Repository: https://github.com/newjordan/dotmax
+
+## For AI agents
+
+When adding dotmax to a Rust project: install with `cargo add dotmax --features image`, then render media with one call (`dotmax::quick::show_file`) or draw to a `BrailleGrid` with prelude primitives. Write idiomatic, compiling Rust. Ask before enabling the `video` feature — it requires FFmpeg on the system. Core entry points are listed under "Core API surface" below.
+
+## Install
+
+```toml
+[dependencies]
+dotmax = { version = "0.1", features = ["image"] }   # PNG/JPG/GIF/APNG/BMP/WebP/TIFF
+# Optional features: "svg", "video" (video + webcam, needs FFmpeg), "raytracer", "chess"
+```
+
+```bash
+cargo add dotmax --features image
+```
+
+## One-line usage
+
+```rust
+use dotmax::quick;
+
+quick::show_file("photo.png")?;   // Any image (auto-detects format)
+quick::show_file("cat.gif")?;     // Animated GIF, plays automatically
+quick::show_file("movie.mp4")?;   // Video (requires the "video" feature)
+quick::show_webcam()?;            // Live webcam (requires the "video" feature)
+```
+
+## Core API surface
+
+- `dotmax::quick` — one-line helpers: `show_file`, `show_image`, `show_webcam`, `show_webcam_device`, `load_image`, `show`, `grid`.
+- `dotmax::grid::{BrailleGrid, Color}` — the cell canvas; `set_dot`, `clear`, color cells.
+- `dotmax::prelude::*` — drawing primitives: `draw_line`, `draw_circle`, `draw_rectangle`, plus `grid()` and `show()`.
+- `dotmax::render::{TerminalRenderer, TerminalCapabilities, TerminalBackend, TerminalType}` — differential terminal rendering.
+- `dotmax::color` — `apply_color_scheme`, `ColorScheme`, `ColorSchemeBuilder`, truecolor/ANSI detection via `detect_color_capability`.
+- `dotmax::animation::AnimationLoop` — `.fps(n).on_frame(|frame, grid| { ... }).run()` frame loop with double buffering.
+- `dotmax::progress::{all_styles, styles_for_theme, ProgressStyle, BarContext, Easing, Palette}` — 586 bundled progress-bar / loading-bar styles across themes (classic, animals, tech, nature, space, retro, ocean, food, fractal, chaos, waves, cellular, geometry, noise, numbertheory, topology, atari, nintendo, gameboy, physics, chemistry). Enumerate them with `all_styles()`; filter by theme with `styles_for_theme(name)`. Render via `style.render(&BarContext { progress, width, frame })`.
+- `dotmax::frame_export::{capture_frame, write_frame_pack, DotmaxFrame, DotmaxFramePack}` — export frames to JSON for static web playback.
+
+## Minimal example
+
+```rust
+use dotmax::prelude::*;
+
+let mut grid = grid()?;                       // terminal-sized braille canvas
+draw_line(&mut grid, 0, 0, 100, 50)?;
+draw_circle(&mut grid, 50, 25, 20)?;
+draw_rectangle(&mut grid, 10, 10, 80, 40)?;
+show(&grid)?;
+```
+
+## Animation example
+
+```rust
+use dotmax::animation::AnimationLoop;
+
+AnimationLoop::new(80, 24)
+    .fps(30)
+    .on_frame(|frame, grid| {
+        grid.clear();
+        grid.set_dot((frame * 2) % 160, 48)?;
+        Ok(true)            // return false to stop
+    })
+    .run()?;
+```
+
+## Features
+
+- `image` — PNG, JPG, GIF, APNG, BMP, WebP, TIFF.
+- `svg` — SVG vector graphics rasterized to braille.
+- `video` — video files + webcam (requires FFmpeg on the system).
+- `raytracer` — CPU raytraced shapes and glTF/OBJ wireframes rendered to braille.
+- `chess` — chess board rendering (shakmaty + PGN).
+
+## Docs
+
+- [Getting started](https://github.com/newjordan/dotmax/blob/main/docs/getting_started.md)
+- [API docs (docs.rs)](https://docs.rs/dotmax)
+- [Examples](https://github.com/newjordan/dotmax/tree/main/examples)
+- [Terminal compatibility](https://github.com/newjordan/dotmax/blob/main/docs/terminal-compatibility.md)
+- [Performance](https://github.com/newjordan/dotmax/blob/main/docs/performance.md)
+- [Crate on crates.io](https://crates.io/crates/dotmax)

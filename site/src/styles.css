@@ -1,0 +1,1976 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #070807;
+  color: #f4f0e8;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #070807;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #68f28a;
+}
+
+pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 1rem;
+  color: #d7ffe0;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+code {
+  font-family: JetBrains Mono, SFMono-Regular, Consolas, monospace;
+}
+
+::selection {
+  background: rgba(110, 231, 160, 0.28);
+}
+
+*:focus-visible {
+  outline: 2px solid rgba(110, 231, 160, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.section {
+  @apply mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8;
+  scroll-margin-top: 5.5rem;
+}
+
+.section-heading {
+  @apply mb-10 max-w-2xl;
+}
+
+.section-heading h2,
+.open-source-band h2 {
+  @apply mt-3 text-3xl font-semibold leading-[1.05] tracking-tight text-paper sm:text-[2.75rem];
+}
+
+.section-heading p,
+.open-source-band p {
+  @apply mt-4 text-base leading-7 text-muted sm:text-lg;
+}
+
+.eyebrow {
+  @apply inline-flex items-center gap-2 rounded-full border border-line bg-panel/60 px-3 py-1 font-mono text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-terminal;
+}
+
+.eyebrow::before {
+  content: "";
+  @apply size-1.5 rounded-full bg-terminal;
+  box-shadow: 0 0 10px rgba(110, 231, 160, 0.9);
+}
+
+.button {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.98];
+}
+
+.button-primary {
+  @apply border-paper bg-paper text-ink shadow-sm hover:border-terminal hover:bg-terminal hover:text-ink;
+}
+
+.button-secondary {
+  @apply border-line2 bg-panel2 text-paper hover:border-line2 hover:bg-panel3 hover:text-paper;
+}
+
+.button-ghost {
+  @apply border-transparent bg-transparent text-muted hover:border-line hover:bg-panel/60 hover:text-paper;
+}
+
+.icon-button {
+  @apply inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-panel text-muted transition hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal;
+}
+
+.icon-button-light {
+  @apply border-line bg-panel text-muted hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal;
+}
+
+.brand-mark {
+  @apply flex min-w-0 items-center gap-2 text-sm font-semibold text-paper;
+}
+
+.brand-mark span {
+  @apply flex size-8 items-center justify-center rounded-lg border border-terminal/25 bg-terminal/10 font-mono text-xs font-semibold text-terminal shadow-sm;
+}
+
+.brand-mark strong {
+  @apply text-base font-semibold tracking-tight;
+}
+
+.doc-search-link {
+  @apply inline-flex min-h-9 items-center gap-2 rounded-lg border border-line bg-panel/80 px-3 text-sm text-muted shadow-sm transition hover:border-terminal/50 hover:bg-panel2 hover:text-paper;
+}
+
+.doc-search-link kbd {
+  @apply ml-1 hidden rounded border border-line bg-ink px-1.5 py-0.5 font-mono text-[0.65rem] text-subtle sm:inline;
+}
+
+.copy-button {
+  @apply relative;
+}
+
+.copy-button-status {
+  @apply pointer-events-none absolute -top-9 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap border border-line bg-ink px-2 py-1 font-mono text-[0.68rem] text-muted opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition;
+}
+
+.copy-button-copied {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal hover:text-ink;
+}
+
+.copy-button-copied .copy-button-status {
+  @apply border-terminal bg-terminal text-ink opacity-100;
+}
+
+.copy-button-error {
+  @apply border-coral/70 bg-coral/10 text-coral;
+}
+
+.copy-button-error .copy-button-status {
+  @apply border-coral/70 bg-ink text-coral opacity-100;
+}
+
+.command-link {
+  @apply inline-flex min-h-9 items-center gap-2 rounded-md border border-line bg-panel px-3 font-mono text-xs text-muted transition hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal;
+}
+
+.command-link kbd {
+  @apply ml-1 border border-line bg-ink px-1.5 py-0.5 text-[0.65rem] text-muted;
+}
+
+.status-dot {
+  @apply inline-block size-2 rounded-full bg-terminal shadow-[0_0_16px_rgba(110,231,160,0.9)];
+}
+
+.text-terminal-dark {
+  color: #6ee7a0;
+}
+
+.hero-docs-shell {
+  @apply relative overflow-hidden border-b border-line bg-page;
+}
+
+.hero-docs-shell::before {
+  content: "";
+  @apply pointer-events-none absolute inset-0;
+  background:
+    radial-gradient(60% 70% at 78% 12%, rgba(110, 231, 160, 0.1), transparent 70%),
+    radial-gradient(50% 60% at 8% 0%, rgba(122, 219, 214, 0.06), transparent 70%);
+}
+
+.hero-docs-shell::after {
+  content: "";
+  @apply pointer-events-none absolute inset-0 opacity-[0.4];
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.04) 1px, transparent 0);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(70% 60% at 50% 0%, black, transparent 75%);
+}
+
+.hero-docs-grid {
+  @apply relative z-10 mx-auto grid max-w-7xl gap-8 px-4 py-14 sm:gap-12 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,0.92fr)_minmax(420px,1fr)] lg:px-8 lg:py-28;
+}
+
+.hero-docs-grid h1 {
+  @apply text-[3.5rem] font-semibold leading-[0.95] tracking-tight text-paper sm:text-8xl;
+}
+
+.hero-lede {
+  @apply mt-6 max-w-2xl text-xl leading-[1.45] text-paper/90 sm:text-[1.7rem];
+}
+
+.hero-support {
+  @apply mt-4 max-w-xl text-base leading-7 text-muted;
+}
+
+.hero-stat-row {
+  @apply mt-9 grid gap-3 sm:grid-cols-3;
+}
+
+.hero-stat-row span {
+  @apply rounded-xl border border-line bg-panel2/70 p-3.5 text-sm text-muted shadow-card transition hover:border-line2;
+}
+
+.hero-stat-row strong {
+  @apply mb-1 block font-mono text-xs font-semibold uppercase tracking-wide text-paper;
+}
+
+.hero-preview-stack {
+  @apply grid min-w-0 gap-4 lg:pt-2;
+}
+
+.hero-install-card {
+  @apply min-w-0 overflow-hidden rounded-xl border border-line bg-panel shadow-card;
+}
+
+.hero-install-head {
+  @apply flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 font-mono text-xs uppercase tracking-wide text-muted;
+}
+
+.hero-install-card .code-shell {
+  @apply border-0 bg-ink;
+}
+
+.hero-install-card .code-shell-bar {
+  @apply hidden;
+}
+
+.hero-install-card pre {
+  @apply bg-ink text-sm text-paper;
+}
+
+.hero-shell {
+  @apply relative min-h-[calc(78svh-3.75rem)] overflow-hidden border-b border-line;
+}
+
+.hero-art {
+  @apply absolute inset-0;
+}
+
+.hero-art img {
+  @apply h-full w-full object-cover;
+  object-position: 58% 45%;
+}
+
+.hero-shade {
+  @apply absolute inset-0;
+  background:
+    linear-gradient(90deg, rgba(7, 8, 7, 0.96) 0%, rgba(7, 8, 7, 0.78) 38%, rgba(7, 8, 7, 0.16) 72%),
+    linear-gradient(0deg, rgba(7, 8, 7, 0.88) 0%, rgba(7, 8, 7, 0.18) 42%, rgba(7, 8, 7, 0.45) 100%);
+}
+
+.hero-content {
+  @apply relative z-10 mx-auto grid min-h-[calc(78svh-3.75rem)] max-w-7xl content-end gap-8 px-4 py-8 sm:px-6 sm:py-10 lg:grid-cols-[minmax(0,0.92fr)_minmax(340px,0.55fr)] lg:items-end lg:px-8;
+}
+
+.hero-copy {
+  @apply max-w-3xl pb-6;
+}
+
+.hero-copy h1 {
+  @apply text-6xl font-semibold leading-none text-paper sm:text-8xl lg:text-9xl;
+}
+
+.hero-copy p {
+  @apply mt-5 max-w-2xl text-xl leading-8 text-paper/80 sm:text-2xl;
+}
+
+.hero-actions {
+  @apply mt-7 flex flex-col gap-3 sm:flex-row;
+}
+
+.hero-code-attach {
+  @apply mb-6 min-w-0 overflow-hidden border border-paper/15 bg-ink/80 shadow-[0_24px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl;
+}
+
+.hero-code-head {
+  @apply flex min-h-11 items-center justify-between gap-3 border-b border-paper/10 px-3 font-mono text-xs uppercase text-muted;
+}
+
+.hero-code-attach pre {
+  @apply p-4 text-sm text-paper;
+}
+
+.dot-matrix {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.42;
+  background-image: radial-gradient(circle at 1px 1px, rgba(104, 242, 138, 0.24) 1px, transparent 0);
+  background-size: 18px 18px;
+  mask-image: linear-gradient(90deg, black, transparent 70%);
+}
+
+.terminal-preview {
+  @apply relative z-10 overflow-hidden rounded-xl border border-line bg-panel shadow-terminal;
+}
+
+.terminal-top {
+  @apply flex h-10 items-center justify-between border-b border-line bg-ink px-4 font-mono text-xs text-muted;
+}
+
+.window-controls {
+  @apply flex gap-2;
+}
+
+.window-controls span {
+  @apply size-2.5 rounded-full;
+}
+
+.terminal-body {
+  @apply relative min-h-[420px] overflow-hidden bg-ink;
+}
+
+.terminal-body img {
+  @apply h-[420px] w-full object-contain p-3 opacity-80;
+}
+
+.terminal-overlay {
+  @apply absolute bottom-0 left-0 right-0 border-t border-terminal/30 bg-ink/90 p-4 font-mono text-xs leading-6 text-terminal backdrop-blur;
+}
+
+.code-shell {
+  @apply min-w-0 overflow-hidden rounded-lg border border-line bg-ink;
+}
+
+.code-shell-bar {
+  @apply flex h-10 items-center justify-between border-b border-line bg-panel px-3 font-mono text-xs uppercase tracking-wide text-muted;
+}
+
+.snippet-card,
+.feature-card,
+.doc-card,
+.widget-card,
+.gallery-item {
+  @apply min-w-0 rounded-xl border border-line bg-panel2;
+}
+
+.snippet-card {
+  @apply p-4;
+}
+
+.snippet-card h3,
+.feature-card h3,
+.doc-card h3 {
+  @apply text-base font-semibold text-paper;
+}
+
+.feature-icon {
+  @apply inline-flex size-9 shrink-0 items-center justify-center text-terminal;
+}
+
+.gallery-grid {
+  @apply grid gap-4 md:grid-cols-2 lg:grid-cols-4;
+}
+
+.widget-grid {
+  @apply grid gap-4 lg:grid-cols-2;
+}
+
+.widget-card {
+  @apply p-4 sm:p-5;
+}
+
+.widget-card-head {
+  @apply mb-4 flex items-start gap-3;
+}
+
+.widget-card-head h3 {
+  @apply text-lg font-semibold text-paper;
+}
+
+.widget-card-head p {
+  @apply mt-1 text-sm leading-6 text-muted;
+}
+
+.widget-card-copy {
+  @apply mb-4 text-sm leading-6 text-muted;
+}
+
+.widget-options {
+  @apply mt-4 flex flex-wrap gap-2;
+}
+
+.widget-options span {
+  @apply border border-line bg-ink px-2.5 py-1.5 font-mono text-xs text-muted;
+}
+
+.feature-strip {
+  @apply mt-5 flex flex-wrap gap-x-4 gap-y-2 font-mono text-xs text-muted;
+}
+
+.feature-strip span {
+  @apply inline-flex items-center gap-2;
+}
+
+.feature-strip span::before {
+  content: "";
+  @apply size-1.5 rounded-full bg-terminal;
+}
+
+.install-visual-grid {
+  @apply grid gap-5 lg:grid-cols-2;
+}
+
+.install-card {
+  @apply relative min-h-80 overflow-hidden rounded-xl border border-line bg-ink transition hover:border-line2;
+}
+
+.install-card img {
+  @apply absolute inset-0 h-full w-full object-contain opacity-65;
+}
+
+.install-card-top {
+  @apply absolute left-3 right-3 top-3 z-10 flex min-h-10 items-center justify-between gap-3 rounded-lg border border-paper/10 bg-ink/80 px-3 font-mono text-xs text-muted backdrop-blur;
+}
+
+.install-card-output {
+  @apply absolute bottom-0 left-0 right-0 z-10 border-t border-terminal/30 bg-ink/90 p-4 font-mono text-sm leading-7 text-terminal backdrop-blur;
+}
+
+.install-card-output p {
+  @apply m-0 truncate;
+}
+
+.examples-head {
+  @apply mb-8 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end;
+}
+
+.examples-head .section-heading {
+  @apply mb-0;
+}
+
+.examples-actions {
+  @apply flex flex-col gap-3 sm:flex-row lg:flex-col;
+}
+
+.example-browser {
+  @apply grid gap-5 lg:grid-cols-[minmax(230px,280px)_1fr] lg:items-start;
+}
+
+.search-box {
+  @apply flex min-h-11 items-center gap-3 rounded-lg border border-line bg-ink px-3 text-muted transition focus-within:border-terminal/70 focus-within:ring-2 focus-within:ring-terminal/20;
+}
+
+.search-box input {
+  @apply min-w-0 flex-1 bg-transparent text-sm text-paper outline-none placeholder:text-subtle;
+}
+
+.category-sidebar {
+  @apply z-20 grid gap-3 rounded-xl border border-line bg-panel2 p-3 lg:sticky lg:top-20;
+}
+
+.category-menu {
+  @apply grid gap-2;
+}
+
+.category-menu-item {
+  @apply grid min-h-16 w-full grid-cols-[3.5rem_1fr] items-center gap-3 rounded-lg border border-line bg-ink p-2 text-left transition hover:border-terminal/60 hover:bg-terminal/10;
+}
+
+.category-menu-item-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.category-menu-thumb {
+  @apply block h-12 min-w-0 overflow-hidden rounded-md border border-line bg-panel;
+}
+
+.category-menu-thumb img {
+  @apply h-full w-full object-cover opacity-85;
+}
+
+.category-menu-copy {
+  @apply grid min-w-0 gap-1;
+}
+
+.category-menu-copy strong {
+  @apply min-w-0 truncate text-sm font-semibold text-paper;
+}
+
+.category-menu-copy span {
+  @apply font-mono text-xs text-muted;
+}
+
+.category-menu-item-active .category-menu-thumb {
+  @apply border-ink/20;
+}
+
+.category-menu-item-active .category-menu-copy strong,
+.category-menu-item-active .category-menu-copy span {
+  @apply text-ink;
+}
+
+.category-gallery {
+  @apply grid min-w-0 gap-6;
+}
+
+.category-panel {
+  @apply min-w-0 overflow-hidden rounded-xl border border-line bg-panel;
+}
+
+.category-panel-head {
+  @apply flex min-h-20 flex-col gap-3 border-b border-line bg-ink px-4 py-4 sm:flex-row sm:items-end sm:justify-between;
+}
+
+.category-panel-head h3 {
+  @apply mt-2 text-2xl font-semibold leading-tight text-paper;
+}
+
+.category-panel-head > span {
+  @apply font-mono text-xs uppercase text-muted;
+}
+
+.category-panel-grid {
+  @apply grid gap-4 p-4 xl:grid-cols-2;
+}
+
+.empty-gallery-panel {
+  @apply flex min-h-48 items-center justify-center gap-3 rounded-xl border border-line bg-panel2 p-5 font-mono text-sm text-muted;
+}
+
+.filter-bar {
+  @apply flex gap-3 overflow-x-auto pb-1 lg:justify-end;
+}
+
+.filter-pill {
+  @apply relative h-24 w-32 shrink-0 overflow-hidden border border-line bg-ink text-left transition hover:border-paper/35;
+}
+
+.filter-pill img {
+  @apply h-full w-full object-cover opacity-70 transition;
+}
+
+.filter-pill span {
+  @apply absolute bottom-0 left-0 right-0 border-t border-line bg-ink/90 px-2 py-1.5 font-mono text-xs text-paper backdrop-blur;
+}
+
+.filter-pill:hover img {
+  @apply opacity-100;
+}
+
+.filter-pill-active {
+  @apply border-paper/55 shadow-[0_18px_50px_rgba(0,0,0,0.25)];
+}
+
+.filter-pill-active span {
+  @apply bg-paper text-ink;
+}
+
+.example-grid {
+  @apply grid gap-5 xl:grid-cols-2;
+}
+
+.example-card {
+  @apply grid min-w-0 overflow-hidden rounded-xl border border-line bg-panel2 transition hover:border-line2 lg:grid-cols-[minmax(0,0.9fr)_minmax(300px,0.72fr)];
+}
+
+.example-card-top {
+  @apply flex items-start gap-3 px-4 pt-4 sm:px-5 lg:col-start-2;
+}
+
+.example-card h3 {
+  @apply mt-2 text-lg font-semibold text-paper;
+}
+
+.example-card p {
+  @apply mb-4 mt-3 px-4 text-sm leading-6 text-muted sm:px-5 lg:col-start-2;
+}
+
+.example-terminal {
+  @apply min-w-0 overflow-hidden border-b border-line bg-ink shadow-[0_20px_80px_rgba(0,0,0,0.28)] lg:row-span-4 lg:border-b-0 lg:border-r;
+}
+
+.mini-terminal {
+  @apply bg-ink;
+}
+
+.mini-terminal-top {
+  @apply flex h-9 items-center gap-2 border-b border-line bg-panel px-3 font-mono text-[0.68rem] text-muted;
+}
+
+.mini-terminal-top > span {
+  @apply min-w-0 flex-1 truncate;
+}
+
+.mini-terminal-toggle {
+  @apply inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-line bg-ink text-muted transition hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.mini-terminal-screen {
+  @apply relative overflow-hidden bg-ink p-3;
+}
+
+.mini-terminal-screen::before {
+  content: "";
+  @apply pointer-events-none absolute inset-0 opacity-20;
+  background: linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 100% 0.75rem;
+}
+
+.mini-terminal-grid {
+  @apply relative z-10 grid w-max max-w-full overflow-hidden font-mono text-[0.46rem] leading-[0.72rem] text-terminal;
+  letter-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.mini-terminal-cell {
+  @apply inline-block h-[0.72rem] w-[1ch] overflow-hidden text-center;
+}
+
+.example-terminal-bar {
+  @apply absolute left-3 top-3 z-20 flex h-8 max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg border border-line bg-ink/90 px-3 font-mono text-[0.68rem] text-muted backdrop-blur;
+}
+
+.example-terminal-bar > span:last-child {
+  @apply min-w-0 truncate;
+}
+
+.example-terminal-body {
+  @apply relative aspect-[16/10] overflow-hidden bg-ink;
+}
+
+.example-terminal-body-image {
+  @apply bg-panel;
+}
+
+.example-terminal-media {
+  @apply absolute inset-0 bg-ink p-2;
+}
+
+.example-terminal-image {
+  @apply h-full w-full object-contain;
+}
+
+.example-terminal-lines {
+  @apply absolute bottom-0 left-0 right-0 z-10 overflow-hidden border-t border-terminal/30 bg-ink/90 p-3 font-mono text-[0.72rem] leading-[1.45] text-terminal backdrop-blur;
+}
+
+.example-terminal-lines p {
+  @apply m-0 min-w-0 truncate text-[inherit] leading-[inherit] text-[inherit];
+}
+
+.example-meta {
+  @apply flex flex-wrap items-center gap-3 font-mono text-xs text-muted;
+}
+
+.example-meta span {
+  @apply inline-flex items-center gap-1.5;
+}
+
+.example-meta span::before {
+  content: "";
+  @apply size-1.5 rounded-full bg-muted;
+}
+
+.example-meta .status-ready {
+  @apply text-terminal;
+}
+
+.example-meta .status-gated {
+  @apply text-cyan;
+}
+
+.example-meta .status-wishlist {
+  @apply text-amber;
+}
+
+.example-footer {
+  @apply mt-4 flex flex-col gap-3 border-t border-line px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5 lg:col-start-2;
+}
+
+.example-code-details {
+  @apply mx-4 mb-4 sm:mx-5 lg:col-start-2;
+}
+
+.example-code-details summary {
+  @apply inline-flex min-h-10 cursor-pointer list-none items-center gap-2 font-mono text-xs text-muted transition hover:text-terminal;
+}
+
+.example-code-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.example-code-details[open] summary {
+  @apply mb-3 text-terminal;
+}
+
+.example-code-details .code-shell {
+  @apply border-0 border-t border-line;
+}
+
+.example-code-details .code-shell:first-of-type {
+  @apply border-t-0;
+}
+
+.tag-row {
+  @apply flex flex-wrap gap-x-3 gap-y-1;
+}
+
+.tag-row span {
+  @apply font-mono text-xs text-muted;
+}
+
+.source-link {
+  @apply inline-flex shrink-0 items-center gap-1 font-mono text-xs text-terminal hover:text-paper;
+}
+
+.patterns-section {
+  @apply border-b border-line bg-ink;
+}
+
+.patterns-head {
+  @apply mb-8 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end;
+}
+
+.patterns-head .section-heading {
+  @apply mb-0;
+}
+
+.pattern-kpis {
+  @apply grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel2 font-mono text-xs text-muted sm:grid-cols-4 xl:grid-cols-11;
+}
+
+.pattern-kpis span {
+  @apply flex min-w-24 flex-col gap-1 border-r border-line p-4 last:border-r-0;
+}
+
+.pattern-kpis strong {
+  @apply text-2xl leading-none text-paper;
+}
+
+.pattern-resource-index {
+  @apply mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4;
+}
+
+.pattern-resource-card {
+  @apply grid min-h-32 gap-2 rounded-xl border border-line bg-panel2 p-4 text-left transition hover:border-terminal/60 hover:bg-terminal/10;
+}
+
+.pattern-resource-card span {
+  @apply font-mono text-xs uppercase text-cyan;
+}
+
+.pattern-resource-card strong {
+  @apply text-3xl leading-none text-paper;
+}
+
+.pattern-resource-card p {
+  @apply text-sm leading-6 text-muted;
+}
+
+.pattern-resource-card-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.pattern-resource-card-active span,
+.pattern-resource-card-active strong,
+.pattern-resource-card-active p {
+  @apply text-ink;
+}
+
+.pattern-tabs {
+  @apply mb-4 inline-flex max-w-full overflow-x-auto rounded-xl border border-line bg-panel p-1;
+}
+
+.pattern-tab {
+  @apply inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg px-3 font-mono text-xs text-muted transition hover:bg-terminal/10 hover:text-terminal;
+}
+
+.pattern-tab-active {
+  @apply bg-terminal text-ink hover:bg-terminal hover:text-ink;
+}
+
+.pattern-panel {
+  @apply overflow-hidden rounded-xl border border-line bg-panel2;
+}
+
+.pattern-toolbar {
+  @apply grid gap-3 border-b border-line p-3 lg:grid-cols-[minmax(260px,440px)_1fr] lg:items-center;
+}
+
+.pattern-sort {
+  @apply flex gap-2 lg:justify-end;
+}
+
+.pattern-sort button {
+  @apply inline-flex min-h-9 items-center gap-2 border border-line bg-ink px-3 font-mono text-xs text-muted transition hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal;
+}
+
+.pattern-sort .pattern-sort-active {
+  @apply border-terminal bg-terminal text-ink;
+}
+
+.resource-table-wrap {
+  @apply overflow-x-auto;
+}
+
+.resource-table {
+  @apply min-w-[980px] w-full border-collapse text-left;
+}
+
+.resource-table th {
+  @apply border-b border-line bg-ink px-3 py-2 font-mono text-xs font-semibold uppercase text-muted;
+}
+
+.resource-table td {
+  @apply border-b border-line px-3 py-3 align-top text-sm leading-6 text-muted;
+}
+
+.resource-table tbody tr:hover {
+  @apply bg-terminal/5;
+}
+
+.resource-table td strong {
+  @apply block text-paper;
+}
+
+.resource-table td span:not(.priority-pill) {
+  @apply mt-1 block font-mono text-xs text-muted;
+}
+
+.priority-pill {
+  @apply inline-flex min-h-7 items-center rounded-full border px-2.5 font-mono text-xs;
+}
+
+.priority-core {
+  @apply border-terminal/60 bg-terminal/10 text-terminal;
+}
+
+.priority-next {
+  @apply border-cyan/60 bg-cyan/10 text-cyan;
+}
+
+.priority-lab {
+  @apply border-amber/70 bg-amber/10 text-amber;
+}
+
+.table-recipe-workbench {
+  @apply grid border-t border-line lg:grid-cols-[minmax(260px,0.62fr)_1fr];
+}
+
+.table-recipe-list {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.table-recipe-row {
+  @apply grid min-h-20 w-full gap-1 border border-transparent px-3 py-2 text-left transition hover:border-terminal/40 hover:bg-terminal/10;
+}
+
+.table-recipe-row span {
+  @apply min-w-0 truncate font-mono text-xs text-cyan;
+}
+
+.table-recipe-row strong {
+  @apply text-sm text-paper;
+}
+
+.table-recipe-row code {
+  @apply truncate font-mono text-[0.68rem] text-muted;
+}
+
+.table-recipe-row-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.table-recipe-row-active span,
+.table-recipe-row-active strong,
+.table-recipe-row-active code {
+  @apply text-ink;
+}
+
+.table-recipe-detail {
+  @apply min-w-0 p-5;
+}
+
+.table-recipe-head {
+  @apply flex items-start justify-between gap-3 border-b border-line pb-4;
+}
+
+.table-recipe-head span {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.table-recipe-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.table-recipe-head p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.table-recipe-preview {
+  @apply mt-4 grid gap-1 border border-line bg-ink p-3 font-mono text-[0.76rem] leading-5 text-terminal;
+}
+
+.table-recipe-preview span {
+  @apply block whitespace-pre overflow-hidden text-ellipsis;
+}
+
+.table-recipe-grid {
+  @apply mt-4 grid gap-3 md:grid-cols-2;
+}
+
+.table-recipe-grid > div {
+  @apply border border-line bg-ink p-3;
+}
+
+.table-recipe-grid strong {
+  @apply mb-3 block font-mono text-xs uppercase text-terminal;
+}
+
+.table-recipe-grid code {
+  @apply mb-2 block border border-line bg-panel px-2 py-1.5 font-mono text-[0.7rem] text-muted last:mb-0;
+}
+
+.table-recipe-code {
+  @apply mt-4 max-h-72 overflow-auto border border-line bg-panel p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.pattern-folder-layout {
+  @apply grid lg:grid-cols-[minmax(260px,360px)_1fr];
+}
+
+.folder-tree-panel {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.folder-node {
+  @apply flex min-h-10 w-full min-w-0 items-center gap-2 px-3 text-left font-mono text-xs text-muted transition hover:bg-terminal/10 hover:text-terminal;
+}
+
+.folder-node span {
+  @apply min-w-0 truncate;
+}
+
+.folder-node-active {
+  @apply bg-terminal text-ink hover:bg-terminal hover:text-ink;
+}
+
+.folder-detail-panel {
+  @apply p-5;
+}
+
+.folder-detail-top {
+  @apply mb-5 flex items-start gap-3 text-terminal;
+}
+
+.folder-detail-top span {
+  @apply block font-mono text-xs uppercase text-muted;
+}
+
+.folder-detail-top strong {
+  @apply mt-1 block text-xl text-paper;
+}
+
+.folder-detail-panel p {
+  @apply max-w-3xl text-sm leading-7 text-muted;
+}
+
+.folder-recipe-box {
+  @apply mt-5 border border-line bg-ink p-4;
+}
+
+.folder-recipe-box span {
+  @apply mb-2 block font-mono text-xs uppercase text-terminal;
+}
+
+.folder-recipe-box code {
+  @apply block whitespace-normal text-sm leading-6 text-paper;
+}
+
+.folder-browser-workbench {
+  @apply mt-5 grid overflow-hidden border border-line lg:grid-cols-[minmax(230px,0.55fr)_1fr];
+}
+
+.folder-browser-list {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.folder-browser-row {
+  @apply grid min-h-16 w-full gap-1 border border-transparent px-3 py-2 text-left transition hover:border-terminal/40 hover:bg-terminal/10;
+}
+
+.folder-browser-row span {
+  @apply min-w-0 truncate font-mono text-xs text-cyan;
+}
+
+.folder-browser-row strong {
+  @apply text-sm text-paper;
+}
+
+.folder-browser-row-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.folder-browser-row-active span,
+.folder-browser-row-active strong {
+  @apply text-ink;
+}
+
+.folder-browser-detail {
+  @apply min-w-0 p-4;
+}
+
+.folder-browser-head {
+  @apply flex items-start justify-between gap-3 border-b border-line pb-4;
+}
+
+.folder-browser-head span {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.folder-browser-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.folder-browser-head p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.folder-browser-preview {
+  @apply mt-4 grid gap-1 border border-line bg-panel p-3 font-mono text-[0.76rem] leading-5 text-terminal;
+}
+
+.folder-browser-preview span {
+  @apply block whitespace-pre overflow-hidden text-ellipsis;
+}
+
+.folder-browser-grid {
+  @apply mt-4 grid gap-3 md:grid-cols-2;
+}
+
+.folder-browser-grid > div {
+  @apply border border-line bg-ink p-3;
+}
+
+.folder-browser-grid strong {
+  @apply mb-3 block font-mono text-xs uppercase text-terminal;
+}
+
+.folder-browser-grid code {
+  @apply mb-2 block border border-line bg-panel px-2 py-1.5 font-mono text-[0.7rem] text-muted last:mb-0;
+}
+
+.folder-browser-code {
+  @apply mt-4 max-h-72 overflow-auto border border-line bg-panel p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.schematic-panel {
+  @apply p-4;
+}
+
+.schematic-grid {
+  @apply grid gap-3 md:grid-cols-2 xl:grid-cols-3;
+}
+
+.schematic-node {
+  @apply relative min-h-36 border border-line bg-ink p-4;
+}
+
+.schematic-node::after {
+  content: "";
+  @apply absolute -right-3 top-1/2 hidden h-px w-3 bg-terminal/50 xl:block;
+}
+
+.schematic-node:nth-child(3n)::after {
+  display: none;
+}
+
+.schematic-node span {
+  @apply font-mono text-xs text-cyan;
+}
+
+.schematic-node strong {
+  @apply mt-4 block text-lg text-paper;
+}
+
+.schematic-node p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.schematic-notes {
+  @apply mt-4 flex gap-3 border border-terminal/30 bg-terminal/10 p-4 text-sm leading-6 text-paper;
+}
+
+.schematic-notes svg {
+  @apply mt-1 shrink-0 text-terminal;
+}
+
+.schematic-recipe-workbench {
+  @apply mt-4 grid overflow-hidden border border-line lg:grid-cols-[minmax(260px,0.62fr)_1fr];
+}
+
+.schematic-recipe-list {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.schematic-recipe-row {
+  @apply grid min-h-20 w-full gap-1 border border-transparent px-3 py-2 text-left transition hover:border-terminal/40 hover:bg-terminal/10;
+}
+
+.schematic-recipe-row span {
+  @apply min-w-0 truncate font-mono text-xs text-cyan;
+}
+
+.schematic-recipe-row strong {
+  @apply text-sm text-paper;
+}
+
+.schematic-recipe-row-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.schematic-recipe-row-active span,
+.schematic-recipe-row-active strong {
+  @apply text-ink;
+}
+
+.schematic-recipe-detail {
+  @apply min-w-0 p-5;
+}
+
+.schematic-recipe-head {
+  @apply flex items-start justify-between gap-3 border-b border-line pb-4;
+}
+
+.schematic-recipe-head span {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.schematic-recipe-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.schematic-recipe-head p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.schematic-recipe-preview {
+  @apply mt-4 grid gap-1 border border-line bg-panel p-3 font-mono text-[0.76rem] leading-5 text-terminal;
+}
+
+.schematic-recipe-preview span {
+  @apply block whitespace-pre overflow-hidden text-ellipsis;
+}
+
+.schematic-recipe-grid {
+  @apply mt-4 grid gap-3 md:grid-cols-2;
+}
+
+.schematic-recipe-grid > div {
+  @apply border border-line bg-ink p-3;
+}
+
+.schematic-recipe-grid strong {
+  @apply mb-3 block font-mono text-xs uppercase text-terminal;
+}
+
+.schematic-recipe-grid code {
+  @apply mb-2 block border border-line bg-panel px-2 py-1.5 font-mono text-[0.7rem] text-muted last:mb-0;
+}
+
+.schematic-recipe-code {
+  @apply mt-4 max-h-72 overflow-auto border border-line bg-panel p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.tab-recipe-panel {
+  @apply grid lg:grid-cols-[minmax(280px,0.72fr)_1fr];
+}
+
+.tab-recipe-list {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.tab-recipe-row {
+  @apply grid min-h-24 w-full gap-1 border border-transparent px-3 py-2 text-left transition hover:border-terminal/40 hover:bg-terminal/10;
+}
+
+.tab-recipe-row span {
+  @apply min-w-0 truncate font-mono text-xs text-cyan;
+}
+
+.tab-recipe-row strong {
+  @apply text-sm text-paper;
+}
+
+.tab-recipe-row code {
+  @apply truncate font-mono text-[0.68rem] text-muted;
+}
+
+.tab-recipe-row-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.tab-recipe-row-active span,
+.tab-recipe-row-active strong,
+.tab-recipe-row-active code {
+  @apply text-ink;
+}
+
+.tab-recipe-detail {
+  @apply min-w-0 p-5;
+}
+
+.tab-recipe-head {
+  @apply flex items-start justify-between gap-3 border-b border-line pb-4;
+}
+
+.tab-recipe-head span {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.tab-recipe-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.tab-recipe-head p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.tab-strip-preview {
+  @apply mt-4 flex max-w-full overflow-x-auto border border-line bg-ink p-1;
+}
+
+.tab-strip-preview span {
+  @apply inline-flex min-h-9 shrink-0 items-center border-r border-line px-3 font-mono text-xs text-muted last:border-r-0;
+}
+
+.tab-strip-preview .tab-strip-active {
+  @apply bg-terminal text-ink;
+}
+
+.tab-state-grid {
+  @apply mt-4 grid gap-3 md:grid-cols-2;
+}
+
+.tab-state-grid > div {
+  @apply border border-line bg-ink p-3;
+}
+
+.tab-state-grid strong {
+  @apply mb-3 block font-mono text-xs uppercase text-terminal;
+}
+
+.tab-state-grid code {
+  @apply mb-2 block border border-line bg-panel px-2 py-1.5 font-mono text-[0.7rem] text-muted last:mb-0;
+}
+
+.tab-recipe-code {
+  @apply mt-4 max-h-72 overflow-auto border border-line bg-panel p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.blueprint-panel {
+  @apply grid gap-4 p-4 xl:grid-cols-2;
+}
+
+.blueprint-card {
+  @apply min-w-0 border border-line bg-ink;
+}
+
+.blueprint-card-head {
+  @apply flex min-h-14 items-center justify-between gap-3 border-b border-line px-4 py-3;
+}
+
+.blueprint-card-head span {
+  @apply font-mono text-xs uppercase text-cyan;
+}
+
+.blueprint-card h3 {
+  @apply mt-1 text-lg font-semibold text-paper;
+}
+
+.blueprint-card > p {
+  @apply px-4 pt-4 text-sm leading-6 text-muted;
+}
+
+.blueprint-grid {
+  @apply grid gap-3 p-4 md:grid-cols-2;
+}
+
+.blueprint-grid > div {
+  @apply min-w-0 border border-line bg-panel2 p-3;
+}
+
+.blueprint-grid strong {
+  @apply mb-2 block font-mono text-xs uppercase text-terminal;
+}
+
+.blueprint-grid code {
+  @apply mb-2 block whitespace-normal border border-line bg-ink px-2 py-1.5 text-[0.68rem] leading-5 text-muted last:mb-0;
+}
+
+.blueprint-code {
+  @apply max-h-64 border-t border-line bg-panel p-4 text-[0.72rem] leading-5 text-paper;
+}
+
+.kit-panel {
+  @apply grid gap-4 p-4;
+}
+
+.kit-card {
+  @apply grid min-w-0 overflow-hidden border border-line bg-ink lg:grid-cols-[1fr_minmax(280px,360px)];
+}
+
+.kit-card-main {
+  @apply min-w-0 border-b border-line lg:border-b-0 lg:border-r;
+}
+
+.kit-card-head {
+  @apply border-b border-line p-4;
+}
+
+.kit-card-head span {
+  @apply font-mono text-xs uppercase text-cyan;
+}
+
+.kit-card-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.kit-card-head p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.kit-command {
+  @apply flex items-center gap-2 border-b border-line bg-panel p-3;
+}
+
+.kit-command code {
+  @apply min-w-0 flex-1 truncate font-mono text-xs text-terminal;
+}
+
+.kit-code {
+  @apply max-h-56 p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.kit-card-side {
+  @apply grid gap-0;
+}
+
+.kit-card-side > div {
+  @apply border-b border-line p-4 last:border-b-0;
+}
+
+.kit-card-side strong {
+  @apply mb-2 block font-mono text-xs uppercase text-terminal;
+}
+
+.kit-card-side span {
+  @apply mb-2 block border border-line bg-panel px-2 py-1.5 font-mono text-[0.68rem] text-muted last:mb-0;
+}
+
+.contract-panel {
+  @apply grid lg:grid-cols-[minmax(320px,0.82fr)_1fr];
+}
+
+.contract-list {
+  @apply border-b border-line bg-ink p-2 lg:border-b-0 lg:border-r;
+}
+
+.contract-row {
+  @apply grid min-h-20 w-full grid-cols-[1fr_auto] gap-x-3 gap-y-1 border border-transparent px-3 py-2 text-left transition hover:border-terminal/40 hover:bg-terminal/10;
+}
+
+.contract-row span {
+  @apply min-w-0 truncate font-mono text-xs text-cyan;
+}
+
+.contract-row strong {
+  @apply min-w-0 truncate text-sm text-paper;
+}
+
+.contract-row code {
+  @apply col-span-2 truncate font-mono text-[0.68rem] text-muted;
+}
+
+.contract-row-active {
+  @apply border-terminal bg-terminal text-ink hover:bg-terminal;
+}
+
+.contract-row-active span,
+.contract-row-active strong,
+.contract-row-active code {
+  @apply text-ink;
+}
+
+.contract-detail {
+  @apply min-w-0 p-5;
+}
+
+.contract-detail-head {
+  @apply flex items-start justify-between gap-3 border-b border-line pb-4;
+}
+
+.contract-detail-head span {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.contract-detail-head h3 {
+  @apply mt-1 text-xl font-semibold text-paper;
+}
+
+.contract-detail dl {
+  @apply grid gap-3 py-4;
+}
+
+.contract-detail dl div {
+  @apply border border-line bg-ink p-3;
+}
+
+.contract-detail dt {
+  @apply font-mono text-xs uppercase text-cyan;
+}
+
+.contract-detail dd {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.contract-snippet {
+  @apply border border-line bg-panel p-4 text-[0.76rem] leading-5 text-paper;
+}
+
+.layout-panel {
+  @apply grid gap-4 p-4 xl:grid-cols-2;
+}
+
+.layout-card {
+  @apply grid min-w-0 overflow-hidden border border-line bg-ink lg:grid-cols-[minmax(180px,0.55fr)_1fr];
+}
+
+.layout-wireframe {
+  @apply grid gap-2 border-b border-line bg-panel p-4 lg:border-b-0 lg:border-r;
+}
+
+.layout-wireframe span {
+  @apply flex items-center justify-center border border-terminal/35 bg-terminal/10 px-2 text-center font-mono text-[0.68rem] uppercase text-terminal;
+}
+
+.layout-card-body {
+  @apply min-w-0 p-4;
+}
+
+.layout-card-body > span {
+  @apply font-mono text-xs uppercase text-cyan;
+}
+
+.layout-card h3 {
+  @apply mt-1 text-lg font-semibold text-paper;
+}
+
+.layout-card p {
+  @apply mt-2 text-sm leading-6 text-muted;
+}
+
+.layout-region-row {
+  @apply mt-4 flex flex-wrap gap-2;
+}
+
+.layout-region-row code {
+  @apply border border-line bg-panel px-2 py-1 font-mono text-[0.68rem] text-muted;
+}
+
+.layout-code-head {
+  @apply mt-4 flex min-h-10 items-center justify-between gap-3 border border-line bg-panel px-3;
+}
+
+.layout-code-head strong {
+  @apply font-mono text-xs uppercase text-terminal;
+}
+
+.layout-code {
+  @apply border-x border-b border-line bg-ink p-3 text-[0.72rem] leading-5 text-paper;
+}
+
+.loading-bars-section {
+  @apply border-b border-line;
+}
+
+.loading-bars-head {
+  @apply mb-8 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end;
+}
+
+.loading-bars-head .section-heading {
+  @apply mb-0;
+}
+
+.loading-bars-count {
+  @apply grid grid-cols-2 gap-x-3 gap-y-1 rounded-xl border border-line bg-panel2 p-4 font-mono text-xs text-muted;
+}
+
+.loading-bars-count strong {
+  @apply text-2xl leading-none text-paper;
+}
+
+.loading-bars-toolbar {
+  @apply sticky top-[4.05rem] z-30 mb-5 grid gap-3 rounded-xl border border-line bg-ink/95 p-3 backdrop-blur lg:grid-cols-[minmax(260px,380px)_1fr] lg:items-start;
+}
+
+.loading-theme-strip {
+  @apply flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1;
+}
+
+.loading-theme-pill {
+  @apply inline-flex min-h-8 items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 font-mono text-xs text-muted transition hover:border-terminal/60 hover:bg-terminal/10 hover:text-terminal;
+}
+
+.loading-theme-pill span {
+  @apply text-cyan;
+}
+
+.loading-theme-pill-active {
+  @apply border-terminal bg-terminal text-ink;
+}
+
+.loading-theme-pill-active span {
+  @apply text-ink;
+}
+
+.loading-bars-grid {
+  @apply grid gap-3 md:grid-cols-2 xl:grid-cols-3;
+}
+
+.loading-bar-card {
+  @apply min-w-0 overflow-hidden rounded-xl border border-line bg-panel2 transition hover:border-line2;
+}
+
+.loading-bar-terminal {
+  @apply border-b border-line bg-ink;
+}
+
+.loading-bar-terminal-top {
+  @apply flex h-8 items-center justify-between gap-3 border-b border-line bg-panel px-3 font-mono text-[0.68rem] text-muted;
+}
+
+.loading-bar-terminal-top span {
+  @apply min-w-0 truncate;
+}
+
+.loading-bar-terminal-top span:first-child {
+  @apply text-paper;
+}
+
+.loading-bar-output {
+  @apply min-h-[5.25rem] overflow-hidden p-3 font-mono text-[0.66rem] leading-[1.25] text-terminal;
+  letter-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.loading-bar-card-body {
+  @apply p-3;
+}
+
+.loading-bar-card-meta {
+  @apply flex min-w-0 items-center justify-between gap-3 font-mono text-xs;
+}
+
+.loading-bar-card-meta span:first-child {
+  @apply text-cyan;
+}
+
+.loading-bar-card-meta span:last-child {
+  @apply min-w-0 truncate text-paper;
+}
+
+.loading-bar-card p {
+  @apply mt-3 min-h-12 text-sm leading-6 text-muted;
+}
+
+.loading-bar-card code {
+  @apply mt-3 block truncate border border-line bg-ink px-2.5 py-2 text-[0.68rem] text-muted;
+}
+
+.gallery-item {
+  @apply overflow-hidden bg-ink;
+}
+
+.gallery-featured {
+  @apply md:col-span-2 md:row-span-2;
+}
+
+.gallery-item img {
+  @apply aspect-[4/3] w-full bg-ink object-contain;
+}
+
+.gallery-featured img {
+  @apply md:aspect-[1.45/1];
+}
+
+.gallery-item figcaption {
+  @apply flex min-h-24 flex-col gap-2 border-t border-line p-4;
+}
+
+.gallery-item strong {
+  @apply text-sm font-semibold text-paper;
+}
+
+.gallery-item span {
+  @apply text-sm leading-6 text-muted;
+}
+
+.feature-card {
+  @apply min-h-44 overflow-hidden bg-panel p-0;
+}
+
+.feature-card h3 {
+  @apply px-5 pt-4;
+}
+
+.feature-card p {
+  @apply mt-3 px-5 pb-5 text-sm leading-6 text-muted;
+}
+
+.feature-card-visual,
+.doc-card-visual {
+  @apply relative border-b border-line bg-ink;
+}
+
+.feature-card-visual {
+  @apply aspect-[16/9];
+}
+
+.feature-card-visual img,
+.doc-card-visual img {
+  @apply h-full w-full object-contain;
+}
+
+.feature-card-visual svg {
+  @apply absolute left-3 top-3 text-cyan;
+}
+
+.doc-card {
+  @apply relative min-h-64 overflow-hidden bg-panel p-0 transition hover:border-paper/40 hover:bg-panel2 hover:text-paper;
+}
+
+.doc-card-visual {
+  @apply aspect-[16/10];
+}
+
+.doc-card-visual .feature-icon {
+  @apply absolute left-3 top-3;
+}
+
+.doc-card h3 {
+  @apply px-5 pt-4 text-base font-semibold text-paper;
+}
+
+.doc-card p {
+  @apply mt-4 px-5 pb-14 text-sm leading-6 text-muted;
+}
+
+.doc-card > svg:last-child {
+  @apply absolute bottom-5 right-5 text-muted;
+}
+
+.pill-link {
+  @apply inline-flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 font-mono text-xs transition hover:border-terminal/50 hover:bg-panel2 hover:text-paper;
+}
+
+.plain-action-link {
+  @apply inline-flex items-center gap-2 font-mono text-xs text-terminal transition hover:text-paper;
+}
+
+.open-source-band {
+  @apply grid gap-0 overflow-hidden rounded-2xl border border-line bg-panel2 p-0 lg:grid-cols-[minmax(320px,0.85fr)_1fr_auto] lg:items-center;
+}
+
+.open-source-band > div:not(.open-source-visual) {
+  @apply p-6 sm:p-8;
+}
+
+.open-source-visual {
+  @apply relative min-h-72 border-b border-line bg-ink lg:h-full lg:border-b-0 lg:border-r;
+}
+
+.open-source-visual img {
+  @apply h-full min-h-72 w-full object-contain;
+}
+
+.open-source-visual-caption {
+  @apply absolute bottom-3 left-3 right-3 rounded-lg border border-line bg-ink/90 p-3 font-mono text-xs text-muted backdrop-blur;
+}
+
+.open-source-visual-caption strong {
+  @apply mt-1 block font-sans text-lg text-paper;
+}
+
+.open-source-actions {
+  @apply flex flex-col gap-3 sm:flex-row lg:flex-col;
+}
+
+@media (max-width: 640px) {
+  .button {
+    min-height: 2.5rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .hero-content {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+    gap: 1.25rem;
+  }
+
+  .hero-copy {
+    padding-bottom: 0;
+  }
+
+  .hero-copy h1 {
+    font-size: 3.75rem;
+  }
+
+  .hero-copy p {
+    margin-top: 1.25rem;
+    font-size: 1.25rem;
+    line-height: 1.6;
+  }
+
+  .hero-actions {
+    margin-top: 1.75rem;
+  }
+
+  .hero-code-attach {
+    margin-bottom: 0;
+  }
+
+  .terminal-body {
+    min-height: 220px;
+  }
+
+  .terminal-body img {
+    height: 220px;
+  }
+
+  .terminal-overlay {
+    font-size: 0.6875rem;
+    line-height: 1.55;
+  }
+
+  .example-terminal-body {
+    aspect-ratio: 4 / 3;
+  }
+
+  .example-terminal-lines {
+    padding: 0.65rem;
+    font-size: 0.625rem;
+    line-height: 1.35;
+  }
+
+  .example-terminal-bar {
+    height: 1.9rem;
+    font-size: 0.625rem;
+  }
+
+  pre {
+    font-size: 0.75rem;
+  }
+}
+
+/* ============================================================
+   Redesign additions: nav, hero install, quick start,
+   build-with-ai, command palette, badges
+   ============================================================ */
+
+/* Nav refinements */
+.nav-link {
+  @apply relative rounded-md px-1 py-1 text-sm text-muted transition hover:text-paper;
+}
+
+.nav-link-active {
+  @apply text-paper;
+}
+
+.nav-link-active::after {
+  content: "";
+  @apply absolute -bottom-[1.15rem] left-0 right-0 h-px bg-terminal;
+}
+
+.nav-cmdk {
+  @apply inline-flex min-h-9 items-center gap-2 rounded-lg border border-line bg-panel/80 px-2.5 text-sm text-muted shadow-sm transition hover:border-terminal/50 hover:bg-panel2 hover:text-paper;
+}
+
+.nav-cmdk kbd {
+  @apply ml-1 hidden items-center gap-0.5 rounded border border-line bg-ink px-1.5 py-0.5 font-mono text-[0.65rem] text-subtle sm:inline-flex;
+}
+
+/* Hero install command, front and center */
+.hero-install-inline {
+  @apply mt-7 flex min-h-12 w-full max-w-xl items-center gap-3 rounded-lg border border-terminal/25 bg-ink px-4 py-2.5 font-mono text-sm shadow-card;
+}
+
+.hero-install-inline .prompt {
+  @apply select-none text-terminal;
+}
+
+.hero-install-inline code {
+  @apply min-w-0 flex-1 truncate text-paper;
+}
+
+.hero-badges {
+  @apply mt-6 flex flex-wrap items-center gap-x-2.5 gap-y-2;
+}
+
+.hero-badges img {
+  @apply h-5;
+}
+
+/* Generic badge / chip */
+.badge {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-panel2 px-2.5 py-1 font-mono text-[0.7rem] text-muted;
+}
+
+.badge-accent {
+  @apply border-terminal/35 bg-terminal/10 text-terminal;
+}
+
+/* Quick start section */
+.quickstart-grid {
+  @apply grid items-stretch gap-5 lg:grid-cols-2;
+}
+
+.quickstart-card {
+  @apply flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-panel2;
+}
+
+.quickstart-card-head {
+  @apply flex min-h-11 items-center justify-between gap-3 border-b border-line bg-ink px-4 font-mono text-xs uppercase tracking-wide text-muted;
+}
+
+.quickstart-card pre {
+  @apply flex-1 bg-ink p-4 text-[0.82rem] leading-[1.7] text-paper;
+}
+
+.quickstart-steps {
+  @apply mt-6 grid gap-3 sm:grid-cols-3;
+}
+
+.quickstart-step {
+  @apply rounded-xl border border-line bg-panel2 p-4;
+}
+
+.quickstart-step span {
+  @apply inline-flex size-7 items-center justify-center rounded-lg border border-terminal/30 bg-terminal/10 font-mono text-xs font-semibold text-terminal;
+}
+
+.quickstart-step strong {
+  @apply mt-3 block text-sm font-semibold text-paper;
+}
+
+.quickstart-step p {
+  @apply mt-1 text-sm leading-6 text-muted;
+}
+
+/* Build with AI section */
+.ai-section {
+  @apply border-y border-line bg-surface;
+}
+
+.ai-grid {
+  @apply grid gap-4 lg:grid-cols-3;
+}
+
+.ai-card {
+  @apply flex min-w-0 flex-col rounded-xl border border-line bg-panel2 p-5 transition hover:border-terminal/40;
+}
+
+.ai-card-icon {
+  @apply inline-flex size-10 items-center justify-center rounded-lg border border-terminal/25 bg-terminal/10 text-terminal;
+}
+
+.ai-card h3 {
+  @apply mt-4 text-base font-semibold text-paper;
+}
+
+.ai-card p {
+  @apply mt-2 flex-1 text-sm leading-6 text-muted;
+}
+
+.ai-card-action {
+  @apply mt-4;
+}
+
+.ai-prompt-box {
+  @apply mt-4 rounded-lg border border-line bg-ink p-3 font-mono text-[0.72rem] leading-5 text-muted;
+}
+
+.ai-editor-row {
+  @apply mt-2 flex flex-wrap gap-2;
+}
+
+.ai-roadmap {
+  @apply mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel/60 p-4 text-sm text-muted;
+}
+
+.ai-roadmap strong {
+  @apply font-semibold text-paper;
+}
+
+/* Copy button as a labeled pill variant (for AI / install actions) */
+.copy-pill {
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line2 bg-panel2 px-4 text-sm font-semibold text-paper transition hover:border-terminal/60 hover:bg-panel3 hover:text-terminal active:scale-[0.98];
+}
+
+.copy-pill-copied {
+  @apply border-terminal bg-terminal/15 text-terminal;
+}
+
+/* Command palette (⌘K) */
+.cmdk-overlay {
+  @apply fixed inset-0 z-[60] flex items-start justify-center bg-black/70 p-4 pt-[12vh] backdrop-blur-sm;
+  animation: fade-in 0.12s ease-out both;
+}
+
+.cmdk-panel {
+  @apply flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-line2 bg-popover shadow-pop;
+  animation: scale-in 0.14s ease-out both;
+}
+
+.cmdk-input-row {
+  @apply flex items-center gap-3 border-b border-line px-4;
+}
+
+.cmdk-input-row input {
+  @apply min-h-12 w-full flex-1 bg-transparent text-base text-paper outline-none placeholder:text-subtle;
+}
+
+.cmdk-input-row .cmdk-esc {
+  @apply hidden rounded border border-line bg-ink px-1.5 py-0.5 font-mono text-[0.65rem] text-subtle sm:inline;
+}
+
+.cmdk-list {
+  @apply flex-1 overflow-y-auto p-2;
+}
+
+.cmdk-group-label {
+  @apply px-2 pb-1 pt-3 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-subtle;
+}
+
+.cmdk-item {
+  @apply flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm text-muted transition;
+}
+
+.cmdk-item-active {
+  @apply bg-terminal/10 text-paper;
+}
+
+.cmdk-item svg {
+  @apply shrink-0 text-subtle;
+}
+
+.cmdk-item-active svg {
+  @apply text-terminal;
+}
+
+.cmdk-item .cmdk-item-title {
+  @apply min-w-0 flex-1 truncate;
+}
+
+.cmdk-item .cmdk-item-tag {
+  @apply shrink-0 font-mono text-[0.65rem] uppercase tracking-wide text-subtle;
+}
+
+.cmdk-empty {
+  @apply px-3 py-8 text-center text-sm text-subtle;
+}
+
+/* "Browse all" expander button for gated sections */
+.expander-button {
+  @apply mx-auto mt-6 flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line2 bg-panel2 px-5 text-sm font-semibold text-paper transition hover:border-terminal/60 hover:bg-panel3 hover:text-terminal;
+}
