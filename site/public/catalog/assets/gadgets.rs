@@ -1142,8 +1142,27 @@ impl ProgressStyle for BluetoothPair {
             draw::dot_i(grid, cx as i32 + i as i32, (cy + arm) as i32 - i as i32);
         }
 
+        // ── Pairing signal arcs ──
+        // Nested arcs flank the rune on both sides; the count grows with
+        // progress (1 faint arc at the start, 5 when pairing is nearly done)
+        // so completion stays legible in monochrome.
+        let max_arcs = 5usize;
+        let n_arcs = ((ctx.eased * max_arcs as f32).ceil() as usize).clamp(1, max_arcs);
+        let arc_steps = 13usize;
+        for k in 0..n_arcs {
+            let r = (arm + 4 + k * 7) as f32;
+            for s in 0..arc_steps {
+                let a = (s as f32 / (arc_steps - 1) as f32 - 0.5) * 1.2; // ±0.6 rad
+                let dx = (r * a.cos()).round() as i32;
+                let dy = (r * 0.35 * a.sin()).round() as i32;
+                draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
+                draw::dot_i(grid, cx as i32 - dx, cy as i32 + dy);
+            }
+        }
+
         // ── Handshake blips ──
-        // Blips travel horizontally outward from the glyph.
+        // Blips travel horizontally outward from the glyph. The 0.75 Hz rate
+        // is a multiple of 0.25 Hz so the 4-second loop stays seamless.
         let n_blips = 5usize;
         let paired = ctx.eased >= 1.0;
         for b in 0..n_blips {
@@ -1152,7 +1171,7 @@ impl ProgressStyle for BluetoothPair {
                 // Frozen in place when paired.
                 1.0f32
             } else {
-                (ctx.time * 0.8 + phase).fract()
+                (ctx.time * 0.75 + phase).fract()
             };
             let reach = (t * (w / 2) as f32) as usize;
 

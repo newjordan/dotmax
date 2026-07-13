@@ -90,7 +90,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(content) => {
             match content {
                 MediaContent::Static(grid) => {
-                    println!("Loaded as Static content: {}x{} grid", grid.width(), grid.height());
+                    println!(
+                        "Loaded as Static content: {}x{} grid",
+                        grid.width(),
+                        grid.height()
+                    );
                     println!("\nPress any key to display...");
 
                     // Read a keypress
@@ -136,10 +140,7 @@ fn demonstrate_format_detection() {
 
     // Demonstrate magic byte detection
     let test_cases = [
-        (
-            "PNG",
-            vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-        ),
+        ("PNG", vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
         ("JPEG", vec![0xFF, 0xD8, 0xFF, 0xE0]),
         ("GIF89a", vec![0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
         ("BMP", vec![0x42, 0x4D]),
@@ -171,7 +172,11 @@ fn demonstrate_format_detection() {
 
     for (name, bytes) in test_cases {
         let format = detect_format_from_bytes(&bytes);
-        let hex: String = bytes.iter().take(8).map(|b| format!("{:02X} ", b)).collect();
+        let hex: String = bytes
+            .iter()
+            .take(8)
+            .map(|b| format!("{:02X} ", b))
+            .collect();
         println!("{:12} | {} | -> {}", name, hex.trim(), format);
     }
 

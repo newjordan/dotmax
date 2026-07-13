@@ -7,7 +7,10 @@ use std::fs;
 use std::path::PathBuf;
 
 fn env_f32(key: &str, default: f32) -> f32 {
-    std::env::var(key).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 
 fn env_u8(key: &str, default: u8) -> Option<u8> {
@@ -27,7 +30,12 @@ fn env_bool(key: &str, default: bool) -> bool {
 }
 
 fn env_dither(key: &str) -> DitheringMethod {
-    match std::env::var(key).ok().as_deref().map(str::to_lowercase).as_deref() {
+    match std::env::var(key)
+        .ok()
+        .as_deref()
+        .map(str::to_lowercase)
+        .as_deref()
+    {
         Some("floyd") | Some("floydsteinberg") => DitheringMethod::FloydSteinberg,
         Some("bayer") => DitheringMethod::Bayer,
         Some("atkinson") => DitheringMethod::Atkinson,
@@ -37,7 +45,9 @@ fn env_dither(key: &str) -> DitheringMethod {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let image_path = args.next().ok_or("usage: render_cuda_dojo <image> <out_dir>")?;
+    let image_path = args
+        .next()
+        .ok_or("usage: render_cuda_dojo <image> <out_dir>")?;
     let out_dir: PathBuf = args
         .next()
         .ok_or("usage: render_cuda_dojo <image> <out_dir>")?
@@ -146,8 +156,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let svg_path = out_dir.join(format!("{}.svg", name));
         fs::write(&svg_path, svg)?;
 
-        println!("wrote {} + {}.svg ({}x{} chars)",
-            txt_path.display(), name, grid.width(), grid.height());
+        println!(
+            "wrote {} + {}.svg ({}x{} chars)",
+            txt_path.display(),
+            name,
+            grid.width(),
+            grid.height()
+        );
     }
 
     println!("done — files in {}", out_dir.display());

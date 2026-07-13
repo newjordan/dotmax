@@ -2512,10 +2512,16 @@ mod tests {
         let scheme = grayscale();
 
         let result = grid.apply_color_scheme(&too_short, &scheme);
-        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DotmaxError::BufferSizeMismatch { .. })
+        ));
 
         let result = grid.apply_color_scheme(&too_long, &scheme);
-        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DotmaxError::BufferSizeMismatch { .. })
+        ));
     }
 
     /// Test `apply_color_scheme()` with special float values (AC #4)
@@ -2524,13 +2530,7 @@ mod tests {
         use crate::color::schemes::grayscale;
 
         let mut grid = BrailleGrid::new(5, 1).unwrap();
-        let intensities = vec![
-            f32::NAN,
-            f32::INFINITY,
-            f32::NEG_INFINITY,
-            -0.5,
-            1.5,
-        ];
+        let intensities = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.5, 1.5];
         let scheme = grayscale();
 
         let result = grid.apply_color_scheme(&intensities, &scheme);
@@ -2604,9 +2604,7 @@ mod tests {
         grid.set_dot(10, 10).unwrap();
 
         // Apply color scheme
-        let intensities: Vec<f32> = (0..100)
-            .map(|i| (i as f32) / 99.0)
-            .collect();
+        let intensities: Vec<f32> = (0..100).map(|i| (i as f32) / 99.0).collect();
         let scheme = heat_map();
         grid.apply_color_scheme(&intensities, &scheme).unwrap();
 

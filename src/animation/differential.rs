@@ -169,23 +169,20 @@ impl DifferentialRenderer {
         renderer: &mut TerminalRenderer,
     ) -> Result<(), DotmaxError> {
         // Check for dimension mismatch or no previous frame
-        let should_full_render = self
-            .last_frame
-            .as_ref()
-            .map_or(true, |last| {
-                if last.width() != current.width() || last.height() != current.height() {
-                    debug!(
-                        old_width = last.width(),
-                        old_height = last.height(),
-                        new_width = current.width(),
-                        new_height = current.height(),
-                        "Dimension mismatch - performing full frame render"
-                    );
-                    true
-                } else {
-                    false
-                }
-            });
+        let should_full_render = self.last_frame.as_ref().map_or(true, |last| {
+            if last.width() != current.width() || last.height() != current.height() {
+                debug!(
+                    old_width = last.width(),
+                    old_height = last.height(),
+                    new_width = current.width(),
+                    new_height = current.height(),
+                    "Dimension mismatch - performing full frame render"
+                );
+                true
+            } else {
+                false
+            }
+        });
 
         // Get reference to last frame for comparison, or render full if None
         let last = match (should_full_render, &self.last_frame) {
@@ -230,7 +227,10 @@ impl DifferentialRenderer {
         }
 
         stdout.flush()?;
-        debug!(changed_cells = changed_count, "Differential render complete");
+        debug!(
+            changed_cells = changed_count,
+            "Differential render complete"
+        );
         self.last_frame = Some(current.clone());
         Ok(())
     }

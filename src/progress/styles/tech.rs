@@ -242,14 +242,14 @@ impl ProgressStyle for GlitchBar {
 
         let filled = ((ctx.eased * w as f32) as usize).min(w);
 
-        // Glitch "epoch" changes ~3 times per second; drives which rows glitch.
-        let epoch = (ctx.time * 3.0) as u32;
+        // Glitch "epoch" changes 4 times per second; drives which rows glitch.
+        let epoch = (ctx.time * 4.0) as u32;
 
         for y in 0..h {
             // Decide if this scanline glitches this epoch.
             let row_hash = hash(y as u32 * 31 + epoch * 997);
             let glitch_prob = hashf(row_hash);
-            let shift: i32 = if glitch_prob < 0.08 {
+            let shift: i32 = if glitch_prob < 0.15 {
                 // Displace by up to ±1/8 of width.
                 let mag = (hashf(row_hash ^ 0xDEAD) * (w as f32 / 8.0)) as i32;
                 if row_hash & 1 == 0 {

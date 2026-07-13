@@ -1487,80 +1487,74 @@ impl ProgressStyle for GoldenGnomon {
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh) * 0.9;
-        let rot0 = ctx.time * 0.18 - PI / 2.0;
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
 
-        let max_depth: usize = 5;
-        let depth = ((ctx.eased * max_depth as f32).ceil() as usize)
-            .min(max_depth)
-            .max(1);
-
-        // Golden gnomon (36-72-72): apex angle 36°, two base angles 72°.
-        // Side ratios: two equal long sides = 1, short base = 1/φ.
-        // Place apex at center, base below.
-        let half_base_angle = 72.0_f32.to_radians(); // half of the full apex angle
-        let apex_angle = 36.0_f32.to_radians();
-
-        // Apex at center, long sides of length `scale`.
-        // The two base vertices are at angle ±(90° - 72°) = ±18° from vertical.
-        // More precisely: apex at top, each long side extends at angle ±(90 - 72) = ±18° from down.
-        let _ = half_base_angle;
-        let _ = apex_angle;
-
-        // Triangle vertices (unit long side = 1):
-        // Apex: (0, 0)
-        // Base left: (sin(-36°), cos(36°)) * scale ... actually use exact computation:
-        // With apex at origin, long side = 1, base vertices at ±sin(36°), cos(36°).
+        // A frieze of gnomons: full-height 36-72-72 triangles shoulder to
+        // shoulder across the whole width, with inverted copies between their
+        // apexes (each is the reflection of its neighbour, so the strip tiles
+        // exactly). Every triangle is recursively bisected to `eased` depth.
         let sin36 = 36.0_f32.to_radians().sin();
         let cos36 = 36.0_f32.to_radians().cos();
+        let hf = (dh as f32 - 1.0).max(1.0);
+        let side = hf / cos36; // long side spans the full canvas height
+        let bw = 2.0 * sin36 * side; // gnomon base width
 
-        // We'll represent each triangle as three vertices in dot-space and
-        // recursively subdivide.  Triangle type: G = gnomon (36-72-72),
-        // T = golden triangle (36-36-108).
-        // For display, just draw the triangles at each depth level.
-        // Stack: Vec<(A, B, C, is_gnomon)> where A is apex of gnomon or vertex of golden-tri.
+        // Breathing: the frieze pulses about the canvas centre (0.25 Hz —
+        // seamless over the 4 s loop).
+        let pulse = 1.0 + 0.035 * (ctx.time * PI * 0.5).sin();
+        let (mx, my) = (dw as f32 / 2.0, dh as f32 / 2.0);
+
+        let max_depth: usize = 4;
+        let depth = ((ctx.eased * max_depth as f32).ceil() as usize).clamp(1, max_depth);
 
         type Pt = (f32, f32);
-        fn rot_pt(p: Pt, angle: f32) -> Pt {
-            (
-                p.0 * angle.cos() - p.1 * angle.sin(),
-                p.0 * angle.sin() + p.1 * angle.cos(),
-            )
-        }
         fn lerp_pt(a: Pt, b: Pt, t: f32) -> Pt {
             (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
         }
-        fn draw_tri(grid: &mut BrailleGrid, cx: f32, cy: f32, a: Pt, b: Pt, c: Pt) {
-            let to_dot = |p: Pt| ((cx + p.0).round() as i32, (cy - p.1).round() as i32);
+        let draw_tri = |grid: &mut BrailleGrid, a: Pt, b: Pt, c: Pt| {
+            let to_dot = |p: Pt| {
+                (
+                    (mx + (p.0 - mx) * pulse).round() as i32,
+                    (my + (p.1 - my) * pulse).round() as i32,
+                )
+            };
             let (ax, ay) = to_dot(a);
             let (bx, by) = to_dot(b);
             let (ccx, ccy) = to_dot(c);
             bresenham(grid, ax, ay, bx, by);
             bresenham(grid, bx, by, ccx, ccy);
             bresenham(grid, ccx, ccy, ax, ay);
+        };
+
+        // Root frieze: alternating upright / inverted gnomons.
+        // is_gnomon = true: 36-72-72 gnomon; false: golden triangle (36-36-108).
+        let n_up = ((dw as f32 / bw).ceil() as usize + 1).min(16);
+        let mut tris: Vec<(Pt, Pt, Pt, bool)> = Vec::new();
+        // Leading inverted gnomon so the top-left corner is tiled too.
+        tris.push(((0.0, hf), (-bw / 2.0, 0.0), (bw / 2.0, 0.0), true));
+        for k in 0..n_up {
+            let x0 = k as f32 * bw;
+            // Upright: apex on the top edge, base along the bottom.
+            tris.push(((x0 + bw / 2.0, 0.0), (x0, hf), (x0 + bw, hf), true));
+            // Inverted: apex on the bottom edge between neighbouring apexes.
+            tris.push((
+                (x0 + bw, hf),
+                (x0 + bw / 2.0, 0.0),
+                (x0 + 1.5 * bw, 0.0),
+                true,
+            ));
+        }
+        for &(a, b, c, _) in &tris {
+            draw_tri(grid, a, b, c);
         }
 
-        // Initial gnomon: apex at center top, base at bottom.
-        // Long side = scale; base = scale / PHI.
-        let apex: Pt = (0.0, cos36 * scale);
-        let base_l: Pt = (-sin36 * scale, 0.0);
-        let base_r: Pt = (sin36 * scale, 0.0);
-
-        // Rotate by rot0.
-        let apex = rot_pt(apex, rot0);
-        let base_l = rot_pt(base_l, rot0);
-        let base_r = rot_pt(base_r, rot0);
-
-        // is_gnomon = true: 36-72-72 gnomon; false: golden triangle (36-36-108).
         // Subdivision:
         //   Gnomon (A=apex 36°, B, C base): place P on AB at AP = BC = 1/PHI * AB.
         //     → gnomon(P, A, C) [rotated/reflected] + golden-tri(B, P, C).
         //   Golden-tri (A=apex 108°, B, C base): place P on AB at AP = 1/PHI.
         //     → gnomon(C, P, A) + golden-tri(B, P, C).
-
-        let mut tris: Vec<(Pt, Pt, Pt, bool)> = vec![(apex, base_l, base_r, true)];
-
         for _d in 0..depth.saturating_sub(1) {
             let mut next: Vec<(Pt, Pt, Pt, bool)> = Vec::new();
             for &(a, b, c, is_gnomon) in &tris {
@@ -1578,16 +1572,13 @@ impl ProgressStyle for GoldenGnomon {
             }
             // Draw all triangles at this depth.
             for &(a, b, c, _) in &next {
-                draw_tri(grid, cx, cy, a, b, c);
+                draw_tri(grid, a, b, c);
             }
             tris = next;
-            if tris.len() > 128 {
+            if tris.len() > 512 {
                 break;
             } // cap for degenerate/large grids
         }
-
-        // Always draw the outermost triangle.
-        draw_tri(grid, cx, cy, apex, base_l, base_r);
 
         Ok(())
     }

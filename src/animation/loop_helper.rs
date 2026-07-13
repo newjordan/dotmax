@@ -539,9 +539,7 @@ mod tests {
 
     #[test]
     fn test_builder_fps_clamping_below_min() {
-        let anim = AnimationLoop::new(80, 24)
-            .fps(0)
-            .on_frame(|_, _| Ok(false));
+        let anim = AnimationLoop::new(80, 24).fps(0).on_frame(|_, _| Ok(false));
 
         assert_eq!(anim.target_fps(), 1, "FPS 0 should be clamped to 1");
     }
@@ -557,9 +555,7 @@ mod tests {
 
     #[test]
     fn test_builder_fps_at_min_boundary() {
-        let anim = AnimationLoop::new(80, 24)
-            .fps(1)
-            .on_frame(|_, _| Ok(false));
+        let anim = AnimationLoop::new(80, 24).fps(1).on_frame(|_, _| Ok(false));
 
         assert_eq!(anim.target_fps(), 1, "FPS 1 should remain 1");
     }

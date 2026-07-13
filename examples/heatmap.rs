@@ -43,7 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let intensities = generate_intensity_data(width as usize, height as usize);
 
     // Initial render
-    render_heatmap(&mut grid, &mut renderer, &intensities, &schemes[current_scheme])?;
+    render_heatmap(
+        &mut grid,
+        &mut renderer,
+        &intensities,
+        &schemes[current_scheme],
+    )?;
 
     // Event loop
     loop {
@@ -61,7 +66,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // Re-render with new scheme
-                render_heatmap(&mut grid, &mut renderer, &intensities, &schemes[current_scheme])?;
+                render_heatmap(
+                    &mut grid,
+                    &mut renderer,
+                    &intensities,
+                    &schemes[current_scheme],
+                )?;
             }
         }
     }
@@ -77,7 +87,7 @@ fn generate_intensity_data(width: usize, height: usize) -> Vec<f32> {
 
     // Create a few "hot spots" at different positions
     let hotspots = [
-        (0.3, 0.3, 0.4),  // x, y, radius
+        (0.3, 0.3, 0.4), // x, y, radius
         (0.7, 0.6, 0.35),
         (0.5, 0.8, 0.3),
         (0.2, 0.7, 0.25),

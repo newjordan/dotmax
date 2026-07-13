@@ -558,7 +558,12 @@ impl DotTemporalFilter {
         let expected_len = self.width * self.height;
 
         // Initialize confidence if needed
-        if self.confidence.is_none() || self.confidence.as_ref().is_some_and(|c| c.len() != expected_len) {
+        if self.confidence.is_none()
+            || self
+                .confidence
+                .as_ref()
+                .is_some_and(|c| c.len() != expected_len)
+        {
             // Initialize all dots to 0.5 (neutral)
             self.confidence = Some(vec![0.5; expected_len]);
         }
@@ -853,16 +858,14 @@ mod tests {
     #[test]
     fn test_hysteresis_filter_first_frame() {
         let mut filter = HysteresisFilter::new(10);
-        let frame = GrayImage::from_fn(4, 4, |x, _| {
-            image::Luma([if x < 2 { 100 } else { 150 }])
-        });
+        let frame = GrayImage::from_fn(4, 4, |x, _| image::Luma([if x < 2 { 100 } else { 150 }]));
 
         let result = filter.apply(&frame, 128);
 
         // First frame uses standard threshold (128)
         // Pixels with value 100 -> OFF (< 128)
         // Pixels with value 150 -> ON (>= 128)
-        assert_eq!(result.get_pixel(0, 0).0[0], 0);   // 100 < 128 -> OFF
+        assert_eq!(result.get_pixel(0, 0).0[0], 0); // 100 < 128 -> OFF
         assert_eq!(result.get_pixel(2, 0).0[0], 255); // 150 >= 128 -> ON
     }
 
@@ -937,7 +940,7 @@ mod tests {
     fn test_average_flicker() {
         let frames = vec![
             vec![true, false, true, false],
-            vec![true, true, true, false],  // 1 change from frame 0 (25%)
+            vec![true, true, true, false], // 1 change from frame 0 (25%)
             vec![false, true, false, false], // 2 changes from frame 1 (50%)
         ];
 
@@ -959,9 +962,7 @@ mod tests {
 
         let mut coherence = TemporalCoherence::new(config);
 
-        let frame = GrayImage::from_fn(10, 10, |x, _| {
-            image::Luma([if x < 5 { 100 } else { 150 }])
-        });
+        let frame = GrayImage::from_fn(10, 10, |x, _| image::Luma([if x < 5 { 100 } else { 150 }]));
 
         let result = coherence.process_grayscale(&frame, 128);
         assert_eq!(result.width(), 10);

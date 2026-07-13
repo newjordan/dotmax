@@ -112,10 +112,8 @@ impl FrameBuffer {
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            front: BrailleGrid::new(width, height)
-                .expect("FrameBuffer: invalid grid dimensions"),
-            back: BrailleGrid::new(width, height)
-                .expect("FrameBuffer: invalid grid dimensions"),
+            front: BrailleGrid::new(width, height).expect("FrameBuffer: invalid grid dimensions"),
+            back: BrailleGrid::new(width, height).expect("FrameBuffer: invalid grid dimensions"),
         }
     }
 
@@ -346,14 +344,20 @@ mod tests {
         buffer.get_back_buffer().set_dot(0, 0).unwrap();
 
         // Verify front is empty before swap
-        let front_before = buffer.get_front_buffer().cell_to_braille_char(0, 0).unwrap();
+        let front_before = buffer
+            .get_front_buffer()
+            .cell_to_braille_char(0, 0)
+            .unwrap();
         assert_eq!(front_before, '⠀');
 
         // Swap buffers
         buffer.swap_buffers();
 
         // Now front should have the pattern
-        let front_after = buffer.get_front_buffer().cell_to_braille_char(0, 0).unwrap();
+        let front_after = buffer
+            .get_front_buffer()
+            .cell_to_braille_char(0, 0)
+            .unwrap();
         assert_ne!(front_after, '⠀', "Front should have content after swap");
     }
 
@@ -370,7 +374,10 @@ mod tests {
 
         // Back buffer should have the content again
         let back_char = buffer.get_back_buffer().cell_to_braille_char(0, 0).unwrap();
-        assert_ne!(back_char, '⠀', "Double swap should restore back buffer content");
+        assert_ne!(
+            back_char, '⠀',
+            "Double swap should restore back buffer content"
+        );
     }
 
     #[test]
@@ -378,22 +385,40 @@ mod tests {
         let mut buffer = FrameBuffer::new(10, 10);
 
         // Draw different patterns to track which buffer is which
-        buffer.get_back_buffer().set_dot(0, 0).unwrap();  // Back has dot at (0,0)
+        buffer.get_back_buffer().set_dot(0, 0).unwrap(); // Back has dot at (0,0)
 
         // Swap 1: back->front
         buffer.swap_buffers();
-        assert_ne!(buffer.get_front_buffer().cell_to_braille_char(0, 0).unwrap(), '⠀');
+        assert_ne!(
+            buffer
+                .get_front_buffer()
+                .cell_to_braille_char(0, 0)
+                .unwrap(),
+            '⠀'
+        );
 
         // Add another dot to the new back buffer
         buffer.get_back_buffer().set_dot(2, 0).unwrap();
 
         // Swap 2: back->front (now front has dot at (2,0))
         buffer.swap_buffers();
-        assert_ne!(buffer.get_front_buffer().cell_to_braille_char(1, 0).unwrap(), '⠀');
+        assert_ne!(
+            buffer
+                .get_front_buffer()
+                .cell_to_braille_char(1, 0)
+                .unwrap(),
+            '⠀'
+        );
 
         // Swap 3: back->front (back to original with dot at (0,0))
         buffer.swap_buffers();
-        assert_ne!(buffer.get_front_buffer().cell_to_braille_char(0, 0).unwrap(), '⠀');
+        assert_ne!(
+            buffer
+                .get_front_buffer()
+                .cell_to_braille_char(0, 0)
+                .unwrap(),
+            '⠀'
+        );
     }
 
     // ========================================================================
@@ -417,7 +442,10 @@ mod tests {
 
         // The new back buffer (old front) should be empty
         let new_back_char = buffer.get_back_buffer().cell_to_braille_char(0, 0).unwrap();
-        assert_eq!(new_back_char, '⠀', "New back buffer should be empty after swap");
+        assert_eq!(
+            new_back_char, '⠀',
+            "New back buffer should be empty after swap"
+        );
     }
 
     #[test]
@@ -435,8 +463,15 @@ mod tests {
         for i in 0..10 {
             let cell_x = i;
             let cell_y = i;
-            let char_at_cell = buffer.get_front_buffer().cell_to_braille_char(cell_x, cell_y).unwrap();
-            assert_ne!(char_at_cell, '⠀', "Pattern should be preserved at ({}, {})", cell_x, cell_y);
+            let char_at_cell = buffer
+                .get_front_buffer()
+                .cell_to_braille_char(cell_x, cell_y)
+                .unwrap();
+            assert_ne!(
+                char_at_cell, '⠀',
+                "Pattern should be preserved at ({}, {})",
+                cell_x, cell_y
+            );
         }
     }
 }

@@ -19,8 +19,8 @@ use dotmax::{
 };
 use serde::Serialize;
 use std::f64::consts::PI;
-use std::fs::File;
 use std::fs;
+use std::fs::File;
 use std::path::Path;
 
 const WIDTH: usize = 36;
@@ -345,7 +345,10 @@ fn write_loading_bar_catalog(output_dir: &Path) -> Result<(), Box<dyn std::error
         .collect::<Vec<_>>();
 
     for style in &styles {
-        if let Some(summary) = theme_counts.iter_mut().find(|summary| summary.name == style.theme()) {
+        if let Some(summary) = theme_counts
+            .iter_mut()
+            .find(|summary| summary.name == style.theme())
+        {
             summary.count += 1;
         }
 
@@ -354,9 +357,10 @@ fn write_loading_bar_catalog(output_dir: &Path) -> Result<(), Box<dyn std::error
                 let progress = smooth_ping_pong_progress(frame_index, BAR_CATALOG_FRAMES);
                 let time = frame_index as f32 / BAR_CATALOG_FPS as f32;
                 let label = format!("{:.0}%", progress * 100.0);
-                let context = BarContext::new(progress, time, BAR_CATALOG_WIDTH, BAR_CATALOG_HEIGHT)
-                    .with_easing(Easing::CubicInOut)
-                    .with_label(label);
+                let context =
+                    BarContext::new(progress, time, BAR_CATALOG_WIDTH, BAR_CATALOG_HEIGHT)
+                        .with_easing(Easing::CubicInOut)
+                        .with_label(label);
                 render_lines(style.as_ref(), &context)
             })
             .collect::<Result<Vec<_>, _>>()?;

@@ -111,7 +111,8 @@ pub use color::apply::{apply_color_scheme, apply_colors_to_grid};
 
 // Re-export animation types (Epic 6, Stories 6.1, 6.2, 6.3, 6.4, 6.5)
 pub use animation::{
-    AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer, PrerenderedAnimation,
+    AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer,
+    PrerenderedAnimation,
 };
 
 // Re-export progress-bar types (modular loading bars)

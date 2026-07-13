@@ -33,9 +33,13 @@ fn bench_grid_creation(c: &mut Criterion) {
 
     for (width, height, label) in sizes {
         group.throughput(Throughput::Elements(1));
-        group.bench_with_input(BenchmarkId::new("new", label), &(width, height), |b, &(w, h)| {
-            b.iter(|| black_box(BrailleGrid::new(w, h).unwrap()));
-        });
+        group.bench_with_input(
+            BenchmarkId::new("new", label),
+            &(width, height),
+            |b, &(w, h)| {
+                b.iter(|| black_box(BrailleGrid::new(w, h).unwrap()));
+            },
+        );
     }
 
     group.finish();

@@ -23,7 +23,10 @@ fn main() {
         let mid = frame(style.as_ref(), 0.55, 2.0);
         let lo = frame(style.as_ref(), 0.2, 1.0);
         let hi = frame(style.as_ref(), 0.9, 3.0);
-        let mid_t2 = frame(style.as_ref(), 0.55, 2.25);
+        // Sample one export frame apart (12 fps) — the cadence the site
+        // actually plays at — and a quarter second for slower drifts.
+        let mid_t2 = frame(style.as_ref(), 0.55, 2.0 + 1.0 / 12.0);
+        let mid_t3 = frame(style.as_ref(), 0.55, 2.25);
 
         let mut flags = Vec::new();
         if ink(&mid) < 8 {
@@ -32,7 +35,7 @@ fn main() {
         if lo == hi {
             flags.push("progress-illegible(20%==90%)".to_string());
         }
-        if mid == mid_t2 {
+        if mid == mid_t2 && mid == mid_t3 {
             flags.push("static(no time motion)".to_string());
         }
         if !flags.is_empty() {

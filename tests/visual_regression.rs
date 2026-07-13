@@ -28,7 +28,13 @@
 
 mod visual;
 
-use dotmax::{BrailleGrid, primitives::{draw_line, draw_circle, shapes::{draw_rectangle, draw_polygon}}};
+use dotmax::{
+    primitives::{
+        draw_circle, draw_line,
+        shapes::{draw_polygon, draw_rectangle},
+    },
+    BrailleGrid,
+};
 use visual::{capture_grid, compare_with_baseline, generate_baseline};
 
 // =============================================================================
@@ -76,7 +82,10 @@ fn visual_checkerboard_pattern() {
     let output = capture_grid(&grid);
 
     // Verify pattern characteristics
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank > 0, "Checkerboard should have non-blank cells");
 
     // Full cells should be U+28FF (all 8 dots set)
@@ -97,7 +106,10 @@ fn visual_horizontal_line() {
     let output = capture_grid(&grid);
 
     // Line should affect multiple cells on row ~2-3 (y=10 in dot space)
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank >= 15, "Horizontal line should affect many cells");
 }
 
@@ -110,7 +122,10 @@ fn visual_vertical_line() {
     let output = capture_grid(&grid);
 
     // Line should affect cells in column ~2 (x=5 in dot space)
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank >= 8, "Vertical line should affect many cells");
 }
 
@@ -123,8 +138,14 @@ fn visual_diagonal_line() {
     let output = capture_grid(&grid);
 
     // Diagonal should affect cells along the diagonal
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
-    assert!(non_blank >= 10, "Diagonal line should affect multiple cells");
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
+    assert!(
+        non_blank >= 10,
+        "Diagonal line should affect multiple cells"
+    );
 }
 
 /// Test: Circle is rendered with symmetry
@@ -138,7 +159,10 @@ fn visual_circle_symmetry() {
     let output = capture_grid(&grid);
 
     // Circle should have non-blank cells
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank >= 10, "Circle should have visible outline");
 }
 
@@ -151,7 +175,10 @@ fn visual_rectangle_corners() {
     let output = capture_grid(&grid);
 
     // Rectangle should have non-blank cells for edges
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank >= 8, "Rectangle should have visible edges");
 }
 
@@ -165,7 +192,10 @@ fn visual_triangle() {
     let output = capture_grid(&grid);
 
     // Triangle should have visible edges
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
     assert!(non_blank >= 5, "Triangle should have visible edges");
 }
 
@@ -176,14 +206,7 @@ fn visual_triangle() {
 /// Test: Various grid dimensions produce correct output dimensions
 #[test]
 fn visual_dimension_preservation() {
-    let test_cases = [
-        (5, 3),
-        (10, 5),
-        (20, 10),
-        (80, 24),
-        (1, 1),
-        (100, 50),
-    ];
+    let test_cases = [(5, 3), (10, 5), (20, 10), (80, 24), (1, 1), (100, 50)];
 
     for (w, h) in test_cases {
         let grid = BrailleGrid::new(w, h).unwrap();
@@ -193,7 +216,8 @@ fn visual_dimension_preservation() {
             output.lines().count(),
             h,
             "Height mismatch for {}x{} grid",
-            w, h
+            w,
+            h
         );
 
         for (i, line) in output.lines().enumerate() {
@@ -201,7 +225,9 @@ fn visual_dimension_preservation() {
                 line.chars().count(),
                 w,
                 "Width mismatch on line {} for {}x{} grid",
-                i, w, h
+                i,
+                w,
+                h
             );
         }
     }
@@ -231,7 +257,9 @@ fn visual_braille_unicode_range() {
         assert!(
             (0x2800..=0x28FF).contains(&code),
             "Character {} at position {} (U+{:04X}) is not valid braille",
-            ch, i, code
+            ch,
+            i,
+            code
         );
     }
 }
@@ -250,8 +278,14 @@ fn visual_combined_shapes() {
     let output = capture_grid(&grid);
 
     // Should have significant non-blank content
-    let non_blank: usize = output.chars().filter(|&c| c != '\u{2800}' && c != '\n').count();
-    assert!(non_blank >= 50, "Combined shapes should have significant content");
+    let non_blank: usize = output
+        .chars()
+        .filter(|&c| c != '\u{2800}' && c != '\n')
+        .count();
+    assert!(
+        non_blank >= 50,
+        "Combined shapes should have significant content"
+    );
 
     // All characters should be valid braille
     for ch in output.chars() {

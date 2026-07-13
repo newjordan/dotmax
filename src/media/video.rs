@@ -259,13 +259,14 @@ impl VideoPlayer {
         })?;
 
         // Find video stream
-        let video_stream = input_context
-            .streams()
-            .best(Type::Video)
-            .ok_or_else(|| DotmaxError::VideoError {
-                path: path.clone(),
-                message: "No video stream found in file".to_string(),
-            })?;
+        let video_stream =
+            input_context
+                .streams()
+                .best(Type::Video)
+                .ok_or_else(|| DotmaxError::VideoError {
+                    path: path.clone(),
+                    message: "No video stream found in file".to_string(),
+                })?;
 
         let video_stream_index = video_stream.index();
 
@@ -273,16 +274,21 @@ impl VideoPlayer {
         let codec_params = video_stream.parameters();
 
         // Create decoder
-        let context = ffmpeg::codec::context::Context::from_parameters(codec_params)
-            .map_err(|e| DotmaxError::VideoError {
-                path: path.clone(),
-                message: format!("Failed to create codec context: {e}"),
+        let context =
+            ffmpeg::codec::context::Context::from_parameters(codec_params).map_err(|e| {
+                DotmaxError::VideoError {
+                    path: path.clone(),
+                    message: format!("Failed to create codec context: {e}"),
+                }
             })?;
 
-        let decoder = context.decoder().video().map_err(|e| DotmaxError::VideoError {
-            path: path.clone(),
-            message: format!("Failed to create video decoder: {e}"),
-        })?;
+        let decoder = context
+            .decoder()
+            .video()
+            .map_err(|e| DotmaxError::VideoError {
+                path: path.clone(),
+                message: format!("Failed to create video decoder: {e}"),
+            })?;
 
         let width = decoder.width();
         let height = decoder.height();
@@ -788,12 +794,11 @@ impl VideoPlayer {
         }
 
         // Create RGB image from pre-scaled frame data (uses buffer, no allocation)
-        let img =
-            image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
-                .ok_or_else(|| DotmaxError::VideoError {
-                    path: self.path.clone(),
-                    message: "Failed to create image from frame data".to_string(),
-                })?;
+        let img = image::RgbImage::from_raw(target_width, target_height, self.rgb_buffer.clone())
+            .ok_or_else(|| DotmaxError::VideoError {
+            path: self.path.clone(),
+            message: "Failed to create image from frame data".to_string(),
+        })?;
 
         // Convert to RGBA for ImageRenderer
         let rgba_img = image::DynamicImage::ImageRgb8(img).into_rgba8();
@@ -867,10 +872,7 @@ impl MediaPlayer for VideoPlayer {
     /// efficient seeking in all formats.
     fn reset(&mut self) {
         // Seek to beginning
-        if let Err(e) = self
-            .input_context
-            .seek(0, std::ops::RangeFull)
-        {
+        if let Err(e) = self.input_context.seek(0, std::ops::RangeFull) {
             tracing::warn!("Failed to seek to beginning: {}", e);
             // Try reopening the file
             if let Ok(new_player) = Self::new(&self.path) {

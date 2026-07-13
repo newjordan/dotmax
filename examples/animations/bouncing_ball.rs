@@ -109,12 +109,7 @@ impl Ball {
 
     /// Draw the ball on the grid as a filled circle
     fn draw(&self, grid: &mut dotmax::BrailleGrid) {
-        let _ = draw_circle_filled(
-            grid,
-            self.x as i32,
-            self.y as i32,
-            self.radius,
-        );
+        let _ = draw_circle_filled(grid, self.x as i32, self.y as i32, self.radius);
     }
 }
 

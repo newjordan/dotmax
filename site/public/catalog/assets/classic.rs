@@ -849,6 +849,22 @@ use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
+/// Fast integer hash → `[0, 1)`.
+#[inline]
+fn hash2(x: i32, y: i32) -> f32 {
+    let mut h = (x
+        .wrapping_mul(374_761_393)
+        .wrapping_add(y.wrapping_mul(668_265_263))) as u32;
+    h = (h ^ (h >> 13)).wrapping_mul(1_274_126_177);
+    ((h ^ (h >> 16)) % 1000) as f32 / 1000.0
+}
+
+/// 3-D variant: hash `(x, y, z_int)` for time-slotted sparks.
+#[inline]
+fn hash3(x: i32, y: i32, z: i32) -> f32 {
+    hash2(x ^ z.wrapping_mul(1_234_567), y ^ z.wrapping_mul(7_654_321))
+}
+
 // ---------------------------------------------------------------------------
 // Theme tint — the default cyan into violet. Applied to styles that draw monochrome.
 // ---------------------------------------------------------------------------
@@ -932,6 +948,17 @@ impl ProgressStyle for SolidFill {
             let inner = w - 4;
             let filled = (ctx.eased * inner as f32).round() as usize;
             draw::fill_rect(grid, 2, 2, filled, h - 4);
+            // The leading edge breathes so the bar reads as alive, not stuck.
+            if filled > 0 && filled < inner {
+                let mid = h / 2;
+                let reach = (h as f32 * (0.2 + 0.14 * (ctx.time * PI).sin())) as usize;
+                draw::vline(
+                    grid,
+                    2 + filled,
+                    mid.saturating_sub(reach),
+                    (mid + reach).min(h - 3),
+                );
+            }
         }
         Ok(())
     }
@@ -952,7 +979,13 @@ impl ProgressStyle for Gradient {
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         let filled = (ctx.eased * w as f32).round() as usize;
-        draw::fill_rect(grid, 0, 0, filled, h);
+        // Liquid fill: the surface ripples gently instead of sitting flat.
+        for x in 0..filled {
+            let lift = ((x as f32 * 0.3 + ctx.time * PI).sin() * 1.4 + 1.5) as usize;
+            for y in lift.min(3)..h {
+                draw::dot(grid, x, y);
+            }
+        }
         // Tint per cell-column across the filled span.
         let (cells_w, _) = grid.dimensions();
         let filled_cells = (ctx.eased * cells_w as f32).round() as usize;
@@ -994,7 +1027,16 @@ impl ProgressStyle for Blocks {
         for s in 0..lit.min(seg_count) {
             let x0 = s * seg_w;
             let bw = seg_w.saturating_sub(gap).max(1);
-            draw::fill_rect(grid, x0, 1, bw, h.saturating_sub(2).max(1));
+            let full_h = h.saturating_sub(2).max(1);
+            // The newest segment charges up from the baseline once a second —
+            // classic LED meter behavior.
+            if s + 1 == lit && lit < seg_count {
+                let charge = (ctx.time * 1.0).fract();
+                let ch = ((full_h as f32) * charge).max(1.0) as usize;
+                draw::fill_rect(grid, x0, 1 + (full_h - ch), bw, ch);
+            } else {
+                draw::fill_rect(grid, x0, 1, bw, full_h);
+            }
         }
         Ok(())
     }
@@ -1061,6 +1103,13 @@ impl ProgressStyle for Rocket {
         if head < w {
             draw::vline(grid, head, 0, h - 1);
         }
+        // Sparks popping off the nose, ahead of the fill where they show.
+        let slot = (ctx.time * 6.0) as i32;
+        for i in 0..6i32 {
+            let ahead = 2 + (hash3(i, 1, slot) * 8.0) as i32;
+            let spread = ((hash3(i, 2, slot) - 0.5) * h as f32 * 0.9) as i32;
+            draw::dot_i(grid, head as i32 + ahead, h as i32 / 2 + spread);
+        }
         Ok(())
     }
 }
@@ -1089,6 +1138,15 @@ impl ProgressStyle for TickedTrack {
         let filled = (ctx.eased * w as f32).round() as usize;
         draw::hline(grid, 0, filled.min(w - 1), base.saturating_sub(1));
         draw::hline(grid, 0, filled.min(w - 1), base);
+        // A bobbing carriage marks the leading edge on the ruler.
+        let bob = ((ctx.time * PI).sin() * 1.5 + 1.5) as usize;
+        let x = filled.min(w - 1);
+        draw::vline(
+            grid,
+            x,
+            base.saturating_sub(6 - bob.min(3)),
+            base.saturating_sub(2),
+        );
         Ok(())
     }
 }

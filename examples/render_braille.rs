@@ -11,11 +11,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn env_usize(key: &str, default: usize) -> usize {
-    std::env::var(key).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 
 fn env_f32(key: &str, default: f32) -> f32 {
-    std::env::var(key).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 
 fn env_u8(key: &str, default: u8) -> Option<u8> {
@@ -35,7 +41,12 @@ fn env_bool(key: &str, default: bool) -> bool {
 }
 
 fn env_dither(key: &str) -> DitheringMethod {
-    match std::env::var(key).ok().as_deref().map(str::to_lowercase).as_deref() {
+    match std::env::var(key)
+        .ok()
+        .as_deref()
+        .map(str::to_lowercase)
+        .as_deref()
+    {
         Some("floyd") | Some("floydsteinberg") => DitheringMethod::FloydSteinberg,
         Some("bayer") => DitheringMethod::Bayer,
         Some("atkinson") => DitheringMethod::Atkinson,
@@ -45,7 +56,9 @@ fn env_dither(key: &str) -> DitheringMethod {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let image_path = args.next().ok_or("usage: render_braille <image> <out_dir>")?;
+    let image_path = args
+        .next()
+        .ok_or("usage: render_braille <image> <out_dir>")?;
     let out_dir: PathBuf = args
         .next()
         .ok_or("usage: render_braille <image> <out_dir>")?
@@ -103,7 +116,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enumerate()
         .map(|(i, &w)| {
             let h = ((w as f32 / char_aspect).round() as usize).max(4);
-            let tag = match i { 0 => "xs", 1 => "sm", 2 => "md", 3 => "lg", _ => "xl" };
+            let tag = match i {
+                0 => "xs",
+                1 => "sm",
+                2 => "md",
+                3 => "lg",
+                _ => "xl",
+            };
             (format!("{:02}_{}_{}x{}", i + 1, tag, w, h), w, h)
         })
         .collect();
@@ -206,7 +225,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Preview HTML — for each size, cycle through ambient frames at FRAME_MS
     // so the image visibly evolves; then move to the next size; finally zoom
     // on the XL pyramid frames.
-    fn build_seq(stem: &str, name: &str, frames: usize, frame_ms: usize, scale: f32, ox: &str, oy: &str) -> String {
+    fn build_seq(
+        stem: &str,
+        name: &str,
+        frames: usize,
+        frame_ms: usize,
+        scale: f32,
+        ox: &str,
+        oy: &str,
+    ) -> String {
         (0..frames)
             .map(|i| {
                 format!(

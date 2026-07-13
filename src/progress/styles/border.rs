@@ -248,6 +248,13 @@ impl ProgressStyle for Runner {
             let (x, y) = perim_point(i, pw, ph);
             draw::dot(grid, x, y);
         }
+        // Completed laps: the track solidifies clockwise from the top-left
+        // origin as progress advances, giving a monochrome progress read.
+        let done = ((ctx.eased * p as f32) as usize).min(p);
+        for i in 0..done {
+            let (x, y) = perim_point(i, pw, ph);
+            draw::dot(grid, x, y);
+        }
         // Comet head position driven by time.
         let speed = 0.5; // laps per second
         let head = ((ctx.time * speed).fract() * p as f32) as usize;

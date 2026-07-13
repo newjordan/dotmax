@@ -75,9 +75,9 @@
 //! - `DotmaxError::Terminal` for I/O errors (file not found, permission denied)
 //! - `DotmaxError::FormatError` for unsupported/unknown formats
 
-mod detect;
 #[cfg(feature = "image")]
 pub mod apng;
+mod detect;
 #[cfg(feature = "image")]
 pub mod gif;
 mod router;
@@ -87,13 +87,13 @@ pub mod video;
 pub mod webcam;
 
 // Public re-exports
+#[cfg(feature = "image")]
+pub use apng::{ApngFrame, ApngPlayer, BlendOp, DisposeOp};
 pub use detect::{detect_format, detect_format_from_bytes, ImageFormat, MediaFormat, VideoCodec};
 #[cfg(feature = "image")]
 pub use detect::{is_animated_gif, is_animated_gif_from_bytes};
 #[cfg(feature = "image")]
 pub use detect::{is_animated_png, is_animated_png_from_bytes};
-#[cfg(feature = "image")]
-pub use apng::{ApngFrame, ApngPlayer, BlendOp, DisposeOp};
 #[cfg(feature = "image")]
 pub use gif::{DisposalMethod, GifFrame, GifPlayer};
 pub use router::{MediaContent, MediaPlayer};

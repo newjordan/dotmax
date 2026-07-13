@@ -76,12 +76,13 @@ fn main() -> Result<()> {
     println!("2. ApngPlayer API Demo");
     println!("----------------------");
     let player = ApngPlayer::new(&path)?;
-    println!("   Canvas size: {}x{}", player.canvas_width(), player.canvas_height());
-    println!("   Frame count: {:?}", player.frame_count());
     println!(
-        "   Loop count: {:?} (0 = infinite)",
-        player.loop_count()
+        "   Canvas size: {}x{}",
+        player.canvas_width(),
+        player.canvas_height()
     );
+    println!("   Frame count: {:?}", player.frame_count());
+    println!("   Loop count: {:?} (0 = infinite)", player.loop_count());
     println!();
 
     // Demonstrate MediaContent API (polymorphic)

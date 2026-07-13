@@ -388,7 +388,7 @@ impl ProgressStyle for MountainSnow {
 
         // Render silhouette: for each x, calculate mountain height.
         let mountain_h = |x: usize| -> usize {
-            let dist = if x <= peak_x { peak_x - x } else { x - peak_x };
+            let dist = x.abs_diff(peak_x);
             let slope = 1.0 - dist as f32 / peak_x.max(1) as f32;
             // Add ridge roughness.
             let roughness = ((x as f32 * 0.4).sin() * 0.08 + (x as f32 * 0.7).cos() * 0.05) * slope;
@@ -396,17 +396,23 @@ impl ProgressStyle for MountainSnow {
             (mh * h as f32).round() as usize
         };
 
-        // Draw mountain outline and fill.
+        // Rock body: crisp ridgeline with a dithered interior, so the solid
+        // snow cap below reads against it even in monochrome.
         for x in 0..w {
             let mh = mountain_h(x);
             if mh == 0 {
                 continue;
             }
             let top_y = base_y.saturating_sub(mh);
-            draw::vline(grid, x, top_y, base_y);
+            draw::dot(grid, x, top_y);
+            for y in (top_y + 1)..=base_y {
+                if (x + y * 2) % 3 == 0 {
+                    draw::dot(grid, x, y);
+                }
+            }
         }
 
-        // Snow: fill from peak downward by eased fraction.
+        // Snow: solid fill creeping down from the ridgeline by eased fraction.
         for x in 0..w {
             let mh = mountain_h(x);
             if mh == 0 {
@@ -419,8 +425,25 @@ impl ProgressStyle for MountainSnow {
             // Snowline starts at the top and descends.
             let top_y = base_y.saturating_sub(mh);
             let snow_bottom = (top_y + snow_h).min(base_y);
-            // Overdraw snow with solid fill (same dots, but tinted below).
             draw::vline(grid, x, top_y, snow_bottom);
+        }
+
+        // Snowfall: flakes drift down the open sky above the ridgeline. Fall
+        // rates are multiples of 0.25 Hz so the 4-second loop stays seamless.
+        for k in 0..10usize {
+            let seed = (k as f32 * 0.618_034).fract();
+            let fx0 = (seed * w as f32) as i32;
+            let rate = 0.25 * (1 + k % 2) as f32;
+            let fall = (ctx.time * rate + seed).fract();
+            let fy = (fall * h as f32) as i32;
+            let sway = isin(2.0 * PI * 0.25 * ctx.time + k as f32, 1.5);
+            let fx = fx0 + sway;
+            if fx >= 0 && (fx as usize) < w {
+                let sky_floor = base_y.saturating_sub(mountain_h(fx as usize)) as i32;
+                if fy < sky_floor {
+                    draw::dot_i(grid, fx, fy);
+                }
+            }
         }
 
         // Snow-cap tint via palette (cool blue-white at top, warm at base).

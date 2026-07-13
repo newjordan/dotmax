@@ -44,7 +44,7 @@ quick::show_webcam()?;            // Live webcam (requires the "video" feature)
 - `dotmax::render::{TerminalRenderer, TerminalCapabilities, TerminalBackend, TerminalType}` — differential terminal rendering.
 - `dotmax::color` — `apply_color_scheme`, `ColorScheme`, `ColorSchemeBuilder`, truecolor/ANSI detection via `detect_color_capability`.
 - `dotmax::animation::AnimationLoop` — `.fps(n).on_frame(|frame, grid| { ... }).run()` frame loop with double buffering.
-- `dotmax::progress::{all_styles, styles_for_theme, ProgressStyle, BarContext, Easing, Palette}` — 644 bundled progress-bar / loading-bar styles across 57 themes (classic, matrix, aurora, inferno, glitch, fireworks, animals, tech, nature, space, retro, ocean, fractal, chaos, waves, cellular, geometry, noise, atari, nintendo, gameboy, physics, and more). Enumerate them with `all_styles()`; filter by theme with `styles_for_theme(name)`. Render via `style.render(&BarContext { progress, width, frame })`.
+- `dotmax::progress::{all_styles, styles_for_theme, ProgressStyle, BarContext, Easing, Palette}` — 664 bundled progress-bar / loading-bar styles across 59 themes (classic, matrix, synthwave, demoscene, aurora, inferno, glitch, fireworks, animals, tech, nature, space, retro, ocean, fractal, chaos, waves, cellular, geometry, noise, atari, nintendo, gameboy, physics, and more). Enumerate them with `all_styles()`; filter by theme with `styles_for_theme(name)`. Render via `style.render(&BarContext { progress, width, frame })`.
 - `dotmax::frame_export::{capture_frame, write_frame_pack, DotmaxFrame, DotmaxFramePack}` — export frames to JSON for static web playback.
 
 ## Minimal example

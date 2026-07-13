@@ -214,7 +214,9 @@ pub use crate::media::{MediaContent, MediaPlayer};
 // ============================================================================
 
 #[cfg(feature = "video")]
-pub use crate::media::{list_webcams, WebcamDevice, WebcamDeviceId, WebcamPlayer, WebcamPlayerBuilder};
+pub use crate::media::{
+    list_webcams, WebcamDevice, WebcamDeviceId, WebcamPlayer, WebcamPlayerBuilder,
+};
 
 #[cfg(feature = "video")]
 pub use crate::quick::{show_webcam, show_webcam_device};
@@ -334,10 +336,8 @@ mod tests {
 
         // Test show_file and load_file functions are accessible
         // (just verify they exist, don't call them without real files)
-        let _show_file_fn: fn(&str) -> crate::Result<()> =
-            |path| show_file(path);
-        let _load_file_fn: fn(&str) -> crate::Result<MediaContent> =
-            |path| load_file(path);
+        let _show_file_fn: fn(&str) -> crate::Result<()> = |path| show_file(path);
+        let _load_file_fn: fn(&str) -> crate::Result<MediaContent> = |path| load_file(path);
     }
 
     #[test]
@@ -364,8 +364,7 @@ mod tests {
         // Test show_webcam and show_webcam_device functions exist
         // (just verify they exist as function pointers, don't call them)
         let _show_fn: fn() -> crate::Result<()> = show_webcam;
-        let _show_device_fn: fn(usize) -> crate::Result<()> =
-            |idx| show_webcam_device(idx);
+        let _show_device_fn: fn(usize) -> crate::Result<()> = |idx| show_webcam_device(idx);
     }
 
     #[test]

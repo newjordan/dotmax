@@ -9,20 +9,20 @@
 #![allow(clippy::cast_sign_loss)]
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use std::hint::black_box;
 use dotmax::color::apply::{apply_color_scheme, apply_colors_to_grid};
 use dotmax::color::schemes::{grayscale, heat_map, rainbow};
 use dotmax::{BrailleGrid, Color};
+use std::hint::black_box;
 
 /// Benchmark `apply_color_scheme` with various grid sizes
 fn bench_apply_color_scheme(c: &mut Criterion) {
     let mut group = c.benchmark_group("apply_color_scheme");
 
     let sizes = [
-        (80, 24, "80x24_standard"),     // Standard terminal
-        (120, 30, "120x30_modern"),     // Modern terminal
-        (200, 50, "200x50_large"),      // Large terminal
-        (320, 80, "320x80_xlarge"),     // Extra large
+        (80, 24, "80x24_standard"), // Standard terminal
+        (120, 30, "120x30_modern"), // Modern terminal
+        (200, 50, "200x50_large"),  // Large terminal
+        (320, 80, "320x80_xlarge"), // Extra large
     ];
 
     for (width, height, name) in sizes {
@@ -73,10 +73,7 @@ fn bench_apply_color_scheme(c: &mut Criterion) {
 fn bench_apply_colors_to_grid(c: &mut Criterion) {
     let mut group = c.benchmark_group("apply_colors_to_grid");
 
-    let sizes = [
-        (80, 24, "80x24_standard"),
-        (200, 50, "200x50_large"),
-    ];
+    let sizes = [(80, 24, "80x24_standard"), (200, 50, "200x50_large")];
 
     for (width, height, name) in sizes {
         // Pre-compute colors
@@ -110,10 +107,7 @@ fn bench_apply_colors_to_grid(c: &mut Criterion) {
 fn bench_braille_grid_apply_color_scheme(c: &mut Criterion) {
     let mut group = c.benchmark_group("BrailleGrid_apply_color_scheme");
 
-    let sizes = [
-        (80, 24, "80x24_standard"),
-        (200, 50, "200x50_large"),
-    ];
+    let sizes = [(80, 24, "80x24_standard"), (200, 50, "200x50_large")];
 
     for (width, height, name) in sizes {
         // Create flattened intensity buffer
@@ -147,10 +141,7 @@ fn bench_braille_grid_apply_color_scheme(c: &mut Criterion) {
 fn bench_full_pipeline(c: &mut Criterion) {
     let mut group = c.benchmark_group("full_colorization_pipeline");
 
-    let sizes = [
-        (80, 24, "80x24_standard"),
-        (200, 50, "200x50_large"),
-    ];
+    let sizes = [(80, 24, "80x24_standard"), (200, 50, "200x50_large")];
 
     for (width, height, name) in sizes {
         let intensities_2d: Vec<Vec<f32>> = (0..height)

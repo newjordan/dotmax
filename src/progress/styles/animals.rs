@@ -417,48 +417,95 @@ impl ProgressStyle for RabbitHops {
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let n_hops = 5usize;
-        let hop_w = w / n_hops.max(1);
-        let base = h - 1;
-        let peak = (h * 2 / 3).max(1);
-        // Determine which hop the rabbit is in.
-        let total_progress = ctx.eased;
-        let hop_index_f = total_progress * n_hops as f32;
-        let current_hop = (hop_index_f as usize).min(n_hops - 1);
-        // Within-hop fraction (0=take-off, 1=landing).
-        let hop_frac = hop_index_f.fract();
-        // Draw ground dots for completed hops.
-        for h_idx in 0..current_hop {
-            let gx = h_idx * hop_w + hop_w / 2;
-            draw::dot(grid, gx.min(w - 1), base);
+        let wi = w as i32;
+        let hi = h as i32;
+        let ground = hi - 1;
+
+        // Meadow: dotted ground line across the full width, with grass tufts.
+        for x in (0..wi).step_by(2) {
+            draw::dot_i(grid, x, ground);
         }
-        // Draw the rabbit at its current arc position.
-        let hop_start_x = current_hop * hop_w;
-        let hop_end_x = (hop_start_x + hop_w).min(w);
-        // Animate within the hop using time-driven oscillation when hop_frac is stalled.
-        let t = if ctx.progress >= 1.0 {
-            hop_frac
-        } else {
-            hop_frac
+        for k in 0..(wi / 9 + 1) {
+            let gx = k * 9 + 4;
+            draw::dot_i(grid, gx, ground - 1);
+            draw::dot_i(grid, gx + 1, ground - 2);
+        }
+
+        // Hop geometry: the rabbit crosses in discrete parabolic chunks.
+        let n_hops = 4i32;
+        let x_min = 7.0f32;
+        let x_max = (wi as f32 - 9.0).max(x_min + 1.0);
+        let hop_index_f = ctx.eased * n_hops as f32;
+        let current_hop = (hop_index_f as i32).min(n_hops - 1);
+        let hop_frac = (hop_index_f - current_hop as f32).clamp(0.0, 1.0);
+        let hop_x = |hop: i32, t: f32| -> f32 {
+            let s = (hop as f32 + t) / n_hops as f32;
+            x_min + s * (x_max - x_min)
         };
-        // Parabolic arc: y = -4h * t * (t - 1) gives peak at t=0.5.
-        let arc = -4.0 * peak as f32 * t * (t - 1.0);
-        let rx = hop_start_x + (hop_frac * (hop_end_x - hop_start_x) as f32) as usize;
-        let ry_raw = base as f32 - arc;
-        let ry = (ry_raw.round() as usize).min(h - 1);
-        let rx = rx.min(w.saturating_sub(2));
-        // Rabbit body (two dots).
-        draw::dot(grid, rx, ry);
-        if rx + 1 < w {
-            draw::dot(grid, rx + 1, ry);
+        let peak = (hi as f32 * 0.19).max(2.0);
+        let arc_y = |t: f32| -> f32 { ground as f32 - 2.0 + 4.0 * peak * t * (t - 1.0) };
+
+        // Paw prints where earlier hops landed.
+        for hop in 0..current_hop {
+            let px = hop_x(hop, 1.0) as i32;
+            draw::dot_i(grid, px, ground - 1);
+            draw::dot_i(grid, px + 1, ground - 1);
+            draw::dot_i(grid, px + 3, ground - 2);
+            draw::dot_i(grid, px + 4, ground - 2);
         }
-        // Ears (two dots above body).
-        draw::dot_i(grid, rx as i32, ry as i32 - 1);
-        draw::dot_i(grid, rx as i32 + 1, ry as i32 - 1);
-        draw::dot_i(grid, rx as i32, ry as i32 - 2);
-        draw::dot_i(grid, rx as i32 + 2, ry as i32 - 2);
-        // Shadow on ground under rabbit.
-        draw::dot(grid, rx.min(w - 1), base);
+
+        // Dotted trajectory trail behind the rabbit within the current hop.
+        // The dash pattern crawls with time (rate 1.5/s: +6 slots per 4 s loop).
+        let dash = ((ctx.time * 1.5) as i32).rem_euclid(3);
+        let trail_steps = 24i32;
+        for i in 0..trail_steps {
+            let t = i as f32 / trail_steps as f32;
+            if t >= hop_frac {
+                break;
+            }
+            if (i + dash) % 3 == 0 {
+                draw::dot_i(grid, hop_x(current_hop, t) as i32, arc_y(t) as i32);
+            }
+        }
+
+        // Rabbit anchor: bottom-centre of the body, riding the arc plus a
+        // gentle time-driven bounce (0.25 Hz-multiple: seamless 4 s loop).
+        let bounce = (ctx.time * PI).sin().abs() * 1.2;
+        let rx = hop_x(current_hop, hop_frac).round() as i32;
+        let ry = (arc_y(hop_frac) - bounce).round() as i32;
+
+        // Body: filled ellipse (10 wide, 5 tall), facing right.
+        for dy in -5i32..=0 {
+            let fy = (dy as f32 + 2.5) / 3.0;
+            let span = ((1.0 - fy * fy).max(0.0)).sqrt() * 4.6;
+            let lo = (-span).round() as i32;
+            let hi_x = span.round() as i32;
+            for dx in lo..=hi_x {
+                draw::dot_i(grid, rx + dx, ry + dy);
+            }
+        }
+        // Head: filled disc ahead of the body, one blank dot left as the eye.
+        for dy in -7i32..=-4 {
+            for dx in 4i32..=8 {
+                let ex = dx as f32 - 6.0;
+                let ey = dy as f32 + 5.5;
+                if ex * ex / 5.5 + ey * ey / 3.2 <= 1.0 && !(dx == 7 && dy == -6) {
+                    draw::dot_i(grid, rx + dx, ry + dy);
+                }
+            }
+        }
+        // Ears: two slanted lines; the back ear flicks on a 2/s time slot.
+        let flick = ((ctx.time * 2.0) as i32).rem_euclid(2);
+        for j in 1..=3i32 {
+            draw::dot_i(grid, rx + 4, ry - 7 - j);
+            draw::dot_i(grid, rx + 6 + (j > 2) as i32 * flick, ry - 7 - j);
+        }
+        // Tail puff and airborne feet.
+        draw::dot_i(grid, rx - 5, ry - 4);
+        draw::dot_i(grid, rx - 6, ry - 3);
+        draw::dot_i(grid, rx - 3, ry + 1);
+        draw::dot_i(grid, rx - 4, ry + 1);
+        draw::dot_i(grid, rx + 3, ry + 1);
         Ok(())
     }
 }

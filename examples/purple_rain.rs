@@ -24,11 +24,11 @@ use crossterm::{
 };
 use dotmax::chess::board::{render_position_with_options, RenderOptions};
 use dotmax::image::{DitheringMethod, ImageRenderer};
+use dotmax::raytracer::wireframe::rotate_vec_yaw_pitch_roll;
 use dotmax::raytracer::{
     render_with_orientation, Camera, RenderMode, Scene as RtScene, Sphere, Vector3,
     WireframeRotation,
 };
-use dotmax::raytracer::wireframe::rotate_vec_yaw_pitch_roll;
 use shakmaty::{Chess, Position};
 use std::{
     cell::Cell as StdCell,
@@ -42,7 +42,9 @@ thread_local! { static RNG: StdCell<u32> = StdCell::new(0x1234_5678); }
 fn r_u32() -> u32 {
     RNG.with(|c| {
         let mut x = c.get();
-        if x == 0 { x = 0x9E37_79B9; }
+        if x == 0 {
+            x = 0x9E37_79B9;
+        }
         x ^= x << 13;
         x ^= x >> 17;
         x ^= x << 5;
@@ -50,8 +52,12 @@ fn r_u32() -> u32 {
         x
     })
 }
-fn r_f32() -> f32 { (r_u32() as f32) / (u32::MAX as f32) }
-fn r_pick<T: Copy>(xs: &[T]) -> T { xs[(r_u32() as usize) % xs.len()] }
+fn r_f32() -> f32 {
+    (r_u32() as f32) / (u32::MAX as f32)
+}
+fn r_pick<T: Copy>(xs: &[T]) -> T {
+    xs[(r_u32() as usize) % xs.len()]
+}
 
 fn seed_from_clock() {
     let nanos = Instant::now().elapsed().as_nanos() as u32
@@ -63,24 +69,60 @@ fn seed_from_clock() {
 }
 
 // ───────────────────────── glyph pools ─────────────────────────
-const HEX:   &[char] = &['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'];
-const BITS:  &[char] = &['0','1'];
-const PUNCT: &[char] = &['!','@','#','$','%','&','*','+','=','<','>','?','/','\\','^','~'];
-const KANA:  &[char] = &['ｦ','ｧ','ｨ','ｩ','ｪ','ｫ','ｬ','ｭ','ｮ','ｯ','ｱ','ｲ','ｳ','ｴ','ｵ','ﾊ','ﾋ','ﾌ','ﾍ','ﾎ','ﾏ','ﾐ','ﾑ'];
-const BLOCK: &[char] = &['░','▒','▓','█','▚','▞','▙','▟'];
-const GREEK: &[char] = &['α','β','γ','δ','ε','ζ','η','θ','λ','μ','π','σ','τ','φ','ψ','ω'];
+const HEX: &[char] = &[
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+const BITS: &[char] = &['0', '1'];
+const PUNCT: &[char] = &[
+    '!', '@', '#', '$', '%', '&', '*', '+', '=', '<', '>', '?', '/', '\\', '^', '~',
+];
+const KANA: &[char] = &[
+    'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ',
+    'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ',
+];
+const BLOCK: &[char] = &['░', '▒', '▓', '█', '▚', '▞', '▙', '▟'];
+const GREEK: &[char] = &[
+    'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'λ', 'μ', 'π', 'σ', 'τ', 'φ', 'ψ', 'ω',
+];
 
 const SNIPPETS: &[&str] = &[
-    " ::SYNC:: ", " 0xDEAD ", " [OK] ", " ROUTINE 0x42 ", " ACK ", " FAULT ",
-    " λ=0x1F ", " >>> ", " <<< ", " /proc/self ", " alloc= ", " ACK 0x7F ",
-    " EOF ", " NULL ", " TX/RX ", " PID:4821 ", " SIG 0x4A ", " ENTER ",
-    " φ=1.618 ", " √2=1.414 ", " θ=π/φ ", " FIB(13)=233 ", " // BREACH ",
+    " ::SYNC:: ",
+    " 0xDEAD ",
+    " [OK] ",
+    " ROUTINE 0x42 ",
+    " ACK ",
+    " FAULT ",
+    " λ=0x1F ",
+    " >>> ",
+    " <<< ",
+    " /proc/self ",
+    " alloc= ",
+    " ACK 0x7F ",
+    " EOF ",
+    " NULL ",
+    " TX/RX ",
+    " PID:4821 ",
+    " SIG 0x4A ",
+    " ENTER ",
+    " φ=1.618 ",
+    " √2=1.414 ",
+    " θ=π/φ ",
+    " FIB(13)=233 ",
+    " // BREACH ",
     // scripture
-    " ✦ INVOCATION ✦ ", " ∴ by golden angle ∴ ", " one cursor many cells ",
-    " ☸ hose is holy ☸ ", " the cube watches ", " as above so below ",
-    " // GOLDEN HOUR // ", " ⚘ signal becomes sacrament ⚘ ",
-    " ∞ one cursor ∞ ", " ACK the geometry ", " fold by fold ",
-    " ✧ enter be transformed ✧ ", " ∇ scripture ∇ ",
+    " ✦ INVOCATION ✦ ",
+    " ∴ by golden angle ∴ ",
+    " one cursor many cells ",
+    " ☸ hose is holy ☸ ",
+    " the cube watches ",
+    " as above so below ",
+    " // GOLDEN HOUR // ",
+    " ⚘ signal becomes sacrament ⚘ ",
+    " ∞ one cursor ∞ ",
+    " ACK the geometry ",
+    " fold by fold ",
+    " ✧ enter be transformed ✧ ",
+    " ∇ scripture ∇ ",
 ];
 
 // ───────────────────────── stream source ─────────────────────────
@@ -91,14 +133,18 @@ fn build_stream(len: usize) -> Vec<char> {
         if r_f32() < 0.15 {
             let s = SNIPPETS[(r_u32() as usize) % SNIPPETS.len()];
             for ch in s.chars() {
-                if out.len() >= len { break; }
+                if out.len() >= len {
+                    break;
+                }
                 out.push(ch);
             }
         } else {
             let p = pools[(r_u32() as usize) % pools.len()];
             let burst = 4 + (r_u32() as usize) % 9;
             for _ in 0..burst {
-                if out.len() >= len { break; }
+                if out.len() >= len {
+                    break;
+                }
                 out.push(r_pick(p));
             }
         }
@@ -108,17 +154,24 @@ fn build_stream(len: usize) -> Vec<char> {
 
 // ───────────────────────── geometry ─────────────────────────
 #[derive(Clone, Copy, Debug)]
-struct Rect { x: i32, y: i32, w: i32, h: i32 }
+struct Rect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
 
 /// Recursive φ-subdivision producing a Fibonacci-style spiral of rects.
 /// `cw = true` spirals inward clockwise, `false` counter-clockwise.
 fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
     let mut out = Vec::new();
     let mut rect = initial;
-    const PHI_COMPLEMENT: f32 = 0.381_966;  // 1 - 1/φ
+    const PHI_COMPLEMENT: f32 = 0.381_966; // 1 - 1/φ
 
     for step in 0..max_depth {
-        if rect.w < 6 || rect.h < 4 { break; }
+        if rect.w < 6 || rect.h < 4 {
+            break;
+        }
         let vertical_split = rect.w >= rect.h;
         // Alternate which side the leaf sits on each step; `cw` flips polarity.
         let leaf_far = ((step % 2 == 0) ^ !cw) != false;
@@ -126,20 +179,40 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
         if vertical_split {
             let leaf_w = ((rect.w as f32) * PHI_COMPLEMENT).round().max(3.0) as i32;
             if leaf_far {
-                out.push(Rect { x: rect.x + rect.w - leaf_w, y: rect.y, w: leaf_w, h: rect.h });
+                out.push(Rect {
+                    x: rect.x + rect.w - leaf_w,
+                    y: rect.y,
+                    w: leaf_w,
+                    h: rect.h,
+                });
                 rect.w -= leaf_w;
             } else {
-                out.push(Rect { x: rect.x, y: rect.y, w: leaf_w, h: rect.h });
+                out.push(Rect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: leaf_w,
+                    h: rect.h,
+                });
                 rect.x += leaf_w;
                 rect.w -= leaf_w;
             }
         } else {
             let leaf_h = ((rect.h as f32) * PHI_COMPLEMENT).round().max(2.0) as i32;
             if leaf_far {
-                out.push(Rect { x: rect.x, y: rect.y + rect.h - leaf_h, w: rect.w, h: leaf_h });
+                out.push(Rect {
+                    x: rect.x,
+                    y: rect.y + rect.h - leaf_h,
+                    w: rect.w,
+                    h: leaf_h,
+                });
                 rect.h -= leaf_h;
             } else {
-                out.push(Rect { x: rect.x, y: rect.y, w: rect.w, h: leaf_h });
+                out.push(Rect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: rect.w,
+                    h: leaf_h,
+                });
                 rect.y += leaf_h;
                 rect.h -= leaf_h;
             }
@@ -167,10 +240,20 @@ fn golden_child(parent: Rect) -> Rect {
 
 // ───────────────────────── types ─────────────────────────
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Side { L, R, Chaos, Nested }
+enum Side {
+    L,
+    R,
+    Chaos,
+    Nested,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum FlowDir { RowMajor, RowMajorRev, ColMajor, ColMajorRev }
+enum FlowDir {
+    RowMajor,
+    RowMajorRev,
+    ColMajor,
+    ColMajorRev,
+}
 
 fn random_flow() -> FlowDir {
     match r_u32() & 3 {
@@ -183,12 +266,14 @@ fn random_flow() -> FlowDir {
 
 #[inline]
 fn cell_index(rx: i32, ry: i32, w: i32, h: i32, dir: FlowDir) -> i64 {
-    let rx = rx as i64; let ry = ry as i64;
-    let w = w as i64; let h = h as i64;
+    let rx = rx as i64;
+    let ry = ry as i64;
+    let w = w as i64;
+    let h = h as i64;
     match dir {
-        FlowDir::RowMajor    =>  ry * w + rx,
+        FlowDir::RowMajor => ry * w + rx,
         FlowDir::RowMajorRev => (h - 1 - ry) * w + (w - 1 - rx),
-        FlowDir::ColMajor    =>  rx * h + ry,
+        FlowDir::ColMajor => rx * h + ry,
         FlowDir::ColMajorRev => (w - 1 - rx) * h + (h - 1 - ry),
     }
 }
@@ -246,8 +331,8 @@ struct ImageVariant {
 /// sweep across the image over time.
 struct ImageAsset {
     name: &'static str,
-    variants: Vec<ImageVariant>,   // one per dither method
-    luma: Vec<u8>,                 // raw pattern bytes from first variant — pipe payload
+    variants: Vec<ImageVariant>, // one per dither method
+    luma: Vec<u8>,               // raw pattern bytes from first variant — pipe payload
     // Each image breathes at its own slow rate within the panel so the
     // visible scale of the subject drifts over time and is different per
     // image. scale = base + amp * sin(cursor * rate + phase). Rates are
@@ -267,15 +352,23 @@ const DITHER_METHODS: &[DitheringMethod] = &[
 
 /// Load and convert one image, rendering every dither method in
 /// DITHER_METHODS as separate variants.
-fn load_image(path: &str, name: &'static str, cells_w: usize, cells_h: usize) -> Option<ImageAsset> {
+fn load_image(
+    path: &str,
+    name: &'static str,
+    cells_w: usize,
+    cells_h: usize,
+) -> Option<ImageAsset> {
     let mut variants: Vec<ImageVariant> = Vec::with_capacity(DITHER_METHODS.len());
     let mut luma: Option<Vec<u8>> = None;
     for &m in DITHER_METHODS {
         let grid = ImageRenderer::new()
-            .load_from_path(Path::new(path)).ok()?
-            .resize(cells_w, cells_h, true).ok()?
+            .load_from_path(Path::new(path))
+            .ok()?
+            .resize(cells_w, cells_h, true)
+            .ok()?
             .dithering(m)
-            .render().ok()?;
+            .render()
+            .ok()?;
         let (gw, gh) = grid.dimensions();
         let mut cells: Vec<Vec<char>> = vec![vec![' '; gw]; gh];
         for y in 0..gh {
@@ -286,7 +379,11 @@ fn load_image(path: &str, name: &'static str, cells_w: usize, cells_h: usize) ->
         if luma.is_none() {
             luma = Some(grid.get_raw_patterns().to_vec());
         }
-        variants.push(ImageVariant { cells, w: gw, h: gh });
+        variants.push(ImageVariant {
+            cells,
+            w: gw,
+            h: gh,
+        });
     }
     Some(ImageAsset {
         name,
@@ -333,9 +430,9 @@ fn asset_breath(h: u32) -> (f32, f32, f32, f32) {
     let r2 = ((h >> 11) & 0xFFFF) as f32 / 65535.0;
     let r3 = ((h >> 17) & 0xFFFF) as f32 / 65535.0;
     let r4 = ((h.rotate_left(7)) & 0xFFFF) as f32 / 65535.0;
-    let scale_base  = 0.75 + r1 * 0.70;            // 0.75 .. 1.45
-    let scale_amp   = 0.14 + r2 * 0.32;            // 0.14 .. 0.46
-    let scale_rate  = 0.0035 + r3 * 0.0090;        // ~10–35s period
+    let scale_base = 0.75 + r1 * 0.70; // 0.75 .. 1.45
+    let scale_amp = 0.14 + r2 * 0.32; // 0.14 .. 0.46
+    let scale_rate = 0.0035 + r3 * 0.0090; // ~10–35s period
     let scale_phase = r4 * std::f32::consts::TAU;
     (scale_base, scale_amp, scale_rate, scale_phase)
 }
@@ -344,30 +441,126 @@ fn load_image_assets() -> Vec<ImageAsset> {
     // Tigers, snakes, rabbits, frogs, grifter — plus the full animal
     // bestiary from purple_rain/. No skylines, no palms — animals only.
     let candidates: &[(&str, &str, &'static str)] = &[
-        ("tests/fixtures/images/tiger_small.png",        "./tests/fixtures/images/tiger_small.png",        "TIGER"),
-        ("tests/fixtures/images/tiger_1.png",            "./tests/fixtures/images/tiger_1.png",            "TIGR2"),
-        ("tests/fixtures/images/viper3.png",             "./tests/fixtures/images/viper3.png",             "VIPER"),
-        ("tests/fixtures/images/viper_head_3.png",       "./tests/fixtures/images/viper_head_3.png",       "VHEAD"),
-        ("tests/fixtures/images/extras/snakedesk.png",   "./tests/fixtures/images/extras/snakedesk.png",   "SNAKE"),
-        ("tests/fixtures/images/extras/rabbit.png",      "./tests/fixtures/images/extras/rabbit.png",      "RABT"),
-        ("tests/fixtures/images/extras/grifter.jpg",     "./tests/fixtures/images/extras/grifter.jpg",     "GRFTR"),
-        ("tests/fixtures/images/extras/frog_01.png",     "./tests/fixtures/images/extras/frog_01.png",     "FROG"),
-        ("tests/fixtures/images/extras/frog_02.png",     "./tests/fixtures/images/extras/frog_02.png",     "FROG2"),
-        ("tests/fixtures/images/purple_rain/bear.png",      "./tests/fixtures/images/purple_rain/bear.png",      "BEAR"),
-        ("tests/fixtures/images/purple_rain/dolphins.png",  "./tests/fixtures/images/purple_rain/dolphins.png",  "DLPHN"),
-        ("tests/fixtures/images/purple_rain/elephant.png",  "./tests/fixtures/images/purple_rain/elephant.png",  "ELPHT"),
-        ("tests/fixtures/images/purple_rain/fox.png",       "./tests/fixtures/images/purple_rain/fox.png",       "FOX"),
-        ("tests/fixtures/images/purple_rain/horse.png",     "./tests/fixtures/images/purple_rain/horse.png",     "HORSE"),
-        ("tests/fixtures/images/purple_rain/jellyfish.png", "./tests/fixtures/images/purple_rain/jellyfish.png", "JELLY"),
-        ("tests/fixtures/images/purple_rain/octopus.png",   "./tests/fixtures/images/purple_rain/octopus.png",   "OCTO"),
-        ("tests/fixtures/images/purple_rain/owl.png",       "./tests/fixtures/images/purple_rain/owl.png",       "OWL"),
-        ("tests/fixtures/images/purple_rain/panther.png",   "./tests/fixtures/images/purple_rain/panther.png",   "PANTH"),
-        ("tests/fixtures/images/purple_rain/raven.png",     "./tests/fixtures/images/purple_rain/raven.png",     "RAVEN"),
-        ("tests/fixtures/images/purple_rain/shark.png",     "./tests/fixtures/images/purple_rain/shark.png",     "SHARK"),
-        ("tests/fixtures/images/purple_rain/snake.png",     "./tests/fixtures/images/purple_rain/snake.png",     "SNK2"),
-        ("tests/fixtures/images/purple_rain/stag.png",      "./tests/fixtures/images/purple_rain/stag.png",      "STAG"),
-        ("tests/fixtures/images/purple_rain/whale.png",     "./tests/fixtures/images/purple_rain/whale.png",     "WHALE"),
-        ("tests/fixtures/images/purple_rain/wolf.png",      "./tests/fixtures/images/purple_rain/wolf.png",      "WOLF"),
+        (
+            "tests/fixtures/images/tiger_small.png",
+            "./tests/fixtures/images/tiger_small.png",
+            "TIGER",
+        ),
+        (
+            "tests/fixtures/images/tiger_1.png",
+            "./tests/fixtures/images/tiger_1.png",
+            "TIGR2",
+        ),
+        (
+            "tests/fixtures/images/viper3.png",
+            "./tests/fixtures/images/viper3.png",
+            "VIPER",
+        ),
+        (
+            "tests/fixtures/images/viper_head_3.png",
+            "./tests/fixtures/images/viper_head_3.png",
+            "VHEAD",
+        ),
+        (
+            "tests/fixtures/images/extras/snakedesk.png",
+            "./tests/fixtures/images/extras/snakedesk.png",
+            "SNAKE",
+        ),
+        (
+            "tests/fixtures/images/extras/rabbit.png",
+            "./tests/fixtures/images/extras/rabbit.png",
+            "RABT",
+        ),
+        (
+            "tests/fixtures/images/extras/grifter.jpg",
+            "./tests/fixtures/images/extras/grifter.jpg",
+            "GRFTR",
+        ),
+        (
+            "tests/fixtures/images/extras/frog_01.png",
+            "./tests/fixtures/images/extras/frog_01.png",
+            "FROG",
+        ),
+        (
+            "tests/fixtures/images/extras/frog_02.png",
+            "./tests/fixtures/images/extras/frog_02.png",
+            "FROG2",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/bear.png",
+            "./tests/fixtures/images/purple_rain/bear.png",
+            "BEAR",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/dolphins.png",
+            "./tests/fixtures/images/purple_rain/dolphins.png",
+            "DLPHN",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/elephant.png",
+            "./tests/fixtures/images/purple_rain/elephant.png",
+            "ELPHT",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/fox.png",
+            "./tests/fixtures/images/purple_rain/fox.png",
+            "FOX",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/horse.png",
+            "./tests/fixtures/images/purple_rain/horse.png",
+            "HORSE",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/jellyfish.png",
+            "./tests/fixtures/images/purple_rain/jellyfish.png",
+            "JELLY",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/octopus.png",
+            "./tests/fixtures/images/purple_rain/octopus.png",
+            "OCTO",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/owl.png",
+            "./tests/fixtures/images/purple_rain/owl.png",
+            "OWL",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/panther.png",
+            "./tests/fixtures/images/purple_rain/panther.png",
+            "PANTH",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/raven.png",
+            "./tests/fixtures/images/purple_rain/raven.png",
+            "RAVEN",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/shark.png",
+            "./tests/fixtures/images/purple_rain/shark.png",
+            "SHARK",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/snake.png",
+            "./tests/fixtures/images/purple_rain/snake.png",
+            "SNK2",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/stag.png",
+            "./tests/fixtures/images/purple_rain/stag.png",
+            "STAG",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/whale.png",
+            "./tests/fixtures/images/purple_rain/whale.png",
+            "WHALE",
+        ),
+        (
+            "tests/fixtures/images/purple_rain/wolf.png",
+            "./tests/fixtures/images/purple_rain/wolf.png",
+            "WOLF",
+        ),
     ];
     let mut out = Vec::new();
     for &(p1, p2, name) in candidates {
@@ -401,7 +594,9 @@ fn pick_formation(rect: Rect) -> Formation {
         // Tall/narrow — vertical-friendly stuff.
         match r % 3 {
             0 => Formation::ParseDump,
-            1 => Formation::Cellular1D { rule: if r & 1 == 0 { 30 } else { 110 } },
+            1 => Formation::Cellular1D {
+                rule: if r & 1 == 0 { 30 } else { 110 },
+            },
             _ => Formation::BlockStrata,
         }
     } else if (aspect - 1.0).abs() < 0.45 && rect.w >= 10 && rect.h >= 6 {
@@ -410,7 +605,9 @@ fn pick_formation(rect: Rect) -> Formation {
             0 => Formation::Raytrace,
             1 => Formation::AttentionMatrix,
             2 => Formation::DensityGrid,
-            _ => Formation::Cellular1D { rule: if r & 1 == 0 { 30 } else { 110 } },
+            _ => Formation::Cellular1D {
+                rule: if r & 1 == 0 { 30 } else { 110 },
+            },
         }
     } else {
         // Mid aspect — everything fair game.
@@ -419,7 +616,9 @@ fn pick_formation(rect: Rect) -> Formation {
             1 => Formation::RegisterDump,
             2 => Formation::DensityGrid,
             3 => Formation::TextmarkConverter,
-            4 => Formation::Cellular1D { rule: if r & 1 == 0 { 30 } else { 110 } },
+            4 => Formation::Cellular1D {
+                rule: if r & 1 == 0 { 30 } else { 110 },
+            },
             5 => Formation::BlockStrata,
             6 => Formation::AttentionMatrix,
             7 => Formation::ProbField,
@@ -429,8 +628,8 @@ fn pick_formation(rect: Rect) -> Formation {
 }
 
 struct Zone {
-    base_rect: Rect,       // locked — this is also what's rendered
-    rect: Rect,            // kept for convenience; equals base_rect always
+    base_rect: Rect, // locked — this is also what's rendered
+    rect: Rect,      // kept for convenience; equals base_rect always
 
     side: Side,
     formation: Formation,
@@ -458,12 +657,17 @@ fn make_zone(
         tap_offset: tap,
         pulse: r_f32() * 3.0,
         pulse_rate: 0.6 + r_f32() * 1.1,
-        glitch_rate: if r_f32() < 0.15 { 0.3 + r_f32() * 0.7 } else { 0.0 },
+        glitch_rate: if r_f32() < 0.15 {
+            0.3 + r_f32() * 0.7
+        } else {
+            0.0
+        },
     }
 }
 
 struct Scene {
-    w: i32, h: i32,
+    w: i32,
+    h: i32,
     stream: Vec<char>,
     cursor: f32,
     flow_rate: f32,
@@ -509,8 +713,26 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // Depth scales with size — no slivers on tiny terminals.
     let depth = ((w.min(h * 2)) / 14).clamp(4, 8) as usize;
 
-    let left_spiral  = fib_spiral(Rect { x: 0,   y: 0, w: mid,      h }, depth, true);
-    let right_spiral = fib_spiral(Rect { x: mid, y: 0, w: w - mid,  h }, depth, false);
+    let left_spiral = fib_spiral(
+        Rect {
+            x: 0,
+            y: 0,
+            w: mid,
+            h,
+        },
+        depth,
+        true,
+    );
+    let right_spiral = fib_spiral(
+        Rect {
+            x: mid,
+            y: 0,
+            w: w - mid,
+            h,
+        },
+        depth,
+        false,
+    );
 
     let mut zones = Vec::new();
     let mut tap_accum: i64 = 0;
@@ -518,10 +740,21 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // LEFT: walk outermost → innermost. Default flow RowMajor.
     for rect in &left_spiral {
         let side = if r_f32() < 0.08 { Side::Chaos } else { Side::L };
-        let flow_dir = if r_f32() < 0.20 { random_flow() } else { FlowDir::RowMajor };
+        let flow_dir = if r_f32() < 0.20 {
+            random_flow()
+        } else {
+            FlowDir::RowMajor
+        };
         let formation = pick_formation(*rect);
         let idx = zones.len();
-        zones.push(make_zone(*rect, side, formation, flow_dir, tap_accum as i32, idx));
+        zones.push(make_zone(
+            *rect,
+            side,
+            formation,
+            flow_dir,
+            tap_accum as i32,
+            idx,
+        ));
         tap_accum += (rect.w * rect.h) as i64;
     }
 
@@ -529,10 +762,21 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // creating the mirrored flow. Default flow RowMajorRev.
     for rect in right_spiral.iter().rev() {
         let side = if r_f32() < 0.08 { Side::Chaos } else { Side::R };
-        let flow_dir = if r_f32() < 0.20 { random_flow() } else { FlowDir::RowMajorRev };
+        let flow_dir = if r_f32() < 0.20 {
+            random_flow()
+        } else {
+            FlowDir::RowMajorRev
+        };
         let formation = pick_formation(*rect);
         let idx = zones.len();
-        zones.push(make_zone(*rect, side, formation, flow_dir, tap_accum as i32, idx));
+        zones.push(make_zone(
+            *rect,
+            side,
+            formation,
+            flow_dir,
+            tap_accum as i32,
+            idx,
+        ));
         tap_accum += (rect.w * rect.h) as i64;
     }
 
@@ -542,12 +786,23 @@ fn build_scene(w: i32, h: i32) -> Scene {
     big_indices.sort_by_key(|&i| -(zones[i].base_rect.w * zones[i].base_rect.h));
     for &i in big_indices.iter().take(4) {
         let parent = zones[i].base_rect;
-        if parent.w < 12 || parent.h < 6 { continue; }
+        if parent.w < 12 || parent.h < 6 {
+            continue;
+        }
         let child = golden_child(parent);
-        if child.w < 5 || child.h < 3 { continue; }
+        if child.w < 5 || child.h < 3 {
+            continue;
+        }
         let formation = pick_formation(child);
         let idx = zones.len();
-        let mut z = make_zone(child, Side::Nested, formation, random_flow(), tap_accum as i32, idx);
+        let mut z = make_zone(
+            child,
+            Side::Nested,
+            formation,
+            random_flow(),
+            tap_accum as i32,
+            idx,
+        );
         z.glitch_rate = 0.15 + r_f32() * 0.4;
         zones.push(z);
         tap_accum += (child.w * child.h) as i64;
@@ -564,8 +819,8 @@ fn build_scene(w: i32, h: i32) -> Scene {
     let chess_h = ((h as f32 * 0.55) as i32).clamp(8, 36);
     let mut chess_w = chess_h * 2;
     if chess_w > w * 5 / 8 {
-        chess_w = (w * 5 / 8) & !1;  // even
-        // recompute height to maintain aspect
+        chess_w = (w * 5 / 8) & !1; // even
+                                    // recompute height to maintain aspect
     }
     let chess_w = chess_w.clamp(16, 80);
     let chess_h = (chess_w / 2).clamp(8, 36);
@@ -583,8 +838,18 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // running the full height of the canvas now that the HUD is gone.
     let strip_y = 1_i32;
     let strip_h = (h - 2).max(8);
-    let ui_viper = Rect { x: 1, y: strip_y, w: panel_w, h: strip_h };
-    let ui_vhead = Rect { x: w - panel_w - 1, y: strip_y, w: panel_w, h: strip_h };
+    let ui_viper = Rect {
+        x: 1,
+        y: strip_y,
+        w: panel_w,
+        h: strip_h,
+    };
+    let ui_vhead = Rect {
+        x: w - panel_w - 1,
+        y: strip_y,
+        w: panel_w,
+        h: strip_h,
+    };
 
     // Sort the surviving zones by area for asset/formation assignment.
     let mut sorted_by_area: Vec<usize> = (0..zones.len())
@@ -598,10 +863,16 @@ fn build_scene(w: i32, h: i32) -> Scene {
         let want = assets.len().min(sorted_by_area.len());
         for &i in &sorted_by_area {
             let r = zones[i].base_rect;
-            if r.w < 10 || r.h < 6 { continue; }
-            zones[i].formation = Formation::ImagePanel { asset: assigned % assets.len() };
+            if r.w < 10 || r.h < 6 {
+                continue;
+            }
+            zones[i].formation = Formation::ImagePanel {
+                asset: assigned % assets.len(),
+            };
             assigned += 1;
-            if assigned >= want { break; }
+            if assigned >= want {
+                break;
+            }
         }
     }
 
@@ -624,12 +895,20 @@ fn build_scene(w: i32, h: i32) -> Scene {
         });
         *tap += (rect.w * rect.h) as i64;
     };
-    push_ui(ui_chess,   Formation::ChessBoard,                &mut tap_accum);
+    push_ui(ui_chess, Formation::ChessBoard, &mut tap_accum);
     // SCARY SNAKES — guaranteed visible at decent size.
     let viper_idx = if assets.len() > 1 { 1 } else { 0 };
     let vhead_idx = if assets.len() > 2 { 2 } else { viper_idx };
-    push_ui(ui_viper, Formation::ImagePanel { asset: viper_idx }, &mut tap_accum);
-    push_ui(ui_vhead, Formation::ImagePanel { asset: vhead_idx }, &mut tap_accum);
+    push_ui(
+        ui_viper,
+        Formation::ImagePanel { asset: viper_idx },
+        &mut tap_accum,
+    );
+    push_ui(
+        ui_vhead,
+        Formation::ImagePanel { asset: vhead_idx },
+        &mut tap_accum,
+    );
 
     let stream = build_stream(32_768);
     let pipes: Vec<Pipe> = build_pipes(&zones);
@@ -644,49 +923,191 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // Persistent overlay streamers — many axes for synapse density.
     let streamers = vec![
         // Horizontals at varied rows
-        Streamer { axis: StreamerAxis::Horizontal, anchor: (h as f32 * 0.06) as i32, speed: 26.0, direction:  1 },
-        Streamer { axis: StreamerAxis::Horizontal, anchor: (h as f32 * 0.42) as i32, speed: 32.0, direction: -1 },
-        Streamer { axis: StreamerAxis::Horizontal, anchor: (h as f32 * 0.78) as i32, speed: 21.0, direction:  1 },
-        Streamer { axis: StreamerAxis::Horizontal, anchor: (h as f32 * 0.94) as i32, speed: 18.0, direction: -1 },
+        Streamer {
+            axis: StreamerAxis::Horizontal,
+            anchor: (h as f32 * 0.06) as i32,
+            speed: 26.0,
+            direction: 1,
+        },
+        Streamer {
+            axis: StreamerAxis::Horizontal,
+            anchor: (h as f32 * 0.42) as i32,
+            speed: 32.0,
+            direction: -1,
+        },
+        Streamer {
+            axis: StreamerAxis::Horizontal,
+            anchor: (h as f32 * 0.78) as i32,
+            speed: 21.0,
+            direction: 1,
+        },
+        Streamer {
+            axis: StreamerAxis::Horizontal,
+            anchor: (h as f32 * 0.94) as i32,
+            speed: 18.0,
+            direction: -1,
+        },
         // Verticals on far edges
-        Streamer { axis: StreamerAxis::Vertical,   anchor: (w as f32 * 0.04) as i32, speed: 22.0, direction: -1 },
-        Streamer { axis: StreamerAxis::Vertical,   anchor: (w as f32 * 0.97) as i32, speed: 28.0, direction:  1 },
+        Streamer {
+            axis: StreamerAxis::Vertical,
+            anchor: (w as f32 * 0.04) as i32,
+            speed: 22.0,
+            direction: -1,
+        },
+        Streamer {
+            axis: StreamerAxis::Vertical,
+            anchor: (w as f32 * 0.97) as i32,
+            speed: 28.0,
+            direction: 1,
+        },
         // Diagonals at multiple intercepts
-        Streamer { axis: StreamerAxis::DiagPos,    anchor: (w as f32 * 0.02) as i32, speed: 18.0, direction:  1 },
-        Streamer { axis: StreamerAxis::DiagPos,    anchor: (w as f32 * 0.45) as i32, speed: 24.0, direction:  1 },
-        Streamer { axis: StreamerAxis::DiagNeg,    anchor: (w as f32 * 0.98) as i32, speed: 17.0, direction: -1 },
-        Streamer { axis: StreamerAxis::DiagNeg,    anchor: (w as f32 * 0.55) as i32, speed: 23.0, direction: -1 },
+        Streamer {
+            axis: StreamerAxis::DiagPos,
+            anchor: (w as f32 * 0.02) as i32,
+            speed: 18.0,
+            direction: 1,
+        },
+        Streamer {
+            axis: StreamerAxis::DiagPos,
+            anchor: (w as f32 * 0.45) as i32,
+            speed: 24.0,
+            direction: 1,
+        },
+        Streamer {
+            axis: StreamerAxis::DiagNeg,
+            anchor: (w as f32 * 0.98) as i32,
+            speed: 17.0,
+            direction: -1,
+        },
+        Streamer {
+            axis: StreamerAxis::DiagNeg,
+            anchor: (w as f32 * 0.55) as i32,
+            speed: 23.0,
+            direction: -1,
+        },
     ];
 
     // Noise projection feeds — all 4 edges, dense.
     let noise_feeds = vec![
         // Top edge
-        NoiseFeed { pos: ((w as f32 * 0.10) as i32, 0), dir: (0, 1), length: 4, seed: 0xACE0_BEEF, speed: 11.0 },
-        NoiseFeed { pos: ((w as f32 * 0.30) as i32, 0), dir: (0, 1), length: 5, seed: 0xFACE_FADE, speed: 13.0 },
-        NoiseFeed { pos: ((w as f32 * 0.50) as i32, 0), dir: (0, 1), length: 3, seed: 0xB001_C0DE, speed: 15.0 },
-        NoiseFeed { pos: ((w as f32 * 0.70) as i32, 0), dir: (0, 1), length: 4, seed: 0x1337_C0DE, speed: 12.0 },
-        NoiseFeed { pos: ((w as f32 * 0.90) as i32, 0), dir: (0, 1), length: 3, seed: 0xBEEF_F00D, speed: 16.0 },
+        NoiseFeed {
+            pos: ((w as f32 * 0.10) as i32, 0),
+            dir: (0, 1),
+            length: 4,
+            seed: 0xACE0_BEEF,
+            speed: 11.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.30) as i32, 0),
+            dir: (0, 1),
+            length: 5,
+            seed: 0xFACE_FADE,
+            speed: 13.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.50) as i32, 0),
+            dir: (0, 1),
+            length: 3,
+            seed: 0xB001_C0DE,
+            speed: 15.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.70) as i32, 0),
+            dir: (0, 1),
+            length: 4,
+            seed: 0x1337_C0DE,
+            speed: 12.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.90) as i32, 0),
+            dir: (0, 1),
+            length: 3,
+            seed: 0xBEEF_F00D,
+            speed: 16.0,
+        },
         // Left edge
-        NoiseFeed { pos: (0, (h as f32 * 0.30) as i32), dir: (1, 0), length: 5, seed: 0xDEAD_BEEF, speed: 12.0 },
-        NoiseFeed { pos: (0, (h as f32 * 0.55) as i32), dir: (1, 0), length: 4, seed: 0xCAFE_F00D, speed: 14.0 },
-        NoiseFeed { pos: (0, (h as f32 * 0.78) as i32), dir: (1, 0), length: 5, seed: 0xFEED_BABE, speed: 10.0 },
+        NoiseFeed {
+            pos: (0, (h as f32 * 0.30) as i32),
+            dir: (1, 0),
+            length: 5,
+            seed: 0xDEAD_BEEF,
+            speed: 12.0,
+        },
+        NoiseFeed {
+            pos: (0, (h as f32 * 0.55) as i32),
+            dir: (1, 0),
+            length: 4,
+            seed: 0xCAFE_F00D,
+            speed: 14.0,
+        },
+        NoiseFeed {
+            pos: (0, (h as f32 * 0.78) as i32),
+            dir: (1, 0),
+            length: 5,
+            seed: 0xFEED_BABE,
+            speed: 10.0,
+        },
         // Right edge
-        NoiseFeed { pos: (w - 1, (h as f32 * 0.30) as i32), dir: (-1, 0), length: 5, seed: 0xDEAD_C0DE, speed: 14.0 },
-        NoiseFeed { pos: (w - 1, (h as f32 * 0.55) as i32), dir: (-1, 0), length: 4, seed: 0x4269_4269, speed: 11.0 },
-        NoiseFeed { pos: (w - 1, (h as f32 * 0.78) as i32), dir: (-1, 0), length: 5, seed: 0xC001_BEEF, speed: 15.0 },
+        NoiseFeed {
+            pos: (w - 1, (h as f32 * 0.30) as i32),
+            dir: (-1, 0),
+            length: 5,
+            seed: 0xDEAD_C0DE,
+            speed: 14.0,
+        },
+        NoiseFeed {
+            pos: (w - 1, (h as f32 * 0.55) as i32),
+            dir: (-1, 0),
+            length: 4,
+            seed: 0x4269_4269,
+            speed: 11.0,
+        },
+        NoiseFeed {
+            pos: (w - 1, (h as f32 * 0.78) as i32),
+            dir: (-1, 0),
+            length: 5,
+            seed: 0xC001_BEEF,
+            speed: 15.0,
+        },
         // Bottom edge
-        NoiseFeed { pos: ((w as f32 * 0.20) as i32, h - 1), dir: (0, -1), length: 4, seed: 0xC0DE_F00D, speed: 12.0 },
-        NoiseFeed { pos: ((w as f32 * 0.55) as i32, h - 1), dir: (0, -1), length: 4, seed: 0xBEEF_BABE, speed: 13.0 },
-        NoiseFeed { pos: ((w as f32 * 0.85) as i32, h - 1), dir: (0, -1), length: 5, seed: 0xFA15_AFE1, speed: 11.0 },
+        NoiseFeed {
+            pos: ((w as f32 * 0.20) as i32, h - 1),
+            dir: (0, -1),
+            length: 4,
+            seed: 0xC0DE_F00D,
+            speed: 12.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.55) as i32, h - 1),
+            dir: (0, -1),
+            length: 4,
+            seed: 0xBEEF_BABE,
+            speed: 13.0,
+        },
+        NoiseFeed {
+            pos: ((w as f32 * 0.85) as i32, h - 1),
+            dir: (0, -1),
+            length: 5,
+            seed: 0xFA15_AFE1,
+            speed: 11.0,
+        },
     ];
 
     // No protected rects — chaos bleeds everywhere. UI re-paints on top.
     let protected_rects: Vec<Rect> = Vec::new();
 
     Scene {
-        w, h, stream, cursor: 0.0, flow_rate: 48.0,
-        zones, pipes, assets, adjacency,
-        streamers, noise_feeds,
+        w,
+        h,
+        stream,
+        cursor: 0.0,
+        flow_rate: 48.0,
+        zones,
+        pipes,
+        assets,
+        adjacency,
+        streamers,
+        noise_feeds,
         protected_rects,
         chess_pos: Chess::default(),
         chess_last_move_at: 0.0,
@@ -742,9 +1163,14 @@ fn tick(scene: &mut Scene, dt: f32) {
     // Glitch insertions — random image chunks blasted onto the screen.
     // Expire dead ones first.
     let cur = scene.cursor;
-    scene.glitch_inserts.retain(|i| (cur - i.spawn_cursor).abs() < i.duration_chars);
+    scene
+        .glitch_inserts
+        .retain(|i| (cur - i.spawn_cursor).abs() < i.duration_chars);
     // Then maybe spawn a new one. Up to 5 active simultaneously.
-    if scene.cursor - scene.last_glitch_spawn > 25.0 && scene.glitch_inserts.len() < 5 && !scene.assets.is_empty() {
+    if scene.cursor - scene.last_glitch_spawn > 25.0
+        && scene.glitch_inserts.len() < 5
+        && !scene.assets.is_empty()
+    {
         scene.last_glitch_spawn = scene.cursor;
         if r_f32() < 0.85 {
             spawn_glitch_insertion(scene);
@@ -755,7 +1181,9 @@ fn tick(scene: &mut Scene, dt: f32) {
 fn spawn_glitch_insertion(scene: &mut Scene) {
     let asset_idx = (r_u32() as usize) % scene.assets.len();
     let asset = &scene.assets[asset_idx];
-    if asset.variants.is_empty() { return; }
+    if asset.variants.is_empty() {
+        return;
+    }
     let variant_idx = (r_u32() as usize) % asset.variants.len();
     let variant = &asset.variants[variant_idx];
     let aw = variant.w as i32;
@@ -768,7 +1196,12 @@ fn spawn_glitch_insertion(scene: &mut Scene) {
     let rh = (4 + (r_u32() as i32 % (max_h - 3).max(1))).min(scene.h - 1);
     let rx = r_u32() as i32 % (scene.w - rw).max(1);
     let ry = r_u32() as i32 % (scene.h - rh).max(1);
-    let rect = Rect { x: rx, y: ry, w: rw, h: rh };
+    let rect = Rect {
+        x: rx,
+        y: ry,
+        w: rw,
+        h: rh,
+    };
 
     // Half the time: full image. Other half: random crop (a strip or chunk).
     let crop = if r_f32() < 0.5 {
@@ -778,7 +1211,12 @@ fn spawn_glitch_insertion(scene: &mut Scene) {
         let ch = (3 + (r_u32() as i32 % (ah - 2).max(1))).min(ah);
         let cx = r_u32() as i32 % (aw - cw).max(1);
         let cy = r_u32() as i32 % (ah - ch).max(1);
-        Some(Rect { x: cx, y: cy, w: cw, h: ch })
+        Some(Rect {
+            x: cx,
+            y: cy,
+            w: cw,
+            h: ch,
+        })
     };
 
     let duration_chars = 30.0 + r_f32() * 90.0; // ~0.6 to ~2.5 sec @ 48 cps
@@ -801,18 +1239,27 @@ struct PxCell {
     ch: char,
     fg: (u8, u8, u8),
     intensity: f32,
-    owner: u16,   // zone index that won this cell — used for hard-cutoff masks
+    owner: u16, // zone index that won this cell — used for hard-cutoff masks
 }
 impl PxCell {
     const fn empty() -> Self {
-        Self { ch: ' ', fg: (0, 0, 0), intensity: 0.0, owner: NO_OWNER }
+        Self {
+            ch: ' ',
+            fg: (0, 0, 0),
+            intensity: 0.0,
+            owner: NO_OWNER,
+        }
     }
 }
 
 fn put(grid: &mut [Vec<PxCell>], x: i32, y: i32, ch: char, c: (u8, u8, u8), i: f32, owner: u16) {
-    if y < 0 || x < 0 { return; }
+    if y < 0 || x < 0 {
+        return;
+    }
     let (uy, ux) = (y as usize, x as usize);
-    if uy >= grid.len() || ux >= grid[0].len() { return; }
+    if uy >= grid.len() || ux >= grid[0].len() {
+        return;
+    }
     let cell = &mut grid[uy][ux];
     if i >= cell.intensity {
         cell.ch = ch;
@@ -825,19 +1272,28 @@ fn put(grid: &mut [Vec<PxCell>], x: i32, y: i32, ch: char, c: (u8, u8, u8), i: f
 /// Forced paint — used by pipes to bleed across zone boundaries regardless
 /// of who owns the cell. Always overwrites.
 fn put_force(grid: &mut [Vec<PxCell>], x: i32, y: i32, ch: char, c: (u8, u8, u8), i: f32) {
-    if y < 0 || x < 0 { return; }
+    if y < 0 || x < 0 {
+        return;
+    }
     let (uy, ux) = (y as usize, x as usize);
-    if uy >= grid.len() || ux >= grid[0].len() { return; }
-    grid[uy][ux] = PxCell { ch, fg: c, intensity: i, owner: NO_OWNER };
+    if uy >= grid.len() || ux >= grid[0].len() {
+        return;
+    }
+    grid[uy][ux] = PxCell {
+        ch,
+        fg: c,
+        intensity: i,
+        owner: NO_OWNER,
+    };
 }
 
 fn color_for(side: Side) -> (u8, u8, u8) {
     // Pure grayscale — signal comes from intensity + char-weight, not hue.
     // Side identity survives as small brightness differences at full intensity.
     match side {
-        Side::L | Side::R => (170, 18, 18),  // deep matte blood red
-        Side::Chaos       => (255, 90, 90),  // hot pink-red pops through
-        Side::Nested      => (230, 40, 40),  // bright red, not quite hot
+        Side::L | Side::R => (170, 18, 18), // deep matte blood red
+        Side::Chaos => (255, 90, 90),       // hot pink-red pops through
+        Side::Nested => (230, 40, 40),      // bright red, not quite hot
     }
 }
 
@@ -849,7 +1305,9 @@ fn sample(stream: &[char], idx: i64) -> char {
 
 /// Occasional discrete phase jumps, modulated by zone.pulse.
 fn glitch_offset(z: &Zone) -> i64 {
-    if z.glitch_rate < 0.05 { return 0; }
+    if z.glitch_rate < 0.05 {
+        return 0;
+    }
     let phase = (z.pulse * z.glitch_rate * 0.6) as i64;
     // wrapping_mul by a prime gives chaotic jumps when phase increments.
     phase.wrapping_mul(2_039)
@@ -871,7 +1329,15 @@ fn paint_fill(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ch: char, i: 
     let color = color_for(zone.side);
     for ry in 0..zone.rect.h {
         for rx in 0..zone.rect.w {
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
@@ -906,7 +1372,15 @@ fn paint_raytrace(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
             let idx = ((v * (ramp.len() - 1) as f32).round() as usize).min(ramp.len() - 1);
             let ch = ramp[idx];
             let i = if v > 0.30 { 0.90 } else { 0.22 };
-            put(grid, zone.rect.x + rx as i32, zone.rect.y + ry as i32, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx as i32,
+                zone.rect.y + ry as i32,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
@@ -936,13 +1410,27 @@ fn paint_block_strata(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
         };
         let (ch, i) = levels[level_idx];
         for rx in 0..zone.rect.w {
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
 
 /// 3. ParseDump — `xxxx: AB CD EF ...` hex memory dump.
-fn paint_parse_dump(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[char], cursor: f32) {
+fn paint_parse_dump(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    stream: &[char],
+    cursor: f32,
+) {
     let color = color_for(zone.side);
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -970,14 +1458,30 @@ fn paint_parse_dump(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream:
                     _ => (' ', 0.12),
                 }
             };
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
 
 /// 4. RegisterDump — named registers with hex values.
-fn paint_register_dump(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[char], cursor: f32) {
-    const NAMES: &[&str] = &["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "PC", "SP", "LR", "SR"];
+fn paint_register_dump(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    stream: &[char],
+    cursor: f32,
+) {
+    const NAMES: &[&str] = &[
+        "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "PC", "SP", "LR", "SR",
+    ];
     let color = color_for(zone.side);
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -998,15 +1502,31 @@ fn paint_register_dump(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stre
             let nib = sample(stream, base + (ry as i64) * 5 + i as i64) as u32;
             row.push((HEX[(nib & 0xf) as usize], 0.95));
         }
-        while row.len() < zw as usize { row.push((' ', 0.10)); }
+        while row.len() < zw as usize {
+            row.push((' ', 0.10));
+        }
         for (rx, &(ch, i)) in row.iter().take(zw as usize).enumerate() {
-            put(grid, zone.rect.x + rx as i32, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx as i32,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
 
 /// 5. TextmarkConverter — left side raw stream → `⇒` → right side transformed.
-fn paint_textmark(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[char], cursor: f32) {
+fn paint_textmark(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    stream: &[char],
+    cursor: f32,
+) {
     let color = color_for(zone.side);
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -1032,7 +1552,15 @@ fn paint_textmark(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &
     for ry in 0..zh {
         for rx in 0..zw {
             if ry == mid_y && rx == mid_x {
-                put(grid, zone.rect.x + rx, zone.rect.y + ry, '⇒', color, 1.0, zone_id);
+                put(
+                    grid,
+                    zone.rect.x + rx,
+                    zone.rect.y + ry,
+                    '⇒',
+                    color,
+                    1.0,
+                    zone_id,
+                );
                 continue;
             }
             if ry == mid_y {
@@ -1043,19 +1571,42 @@ fn paint_textmark(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &
                     let c = sample(stream, base + (rx - mid_x - 1) as i64);
                     (transform(c), 0.95)
                 };
-                put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+                put(
+                    grid,
+                    zone.rect.x + rx,
+                    zone.rect.y + ry,
+                    ch,
+                    color,
+                    i,
+                    zone_id,
+                );
             } else {
                 let d = ((ry - mid_y).abs() as f32) / (zh as f32 * 0.5);
                 let fade = (0.48 - d * 0.32).max(0.12);
                 let c = sample(stream, base + (ry as i64) * 7 + rx as i64);
-                put(grid, zone.rect.x + rx, zone.rect.y + ry, c, color, fade, zone_id);
+                put(
+                    grid,
+                    zone.rect.x + rx,
+                    zone.rect.y + ry,
+                    c,
+                    color,
+                    fade,
+                    zone_id,
+                );
             }
         }
     }
 }
 
 /// 6. Cellular1D — elementary CA, seeded from the stream, evolves top-to-bottom.
-fn paint_cellular(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, rule: u8, stream: &[char], cursor: f32) {
+fn paint_cellular(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    rule: u8,
+    stream: &[char],
+    cursor: f32,
+) {
     let color = color_for(zone.side);
     let zw = zone.rect.w as usize;
     let zh = zone.rect.h as usize;
@@ -1076,9 +1627,19 @@ fn paint_cellular(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, rule: u8,
     for ry in 0..zh {
         for rx in 0..zw {
             let (ch, i) = if row[rx] { ('█', 0.93) } else { ('·', 0.18) };
-            put(grid, zone.rect.x + rx as i32, zone.rect.y + ry as i32, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx as i32,
+                zone.rect.y + ry as i32,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
-        if ry + 1 >= zh { break; }
+        if ry + 1 >= zh {
+            break;
+        }
         let prev = row.clone();
         for rx in 0..zw {
             let l = prev[(rx + zw - 1) % zw];
@@ -1091,7 +1652,13 @@ fn paint_cellular(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, rule: u8,
 }
 
 /// 8. Marquee — scrolling stream text with bright middle band.
-fn paint_marquee(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[char], cursor: f32) {
+fn paint_marquee(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    stream: &[char],
+    cursor: f32,
+) {
     let color = color_for(zone.side);
     let base: i64 = (cursor as i64) - (zone.tap_offset as i64) + glitch_offset(zone);
     let zw = zone.rect.w;
@@ -1107,13 +1674,27 @@ fn paint_marquee(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[
                 let d = ((ry - mid_y).abs() as f32) / (zh as f32 * 0.5);
                 (0.78 - d * 0.48).max(0.30)
             };
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
 
 /// 9. DensityGrid — 2-cell block mosaic at stream-byte density.
-fn paint_density_grid(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, stream: &[char], cursor: f32) {
+fn paint_density_grid(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    stream: &[char],
+    cursor: f32,
+) {
     let color = color_for(zone.side);
     let base: i64 = (cursor as i64) - (zone.tap_offset as i64);
     let levels: &[(char, f32)] = &[
@@ -1135,8 +1716,18 @@ fn paint_density_grid(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, strea
             let (ch, i) = levels[density];
             for k in 0..block_w {
                 let rx = rx0 + k;
-                if rx >= zone.rect.w { break; }
-                put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+                if rx >= zone.rect.w {
+                    break;
+                }
+                put(
+                    grid,
+                    zone.rect.x + rx,
+                    zone.rect.y + ry,
+                    ch,
+                    color,
+                    i,
+                    zone_id,
+                );
             }
         }
     }
@@ -1197,7 +1788,15 @@ fn paint_attention(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
             } else {
                 ('.', 0.14)
             };
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
     }
 }
@@ -1213,10 +1812,9 @@ fn paint_attention(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
 /// picture of attention doing what attention does.
 fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &PaintCtx) {
     const CANDIDATES: &[&str] = &[
-        "the", "and", "to", "of", "is", "a", "in", "that", "it", "for",
-        "fn", "::", "0x", "->", "=>", "if", "fold", "self", "void", "phi",
-        "sigma", "delta", "ROUTINE", "ACK", "MOV", "yield", "loop", "ok",
-        "recur", "echo", "bind", "map", "tau", "λ", "∇",
+        "the", "and", "to", "of", "is", "a", "in", "that", "it", "for", "fn", "::", "0x", "->",
+        "=>", "if", "fold", "self", "void", "phi", "sigma", "delta", "ROUTINE", "ACK", "MOV",
+        "yield", "loop", "ok", "recur", "echo", "bind", "map", "tau", "λ", "∇",
     ];
     let color = color_for(zone.side);
     let zw = zone.rect.w as usize;
@@ -1232,7 +1830,10 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
     let tap_pool: Vec<i32> = if neighbors.is_empty() {
         vec![zone.tap_offset]
     } else {
-        neighbors.iter().map(|&j| ctx.zones[j as usize].tap_offset).collect()
+        neighbors
+            .iter()
+            .map(|&j| ctx.zones[j as usize].tap_offset)
+            .collect()
     };
 
     let top_k = zh.min(16);
@@ -1246,14 +1847,19 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
     for i in 0..top_k {
         let tap = tap_pool[i % tap_pool.len()];
         let neighbor_window_offset = (i as i64) * 23 + (ctx.cursor as i64 / 3);
-        let s = sample(ctx.stream, (ctx.cursor as i64) - (tap as i64) + neighbor_window_offset) as u32;
+        let s = sample(
+            ctx.stream,
+            (ctx.cursor as i64) - (tap as i64) + neighbor_window_offset,
+        ) as u32;
         let raw = 0.01 + ((s & 0xff) as f32) / 255.0;
         let weight = raw.powi(3);
         sum += weight;
         let name = CANDIDATES[(s as usize >> 4) % CANDIDATES.len()];
         probs.push((weight, name));
     }
-    for p in &mut probs { p.0 /= sum.max(1e-6); }
+    for p in &mut probs {
+        p.0 /= sum.max(1e-6);
+    }
     probs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     paint_fill(grid, zone, zone_id, ' ', 0.08);
@@ -1267,19 +1873,47 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
             } else {
                 ('░', 0.20)
             };
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, i, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                i,
+                zone_id,
+            );
         }
         let p_str = format!(" {:.2}", p.min(0.99));
         let mut cx = bar_width as i32 + 1;
         for ch in p_str.chars() {
-            if cx >= zone.rect.w { break; }
-            put(grid, zone.rect.x + cx, zone.rect.y + ry, ch, color, 0.82, zone_id);
+            if cx >= zone.rect.w {
+                break;
+            }
+            put(
+                grid,
+                zone.rect.x + cx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                0.82,
+                zone_id,
+            );
             cx += 1;
         }
         cx += 1;
         for ch in name.chars() {
-            if cx >= zone.rect.w { break; }
-            put(grid, zone.rect.x + cx, zone.rect.y + ry, ch, color, 0.95, zone_id);
+            if cx >= zone.rect.w {
+                break;
+            }
+            put(
+                grid,
+                zone.rect.x + cx,
+                zone.rect.y + ry,
+                ch,
+                color,
+                0.95,
+                zone_id,
+            );
             cx += 1;
         }
     }
@@ -1306,12 +1940,25 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
 // diagonal, anti-diagonal, radial).
 
 #[derive(Clone, Copy)]
-enum SweepKind { Horizontal, Vertical, Diagonal, AntiDiag, Radial }
+enum SweepKind {
+    Horizontal,
+    Vertical,
+    Diagonal,
+    AntiDiag,
+    Radial,
+}
 
 #[derive(Clone, Copy)]
 enum DitherPhase {
-    Stable { idx: usize },
-    Sweep  { from: usize, to: usize, t: f32, kind: SweepKind },
+    Stable {
+        idx: usize,
+    },
+    Sweep {
+        from: usize,
+        to: usize,
+        t: f32,
+        kind: SweepKind,
+    },
 }
 
 const DITHER_NAMES: &[&str] = &["NONE", "FLOYD", "BAYER", "ATKIN"];
@@ -1336,7 +1983,9 @@ fn dither_phase(cursor: f32, n_variants: usize, offset_secs: f32) -> DitherPhase
     };
 
     if in_cycle < PERIOD {
-        DitherPhase::Stable { idx: (cycle_num.rem_euclid(n_variants as i64)) as usize }
+        DitherPhase::Stable {
+            idx: (cycle_num.rem_euclid(n_variants as i64)) as usize,
+        }
     } else {
         let raw = ((in_cycle - PERIOD) / TRANSIT).clamp(0.0, 1.0);
         // Smoothstep — dramatic ease-in/out rather than linear.
@@ -1352,11 +2001,11 @@ fn dither_phase(cursor: f32, n_variants: usize, offset_secs: f32) -> DitherPhase
 #[inline]
 fn sweep_front_glyph(kind: SweepKind) -> char {
     match kind {
-        SweepKind::Horizontal => '✦',  // four-pointed star
-        SweepKind::Vertical   => '✧',  // outlined star
-        SweepKind::Diagonal   => '◉',  // circled dot
-        SweepKind::AntiDiag   => '☸',  // wheel of dharma
-        SweepKind::Radial     => '⚘',  // flower
+        SweepKind::Horizontal => '✦', // four-pointed star
+        SweepKind::Vertical => '✧',   // outlined star
+        SweepKind::Diagonal => '◉',   // circled dot
+        SweepKind::AntiDiag => '☸',   // wheel of dharma
+        SweepKind::Radial => '⚘',     // flower
     }
 }
 
@@ -1367,9 +2016,9 @@ fn sweep_progress(rx: i32, ry: i32, zw: i32, zh: i32, kind: SweepKind) -> f32 {
     let zhf = zh.max(1) as f32;
     match kind {
         SweepKind::Horizontal => rx as f32 / zwf,
-        SweepKind::Vertical   => ry as f32 / zhf,
-        SweepKind::Diagonal   => (rx as f32 + (ry as f32) * 2.0) / (zwf + zhf * 2.0),
-        SweepKind::AntiDiag   => ((zwf - rx as f32 - 1.0) + (ry as f32) * 2.0) / (zwf + zhf * 2.0),
+        SweepKind::Vertical => ry as f32 / zhf,
+        SweepKind::Diagonal => (rx as f32 + (ry as f32) * 2.0) / (zwf + zhf * 2.0),
+        SweepKind::AntiDiag => ((zwf - rx as f32 - 1.0) + (ry as f32) * 2.0) / (zwf + zhf * 2.0),
         SweepKind::Radial => {
             let cx = zwf * 0.5;
             let cy = zhf * 0.5;
@@ -1382,7 +2031,13 @@ fn sweep_progress(rx: i32, ry: i32, zw: i32, zh: i32, kind: SweepKind) -> f32 {
     }
 }
 
-fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_idx: usize, ctx: &PaintCtx) {
+fn paint_image_panel(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    asset_idx: usize,
+    ctx: &PaintCtx,
+) {
     let color = color_for(zone.side);
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -1436,7 +2091,9 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
     for ry in 0..zh {
         let mut tear_dx = 0_i32;
         for k in 0..3 {
-            if ry == tear_rows[k] { tear_dx = tear_amts[k]; }
+            if ry == tear_rows[k] {
+                tear_dx = tear_amts[k];
+            }
         }
 
         for rx in 0..zw {
@@ -1461,7 +2118,12 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
             let sy_f = (ry as f32 - cy) * inv_scale + cy + scroll_y as f32;
             let srx = (sx_f.floor() as i32).rem_euclid(vw.max(1)) as usize;
             let sry = (sy_f.floor() as i32).rem_euclid(vh.max(1)) as usize;
-            let img_ch = variant.cells.get(sry).and_then(|row| row.get(srx)).copied().unwrap_or(' ');
+            let img_ch = variant
+                .cells
+                .get(sry)
+                .and_then(|row| row.get(srx))
+                .copied()
+                .unwrap_or(' ');
 
             let h = ihash(rx, ry, pulse_i);
             let (ch, intensity, fg_override) = if on_front {
@@ -1479,7 +2141,15 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
                 (img_ch, 0.92, None)
             };
             let fg = fg_override.unwrap_or(color);
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, fg, intensity, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ch,
+                fg,
+                intensity,
+                zone_id,
+            );
         }
     }
 
@@ -1493,7 +2163,9 @@ fn paint_image_panel(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, asset_
     }
     // Bottom-right: dither phase tag — calculated readout of state.
     let tag: String = match phase {
-        DitherPhase::Stable { idx } => format!("[{}]", DITHER_NAMES[idx.min(DITHER_NAMES.len() - 1)]),
+        DitherPhase::Stable { idx } => {
+            format!("[{}]", DITHER_NAMES[idx.min(DITHER_NAMES.len() - 1)])
+        }
         DitherPhase::Sweep { from, to, .. } => format!(
             "{}→{}",
             DITHER_NAMES[from.min(DITHER_NAMES.len() - 1)],
@@ -1525,25 +2197,42 @@ fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     // Fill zone with true black bg — claim ownership at low positive intensity.
     for ry in 0..zh {
         for rx in 0..zw {
-            put(grid, zone.rect.x + rx, zone.rect.y + ry, ' ', (0, 0, 0), 0.02, zone_id);
+            put(
+                grid,
+                zone.rect.x + rx,
+                zone.rect.y + ry,
+                ' ',
+                (0, 0, 0),
+                0.02,
+                zone_id,
+            );
         }
     }
 
     // 8 corners of a unit cube centered at origin.
     let corners = [
         Vector3::new(-1.0, -1.0, -1.0),
-        Vector3::new( 1.0, -1.0, -1.0),
-        Vector3::new( 1.0,  1.0, -1.0),
-        Vector3::new(-1.0,  1.0, -1.0),
-        Vector3::new(-1.0, -1.0,  1.0),
-        Vector3::new( 1.0, -1.0,  1.0),
-        Vector3::new( 1.0,  1.0,  1.0),
-        Vector3::new(-1.0,  1.0,  1.0),
+        Vector3::new(1.0, -1.0, -1.0),
+        Vector3::new(1.0, 1.0, -1.0),
+        Vector3::new(-1.0, 1.0, -1.0),
+        Vector3::new(-1.0, -1.0, 1.0),
+        Vector3::new(1.0, -1.0, 1.0),
+        Vector3::new(1.0, 1.0, 1.0),
+        Vector3::new(-1.0, 1.0, 1.0),
     ];
     let edges: [(usize, usize); 12] = [
-        (0, 1), (1, 2), (2, 3), (3, 0),  // back face
-        (4, 5), (5, 6), (6, 7), (7, 4),  // front face
-        (0, 4), (1, 5), (2, 6), (3, 7),  // connecting edges
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0), // back face
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4), // front face
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7), // connecting edges
     ];
 
     let yaw = zone.pulse * 0.55;
@@ -1562,11 +2251,13 @@ fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
         for (i, &c) in corners.iter().enumerate() {
             let r = rotate_vec_yaw_pitch_roll(c, yaw, pitch, roll);
             let z = r.z - cam_z;
-            if z >= -0.01 { continue; }   // behind camera
+            if z >= -0.01 {
+                continue;
+            } // behind camera
             let px = r.x * (-1.0 / z) / (viewport_w * 0.5);
             let py = r.y * (-1.0 / z) / (viewport_h * 0.5);
             let cx = (px + 1.0) * 0.5 * zwf;
-            let cy = (1.0 - (py + 1.0) * 0.5) * zhf * 2.0;  // aspect correction
+            let cy = (1.0 - (py + 1.0) * 0.5) * zhf * 2.0; // aspect correction
             let cy = cy * 0.5;
             out[i] = Some((cx.round() as i32, cy.round() as i32));
         }
@@ -1585,12 +2276,28 @@ fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
             let (mut x, mut y) = (x0, y0);
             loop {
                 if x >= 0 && x < zw && y >= 0 && y < zh {
-                    put(grid, zone.rect.x + x, zone.rect.y + y, '█', (220, 35, 35), 1.0, zone_id);
+                    put(
+                        grid,
+                        zone.rect.x + x,
+                        zone.rect.y + y,
+                        '█',
+                        (220, 35, 35),
+                        1.0,
+                        zone_id,
+                    );
                 }
-                if x == x1 && y == y1 { break; }
+                if x == x1 && y == y1 {
+                    break;
+                }
                 let e2 = 2 * err;
-                if e2 >= dy { err += dy; x += sx; }
-                if e2 <= dx { err += dx; y += sy; }
+                if e2 >= dy {
+                    err += dy;
+                    x += sx;
+                }
+                if e2 <= dx {
+                    err += dx;
+                    y += sy;
+                }
             }
         }
     }
@@ -1601,7 +2308,13 @@ fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
 /// Live chess board — converts shakmaty position to braille via dotmax::chess.
 /// During global dither sweeps, a sacred sweep-front cuts across the board so
 /// the chess "dithers into" the center in lockstep with the image panels.
-fn paint_chess_board(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, pos: &Chess, cursor: f32) {
+fn paint_chess_board(
+    grid: &mut [Vec<PxCell>],
+    zone: &Zone,
+    zone_id: u16,
+    pos: &Chess,
+    cursor: f32,
+) {
     paint_fill(grid, zone, zone_id, ' ', 0.04);
     let opts = RenderOptions {
         target_width: Some(zone.rect.w as usize),
@@ -1620,7 +2333,15 @@ fn paint_chess_board(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, pos: &
                 } else {
                     (UI_WHITE, 1.0)
                 };
-                put(grid, zone.rect.x + rx, zone.rect.y + ry, ch, color, intensity, zone_id);
+                put(
+                    grid,
+                    zone.rect.x + rx,
+                    zone.rect.y + ry,
+                    ch,
+                    color,
+                    intensity,
+                    zone_id,
+                );
             }
         }
         // Chess "dithers in" — sweep front overlay during transitions.
@@ -1651,19 +2372,21 @@ fn paint_chess_board(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, pos: &
 
 fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &PaintCtx) {
     match zone.formation {
-        Formation::Raytrace          => paint_raytrace(grid, zone, zone_id),
-        Formation::BlockStrata       => paint_block_strata(grid, zone, zone_id),
-        Formation::ParseDump         => paint_parse_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
-        Formation::RegisterDump      => paint_register_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
+        Formation::Raytrace => paint_raytrace(grid, zone, zone_id),
+        Formation::BlockStrata => paint_block_strata(grid, zone, zone_id),
+        Formation::ParseDump => paint_parse_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
+        Formation::RegisterDump => paint_register_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::TextmarkConverter => paint_textmark(grid, zone, zone_id, ctx.stream, ctx.cursor),
-        Formation::Cellular1D { rule } => paint_cellular(grid, zone, zone_id, rule, ctx.stream, ctx.cursor),
-        Formation::Marquee           => paint_marquee(grid, zone, zone_id, ctx.stream, ctx.cursor),
-        Formation::DensityGrid       => paint_density_grid(grid, zone, zone_id, ctx.stream, ctx.cursor),
-        Formation::AttentionMatrix   => paint_attention(grid, zone, zone_id),
-        Formation::ProbField         => paint_prob_field(grid, zone, zone_id, ctx),
+        Formation::Cellular1D { rule } => {
+            paint_cellular(grid, zone, zone_id, rule, ctx.stream, ctx.cursor)
+        }
+        Formation::Marquee => paint_marquee(grid, zone, zone_id, ctx.stream, ctx.cursor),
+        Formation::DensityGrid => paint_density_grid(grid, zone, zone_id, ctx.stream, ctx.cursor),
+        Formation::AttentionMatrix => paint_attention(grid, zone, zone_id),
+        Formation::ProbField => paint_prob_field(grid, zone, zone_id, ctx),
         Formation::ImagePanel { asset } => paint_image_panel(grid, zone, zone_id, asset, ctx),
-        Formation::RaytraceCube      => paint_raytrace_cube(grid, zone, zone_id),
-        Formation::ChessBoard        => paint_chess_board(grid, zone, zone_id, ctx.chess_pos, ctx.cursor),
+        Formation::RaytraceCube => paint_raytrace_cube(grid, zone, zone_id),
+        Formation::ChessBoard => paint_chess_board(grid, zone, zone_id, ctx.chess_pos, ctx.cursor),
     }
 }
 
@@ -1697,7 +2420,11 @@ fn apply_transform(c: char, t: Transform) -> char {
         Transform::Xor(k) => {
             if c.is_ascii() {
                 let b = (c as u8) ^ k;
-                if (b as char).is_ascii_graphic() { b as char } else { HEX[(b & 0x0f) as usize] }
+                if (b as char).is_ascii_graphic() {
+                    b as char
+                } else {
+                    HEX[(b & 0x0f) as usize]
+                }
             } else {
                 HEX[((c as u32) & 0x0f) as usize]
             }
@@ -1707,7 +2434,9 @@ fn apply_transform(c: char, t: Transform) -> char {
                 let base = if c.is_ascii_uppercase() { b'A' } else { b'a' };
                 let shifted = (((c as u8 - base) as i16 + n as i16).rem_euclid(26)) as u8;
                 (base + shifted) as char
-            } else { c }
+            } else {
+                c
+            }
         }
         Transform::HexEncode => HEX[((c as u32) & 0x0f) as usize],
         Transform::BitRev => {
@@ -1716,12 +2445,22 @@ fn apply_transform(c: char, t: Transform) -> char {
                 b = (b >> 4) | (b << 4);
                 b = ((b >> 2) & 0x33) | ((b << 2) & 0xcc);
                 b = ((b >> 1) & 0x55) | ((b << 1) & 0xaa);
-                if (b as char).is_ascii_graphic() { b as char } else { HEX[(b & 0x0f) as usize] }
+                if (b as char).is_ascii_graphic() {
+                    b as char
+                } else {
+                    HEX[(b & 0x0f) as usize]
+                }
             } else {
                 HEX[((c as u32) & 0x0f) as usize]
             }
         }
-        Transform::Stripe => if (c as u32) & 1 == 0 { '|' } else { c },
+        Transform::Stripe => {
+            if (c as u32) & 1 == 0 {
+                '|'
+            } else {
+                c
+            }
+        }
     }
 }
 
@@ -1748,9 +2487,9 @@ fn transform_symbols(t: Transform) -> [char; 3] {
 struct Pipe {
     from: u16,
     to: u16,
-    cells: Vec<(i32, i32)>,  // ordered source-end → dest-end
+    cells: Vec<(i32, i32)>, // ordered source-end → dest-end
     transform: Transform,
-    step: i64,               // stream-chars between consecutive pipe cells (1..=4)
+    step: i64, // stream-chars between consecutive pipe cells (1..=4)
 }
 
 /// Try to build a pipe between two adjacent zones. Returns None if they
@@ -1764,9 +2503,11 @@ fn try_build_pipe(zones: &[Zone], i: usize, j: usize) -> Option<Pipe> {
     // Helper to finish the Pipe once `cells` are built
     let mk = |from: u16, to: u16, cells: Vec<(i32, i32)>| -> Pipe {
         Pipe {
-            from, to, cells,
+            from,
+            to,
+            cells,
             transform: pick_transform(),
-            step: 1 + (r_u32() % 4) as i64,  // per-pipe flow granularity
+            step: 1 + (r_u32() % 4) as i64, // per-pipe flow granularity
         }
     };
 
@@ -1774,45 +2515,61 @@ fn try_build_pipe(zones: &[Zone], i: usize, j: usize) -> Option<Pipe> {
     if a.x + a.w == b.x {
         let y0 = a.y.max(b.y);
         let y1 = (a.y + a.h).min(b.y + b.h);
-        if y1 - y0 < min_edge { return None; }
+        if y1 - y0 < min_edge {
+            return None;
+        }
         let y = y0 + (y1 - y0) / 2;
         let l_a = len_each.min(a.w - 1).max(2);
         let l_b = len_each.min(b.w - 1).max(2);
         let cells: Vec<(i32, i32)> = ((a.x + a.w - l_a)..(b.x + l_b)).map(|x| (x, y)).collect();
-        if cells.len() >= 6 { return Some(mk(i as u16, j as u16, cells)); }
+        if cells.len() >= 6 {
+            return Some(mk(i as u16, j as u16, cells));
+        }
     }
     // B-right touches A-left (flow rightwards: from B into A)
     if b.x + b.w == a.x {
         let y0 = a.y.max(b.y);
         let y1 = (a.y + a.h).min(b.y + b.h);
-        if y1 - y0 < min_edge { return None; }
+        if y1 - y0 < min_edge {
+            return None;
+        }
         let y = y0 + (y1 - y0) / 2;
         let l_a = len_each.min(a.w - 1).max(2);
         let l_b = len_each.min(b.w - 1).max(2);
         let cells: Vec<(i32, i32)> = ((b.x + b.w - l_b)..(a.x + l_a)).map(|x| (x, y)).collect();
-        if cells.len() >= 6 { return Some(mk(j as u16, i as u16, cells)); }
+        if cells.len() >= 6 {
+            return Some(mk(j as u16, i as u16, cells));
+        }
     }
     // A-bottom touches B-top (flow downwards: from A into B)
     if a.y + a.h == b.y {
         let x0 = a.x.max(b.x);
         let x1 = (a.x + a.w).min(b.x + b.w);
-        if x1 - x0 < min_edge { return None; }
+        if x1 - x0 < min_edge {
+            return None;
+        }
         let x = x0 + (x1 - x0) / 2;
         let l_a = 4.min(a.h - 1).max(2);
         let l_b = 4.min(b.h - 1).max(2);
         let cells: Vec<(i32, i32)> = ((a.y + a.h - l_a)..(b.y + l_b)).map(|y| (x, y)).collect();
-        if cells.len() >= 6 { return Some(mk(i as u16, j as u16, cells)); }
+        if cells.len() >= 6 {
+            return Some(mk(i as u16, j as u16, cells));
+        }
     }
     // B-bottom touches A-top (flow downwards: from B into A)
     if b.y + b.h == a.y {
         let x0 = a.x.max(b.x);
         let x1 = (a.x + a.w).min(b.x + b.w);
-        if x1 - x0 < min_edge { return None; }
+        if x1 - x0 < min_edge {
+            return None;
+        }
         let x = x0 + (x1 - x0) / 2;
         let l_a = 4.min(a.h - 1).max(2);
         let l_b = 4.min(b.h - 1).max(2);
         let cells: Vec<(i32, i32)> = ((b.y + b.h - l_b)..(a.y + l_a)).map(|y| (x, y)).collect();
-        if cells.len() >= 6 { return Some(mk(j as u16, i as u16, cells)); }
+        if cells.len() >= 6 {
+            return Some(mk(j as u16, i as u16, cells));
+        }
     }
     None
 }
@@ -1822,9 +2579,13 @@ fn build_pipes(zones: &[Zone]) -> Vec<Pipe> {
     // The whole screen becomes visibly networked.
     let mut pipes = Vec::new();
     for i in 0..zones.len() {
-        if zones[i].side == Side::Nested { continue; }
+        if zones[i].side == Side::Nested {
+            continue;
+        }
         for j in (i + 1)..zones.len() {
-            if zones[j].side == Side::Nested { continue; }
+            if zones[j].side == Side::Nested {
+                continue;
+            }
             if let Some(p) = try_build_pipe(zones, i, j) {
                 pipes.push(p);
             }
@@ -1835,26 +2596,33 @@ fn build_pipes(zones: &[Zone]) -> Vec<Pipe> {
 
 /// Streamer axis — direction of a persistent overlay flow line.
 #[derive(Clone, Copy)]
-enum StreamerAxis { Horizontal, Vertical, DiagPos, DiagNeg }
+enum StreamerAxis {
+    Horizontal,
+    Vertical,
+    DiagPos,
+    DiagNeg,
+}
 
 /// A single persistent overlay flow line.
 struct Streamer {
     axis: StreamerAxis,
-    anchor: i32,        // y for H, x for V, intercept for diagonals (top edge)
-    speed: f32,         // chars / sec
-    direction: i32,     // +1 / -1 — flow direction along the line
+    anchor: i32,    // y for H, x for V, intercept for diagonals (top edge)
+    speed: f32,     // chars / sec
+    direction: i32, // +1 / -1 — flow direction along the line
 }
 
 fn streamer_cells(axis: StreamerAxis, anchor: i32, w: i32, h: i32) -> Vec<(i32, i32)> {
     match axis {
         StreamerAxis::Horizontal => (0..w).map(|x| (x, anchor)).collect(),
-        StreamerAxis::Vertical   => (0..h).map(|y| (anchor, y)).collect(),
+        StreamerAxis::Vertical => (0..h).map(|y| (anchor, y)).collect(),
         StreamerAxis::DiagPos => {
             let mut out = Vec::new();
             let mut x = anchor;
             let mut y = 0;
             while y < h {
-                if x >= 0 && x < w { out.push((x, y)); }
+                if x >= 0 && x < w {
+                    out.push((x, y));
+                }
                 y += 1;
                 x += 2; // step 2 cells horizontally per row → ~45° on screen aspect
             }
@@ -1865,7 +2633,9 @@ fn streamer_cells(axis: StreamerAxis, anchor: i32, w: i32, h: i32) -> Vec<(i32, 
             let mut x = anchor;
             let mut y = 0;
             while y < h {
-                if x >= 0 && x < w { out.push((x, y)); }
+                if x >= 0 && x < w {
+                    out.push((x, y));
+                }
                 y += 1;
                 x -= 2;
             }
@@ -1891,7 +2661,9 @@ fn paint_streamer(
     let cells = streamer_cells(s.axis, s.anchor, w, h);
     let scroll = (cursor * s.speed) as i64;
     for (i, &(x, y)) in cells.iter().enumerate() {
-        if protected.iter().any(|r| rect_contains(*r, x, y)) { continue; }
+        if protected.iter().any(|r| rect_contains(*r, x, y)) {
+            continue;
+        }
         let pos = scroll + (i as i64) * s.direction as i64;
         let ch = sample(stream, pos);
         put_force(grid, x, y, ch, (250, 55, 55), 0.95);
@@ -1901,27 +2673,27 @@ fn paint_streamer(
 /// Edge-anchored noise injection. Emits a short trail of chars from an edge
 /// point inward, scrolling with its own speed. Different from the global hose.
 struct NoiseFeed {
-    pos: (i32, i32),     // edge cell
-    dir: (i32, i32),      // (dx, dy) inward unit vector
-    length: i32,          // trail length in cells
-    seed: u32,            // unique noise seed per feed
-    speed: f32,           // chars / sec
+    pos: (i32, i32), // edge cell
+    dir: (i32, i32), // (dx, dy) inward unit vector
+    length: i32,     // trail length in cells
+    seed: u32,       // unique noise seed per feed
+    speed: f32,      // chars / sec
 }
 
-const NOISE_POOL: &[char] = &['#', '@', '%', '$', '*', '!', '?', '&', '+', '=', '~', '^', '\\'];
+const NOISE_POOL: &[char] = &[
+    '#', '@', '%', '$', '*', '!', '?', '&', '+', '=', '~', '^', '\\',
+];
 
-fn paint_noise_feed(
-    grid: &mut [Vec<PxCell>],
-    f: &NoiseFeed,
-    protected: &[Rect],
-    cursor: f32,
-) {
+fn paint_noise_feed(grid: &mut [Vec<PxCell>], f: &NoiseFeed, protected: &[Rect], cursor: f32) {
     let scroll = (cursor * f.speed) as u32;
     for i in 0..f.length {
         let x = f.pos.0 + f.dir.0 * i;
         let y = f.pos.1 + f.dir.1 * i;
-        if protected.iter().any(|r| rect_contains(*r, x, y)) { continue; }
-        let h = f.seed
+        if protected.iter().any(|r| rect_contains(*r, x, y)) {
+            continue;
+        }
+        let h = f
+            .seed
             .wrapping_mul(2_654_435_761)
             .wrapping_add(scroll.wrapping_mul(31))
             .wrapping_add(i as u32);
@@ -1983,7 +2755,9 @@ fn tick_flow(flow: &mut DitherFlow, dt: f32, w: i32, h: i32) {
 
 fn paint_flow(grid: &mut [Vec<PxCell>], flow: &DitherFlow) {
     let n = flow.trail.len();
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
     for (i, &(x, y)) in flow.trail.iter().enumerate() {
         // 0 = oldest (dimmest, lightest density char) → n-1 = head (brightest, █).
         let age_pct = i as f32 / n as f32;
@@ -2012,9 +2786,13 @@ fn paint_glitch_insertion(
     assets: &[ImageAsset],
     cursor: f32,
 ) {
-    if ins.asset_idx >= assets.len() { return; }
+    if ins.asset_idx >= assets.len() {
+        return;
+    }
     let asset = &assets[ins.asset_idx];
-    if asset.variants.is_empty() { return; }
+    if asset.variants.is_empty() {
+        return;
+    }
     let variant = &asset.variants[ins.variant_idx.min(asset.variants.len() - 1)];
 
     let vw = variant.w as i32;
@@ -2037,10 +2815,24 @@ fn paint_glitch_insertion(
         for rx in 0..ins.rect.w {
             let srx = (off_x + rx).rem_euclid(vw.max(1)) as usize;
             let sry = (off_y + ry).rem_euclid(vh.max(1)) as usize;
-            let ch = variant.cells.get(sry).and_then(|row| row.get(srx)).copied().unwrap_or(' ');
-            if ch == '\u{2800}' || ch == ' ' { continue; }
+            let ch = variant
+                .cells
+                .get(sry)
+                .and_then(|row| row.get(srx))
+                .copied()
+                .unwrap_or(' ');
+            if ch == '\u{2800}' || ch == ' ' {
+                continue;
+            }
             let intensity = (0.7 + 0.3 * life_factor).min(1.0);
-            put_force(grid, ins.rect.x + rx, ins.rect.y + ry, ch, (255, 60, 60), intensity);
+            put_force(
+                grid,
+                ins.rect.x + rx,
+                ins.rect.y + ry,
+                ch,
+                (255, 60, 60),
+                intensity,
+            );
         }
     }
 }
@@ -2058,7 +2850,9 @@ const LITANY: &str =
 fn paint_litany(grid: &mut [Vec<PxCell>], w: i32, cursor: f32) {
     let chars: Vec<char> = LITANY.chars().collect();
     let n = chars.len() as i64;
-    if n == 0 || grid.is_empty() { return; }
+    if n == 0 || grid.is_empty() {
+        return;
+    }
     let scroll = (cursor * 0.35) as i64;
     for x in 0..w {
         let idx = (scroll + x as i64).rem_euclid(n) as usize;
@@ -2095,7 +2889,9 @@ fn paint_pipe(
     // digit pair (so the byte-value shape reads as data).
     let fetch_char = |p: i64| -> char {
         if let Some(bytes) = image_src {
-            if bytes.is_empty() { return ' '; }
+            if bytes.is_empty() {
+                return ' ';
+            }
             let idx = p.rem_euclid(bytes.len() as i64 * 2) as usize;
             let byte = bytes[idx / 2];
             let nib = if idx & 1 == 0 { byte >> 4 } else { byte & 0x0f };
@@ -2121,7 +2917,11 @@ fn paint_pipe(
             let src = fetch_char(src_pos);
             apply_transform(src, pipe.transform)
         };
-        let i_val = if (input_end..op_end).contains(&i) { 0.92 } else { 1.0 };
+        let i_val = if (input_end..op_end).contains(&i) {
+            0.92
+        } else {
+            1.0
+        };
         put_force(grid, x, y, ch, (255, 50, 50), i_val);
     }
 }
@@ -2132,11 +2932,17 @@ fn paint_pipe(
 /// the character "languages" morph into each other. Exempts the cube zone.
 fn apply_edge_morph(grid: &mut [Vec<PxCell>], scene: &Scene) {
     let grid_h = grid.len() as i32;
-    let grid_w = if grid.is_empty() { 0 } else { grid[0].len() as i32 };
+    let grid_w = if grid.is_empty() {
+        0
+    } else {
+        grid[0].len() as i32
+    };
 
     for i in 0..scene.zones.len() {
         let z = &scene.zones[i];
-        if matches!(z.formation, Formation::RaytraceCube) { continue; }
+        if matches!(z.formation, Formation::RaytraceCube) {
+            continue;
+        }
         let r = z.base_rect;
         let morph_d: i32 = 3;
         let t_phase = (scene.cursor * 0.25) as i32;
@@ -2146,38 +2952,63 @@ fn apply_edge_morph(grid: &mut [Vec<PxCell>], scene: &Scene) {
                 let dx = rx.min(r.w - 1 - rx);
                 let dy = ry.min(r.h - 1 - ry);
                 let dist = dx.min(dy);
-                if dist >= morph_d { continue; }
+                if dist >= morph_d {
+                    continue;
+                }
 
                 let gx = r.x + rx;
                 let gy = r.y + ry;
-                if gx < 0 || gy < 0 || gx >= grid_w || gy >= grid_h { continue; }
+                if gx < 0 || gy < 0 || gx >= grid_w || gy >= grid_h {
+                    continue;
+                }
                 let (ugx, ugy) = (gx as usize, gy as usize);
-                if grid[ugy][ugx].owner != i as u16 { continue; }
+                if grid[ugy][ugx].owner != i as u16 {
+                    continue;
+                }
 
                 // Nearness in [0, 1]; squared so effect falls off faster.
                 let nearness = (morph_d - dist) as f32 / morph_d as f32;
                 let h_val = ihash(rx, ry, t_phase);
                 let r_val = (h_val & 0xff) as f32 / 255.0;
                 let threshold = 0.55 * nearness * nearness;
-                if r_val >= threshold { continue; }
+                if r_val >= threshold {
+                    continue;
+                }
 
                 // Pick a direction outward — one of 4 cardinal dirs weighted
                 // toward the nearest edge so bleeding mostly comes from the
                 // neighbor on that side.
                 let (sdx, sdy): (i32, i32) = if dx < dy {
-                    if rx < r.w / 2 { (-1, 0) } else { (1, 0) }
+                    if rx < r.w / 2 {
+                        (-1, 0)
+                    } else {
+                        (1, 0)
+                    }
                 } else {
-                    if ry < r.h / 2 { (0, -1) } else { (0, 1) }
+                    if ry < r.h / 2 {
+                        (0, -1)
+                    } else {
+                        (0, 1)
+                    }
                 };
                 let steps = 1 + ((h_val >> 8) & 0x3) as i32;
                 let lx = gx + sdx * steps;
                 let ly = gy + sdy * steps;
-                if lx < 0 || ly < 0 || lx >= grid_w || ly >= grid_h { continue; }
+                if lx < 0 || ly < 0 || lx >= grid_w || ly >= grid_h {
+                    continue;
+                }
                 let src = grid[ly as usize][lx as usize];
                 // Only morph if the source is owned by a DIFFERENT zone and
                 // that zone isn't the cube (cube stays crisp).
-                if src.owner == i as u16 || src.owner == NO_OWNER { continue; }
-                if matches!(scene.zones[src.owner as usize].formation, Formation::RaytraceCube) { continue; }
+                if src.owner == i as u16 || src.owner == NO_OWNER {
+                    continue;
+                }
+                if matches!(
+                    scene.zones[src.owner as usize].formation,
+                    Formation::RaytraceCube
+                ) {
+                    continue;
+                }
 
                 let cell = &mut grid[ugy][ugx];
                 cell.ch = src.ch;
@@ -2217,11 +3048,26 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     apply_edge_morph(&mut grid, scene);
     // 3) Pipes force-paint on top — the compression machinery between cells.
     for p in &scene.pipes {
-        paint_pipe(&mut grid, p, &scene.zones, &scene.stream, &scene.assets, scene.cursor);
+        paint_pipe(
+            &mut grid,
+            p,
+            &scene.zones,
+            &scene.stream,
+            &scene.assets,
+            scene.cursor,
+        );
     }
     // 4) Persistent overlay streamers (orthogonal + crossed diagonals).
     for s in &scene.streamers {
-        paint_streamer(&mut grid, s, scene.w, scene.h, &scene.protected_rects, &scene.stream, scene.cursor);
+        paint_streamer(
+            &mut grid,
+            s,
+            scene.w,
+            scene.h,
+            &scene.protected_rects,
+            &scene.stream,
+            scene.cursor,
+        );
     }
     // 5) Noise projection feeds from edges.
     for f in &scene.noise_feeds {
@@ -2248,7 +3094,9 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     // 7) Flip: mirror every row horizontally at the very end so the creed
     // flips too — the mirror universe has its own scripture.
     if scene.flipped {
-        for row in grid.iter_mut() { row.reverse(); }
+        for row in grid.iter_mut() {
+            row.reverse();
+        }
     }
     grid
 }
@@ -2270,7 +3118,14 @@ fn draw(stdout: &mut impl Write, grid: &[Vec<PxCell>]) -> io::Result<()> {
         for cell in row {
             let fg = dim(cell.fg, cell.intensity);
             if Some(fg) != last_fg {
-                queue!(stdout, SetForegroundColor(Color::Rgb { r: fg.0, g: fg.1, b: fg.2 }))?;
+                queue!(
+                    stdout,
+                    SetForegroundColor(Color::Rgb {
+                        r: fg.0,
+                        g: fg.1,
+                        b: fg.2
+                    })
+                )?;
                 last_fg = Some(fg);
             }
             queue!(stdout, Print(cell.ch))?;
@@ -2285,7 +3140,12 @@ fn draw(stdout: &mut impl Write, grid: &[Vec<PxCell>]) -> io::Result<()> {
 fn main() -> io::Result<()> {
     let mut stdout = io::stdout();
     terminal::enable_raw_mode()?;
-    execute!(stdout, EnterAlternateScreen, cursor::Hide, Clear(ClearType::All))?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        cursor::Hide,
+        Clear(ClearType::All)
+    )?;
 
     let (cols, rows) = terminal::size()?;
     let w = (cols as i32).max(60);
@@ -2304,8 +3164,12 @@ fn main() -> io::Result<()> {
                         (KeyCode::Esc, _) => break,
                         (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => break,
                         // Toggles moved to Ctrl-modified so plain f/r are typeable.
-                        (KeyCode::Char('f'), m) if m.contains(KeyModifiers::CONTROL) => scene.flipped = !scene.flipped,
-                        (KeyCode::Char('r'), m) if m.contains(KeyModifiers::CONTROL) => scene.reversed = !scene.reversed,
+                        (KeyCode::Char('f'), m) if m.contains(KeyModifiers::CONTROL) => {
+                            scene.flipped = !scene.flipped
+                        }
+                        (KeyCode::Char('r'), m) if m.contains(KeyModifiers::CONTROL) => {
+                            scene.reversed = !scene.reversed
+                        }
                         (KeyCode::Char('q'), _) => break,
                         _ => {}
                     }
@@ -2320,7 +3184,9 @@ fn main() -> io::Result<()> {
             draw(&mut stdout, &grid)?;
 
             let elapsed = last.elapsed();
-            if elapsed < target { std::thread::sleep(target - elapsed); }
+            if elapsed < target {
+                std::thread::sleep(target - elapsed);
+            }
         }
         Ok(())
     })();

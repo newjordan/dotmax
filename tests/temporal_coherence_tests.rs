@@ -17,7 +17,10 @@ use image::GrayImage;
 fn test_measure_flicker_identical_frames() {
     let frame = vec![true, false, true, false, true];
     let flicker = measure_flicker(&frame, &frame);
-    assert!((flicker - 0.0).abs() < f64::EPSILON, "Identical frames should have 0 flicker");
+    assert!(
+        (flicker - 0.0).abs() < f64::EPSILON,
+        "Identical frames should have 0 flicker"
+    );
 }
 
 #[test]
@@ -25,7 +28,10 @@ fn test_measure_flicker_completely_different() {
     let frame1 = vec![true, true, true, true];
     let frame2 = vec![false, false, false, false];
     let flicker = measure_flicker(&frame1, &frame2);
-    assert!((flicker - 1.0).abs() < f64::EPSILON, "Opposite frames should have 100% flicker");
+    assert!(
+        (flicker - 1.0).abs() < f64::EPSILON,
+        "Opposite frames should have 100% flicker"
+    );
 }
 
 #[test]
@@ -39,8 +45,8 @@ fn test_measure_flicker_partial_change() {
 #[test]
 fn test_average_flicker_calculation() {
     let frames = vec![
-        vec![true, false, true, false], // frame 0
-        vec![true, true, true, false],  // 1 change from frame 0 (25%)
+        vec![true, false, true, false],  // frame 0
+        vec![true, true, true, false],   // 1 change from frame 0 (25%)
         vec![false, true, false, false], // 2 changes from frame 1 (50%)
     ];
     let avg = average_flicker(&frames);
@@ -52,14 +58,20 @@ fn test_average_flicker_calculation() {
 fn test_average_flicker_single_frame() {
     let frames = vec![vec![true, false]];
     let avg = average_flicker(&frames);
-    assert!((avg - 0.0).abs() < f64::EPSILON, "Single frame should have 0 average flicker");
+    assert!(
+        (avg - 0.0).abs() < f64::EPSILON,
+        "Single frame should have 0 average flicker"
+    );
 }
 
 #[test]
 fn test_average_flicker_empty() {
     let frames: Vec<Vec<bool>> = vec![];
     let avg = average_flicker(&frames);
-    assert!((avg - 0.0).abs() < f64::EPSILON, "Empty frames should have 0 flicker");
+    assert!(
+        (avg - 0.0).abs() < f64::EPSILON,
+        "Empty frames should have 0 flicker"
+    );
 }
 
 // ============================================================================
@@ -84,7 +96,11 @@ fn test_hysteresis_reduces_noise_flicker() {
     // With hysteresis, should stay ON
     let frame2 = GrayImage::from_fn(1, 1, |_, _| image::Luma([120]));
     let result2 = filter.apply(&frame2, threshold);
-    assert_eq!(result2.get_pixel(0, 0).0[0], 255, "Should stay ON (hysteresis)");
+    assert_eq!(
+        result2.get_pixel(0, 0).0[0],
+        255,
+        "Should stay ON (hysteresis)"
+    );
 
     // Frame 3: Pixel drops to 110 (below low_thresh=113)
     // Now it should turn OFF
@@ -96,7 +112,11 @@ fn test_hysteresis_reduces_noise_flicker() {
     // With hysteresis, should stay OFF
     let frame4 = GrayImage::from_fn(1, 1, |_, _| image::Luma([130]));
     let result4 = filter.apply(&frame4, threshold);
-    assert_eq!(result4.get_pixel(0, 0).0[0], 0, "Should stay OFF (hysteresis)");
+    assert_eq!(
+        result4.get_pixel(0, 0).0[0],
+        0,
+        "Should stay OFF (hysteresis)"
+    );
 
     // Frame 5: Pixel rises to 150 (above high_thresh=143)
     // Now it should turn ON
@@ -204,12 +224,7 @@ fn test_temporal_coherence_reduces_flicker() {
     // Process without temporal coherence (simple threshold)
     let results_without: Vec<Vec<bool>> = frames_raw
         .iter()
-        .map(|frame| {
-            frame
-                .pixels()
-                .map(|p| p.0[0] >= threshold)
-                .collect()
-        })
+        .map(|frame| frame.pixels().map(|p| p.0[0] >= threshold).collect())
         .collect();
 
     let flicker_without = average_flicker(&results_without);
@@ -252,7 +267,11 @@ fn test_temporal_coherence_reset() {
     let result = coherence.process_grayscale(&frame2, 128);
 
     // 100 < 128, so should be OFF
-    assert_eq!(result.get_pixel(0, 0).0[0], 0, "After reset, should use standard threshold");
+    assert_eq!(
+        result.get_pixel(0, 0).0[0],
+        0,
+        "After reset, should use standard threshold"
+    );
 }
 
 #[test]

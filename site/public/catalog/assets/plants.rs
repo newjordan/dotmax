@@ -1029,57 +1029,88 @@ impl ProgressStyle for FernFiddlehead {
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wf = w as f32;
+        let hf = h as f32;
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
+        // The frond unrolls left→right across the whole canvas: the rachis
+        // (main stem) extends with eased, pinnae unfurl behind the advancing
+        // tip, and the tip itself carries the uncurling fiddlehead coil.
+        let x0 = 3.0f32;
+        let y0 = hf - 2.0;
+        let full_len = (wf - 12.0).max(2.0);
+        let rise = hf * 0.45;
 
-        // Logarithmic spiral: r = a * e^(b * theta).
-        // At eased=0 draw only the tight coil; at eased=1 draw full frond.
-        let a = 1.0f32;
-        let b = 0.22f32;
+        // Breeze: a slow wave travels along the frond (0.25 Hz — seamless).
+        let breeze = |s: f32| (ctx.time * PI * 0.5 + s * 3.0).sin() * 1.1 * s;
 
-        // Total angular span of the frond: 0 (coil only) → 4*PI (full unroll).
-        let max_turns = 4.0 * PI;
-        let unroll = ctx.eased * max_turns;
+        // Rachis point at parameter s in 0..=1.
+        let rachis = |s: f32| -> (f32, f32) {
+            let x = x0 + s * full_len;
+            let y = y0 - rise * s.powf(1.25) + breeze(s);
+            (x, y)
+        };
 
-        // Coil starts wound tightly (small theta) and unwinds.
-        // We draw from theta = 0 (innermost) outward.
-        let max_r = (w.min(h) / 2).saturating_sub(1) as f32;
-        let scale = max_r / (a * (b * max_turns).exp());
-
-        // Breathe: the coil rotates slightly with time.
-        let breath_offset = (ctx.time * 0.5).sin() * 0.15;
-
-        let steps = 200usize;
-        for s in 0..=steps {
-            let theta = s as f32 / steps as f32 * unroll;
-            if theta > unroll {
+        // Draw the rachis up to the growth front, thickened near the base.
+        let grown = ctx.eased.clamp(0.0, 1.0);
+        let steps = (full_len * 1.5) as i32;
+        for i in 0..=steps {
+            let s = i as f32 / steps.max(1) as f32 * grown;
+            if s > grown {
                 break;
             }
-            let r = a * (b * theta).exp() * scale;
-            // Rotate so fiddlehead starts pointing down (PI/2) and uncurls upward.
-            let angle = theta + PI / 2.0 + breath_offset;
-            let px = cx + (r * angle.cos()).round() as i32;
-            let py = cy + (r * angle.sin()).round() as i32;
-            draw::dot_i(grid, px, py);
+            let (x, y) = rachis(s);
+            draw::dot_i(grid, x.round() as i32, y.round() as i32);
+            if s < 0.6 {
+                draw::dot_i(grid, x.round() as i32, y.round() as i32 + 1);
+            }
+        }
 
-            // Pinnae (side leaflets) every half-turn on the outer half of the spiral.
-            if theta > max_turns / 2.0 && s % 20 == 0 {
-                let pinnae_len = (r * 0.4).max(1.0);
-                let pinnae_angle = angle + PI / 2.0;
-                for pd in 1..=(pinnae_len.round() as i32) {
+        // Pinnae: paired leaflets sprouting along the grown rachis. Each pair
+        // matures (lengthens) once the tip has passed it.
+        let n_pinnae = 16i32;
+        for k in 1..=n_pinnae {
+            let sk = k as f32 / (n_pinnae + 1) as f32;
+            if sk >= grown {
+                break;
+            }
+            let maturity = ((grown - sk) / 0.12).clamp(0.0, 1.0);
+            let len = (hf * 0.38) * (1.0 - 0.55 * sk) * maturity;
+            let (px, py) = rachis(sk);
+            for j in 1..=(len.round() as i32) {
+                let jf = j as f32;
+                // Upward leaflet sweeps back; downward one is shorter.
+                draw::dot_i(
+                    grid,
+                    (px - jf * 0.45).round() as i32,
+                    (py - jf * 0.9).round() as i32,
+                );
+                if jf < len * 0.7 {
                     draw::dot_i(
                         grid,
-                        px + (pinnae_angle.cos() * pd as f32).round() as i32,
-                        py + (pinnae_angle.sin() * pd as f32).round() as i32,
-                    );
-                    draw::dot_i(
-                        grid,
-                        px - (pinnae_angle.cos() * pd as f32).round() as i32,
-                        py - (pinnae_angle.sin() * pd as f32).round() as i32,
+                        (px - jf * 0.35).round() as i32,
+                        (py + jf * 0.8).round() as i32,
                     );
                 }
             }
+        }
+
+        // Fiddlehead coil at the growth tip: a tight Archimedean curl that
+        // unwinds as progress advances until only a small hook remains.
+        let (tx, ty) = rachis(grown);
+        let coil_turns = 0.4 + 2.4 * (1.0 - grown);
+        let coil_r = 2.2 + 4.0 * (1.0 - grown);
+        let coil_cx = tx + coil_r * 0.4;
+        let coil_cy = ty - coil_r * 0.9;
+        let coil_steps = (coil_turns * 24.0) as i32;
+        for i in 0..=coil_steps {
+            let t = i as f32 / coil_steps.max(1) as f32;
+            let theta = t * coil_turns * 2.0 * PI + PI * 0.5;
+            let r = coil_r * (1.0 - t * 0.85);
+            draw::dot_i(
+                grid,
+                (coil_cx + r * theta.cos()).round() as i32,
+                (coil_cy + r * theta.sin()).round() as i32,
+            );
         }
 
         // Tint: deep green shifting to pale frond tip.
@@ -1118,46 +1149,63 @@ impl ProgressStyle for BambooShoot {
         }
 
         let (cw, ch) = grid.dimensions();
-        // Bamboo column sits in the centre third.
-        let stem_cx = cw / 2;
-        let seg_height_cells = 2usize.max(1); // each segment is 2 cell rows tall
-        let max_segs = (ch / seg_height_cells).max(1);
-        let segs_grown = (ctx.eased * max_segs as f32).round() as usize;
+        let wi = w as i32;
+        let hi = h as i32;
+        let ground = hi - 1;
 
-        // Sway: the culm leans left/right.
-        let sway_cells = (isin(ctx.time * 1.0, (cw as f32 * 0.06).max(1.0))) as i32;
+        // Dotted soil line the grove springs from.
+        for x in (0..wi).step_by(2) {
+            draw::dot_i(grid, x, ground);
+        }
 
-        for seg in 0..segs_grown.min(max_segs) {
-            // Segments grow from bottom up.
-            let base_cell_y = ch.saturating_sub(1 + seg * seg_height_cells);
-            let sx = (stem_cx as i32 + sway_cells).clamp(0, cw.saturating_sub(1) as i32) as usize;
-
-            // Draw segment body using vblock glyphs (full column in both cell rows).
-            for dy in 0..seg_height_cells {
-                let cy = base_cell_y.saturating_sub(dy);
-                draw::vblock(grid, sx.min(cw.saturating_sub(1)), cy, 8);
-                // Thin border dots on both sides (in dot space).
-                let dx = sx * 2;
-                let dy_dot = cy * 4;
-                draw::vline(grid, dx.saturating_sub(1), dy_dot, dy_dot + 3);
-                draw::vline(grid, (dx + 2).min(w.saturating_sub(1)), dy_dot, dy_dot + 3);
+        // A grove of culms revealed left→right: culm i shoots up while
+        // `eased * n` passes through [i, i+1], each rising segment by segment.
+        let n_culms = 6i32;
+        let culm_max = (hi - 3).max(1) as f32;
+        for i in 0..n_culms {
+            let grow = (ctx.eased * n_culms as f32 - i as f32).clamp(0.0, 1.0);
+            if grow <= 0.0 {
+                break;
             }
+            let cx = wi * (2 * i + 1) / (2 * n_culms);
+            let culm_h = (grow * culm_max).round() as i32;
+            // Sway: each culm leans on its own phase (0.25 Hz — seamless).
+            let lean = (ctx.time * PI * 0.5 + i as f32 * 1.1).sin() * 1.6;
 
-            // Node (joint) line at the base of each segment.
-            let node_y = base_cell_y;
-            let node_dot_y = node_y * 4 + 3;
-            let left = sx.saturating_sub(1) * 2;
-            let right = (sx + 2).min(w / 2) * 2;
-            draw::hline(grid, left, right, node_dot_y.min(h.saturating_sub(1)));
-
-            // Leaf pair at every other node (alternating sides).
-            if seg % 2 == 0 && segs_grown > 1 {
-                let leaf_y = node_y as i32;
-                let leaf_x_base = sx as i32 * 2;
-                let side = if seg % 4 == 0 { 1i32 } else { -1i32 };
-                // Three-dot leaf sweeping out.
-                for ld in 1..=3i32 {
-                    draw::dot_i(grid, leaf_x_base + side * ld, (leaf_y * 4) as i32 - ld);
+            for dy in 0..=culm_h {
+                let xoff = (lean * dy as f32 / culm_max).round() as i32;
+                let y = ground - 1 - dy;
+                // Twin walls form the hollow culm.
+                draw::dot_i(grid, cx - 1 + xoff, y);
+                draw::dot_i(grid, cx + 1 + xoff, y);
+                // Node (joint) line closes each segment.
+                if dy % 4 == 3 {
+                    draw::dot_i(grid, cx - 2 + xoff, y);
+                    draw::dot_i(grid, cx + xoff, y);
+                    draw::dot_i(grid, cx + 2 + xoff, y);
+                }
+            }
+            // Tapered growing tip while the culm is still shooting.
+            let tip_off = (lean * culm_h as f32 / culm_max).round() as i32;
+            if grow < 1.0 {
+                draw::dot_i(grid, cx + tip_off, ground - 2 - culm_h);
+            }
+            // Leaves at the upper nodes once tall enough, alternating sides.
+            if culm_h >= 7 {
+                let side = if i % 2 == 0 { 1i32 } else { -1 };
+                for ld in 1..=4i32 {
+                    draw::dot_i(
+                        grid,
+                        cx + tip_off + side * ld,
+                        ground - 1 - culm_h + 4 - (ld + 1) / 2,
+                    );
+                    if culm_h >= 11 {
+                        draw::dot_i(
+                            grid,
+                            cx + tip_off - side * ld,
+                            ground - 1 - culm_h + 8 - (ld + 1) / 2,
+                        );
+                    }
                 }
             }
         }

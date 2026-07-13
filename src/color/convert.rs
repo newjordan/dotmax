@@ -663,10 +663,7 @@ mod tests {
         // Dark gray (64, 64, 64)
         let result = rgb_to_ansi256(64, 64, 64);
         // Should be in grayscale range (232-255). Upper bound check omitted since u8 max is 255.
-        assert!(
-            result >= 232,
-            "Expected grayscale index, got {result}"
-        );
+        assert!(result >= 232, "Expected grayscale index, got {result}");
     }
 
     #[test]
@@ -674,10 +671,7 @@ mod tests {
         // Light gray (192, 192, 192)
         let result = rgb_to_ansi256(192, 192, 192);
         // Should be in grayscale range (232-255). Upper bound check omitted since u8 max is 255.
-        assert!(
-            result >= 232,
-            "Expected grayscale index, got {result}"
-        );
+        assert!(result >= 232, "Expected grayscale index, got {result}");
     }
 
     #[test]

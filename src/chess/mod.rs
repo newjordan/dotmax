@@ -6,9 +6,9 @@ pub mod board;
 pub mod sprites;
 
 use crate::error::DotmaxError;
-pub use board::{RenderOptions, BoardColorScheme};
+pub use board::{BoardColorScheme, RenderOptions};
+use pgn_reader::{BufferedReader, SanPlus, Visitor};
 use shakmaty::{Chess, Position};
-use pgn_reader::{BufferedReader, Visitor, SanPlus};
 
 /// Render a PGN string to a braille-encoded string.
 ///
@@ -18,20 +18,28 @@ pub fn render_pgn(pgn: &str, move_index: Option<usize>) -> Result<String, Dotmax
 }
 
 /// Render a PGN string to a braille-encoded string with options.
-pub fn render_pgn_with_options(pgn: &str, move_index: Option<usize>, options: &RenderOptions) -> Result<String, DotmaxError> {
+pub fn render_pgn_with_options(
+    pgn: &str,
+    move_index: Option<usize>,
+    options: &RenderOptions,
+) -> Result<String, DotmaxError> {
     let mut visitor = ChessVisitor::new(move_index);
     let mut reader = BufferedReader::new_cursor(pgn.as_bytes());
-    
+
     if let Ok(Some(pos)) = reader.read_game(&mut visitor) {
         let grid = board::render_position_with_options(&pos, options)?;
         let mut out = String::new();
         for row in grid.to_unicode_grid() {
-            for ch in row { out.push(ch); }
+            for ch in row {
+                out.push(ch);
+            }
             out.push('\n');
         }
         Ok(out)
     } else {
-        Err(DotmaxError::TerminalBackend("No game found or PGN error".to_string()))
+        Err(DotmaxError::TerminalBackend(
+            "No game found or PGN error".to_string(),
+        ))
     }
 }
 
@@ -67,7 +75,7 @@ impl Visitor for ChessVisitor {
                 return;
             }
         }
-        
+
         if let Ok(m) = san.san.to_move(&self.pos) {
             self.pos.play_unchecked(m);
             self.current_move += 1;

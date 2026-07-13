@@ -348,9 +348,9 @@ impl ImageRenderer {
         if self.ambient_intensity <= 0.0 {
             return JitterParams::NONE;
         }
-        let base = self
-            .ambient_seed
-            .unwrap_or_else(|| clock_seed() ^ next_global_seed_offset().wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let base = self.ambient_seed.unwrap_or_else(|| {
+            clock_seed() ^ next_global_seed_offset().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        });
         // Mix in the frame counter so each render advances the pattern.
         let mut s = base ^ self.frame_counter.wrapping_mul(0xD1B5_4A32_D192_ED03);
         s ^= s >> 33;
@@ -928,9 +928,9 @@ impl ImageRenderer {
 
         // ISSUE #3 FIX: Check if we can reuse cached resized image
         // Must check both cache existence AND that dimensions haven't changed (e.g., terminal resize)
-        let dimensions_match = self.cached_dimensions.is_some_and(|(w, h)| {
-            w == target_width_pixels && h == target_height_pixels
-        });
+        let dimensions_match = self
+            .cached_dimensions
+            .is_some_and(|(w, h)| w == target_width_pixels && h == target_height_pixels);
 
         let resized = if let Some(cached) = &self.cached_resized {
             if dimensions_match {
@@ -1048,12 +1048,7 @@ impl ImageRenderer {
         }
 
         // Convert to binary (dithering or threshold) with jitter.
-        let binary = apply_dithering_jittered(
-            &gray,
-            self.dithering,
-            modulated_threshold,
-            jitter,
-        )?;
+        let binary = apply_dithering_jittered(&gray, self.dithering, modulated_threshold, jitter)?;
 
         // Map to braille grid
         let cell_width = target_width_pixels as usize / 2;

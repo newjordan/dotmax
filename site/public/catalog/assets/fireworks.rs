@@ -1027,13 +1027,14 @@ impl ProgressStyle for Chrysanthemum {
         let cy = h as f32 * 0.4;
         let max_r = w as f32 / 2.0 - 1.0;
         let r = ctx.eased * max_r;
-        // Core disc: dithered fill.
+        // Core disc: time-slotted dither so the heart of the shell sparkles.
         let core = r * 0.35;
+        let slot = (ctx.time * 4.0) as i32;
         for y in 0..h {
             for x in 0..w {
                 let dx = x as f32 - cx;
                 let dy = (y as f32 - cy) * 2.2;
-                if dx * dx + dy * dy <= core * core && hash2(x as i32, y as i32) < 0.6 {
+                if dx * dx + dy * dy <= core * core && hash3(x as i32, y as i32, slot) < 0.6 {
                     draw::dot(grid, x, y);
                     let _ = grid.set_cell_color(x / 2, y / 4, FW_GOLD);
                 }
@@ -1044,11 +1045,16 @@ impl ProgressStyle for Chrysanthemum {
         for p in 0..petals {
             let ang = p as f32 * TAU / petals as f32;
             let sag = (r / max_r.max(1.0)).powi(2) * h as f32 * 0.3;
+            // Petals twinkle in and out as the shell ages.
+            if hash3(p, 5, slot) < 0.18 {
+                continue;
+            }
             let px = cx + ang.cos() * r;
             let py = cy + ang.sin() * r * 0.4 + sag;
             draw::dot_i(grid, px as i32, py as i32);
-            // A short trailing spark above each petal.
-            draw::dot_i(grid, px as i32, py as i32 - 2);
+            // A short trailing spark that drifts with the twinkle.
+            let lift = 2 + (hash3(p, 11, slot) * 2.0) as i32;
+            draw::dot_i(grid, px as i32, py as i32 - lift);
             if px >= 0.0 && py >= 0.0 && (px as usize) < w && (py as usize) < h {
                 let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, fw_color(p));
             }

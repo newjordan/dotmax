@@ -193,12 +193,29 @@ impl ProgressStyle for WolframRule {
 
         // Rows to reveal: 0 = empty, h = fully revealed.
         let reveal = (ctx.eased * h as f32).ceil() as usize;
-        // Slow horizontal drift driven by time (wraps around tape).
-        let scroll = (ctx.time * 0.3) as usize % w.max(1);
+        // Slow horizontal drift driven by time (wraps around tape). Rule 184
+        // laps the tape exactly once per 4 s loop so the traffic flows
+        // seamlessly; the other rules keep their subtle drift.
+        let scroll = if self.rule == 184 {
+            ((ctx.time * 0.25).fract() * w as f32) as usize % w
+        } else {
+            (ctx.time * 0.3) as usize % w.max(1)
+        };
 
-        // Seed: single live cell at the centre.
+        // Seed: single live cell at the centre — except Rule 184 (traffic
+        // flow), where a lone car is invisible: seed a whole rush hour whose
+        // density rises with eased, so jams condense as the bar fills.
         let mut row = vec![0u8; w];
-        row[w / 2] = 1;
+        if self.rule == 184 {
+            let density = 0.30 + 0.45 * ctx.eased;
+            for (x, cell) in row.iter_mut().enumerate() {
+                if hash_f(x as u32 * 3 + 11) < density {
+                    *cell = 1;
+                }
+            }
+        } else {
+            row[w / 2] = 1;
+        }
 
         for gen in 0..reveal.min(h) {
             // Draw this generation into dot row `gen`.

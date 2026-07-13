@@ -101,8 +101,8 @@ use image::{DynamicImage, GenericImageView, Rgb};
 use tracing::debug;
 
 use crate::image::{
-    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering_jittered,
-    pixels_to_braille, to_grayscale, DitheringMethod, JitterParams,
+    adjust_brightness, adjust_contrast, adjust_gamma, apply_dithering_jittered, pixels_to_braille,
+    to_grayscale, DitheringMethod, JitterParams,
 };
 use crate::{BrailleGrid, Color, DotmaxError};
 

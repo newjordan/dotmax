@@ -47,8 +47,8 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 struct TunerState {
     dithering: DitheringMethod,
-    use_otsu: bool,        // true = Otsu (auto), false = manual threshold
-    manual_threshold: u8,  // Used when use_otsu is false
+    use_otsu: bool,       // true = Otsu (auto), false = manual threshold
+    manual_threshold: u8, // Used when use_otsu is false
     brightness: f32,
     contrast: f32,
     gamma: f32,
@@ -169,12 +169,30 @@ impl TunerState {
         println!("║                    FINAL TUNER SETTINGS                      ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║                                                              ║");
-        println!("║  Dithering:   {:15}                               ║", self.dithering_name());
-        println!("║  Threshold:   {:15}                               ║", self.threshold_display());
-        println!("║  Brightness:  {:15.2}                               ║", self.brightness);
-        println!("║  Contrast:    {:15.2}                               ║", self.contrast);
-        println!("║  Gamma:       {:15.2}                               ║", self.gamma);
-        println!("║  Color Mode:  {:15}                               ║", self.color_mode_name());
+        println!(
+            "║  Dithering:   {:15}                               ║",
+            self.dithering_name()
+        );
+        println!(
+            "║  Threshold:   {:15}                               ║",
+            self.threshold_display()
+        );
+        println!(
+            "║  Brightness:  {:15.2}                               ║",
+            self.brightness
+        );
+        println!(
+            "║  Contrast:    {:15.2}                               ║",
+            self.contrast
+        );
+        println!(
+            "║  Gamma:       {:15.2}                               ║",
+            self.gamma
+        );
+        println!(
+            "║  Color Mode:  {:15}                               ║",
+            self.color_mode_name()
+        );
         println!("║                                                              ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  Copy-paste code:                                            ║");
@@ -195,7 +213,10 @@ impl TunerState {
         println!("    .build()?;");
         println!();
         println!("// Or apply to existing player:");
-        println!("player.set_dithering(DitheringMethod::{:?});", self.dithering);
+        println!(
+            "player.set_dithering(DitheringMethod::{:?});",
+            self.dithering
+        );
         if self.use_otsu {
             println!("player.set_threshold(None);");
         } else {
@@ -215,7 +236,6 @@ impl TunerState {
 
 fn main() -> dotmax::Result<()> {
     println!("=== Webcam Tuner ===\n");
-
 
     // Select camera before starting
     let camera_index = select_camera()?;
@@ -284,7 +304,10 @@ fn select_camera() -> dotmax::Result<usize> {
                 return Ok(idx);
             }
             Ok(idx) => {
-                println!("Invalid selection: {idx}. Please enter 0-{}.", cameras.len() - 1);
+                println!(
+                    "Invalid selection: {idx}. Please enter 0-{}.",
+                    cameras.len() - 1
+                );
             }
             Err(_) => {
                 println!("Please enter a number.");
@@ -376,7 +399,6 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
     // Cleanup - always restore terminal state
     execute!(stdout, cursor::Show, LeaveAlternateScreen)?;
     terminal::disable_raw_mode()?;
-
 
     result
 }

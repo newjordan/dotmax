@@ -86,7 +86,9 @@ fn parse_args() -> Result<Options, String> {
                 }
                 opts.dithering = match args[i].to_lowercase().as_str() {
                     "none" => DitheringMethod::None,
-                    "floyd" | "floydsteinberg" | "floyd-steinberg" => DitheringMethod::FloydSteinberg,
+                    "floyd" | "floydsteinberg" | "floyd-steinberg" => {
+                        DitheringMethod::FloydSteinberg
+                    }
                     "bayer" => DitheringMethod::Bayer,
                     "atkinson" => DitheringMethod::Atkinson,
                     other => return Err(format!("Unknown dither method: {}", other)),
@@ -107,27 +109,21 @@ fn parse_args() -> Result<Options, String> {
                 if i >= args.len() {
                     return Err("--brightness requires a value".to_string());
                 }
-                opts.brightness = args[i]
-                    .parse()
-                    .map_err(|_| "Invalid brightness value")?;
+                opts.brightness = args[i].parse().map_err(|_| "Invalid brightness value")?;
             }
             "--contrast" => {
                 i += 1;
                 if i >= args.len() {
                     return Err("--contrast requires a value".to_string());
                 }
-                opts.contrast = args[i]
-                    .parse()
-                    .map_err(|_| "Invalid contrast value")?;
+                opts.contrast = args[i].parse().map_err(|_| "Invalid contrast value")?;
             }
             "--gamma" => {
                 i += 1;
                 if i >= args.len() {
                     return Err("--gamma requires a value".to_string());
                 }
-                opts.gamma = args[i]
-                    .parse()
-                    .map_err(|_| "Invalid gamma value")?;
+                opts.gamma = args[i].parse().map_err(|_| "Invalid gamma value")?;
             }
             "--loop" => {
                 opts.loop_playback = true;
@@ -223,7 +219,10 @@ fn main() -> dotmax::Result<()> {
     println!("  Brightness: {:.2}", opts.brightness);
     println!("  Contrast:   {:.2}", opts.contrast);
     println!("  Gamma:      {:.2}", opts.gamma);
-    println!("  Looping:    {}", if opts.loop_playback { "Yes" } else { "No" });
+    println!(
+        "  Looping:    {}",
+        if opts.loop_playback { "Yes" } else { "No" }
+    );
     println!("\nPress any key to stop playback...\n");
 
     // Small delay to let user read info

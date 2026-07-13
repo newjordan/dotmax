@@ -23,7 +23,10 @@ pub mod wireframe;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderMode {
     /// Wireframe grid with configurable spacing and thickness (radians)
-    Wireframe { step_rad: f32, tol_rad: f32 },
+    Wireframe {
+        step_rad: f32,
+        tol_rad: f32,
+    },
     Solid,
 }
 

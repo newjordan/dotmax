@@ -68,14 +68,17 @@ pub fn compare_with_baseline(test_name: &str, actual: &str) -> Result<(), String
     if std::env::var("UPDATE_BASELINES").is_ok() {
         fs::create_dir_all(BASELINE_DIR)
             .map_err(|e| format!("Failed to create baseline directory: {}", e))?;
-        fs::write(path, actual)
-            .map_err(|e| format!("Failed to write baseline: {}", e))?;
+        fs::write(path, actual).map_err(|e| format!("Failed to write baseline: {}", e))?;
         return Ok(());
     }
 
     // Read existing baseline
-    let expected = fs::read_to_string(path)
-        .map_err(|_| format!("Baseline not found: {}. Run with UPDATE_BASELINES=1 to create.", baseline_path))?;
+    let expected = fs::read_to_string(path).map_err(|_| {
+        format!(
+            "Baseline not found: {}. Run with UPDATE_BASELINES=1 to create.",
+            baseline_path
+        )
+    })?;
 
     // Compare
     if actual == expected {
@@ -98,8 +101,7 @@ pub fn generate_baseline(test_name: &str, content: &str) -> Result<(), String> {
 
     fs::create_dir_all(BASELINE_DIR)
         .map_err(|e| format!("Failed to create baseline directory: {}", e))?;
-    fs::write(path, content)
-        .map_err(|e| format!("Failed to write baseline: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("Failed to write baseline: {}", e))?;
 
     Ok(())
 }

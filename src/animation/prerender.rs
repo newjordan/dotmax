@@ -419,10 +419,7 @@ impl PrerenderedAnimation {
         let mut writer = BufWriter::new(file);
 
         // Determine dimensions from first frame (or use 0x0 for empty)
-        let (width, height) = self
-            .frames
-            .first()
-            .map_or((0, 0), BrailleGrid::dimensions);
+        let (width, height) = self.frames.first().map_or((0, 0), BrailleGrid::dimensions);
 
         // Write header
         writer.write_all(MAGIC)?;

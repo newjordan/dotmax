@@ -79,14 +79,20 @@ mod glitch;
 mod inferno;
 mod matrix;
 
+// Wave 9 — retro-futures: outrun neon and the demoscene canon.
+mod demoscene;
+mod synthwave;
+
 /// All themes bundled with dotmax, in display order.
-pub const THEMES: [&str; 57] = [
+pub const THEMES: [&str; 59] = [
     "classic",
     "matrix",
     "aurora",
     "inferno",
     "glitch",
     "fireworks",
+    "synthwave",
+    "demoscene",
     "animals",
     "tech",
     "nature",
@@ -156,6 +162,8 @@ pub fn all_styles() -> Vec<Box<dyn ProgressStyle>> {
     v.extend(inferno::styles());
     v.extend(glitch::styles());
     v.extend(fireworks::styles());
+    v.extend(synthwave::styles());
+    v.extend(demoscene::styles());
     v.extend(animals::styles());
     v.extend(tech::styles());
     v.extend(nature::styles());

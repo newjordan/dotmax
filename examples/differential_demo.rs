@@ -77,11 +77,15 @@ impl Ball {
 
         if self.x - self.radius as f64 <= 1.0 || self.x + self.radius as f64 >= max_x - 1.0 {
             self.vx = -self.vx;
-            self.x = self.x.clamp(self.radius as f64 + 1.0, max_x - self.radius as f64 - 1.0);
+            self.x = self
+                .x
+                .clamp(self.radius as f64 + 1.0, max_x - self.radius as f64 - 1.0);
         }
         if self.y - self.radius as f64 <= 1.0 || self.y + self.radius as f64 >= max_y - 1.0 {
             self.vy = -self.vy;
-            self.y = self.y.clamp(self.radius as f64 + 1.0, max_y - self.radius as f64 - 1.0);
+            self.y = self
+                .y
+                .clamp(self.radius as f64 + 1.0, max_y - self.radius as f64 - 1.0);
         }
     }
 

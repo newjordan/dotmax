@@ -1731,41 +1731,65 @@ impl ProgressStyle for PinwheelTiling {
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh) * 0.8;
-        let rot = ctx.time * 0.12;
 
-        let depth = (ctx.eased * 3.0).floor() as usize;
-        let reveal_frac = (ctx.eased * 3.0).fract();
+        // The whole canvas is tiled with 1:2 right triangles: a lattice of
+        // 2h×h rectangles, each split along its diagonal into two seeds.
+        // As progress rises every seed deflates into 5, then 25 copies —
+        // exactly the pinwheel substitution — sweeping left to right.
+        type Tri = [[f32; 2]; 3]; // [P (right angle), Q (short leg), R (long leg)]
+        let rh = (dh as f32 - 1.0).max(2.0); // rectangle height (short leg)
+        let rw = rh * 2.0; // rectangle width (long leg)
+        let cols = ((dw as f32 / rw).ceil() as usize + 1).min(64);
+        let period = cols as f32 * rw;
 
-        // Seed: one 1:2 right triangle in unit space.
-        // P=right angle=(0,0), Q=(1,0), R=(0,2), normalised to scale.
-        let seed_scale = 1.0 / 5.0f32.sqrt(); // so hypotenuse=1 in unit space
-        type Tri = [[f32; 2]; 3]; // [P, Q, R]
+        // The tiling drifts one full lattice period per 4 s loop (seamless).
+        let drift = (ctx.time * 0.25).fract() * period;
 
-        let seed: Tri = [[0.0, 0.0], [seed_scale, 0.0], [0.0, seed_scale * 2.0]];
-        let mut tris: Vec<Tri> = vec![seed];
-
-        for _step in 0..depth.min(3) {
-            tris = pinwheel_deflate(tris);
-            if tris.len() > 2000 {
-                break;
-            }
+        let mut seeds: Vec<Tri> = Vec::with_capacity(cols * 2);
+        for col in 0..cols {
+            let x0 = col as f32 * rw;
+            // Two complementary 1:2 triangles sharing the diagonal.
+            seeds.push([[x0, 0.0], [x0, rh], [x0 + rw, 0.0]]);
+            seeds.push([[x0 + rw, rh], [x0 + rw, 0.0], [x0, rh]]);
         }
 
-        let n_total = tris.len();
-        let n_draw = if depth < 3 {
-            (reveal_frac * n_total as f32).round() as usize
-        } else {
-            n_total
+        // Draw a triangle at the drifting offset (twice, so the wrap-around
+        // seam at the right edge is filled by the copy from the left).
+        let draw_tri = |grid: &mut BrailleGrid, tri: &Tri| {
+            for wrap in [0.0f32, -period] {
+                let pts: Vec<(i32, i32)> = tri
+                    .iter()
+                    .map(|v| ((v[0] + drift + wrap).round() as i32, (v[1]).round() as i32))
+                    .collect();
+                if pts.iter().all(|&(x, _)| x < 0) || pts.iter().all(|&(x, _)| x >= dw as i32) {
+                    continue;
+                }
+                draw_poly(grid, &pts);
+            }
         };
 
-        for tri in tris.iter().take(n_draw) {
-            let pts: Vec<(i32, i32)> = tri
-                .iter()
-                .map(|v| to_dot(cx, cy, scale, v[0], v[1], rot))
-                .collect();
-            draw_poly(grid, &pts);
+        // The seed lattice is always visible; deflation generations bloom
+        // seed by seed as eased advances (two full passes: depth 1, then 2).
+        for tri in &seeds {
+            draw_tri(grid, tri);
+        }
+        let n_seeds = seeds.len();
+        let phase = ctx.eased * 2.0;
+        for (i, seed) in seeds.iter().enumerate() {
+            let gen1_on = phase * n_seeds as f32 >= (i + 1) as f32;
+            let gen2_on = (phase - 1.0) * n_seeds as f32 >= (i + 1) as f32;
+            if !gen1_on {
+                continue;
+            }
+            let children = pinwheel_deflate(vec![*seed]);
+            for tri in &children {
+                draw_tri(grid, tri);
+            }
+            if gen2_on {
+                for tri in &pinwheel_deflate(children) {
+                    draw_tri(grid, tri);
+                }
+            }
         }
         Ok(())
     }

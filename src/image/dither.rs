@@ -390,7 +390,10 @@ pub fn apply_dithering_jittered(
     // midpoint so FS / Atkinson don't collapse high-contrast images into a
     // solid block.
     let threshold_value = threshold.unwrap_or_else(|| {
-        if matches!(method, DitheringMethod::FloydSteinberg | DitheringMethod::Atkinson) {
+        if matches!(
+            method,
+            DitheringMethod::FloydSteinberg | DitheringMethod::Atkinson
+        ) {
             otsu_threshold(gray)
         } else {
             THRESHOLD
@@ -416,12 +419,12 @@ pub fn apply_dithering_jittered(
             } else if let Some(t) = threshold {
                 Ok(apply_threshold(gray, t))
             } else {
-                Ok(auto_threshold(&image::DynamicImage::ImageLuma8(gray.clone())))
+                Ok(auto_threshold(&image::DynamicImage::ImageLuma8(
+                    gray.clone(),
+                )))
             }
         }
-        DitheringMethod::FloydSteinberg => {
-            floyd_steinberg_jittered(gray, threshold_value, jitter)
-        }
+        DitheringMethod::FloydSteinberg => floyd_steinberg_jittered(gray, threshold_value, jitter),
         DitheringMethod::Bayer => bayer_jittered(gray, threshold_value, jitter),
         DitheringMethod::Atkinson => atkinson_jittered(gray, threshold_value, jitter),
     }
@@ -529,7 +532,11 @@ fn floyd_steinberg_jittered(
                 new_pixel += jitter_signed(x as u32, y as u32, jitter.seed) * noise_amp;
             }
 
-            let output_value = if new_pixel >= threshold as f32 { 255.0 } else { 0.0 };
+            let output_value = if new_pixel >= threshold as f32 {
+                255.0
+            } else {
+                0.0
+            };
             binary.set_pixel(x as u32, y as u32, output_value == 255.0);
 
             let quant_error = new_pixel - output_value;
@@ -647,8 +654,7 @@ fn bayer_jittered(
     for y in 0..height {
         for x in 0..width {
             let pixel_value = gray.get_pixel(x as u32, y as u32)[0];
-            let bayer_threshold =
-                BAYER_MATRIX_8X8[(y + off_y) % 8][(x + off_x) % 8] as f32 / 64.0;
+            let bayer_threshold = BAYER_MATRIX_8X8[(y + off_y) % 8][(x + off_x) % 8] as f32 / 64.0;
 
             let mut comparison = pixel_value as f32 / 255.0 + threshold_bias;
             if jitter.enabled() {
@@ -758,7 +764,11 @@ fn atkinson_jittered(
                 new_pixel += jitter_signed(x as u32, y as u32, jitter.seed) * noise_amp;
             }
 
-            let output_value = if new_pixel >= threshold as f32 { 255.0 } else { 0.0 };
+            let output_value = if new_pixel >= threshold as f32 {
+                255.0
+            } else {
+                0.0
+            };
             binary.set_pixel(x as u32, y as u32, output_value == 255.0);
 
             let quant_error = new_pixel - output_value;
@@ -801,11 +811,7 @@ fn atkinson_jittered(
 /// Used by `DitheringMethod::None` whenever jitter is enabled — produces a
 /// stipple pattern that fully reshuffles per seed instead of a hard binary
 /// step.
-fn noise_threshold_jittered(
-    gray: &GrayImage,
-    threshold: u8,
-    jitter: JitterParams,
-) -> BinaryImage {
+fn noise_threshold_jittered(gray: &GrayImage, threshold: u8, jitter: JitterParams) -> BinaryImage {
     let width = gray.width();
     let height = gray.height();
     let mut binary = BinaryImage::new(width, height);

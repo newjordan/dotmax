@@ -48,10 +48,26 @@ const MINUTE_HAND_LENGTH: f64 = 32.0; // Medium minute hand
 const SECOND_HAND_LENGTH: f64 = 38.0; // Long second hand
 
 /// Colors for clock elements
-const HOUR_HAND_COLOR: Color = Color { r: 255, g: 255, b: 255 }; // White
-const MINUTE_HAND_COLOR: Color = Color { r: 200, g: 200, b: 255 }; // Light blue
-const SECOND_HAND_COLOR: Color = Color { r: 255, g: 100, b: 100 }; // Red
-const MARKER_COLOR: Color = Color { r: 255, g: 255, b: 200 }; // Light yellow
+const HOUR_HAND_COLOR: Color = Color {
+    r: 255,
+    g: 255,
+    b: 255,
+}; // White
+const MINUTE_HAND_COLOR: Color = Color {
+    r: 200,
+    g: 200,
+    b: 255,
+}; // Light blue
+const SECOND_HAND_COLOR: Color = Color {
+    r: 255,
+    g: 100,
+    b: 100,
+}; // Red
+const MARKER_COLOR: Color = Color {
+    r: 255,
+    g: 255,
+    b: 200,
+}; // Light yellow
 
 /// Get current system time as (hours, minutes, seconds)
 fn get_current_time() -> (u32, u32, u32) {

@@ -92,11 +92,7 @@ impl Counter {
 }
 
 /// Display status information via stderr (doesn't interfere with terminal graphics)
-fn display_status(
-    timer: &FrameTimer,
-    frame_count: u64,
-    target_fps: u32,
-) {
+fn display_status(timer: &FrameTimer, frame_count: u64, target_fps: u32) {
     let actual_fps = timer.actual_fps();
     let frame_time_ms = timer.frame_time().as_secs_f64() * 1000.0;
     let target_ms = timer.target_frame_time().as_secs_f64() * 1000.0;
@@ -209,8 +205,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("\n\n--- Final Statistics ---");
     eprintln!("Total frames rendered: {frame_count}");
     eprintln!("Final FPS measurement: {:.1}", timer.actual_fps());
-    eprintln!("Target frame time: {:.2}ms", timer.target_frame_time().as_secs_f64() * 1000.0);
-    eprintln!("Last frame time: {:.2}ms", timer.frame_time().as_secs_f64() * 1000.0);
+    eprintln!(
+        "Target frame time: {:.2}ms",
+        timer.target_frame_time().as_secs_f64() * 1000.0
+    );
+    eprintln!(
+        "Last frame time: {:.2}ms",
+        timer.frame_time().as_secs_f64() * 1000.0
+    );
 
     Ok(())
 }

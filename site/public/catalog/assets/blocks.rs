@@ -1081,35 +1081,82 @@ impl ProgressStyle for Thermometer {
         if cells_w == 0 || cells_h == 0 {
             return Ok(());
         }
-        // Centre column (or all columns for wider grids, each a replica).
-        let col_x = cells_w / 2;
-        let total_eighths = (ctx.eased * cells_h as f32 * 8.0).round() as usize;
-        let full_cells = (total_eighths / 8).min(cells_h);
+        let (dw, _dh) = draw::dot_dims(grid);
+        let dwi = dw as i32;
+
+        // Mercury columns: the two centre cell columns form the capillary.
+        let col_r = cells_w / 2;
+        let col_l = col_r.saturating_sub(1);
+        // Bottom cell row is the bulb; the rows above are the tube.
+        let tube_rows = cells_h.saturating_sub(1).max(1);
+        // Mercury level with a faint 0.25 Hz simmer (seamless 4 s loop).
+        let simmer = (ctx.time * PI * 0.5).sin() * 2.0;
+        let total_eighths = ((ctx.eased * tube_rows as f32 * 8.0) + simmer)
+            .clamp(0.0, tube_rows as f32 * 8.0)
+            .round() as usize;
+        let full_cells = (total_eighths / 8).min(tube_rows);
         let rem_eighths = total_eighths % 8;
 
-        // Full cells from bottom.
+        // Fill the capillary bottom-to-top with vblock eighths.
         for row in 0..full_cells {
-            let cy = cells_h.saturating_sub(1).saturating_sub(row);
-            draw::vblock(grid, col_x, cy, 8);
+            let cy = cells_h.saturating_sub(2).saturating_sub(row);
+            draw::vblock(grid, col_l, cy, 8);
+            draw::vblock(grid, col_r, cy, 8);
         }
-        // Partial top cell.
-        if full_cells < cells_h && rem_eighths > 0 {
-            let cy = cells_h.saturating_sub(1).saturating_sub(full_cells);
-            draw::vblock(grid, col_x, cy, rem_eighths);
+        if full_cells < tube_rows && rem_eighths > 0 {
+            let cy = cells_h.saturating_sub(2).saturating_sub(full_cells);
+            draw::vblock(grid, col_l, cy, rem_eighths);
+            draw::vblock(grid, col_r, cy, rem_eighths);
         }
 
-        // For wider grids add a second, mirrored column for symmetry.
-        if cells_w >= 3 {
-            let col_x2 = cells_w - 1 - col_x;
-            if col_x2 != col_x {
-                for row in 0..full_cells {
-                    let cy = cells_h.saturating_sub(1).saturating_sub(row);
-                    draw::vblock(grid, col_x2, cy, 8);
-                }
-                if full_cells < cells_h && rem_eighths > 0 {
-                    let cy = cells_h.saturating_sub(1).saturating_sub(full_cells);
-                    draw::vblock(grid, col_x2, cy, rem_eighths);
-                }
+        // Everything below is braille-dot scenery, kept out of the two glyph
+        // columns so no vblock ever buries dot artwork.
+        let tube_x0 = col_l as i32 * 2; // leftmost dot of the capillary
+        let tube_x1 = col_r as i32 * 2 + 1; // rightmost dot of the capillary
+        let tube_bot = (cells_h as i32 - 1) * 4; // dot row where the bulb starts
+
+        // Glass walls flanking the capillary, with rounded top corners.
+        for y in 1..tube_bot {
+            draw::dot_i(grid, tube_x0 - 1, y);
+            draw::dot_i(grid, tube_x1 + 1, y);
+        }
+        draw::dot_i(grid, tube_x0 - 1, 0);
+        draw::dot_i(grid, tube_x1 + 1, 0);
+
+        // Bulb: filled mercury reservoir, wider than the tube, in the bottom
+        // cell row (that row holds no vblocks, so dots are safe there).
+        let bx = (tube_x0 + tube_x1) as f32 / 2.0;
+        let by = tube_bot as f32 + 1.5;
+        for dy in tube_bot..tube_bot + 4 {
+            let fy = (dy as f32 - by) / 2.0;
+            let span = ((1.0 - fy * fy).max(0.0)).sqrt() * 4.5;
+            for dx in (bx - span).round() as i32..=(bx + span).round() as i32 {
+                draw::dot_i(grid, dx, dy);
+            }
+        }
+
+        // Graduation ticks on both sides of the glass: long every other mark.
+        let mut mark = 0i32;
+        let mut y = 1i32;
+        while y < tube_bot {
+            let len = if mark % 2 == 0 { 3 } else { 2 };
+            for j in 0..len {
+                draw::dot_i(grid, tube_x0 - 4 - j, y);
+                draw::dot_i(grid, tube_x1 + 4 + j, y);
+            }
+            mark += 1;
+            y += 3;
+        }
+
+        // Reading line: a dotted rule across the full width at the mercury
+        // top, skipping the instrument itself. The dashes crawl on a 4/s
+        // slot (16 per 4 s loop, mod 4 → seamless).
+        let level_y = (tube_bot - (total_eighths as i32 + 1) / 2).clamp(0, tube_bot);
+        let crawl = ((ctx.time * 4.0) as i32).rem_euclid(4);
+        for x in (0..dwi + 4).step_by(4) {
+            let x = x - crawl;
+            if x < tube_x0 - 8 || x > tube_x1 + 8 {
+                draw::dot_i(grid, x, level_y);
             }
         }
         Ok(())

@@ -91,13 +91,9 @@ fn bench_image_resize(c: &mut Criterion) {
         let img = create_test_image(width, height);
 
         // Resize to 80x24 terminal
-        group.bench_with_input(
-            BenchmarkId::new("to_80x24", label),
-            &img,
-            |b, img| {
-                b.iter(|| black_box(resize_to_terminal(img, 80, 24).unwrap()));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("to_80x24", label), &img, |b, img| {
+            b.iter(|| black_box(resize_to_terminal(img, 80, 24).unwrap()));
+        });
     }
 
     // Resize to various terminal sizes from typical 800x600 source
@@ -304,9 +300,13 @@ fn bench_grayscale_conversion(c: &mut Criterion) {
         let th = (height / 4) as u16;
         let resized = resize_to_terminal(&img, tw, th).unwrap();
 
-        group.bench_with_input(BenchmarkId::new("to_grayscale", label), &resized, |b, img| {
-            b.iter(|| black_box(to_grayscale(img)));
-        });
+        group.bench_with_input(
+            BenchmarkId::new("to_grayscale", label),
+            &resized,
+            |b, img| {
+                b.iter(|| black_box(to_grayscale(img)));
+            },
+        );
     }
 
     group.finish();

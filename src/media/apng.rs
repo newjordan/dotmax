@@ -506,7 +506,7 @@ impl ApngPlayer {
                         }
                         let idx = (canvas_y * self.canvas_width as usize + canvas_x) * 4;
                         if idx + 3 < self.canvas.len() {
-                            self.canvas[idx] = 0;     // R
+                            self.canvas[idx] = 0; // R
                             self.canvas[idx + 1] = 0; // G
                             self.canvas[idx + 2] = 0; // B
                             self.canvas[idx + 3] = 0; // A
@@ -583,16 +583,22 @@ impl ApngPlayer {
                     png::ColorType::Indexed => {
                         // Indexed color - should be expanded by decoder, but fallback
                         let idx = self.frame_buffer[frame_idx] as usize;
-                        self.decoder.info().palette.as_ref().map_or(
-                            (0, 0, 0, 255),
-                            |palette| {
+                        self.decoder
+                            .info()
+                            .palette
+                            .as_ref()
+                            .map_or((0, 0, 0, 255), |palette| {
                                 if idx * 3 + 2 < palette.len() {
-                                    (palette[idx * 3], palette[idx * 3 + 1], palette[idx * 3 + 2], 255)
+                                    (
+                                        palette[idx * 3],
+                                        palette[idx * 3 + 1],
+                                        palette[idx * 3 + 2],
+                                        255,
+                                    )
                                 } else {
                                     (0, 0, 0, 255)
                                 }
-                            },
-                        )
+                            })
                     }
                 };
 
@@ -622,9 +628,9 @@ impl ApngPlayer {
                                 let src_rgb = [f32::from(r), f32::from(g), f32::from(b)];
                                 for (i, &src_component) in src_rgb.iter().enumerate() {
                                     let dst = f32::from(self.canvas[canvas_idx + i]);
-                                    let blended =
-                                        src_component.mul_add(src_a, dst * dst_a * (1.0 - src_a))
-                                            / out_a;
+                                    let blended = src_component
+                                        .mul_add(src_a, dst * dst_a * (1.0 - src_a))
+                                        / out_a;
                                     self.canvas[canvas_idx + i] = blended as u8;
                                 }
                                 self.canvas[canvas_idx + 3] = (out_a * 255.0) as u8;
@@ -640,11 +646,12 @@ impl ApngPlayer {
     /// Converts the current canvas to a BrailleGrid.
     fn canvas_to_grid(&self) -> Result<BrailleGrid> {
         // Create RGBA image from canvas
-        let img = image::RgbaImage::from_raw(self.canvas_width, self.canvas_height, self.canvas.clone())
-            .ok_or_else(|| DotmaxError::ApngError {
-                path: self.path.clone(),
-                message: "Failed to create image from canvas".to_string(),
-            })?;
+        let img =
+            image::RgbaImage::from_raw(self.canvas_width, self.canvas_height, self.canvas.clone())
+                .ok_or_else(|| DotmaxError::ApngError {
+                    path: self.path.clone(),
+                    message: "Failed to create image from canvas".to_string(),
+                })?;
 
         // Use ImageRenderer to convert to BrailleGrid
         let grid = ImageRenderer::new()
@@ -701,7 +708,11 @@ impl MediaPlayer for ApngPlayer {
             None => {
                 // No more frames - handle loop
                 if let Some(frame_count) = self.frame_count {
-                    tracing::debug!("Loop {} complete ({} frames)", self.current_loop, frame_count);
+                    tracing::debug!(
+                        "Loop {} complete ({} frames)",
+                        self.current_loop,
+                        frame_count
+                    );
                 } else {
                     self.frame_count = Some(self.current_frame);
                     tracing::debug!("First loop complete, {} frames", self.current_frame);
@@ -914,7 +925,11 @@ mod tests {
         let path = Path::new("tests/fixtures/media/animated.png");
         if path.exists() {
             let player = ApngPlayer::new(path);
-            assert!(player.is_ok(), "Should load animated PNG: {:?}", player.err());
+            assert!(
+                player.is_ok(),
+                "Should load animated PNG: {:?}",
+                player.err()
+            );
             let player = player.unwrap();
             assert_eq!(player.canvas_width(), 10);
             assert_eq!(player.canvas_height(), 10);

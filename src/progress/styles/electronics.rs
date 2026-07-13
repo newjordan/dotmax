@@ -109,7 +109,7 @@ impl ProgressStyle for RcCharge {
         draw::hline(grid, 0, plot_w.saturating_sub(1), h - 1);
 
         // Draw the capacitor symbol: two plates (vlines) with a gap between.
-        if cap_w + 1 <= w {
+        if cap_w < w {
             let plate_x1 = w.saturating_sub(cap_w);
             let plate_x2 = w.saturating_sub(cap_w - 2);
             let plate_top = h / 4;

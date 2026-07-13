@@ -50,7 +50,10 @@ fn main() -> dotmax::Result<()> {
     }
 
     // Get user selection
-    print!("Select camera (0-{}), or press Enter for default: ", cameras.len() - 1);
+    print!(
+        "Select camera (0-{}), or press Enter for default: ",
+        cameras.len() - 1
+    );
     io::stdout().flush()?;
 
     let mut input = String::new();

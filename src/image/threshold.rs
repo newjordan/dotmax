@@ -579,14 +579,20 @@ mod tests {
     fn test_otsu_all_black() {
         let img = create_uniform_gray_image(10, 10, 0);
         let threshold = otsu_threshold(&img);
-        assert_eq!(threshold, 127, "All black should return default fallback 127");
+        assert_eq!(
+            threshold, 127,
+            "All black should return default fallback 127"
+        );
     }
 
     #[test]
     fn test_otsu_all_white() {
         let img = create_uniform_gray_image(10, 10, 255);
         let threshold = otsu_threshold(&img);
-        assert_eq!(threshold, 127, "All white has no variance, returns default fallback 127");
+        assert_eq!(
+            threshold, 127,
+            "All white has no variance, returns default fallback 127"
+        );
     }
 
     #[test]

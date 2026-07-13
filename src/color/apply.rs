@@ -344,7 +344,10 @@ mod tests {
         ];
 
         let result = apply_colors_to_grid(&mut grid, &colors);
-        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DotmaxError::BufferSizeMismatch { .. })
+        ));
     }
 
     #[test]
@@ -356,7 +359,10 @@ mod tests {
         ];
 
         let result = apply_colors_to_grid(&mut grid, &colors);
-        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DotmaxError::BufferSizeMismatch { .. })
+        ));
     }
 
     #[test]
@@ -365,7 +371,10 @@ mod tests {
         let colors: Vec<Vec<Color>> = vec![];
 
         let result = apply_colors_to_grid(&mut grid, &colors);
-        assert!(matches!(result, Err(DotmaxError::BufferSizeMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(DotmaxError::BufferSizeMismatch { .. })
+        ));
     }
 
     // ========================================================================

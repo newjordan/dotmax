@@ -29,14 +29,14 @@ const FRAMES: usize = 48;
 /// style or the export fails loudly.
 const HERO_STYLES: &[(&str, &str)] = &[
     ("matrix", "rain-fill"),
+    ("synthwave", "sunrise"),
+    ("demoscene", "plasma"),
     ("aurora", "ribbon-flow"),
     ("glitch", "sync-lock"),
     ("inferno", "wildfire"),
+    ("demoscene", "copper-bars"),
+    ("synthwave", "neon-wave"),
     ("fireworks", "grand-finale"),
-    ("matrix", "green-noise-fill"),
-    ("glitch", "hexfade"),
-    ("aurora", "borealis-fill"),
-    ("inferno", "solar-flare"),
     ("classic", "rocket"),
 ];
 
@@ -664,12 +664,16 @@ fn build_standalone(
     }
     core = core.replace("pub mod easing;", &easing_inline);
 
-    let styles_inline = format!("pub mod styles {{\n    pub mod {theme} {{\n{theme_src}\n    }}\n}}");
+    let styles_inline =
+        format!("pub mod styles {{\n    pub mod {theme} {{\n{theme_src}\n    }}\n}}");
     if !core.contains("mod styles;") {
         return Err("marker `mod styles;` not found in progress/mod.rs".into());
     }
     core = core.replace("mod styles;", &styles_inline);
-    core = core.replace("pub use styles::{all_styles, styles_for_theme, themes};", "");
+    core = core.replace(
+        "pub use styles::{all_styles, styles_for_theme, themes};",
+        "",
+    );
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -685,7 +689,9 @@ fn build_standalone(
          //! rustc -O {theme}.rs && ./{theme} [style-name]\n\
          //! ```\n\n"
     ));
-    out.push_str(&format!("const DEFAULT_STYLE: &str = \"{default_style}\";\n"));
+    out.push_str(&format!(
+        "const DEFAULT_STYLE: &str = \"{default_style}\";\n"
+    ));
     out.push_str(RUNTIME_ROOT);
     out.push_str("\npub mod progress {\n");
     out.push_str(&core);
@@ -777,7 +783,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let default_style = theme_styles[0].name().to_string();
         let standalone =
             build_standalone(theme, &theme_src, &mod_src, &easing_src, &default_style)?;
-        fs::write(out_dir.join("assets").join(format!("{theme}.rs")), standalone)?;
+        fs::write(
+            out_dir.join("assets").join(format!("{theme}.rs")),
+            standalone,
+        )?;
 
         index_themes.push(ThemeMeta {
             name: (*theme).to_string(),

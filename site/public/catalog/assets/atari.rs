@@ -1121,33 +1121,84 @@ impl ProgressStyle for Asteroids {
             }
         };
 
-        // Asteroid field: 4 asteroids at fixed logical positions.
-        // As eased rises, radius shrinks (they shatter to nothing).
-        let asteroid_data: [(f32, f32, f32); 4] = [
-            (0.15, 0.3, 0.0),
-            (0.4, 0.7, 0.5),
-            (0.65, 0.25, 1.1),
-            (0.85, 0.6, 0.8),
-        ];
-        let shrink = 1.0 - ctx.eased; // fully gone when eased=1
-        for (i, &(fx, fy, rot_off)) in asteroid_data.iter().enumerate() {
-            let cx = (fx * w as f32) as i32;
-            let cy = (fy * h as f32) as i32;
-            let base_r = ((h as f32 * 0.25) as i32).max(2);
-            let r = ((base_r as f32 * shrink) as i32).max(0);
-            if r < 1 {
-                continue;
+        // Twinkling starfield backdrop (integer 4/s slots: seamless 4 s loop).
+        let star_hash = |n: u32| -> u32 {
+            let mut x = n.wrapping_mul(2_654_435_761);
+            x ^= x >> 15;
+            x.wrapping_mul(2_246_822_519)
+        };
+        let blink = ((ctx.time * 4.0) as u32).rem_euclid(8);
+        for i in 0..24u32 {
+            if (star_hash(i * 5 + 3) + blink) % 8 == 0 {
+                continue; // this star is blinked off right now
             }
-            let rot = rot_off + ctx.time * (0.4 + i as f32 * 0.15);
-            let sides = if i % 2 == 0 { 6 } else { 5 };
-            draw_ngon(grid, cx, cy, r, sides, rot);
+            let sx = (star_hash(i * 2 + 1) % w as u32) as i32;
+            let sy = (star_hash(i * 7 + 5) % h as u32) as i32;
+            draw::dot_i(grid, sx, sy);
         }
 
-        // Player ship: small triangle near bottom-centre.
+        // Asteroid field: 7 full-size rocks at fixed positions, blasted one by
+        // one in a scattered order as progress rises. Each intact rock keeps
+        // its full wireframe (progress = rocks destroyed, not rocks shrunk).
+        let asteroid_data: [(f32, f32, f32, f32, usize); 7] = [
+            (0.08, 0.32, 0.36, 0.0, 6),
+            (0.22, 0.70, 0.30, 0.5, 5),
+            (0.36, 0.26, 0.40, 1.1, 7),
+            (0.52, 0.68, 0.34, 0.8, 6),
+            (0.66, 0.28, 0.28, 0.3, 5),
+            (0.81, 0.68, 0.40, 1.4, 7),
+            (0.94, 0.30, 0.28, 0.9, 5),
+        ];
+        // Destruction order: scattered across the field, not left-to-right.
+        let kill_rank: [f32; 7] = [3.0, 0.0, 5.0, 1.0, 6.0, 2.0, 4.0];
+        let destroyed = ctx.eased * 7.0;
+        for (i, &(fx, fy, fr, rot_off, sides)) in asteroid_data.iter().enumerate() {
+            let cx = (fx * w as f32) as i32;
+            let cy = (fy * h as f32) as i32;
+            let r = ((h as f32 * fr) as i32).max(2);
+            // Rotate by whole symmetry steps per 4 s loop → seamless.
+            let step = 2.0 * PI / sides as f32;
+            let spin = if i % 2 == 0 { 1.0 } else { -1.0 };
+            let rot = rot_off + ctx.time * spin * step * 0.25 * (1 + i % 2) as f32;
+            let frac = destroyed - kill_rank[i];
+            if frac >= 1.0 {
+                // Rock already blasted: a few dust specks linger where it was.
+                for j in 0..3u32 {
+                    let dx = (star_hash(i as u32 * 13 + j * 3 + 1) % (r as u32 * 2 + 1)) as i32 - r;
+                    let dy = (star_hash(i as u32 * 17 + j * 5 + 2) % (r as u32 + 1)) as i32 - r / 2;
+                    draw::dot_i(grid, cx + dx, cy + dy);
+                }
+                continue;
+            }
+            if frac > 0.0 {
+                // Mid-shatter: shards fly outward from the rock's position.
+                for j in 0..sides {
+                    let a = rot + 2.0 * PI * j as f32 / sides as f32;
+                    let d = r as f32 * (0.4 + frac * 2.2);
+                    let px = cx + (d * a.cos()) as i32;
+                    let py = cy + (d * a.sin()) as i32;
+                    draw::dot_i(grid, px, py);
+                    draw::dot_i(grid, px + 1, py);
+                }
+                continue;
+            }
+            draw_ngon(grid, cx, cy, r, sides, rot);
+            // A crater speck inside the wireframe sells the rock.
+            draw::dot_i(grid, cx - r / 3, cy + r / 4);
+            draw::dot_i(grid, cx + r / 3, cy - r / 4);
+        }
+
+        // Player ship: vector triangle near bottom-centre, thrust flickering
+        // on an 8/s slot (seamless over the 4 s loop).
         let ship_cx = (w / 2) as i32;
-        let ship_cy = (h * 3 / 4) as i32;
-        let ship_r = ((h as f32 * 0.12).max(2.0)) as i32;
+        let ship_cy = (h * 7 / 10) as i32;
+        let ship_r = ((h as f32 * 0.22).max(2.0)) as i32;
         draw_ngon(grid, ship_cx, ship_cy, ship_r, 3, -PI / 2.0);
+        if ((ctx.time * 8.0) as i32).rem_euclid(2) == 0 {
+            draw::dot_i(grid, ship_cx, ship_cy + ship_r + 1);
+            draw::dot_i(grid, ship_cx - 1, ship_cy + ship_r + 2);
+            draw::dot_i(grid, ship_cx + 1, ship_cy + ship_r + 2);
+        }
 
         Ok(())
     }

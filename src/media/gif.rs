@@ -263,10 +263,12 @@ impl GifPlayer {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
 
-        let decoder = options.read_info(reader).map_err(|e| DotmaxError::GifError {
-            path: path.clone(),
-            message: format!("Failed to decode GIF: {e}"),
-        })?;
+        let decoder = options
+            .read_info(reader)
+            .map_err(|e| DotmaxError::GifError {
+                path: path.clone(),
+                message: format!("Failed to decode GIF: {e}"),
+            })?;
 
         let canvas_width = decoder.width();
         let canvas_height = decoder.height();
@@ -327,7 +329,11 @@ impl GifPlayer {
             Ok(Some(f)) => f,
             Ok(None) => return None,
             Err(e) => {
-                tracing::warn!("GIF frame decode error at frame {}: {:?}", self.current_frame, e);
+                tracing::warn!(
+                    "GIF frame decode error at frame {}: {:?}",
+                    self.current_frame,
+                    e
+                );
                 // Try to continue with next frame
                 return Some(Err(DotmaxError::GifError {
                     path: self.path.clone(),
@@ -338,7 +344,11 @@ impl GifPlayer {
 
         // Convert delay from centiseconds to milliseconds
         // Default delay of 0 is interpreted as 100ms per GIF spec
-        let delay_ms = if frame.delay == 0 { 100 } else { u32::from(frame.delay) * 10 };
+        let delay_ms = if frame.delay == 0 {
+            100
+        } else {
+            u32::from(frame.delay) * 10
+        };
 
         let gif_frame = GifFrame {
             pixels: frame.buffer.to_vec(),
@@ -379,7 +389,7 @@ impl GifPlayer {
                         }
                         let idx = (canvas_y * self.canvas_width as usize + canvas_x) * 4;
                         if idx + 3 < self.canvas.len() {
-                            self.canvas[idx] = 0;     // R
+                            self.canvas[idx] = 0; // R
                             self.canvas[idx + 1] = 0; // G
                             self.canvas[idx + 2] = 0; // B
                             self.canvas[idx + 3] = 0; // A
@@ -438,7 +448,8 @@ impl GifPlayer {
                             for i in 0..3 {
                                 let src = f32::from(frame.pixels[frame_idx + i]);
                                 let dst = f32::from(self.canvas[canvas_idx + i]);
-                                let blended = src.mul_add(src_a, dst * dst_a * (1.0 - src_a)) / out_a;
+                                let blended =
+                                    src.mul_add(src_a, dst * dst_a * (1.0 - src_a)) / out_a;
                                 self.canvas[canvas_idx + i] = blended as u8;
                             }
                             self.canvas[canvas_idx + 3] = (out_a * 255.0) as u8;
@@ -480,10 +491,12 @@ impl GifPlayer {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
 
-        self.decoder = options.read_info(reader).map_err(|e| DotmaxError::GifError {
-            path: self.path.clone(),
-            message: format!("Failed to reopen GIF: {e}"),
-        })?;
+        self.decoder = options
+            .read_info(reader)
+            .map_err(|e| DotmaxError::GifError {
+                path: self.path.clone(),
+                message: format!("Failed to reopen GIF: {e}"),
+            })?;
 
         Ok(())
     }
@@ -520,7 +533,11 @@ impl MediaPlayer for GifPlayer {
                 // No more frames - handle loop
                 if let Some(frame_count) = self.frame_count {
                     // We know the frame count
-                    tracing::debug!("Loop {} complete ({} frames)", self.current_loop, frame_count);
+                    tracing::debug!(
+                        "Loop {} complete ({} frames)",
+                        self.current_loop,
+                        frame_count
+                    );
                 } else {
                     // First complete iteration - save frame count
                     self.frame_count = Some(self.current_frame);
@@ -576,7 +593,12 @@ impl MediaPlayer for GifPlayer {
 
         // Store disposal info for next frame
         self.previous_disposal = frame.disposal;
-        self.previous_rect = (frame.left, frame.top, frame.width as u16, frame.height as u16);
+        self.previous_rect = (
+            frame.left,
+            frame.top,
+            frame.width as u16,
+            frame.height as u16,
+        );
         self.current_frame += 1;
 
         let duration = Duration::from_millis(u64::from(frame.delay_ms));
@@ -691,7 +713,11 @@ mod tests {
         let path = Path::new("tests/fixtures/media/animated.gif");
         if path.exists() {
             let player = GifPlayer::new(path);
-            assert!(player.is_ok(), "Should load animated GIF: {:?}", player.err());
+            assert!(
+                player.is_ok(),
+                "Should load animated GIF: {:?}",
+                player.err()
+            );
             let player = player.unwrap();
             assert_eq!(player.canvas_width(), 10);
             assert_eq!(player.canvas_height(), 10);

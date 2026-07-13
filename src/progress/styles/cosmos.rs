@@ -657,9 +657,11 @@ impl ProgressStyle for TotalEclipse {
         let star_cy = (h / 2) as i32;
         let star_r = ((h / 2).saturating_sub(1).max(2)) as i32;
 
-        // Moon starts well to the right, crosses the star, exits to the left.
-        // At eased=0.5 the centres align (totality).
-        let travel = (w as f32 * 1.4) as i32;
+        // Moon starts at the right edge, crosses the star, ends at the left
+        // edge. At eased=0.5 the centres align (totality). Travel is capped
+        // at the grid width so the moon limb stays visible at both extremes
+        // and the render always reflects progress.
+        let travel = w as i32;
         let moon_cx = star_cx + travel / 2 - (ctx.eased * travel as f32) as i32;
         let moon_cy = star_cy;
         let moon_r = (star_r as f32 * 0.92) as i32;
@@ -697,7 +699,8 @@ impl ProgressStyle for TotalEclipse {
         // Corona ring: visible only near totality (eased ≈ 0.5).
         let totality_closeness = 1.0 - (ctx.eased * 2.0 - 1.0).abs(); // peaks at 0.5
         let corona_steps = 48usize;
-        let corona_r = star_r + 2 + (ctx.time * 0.3).sin() as i32;
+        // Breathe at 0.25 Hz so the 4-second loop stays seamless.
+        let corona_r = star_r + 2 + (ctx.time * 0.5 * PI).sin().round() as i32;
         let corona_r = corona_r.max(star_r + 1);
         for s in 0..corona_steps {
             let a = s as f32 / corona_steps as f32 * 2.0 * PI;
@@ -708,6 +711,13 @@ impl ProgressStyle for TotalEclipse {
             if hash((s as u32).wrapping_add((ctx.time * 5.0) as u32)) % 10 < threshold {
                 draw::dot_i(grid, px, py);
             }
+        }
+
+        // Eclipse track: a thin baseline along the bottom edge fills
+        // left-to-right with eased, keeping progress legible in monochrome.
+        let track_x = ((ctx.eased * (w - 1) as f32) as usize).min(w - 1);
+        if track_x > 0 {
+            draw::hline(grid, 0, track_x, h - 1);
         }
 
         // Tint palette

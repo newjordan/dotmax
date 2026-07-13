@@ -2014,7 +2014,8 @@ impl ProgressStyle for RadarScope {
         let (cells_w, cells_h) = grid.dimensions();
         for cy_c in 0..cells_h {
             for cx_c in 0..cells_w {
-                let t = (ctx.eased * 0.7 + 0.3 * ((ctx.time * 1.8 + cx_c as f32 * 0.2).sin() * 0.5 + 0.5))
+                let t = (ctx.eased * 0.7
+                    + 0.3 * ((ctx.time * 1.8 + cx_c as f32 * 0.2).sin() * 0.5 + 0.5))
                     .clamp(0.0, 1.0);
                 draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(t));
             }
@@ -2086,7 +2087,13 @@ impl ProgressStyle for AttitudeHorizon {
         let horizon_cell = (((cy + h_off).max(0) as usize) / 4).min(cells_h.saturating_sub(1));
         for cy_c in 0..cells_h {
             let t = if cy_c <= horizon_cell { 0.85 } else { 0.15 };
-            draw::tint_row(grid, cy_c, 0, cells_w.saturating_sub(1), ctx.palette.sample(t));
+            draw::tint_row(
+                grid,
+                cy_c,
+                0,
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(t),
+            );
         }
 
         Ok(())
@@ -2139,7 +2146,13 @@ impl ProgressStyle for BubbleLevel {
         // Centre marks: the "level" gate the bubble must land between.
         let gate = (span * 0.06).max(2.0) as i32;
         for gx in [cx - gate, cx + gate] {
-            bresenham(grid, gx, cy - half_gap - bow as i32 - 1, gx, cy + half_gap - bow as i32 + 1);
+            bresenham(
+                grid,
+                gx,
+                cy - half_gap - bow as i32 - 1,
+                gx,
+                cy + half_gap - bow as i32 + 1,
+            );
         }
 
         // Bubble: travels from the left end to centre as eased → 1, with a
@@ -2283,7 +2296,10 @@ impl ProgressStyle for DialBank {
         let eased = ctx.eased.clamp(0.0, 1.0);
 
         let cy = (dh / 2) as i32;
-        let r = ((dh as i32 / 2) - 1).max(1).min(dw as i32 / (2 * n as i32) - 1).max(1);
+        let r = ((dh as i32 / 2) - 1)
+            .max(1)
+            .min(dw as i32 / (2 * n as i32) - 1)
+            .max(1);
 
         let a_start = 225_f32.to_radians();
         let span = -(270_f32.to_radians());
@@ -2463,15 +2479,7 @@ impl ProgressStyle for Anemometer {
             bresenham(grid, cx, cy, ax, ay);
             // Cup: small circle at the arm tip.
             let cup_steps = ((cup_r as f32 * 2.0 * PI).round() as usize).max(4);
-            arc(
-                grid,
-                ax,
-                ay,
-                cup_r,
-                0.0,
-                2.0 * PI,
-                cup_steps,
-            );
+            arc(grid, ax, ay, cup_r, 0.0, 2.0 * PI, cup_steps);
         }
 
         // Hub.

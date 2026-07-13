@@ -142,10 +142,7 @@ fn draw_dot_at_angle(
 }
 
 /// Draw "Loading..." text pattern using braille dots
-fn draw_loading_text(
-    grid: &mut BrailleGrid,
-    frame: u64,
-) -> Result<(), dotmax::DotmaxError> {
+fn draw_loading_text(grid: &mut BrailleGrid, frame: u64) -> Result<(), dotmax::DotmaxError> {
     // Simple dot pattern at the bottom that pulses
     let (width, _height) = grid.dimensions();
     let dot_width = width * 2;

@@ -850,7 +850,9 @@ fn draw_paused_hud(
     // Position cursor at HUD start
     execute!(stdout, cursor::MoveTo(0, hud_start_row as u16))?;
 
-    draw_hud_optimized(stdout, settings, fps, render_fps, term_width, hud_height, true)?;
+    draw_hud_optimized(
+        stdout, settings, fps, render_fps, term_width, hud_height, true,
+    )?;
     stdout.flush()?;
     Ok(())
 }
@@ -869,7 +871,11 @@ fn draw_hud_optimized(
     let inv_on = "\x1b[7m";
     let inv_off = "\x1b[0m";
 
-    let status = if settings.paused { "PAUSED " } else { "Playing" };
+    let status = if settings.paused {
+        "PAUSED "
+    } else {
+        "Playing"
+    };
 
     // Line 1: Status and main settings
     let line1 = format!(
@@ -887,25 +893,50 @@ fn draw_hud_optimized(
     // Line 2: Adjustments
     let line2 = format!(
         " Bright: {:4.2} | Contrast: {:4.2} | Gamma: {:4.2} | Color: {:5} ",
-        settings.brightness, settings.contrast, settings.gamma, settings.color_mode_name()
+        settings.brightness,
+        settings.contrast,
+        settings.gamma,
+        settings.color_mode_name()
     );
 
     // Line 3: Controls
     let line3 = " [D]ither [T]hresh [B]right [C]ontrast [G]amma [M]ode [Space]Pause [R]eset [S]nippet [Q]uit ";
 
-    write!(stdout, "{}{}{}\r\n", inv_on, pad(&line1, term_width as usize), inv_off)?;
-    write!(stdout, "{}{}{}\r\n", inv_on, pad(&line2, term_width as usize), inv_off)?;
-    write!(stdout, "{}{}{}\r\n", inv_on, pad(line3, term_width as usize), inv_off)?;
+    write!(
+        stdout,
+        "{}{}{}\r\n",
+        inv_on,
+        pad(&line1, term_width as usize),
+        inv_off
+    )?;
+    write!(
+        stdout,
+        "{}{}{}\r\n",
+        inv_on,
+        pad(&line2, term_width as usize),
+        inv_off
+    )?;
+    write!(
+        stdout,
+        "{}{}{}\r\n",
+        inv_on,
+        pad(line3, term_width as usize),
+        inv_off
+    )?;
 
     // Line 4: Snippet (optional)
     if settings.show_snippet && hud_height >= 4 {
         let snippet_line = format!(
             " {} ",
-            settings
-                .to_image_renderer_snippet()
-                .replace('\n', " | ")
+            settings.to_image_renderer_snippet().replace('\n', " | ")
         );
-        write!(stdout, "{}{}{}\r\n", inv_on, pad(&snippet_line, term_width as usize), inv_off)?;
+        write!(
+            stdout,
+            "{}{}{}\r\n",
+            inv_on,
+            pad(&snippet_line, term_width as usize),
+            inv_off
+        )?;
     }
 
     Ok(())
@@ -953,7 +984,10 @@ fn draw_hud(
 
     let line2 = format!(
         " Bright: {:4.2} | Contrast: {:4.2} | Gamma: {:4.2} | Color: {:5} ",
-        settings.brightness, settings.contrast, settings.gamma, settings.color_mode_name()
+        settings.brightness,
+        settings.contrast,
+        settings.gamma,
+        settings.color_mode_name()
     );
 
     let line3 = if is_video {
@@ -987,9 +1021,7 @@ fn draw_hud(
     if settings.show_snippet {
         let snippet_line = format!(
             " {} ",
-            settings
-                .to_image_renderer_snippet()
-                .replace('\n', " | ")
+            settings.to_image_renderer_snippet().replace('\n', " | ")
         );
         write!(
             stdout,

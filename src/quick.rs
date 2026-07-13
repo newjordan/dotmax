@@ -931,8 +931,14 @@ mod tests {
         assert!(w > 0, "Width should be positive");
         assert!(h > 0, "Height should be positive");
         // Fallback is 80x24, actual terminal might be larger
-        assert!(w >= 80 || w > 0, "Width should be at least fallback or positive");
-        assert!(h >= 24 || h > 0, "Height should be at least fallback or positive");
+        assert!(
+            w >= 80 || w > 0,
+            "Width should be at least fallback or positive"
+        );
+        assert!(
+            h >= 24 || h > 0,
+            "Height should be at least fallback or positive"
+        );
     }
 
     #[test]
@@ -1003,7 +1009,11 @@ mod tests {
             let test_image = Path::new("tests/fixtures/images/sample.png");
             if test_image.exists() {
                 let result = load_image_sized(test_image, 40, 20);
-                assert!(result.is_ok(), "load_image_sized should succeed: {:?}", result.err());
+                assert!(
+                    result.is_ok(),
+                    "load_image_sized should succeed: {:?}",
+                    result.err()
+                );
                 let g = result.unwrap();
                 assert_eq!(g.width(), 40);
                 assert_eq!(g.height(), 20);
@@ -1013,13 +1023,19 @@ mod tests {
         #[test]
         fn test_load_image_nonexistent_file_fails() {
             let result = load_image("nonexistent_image_12345.png");
-            assert!(result.is_err(), "load_image should fail for nonexistent file");
+            assert!(
+                result.is_err(),
+                "load_image should fail for nonexistent file"
+            );
         }
 
         #[test]
         fn test_load_image_sized_nonexistent_file_fails() {
             let result = load_image_sized("nonexistent_image_12345.png", 100, 50);
-            assert!(result.is_err(), "load_image_sized should fail for nonexistent file");
+            assert!(
+                result.is_err(),
+                "load_image_sized should fail for nonexistent file"
+            );
         }
     }
 
@@ -1054,7 +1070,11 @@ mod tests {
             let test_image = Path::new("tests/fixtures/images/sample.png");
             if test_image.exists() {
                 let result = load_file(test_image);
-                assert!(result.is_ok(), "load_file should succeed for PNG: {:?}", result.err());
+                assert!(
+                    result.is_ok(),
+                    "load_file should succeed for PNG: {:?}",
+                    result.err()
+                );
 
                 let content = result.unwrap();
                 match content {
@@ -1070,7 +1090,10 @@ mod tests {
         #[test]
         fn test_load_file_nonexistent_fails() {
             let result = load_file("nonexistent_file_12345.png");
-            assert!(result.is_err(), "load_file should fail for nonexistent file");
+            assert!(
+                result.is_err(),
+                "load_file should fail for nonexistent file"
+            );
         }
 
         #[test]
@@ -1089,7 +1112,10 @@ mod tests {
             assert!(result.is_err(), "load_file should fail for unknown format");
 
             if let Err(DotmaxError::FormatError { format }) = result {
-                assert!(format.contains("unknown"), "Error should mention unknown format");
+                assert!(
+                    format.contains("unknown"),
+                    "Error should mention unknown format"
+                );
             } else {
                 panic!("Expected FormatError for unknown format");
             }
@@ -1101,7 +1127,10 @@ mod tests {
         #[test]
         fn test_show_file_nonexistent_fails() {
             let result = show_file("nonexistent_file_12345.png");
-            assert!(result.is_err(), "show_file should fail for nonexistent file");
+            assert!(
+                result.is_err(),
+                "show_file should fail for nonexistent file"
+            );
         }
     }
 }

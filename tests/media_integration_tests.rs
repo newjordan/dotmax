@@ -327,10 +327,7 @@ mod gif_player_tests {
         let path = Path::new("tests/fixtures/media/animated.gif");
         if path.exists() {
             let player = GifPlayer::new(path).unwrap();
-            assert!(
-                player.canvas_width() > 0,
-                "Canvas width should be positive"
-            );
+            assert!(player.canvas_width() > 0, "Canvas width should be positive");
             assert!(
                 player.canvas_height() > 0,
                 "Canvas height should be positive"
@@ -394,10 +391,7 @@ mod apng_player_tests {
         let path = Path::new("tests/fixtures/media/animated.png");
         if path.exists() {
             let player = ApngPlayer::new(path).unwrap();
-            assert!(
-                player.canvas_width() > 0,
-                "Canvas width should be positive"
-            );
+            assert!(player.canvas_width() > 0, "Canvas width should be positive");
             assert!(
                 player.canvas_height() > 0,
                 "Canvas height should be positive"
@@ -443,7 +437,7 @@ mod apng_player_tests {
 
 #[cfg(feature = "image")]
 mod resize_handling_tests {
-    use dotmax::media::{GifPlayer, ApngPlayer, MediaPlayer};
+    use dotmax::media::{ApngPlayer, GifPlayer, MediaPlayer};
     use std::path::Path;
 
     #[test]
@@ -459,7 +453,10 @@ mod resize_handling_tests {
             let frame = player.next_frame();
             assert!(frame.is_some(), "Should get frame after resize");
             let (grid, _delay) = frame.unwrap().unwrap();
-            assert!(grid.width() > 0, "Grid width should be positive after resize");
+            assert!(
+                grid.width() > 0,
+                "Grid width should be positive after resize"
+            );
         }
     }
 
@@ -476,7 +473,10 @@ mod resize_handling_tests {
             let frame = player.next_frame();
             assert!(frame.is_some(), "Should get frame after resize");
             let (grid, _delay) = frame.unwrap().unwrap();
-            assert!(grid.width() > 0, "Grid width should be positive after resize");
+            assert!(
+                grid.width() > 0,
+                "Grid width should be positive after resize"
+            );
         }
     }
 
@@ -505,14 +505,21 @@ mod cross_format_tests {
     #[test]
     fn test_all_image_formats_detected_consistently() {
         let test_cases = [
-            ("tests/fixtures/media/static.gif", MediaFormat::StaticImage(dotmax::media::ImageFormat::Gif)),
-            ("tests/fixtures/media/static_png.png", MediaFormat::StaticImage(dotmax::media::ImageFormat::Png)),
+            (
+                "tests/fixtures/media/static.gif",
+                MediaFormat::StaticImage(dotmax::media::ImageFormat::Gif),
+            ),
+            (
+                "tests/fixtures/media/static_png.png",
+                MediaFormat::StaticImage(dotmax::media::ImageFormat::Png),
+            ),
         ];
 
         for (path, expected_variant) in test_cases {
             if Path::new(path).exists() {
                 let format = detect_format(path).unwrap();
-                let matches = std::mem::discriminant(&format) == std::mem::discriminant(&expected_variant);
+                let matches =
+                    std::mem::discriminant(&format) == std::mem::discriminant(&expected_variant);
                 assert!(
                     matches,
                     "Format detection mismatch for {}: got {:?}, expected variant like {:?}",
@@ -525,8 +532,14 @@ mod cross_format_tests {
     #[test]
     fn test_animated_formats_detected_consistently() {
         let test_cases = [
-            ("tests/fixtures/media/animated.gif", MediaFormat::AnimatedGif),
-            ("tests/fixtures/media/animated.png", MediaFormat::AnimatedPng),
+            (
+                "tests/fixtures/media/animated.gif",
+                MediaFormat::AnimatedGif,
+            ),
+            (
+                "tests/fixtures/media/animated.png",
+                MediaFormat::AnimatedPng,
+            ),
         ];
 
         for (path, expected) in test_cases {

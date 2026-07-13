@@ -9,7 +9,7 @@
 
 #![allow(clippy::semicolon_if_nothing_returned)]
 #![allow(clippy::items_after_statements)]
-#![allow(deprecated)]  // criterion::black_box is deprecated but still used in existing benches
+#![allow(deprecated)] // criterion::black_box is deprecated but still used in existing benches
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::path::Path;

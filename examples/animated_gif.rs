@@ -75,7 +75,11 @@ fn play_with_manual_control(path: &str) -> Result<(), Box<dyn std::error::Error>
     let mut player = GifPlayer::new(path)?;
 
     println!("GIF Info:");
-    println!("  Canvas: {}x{} pixels", player.canvas_width(), player.canvas_height());
+    println!(
+        "  Canvas: {}x{} pixels",
+        player.canvas_width(),
+        player.canvas_height()
+    );
     println!(
         "  Loop count: {}",
         match player.loop_count() {

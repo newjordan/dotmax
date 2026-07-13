@@ -183,8 +183,8 @@ mod grid_tests {
 
 mod color_tests {
     use super::*;
+    use dotmax::color::{rgb_to_ansi16, rgb_to_ansi256};
     use dotmax::Color;
-    use dotmax::color::{rgb_to_ansi256, rgb_to_ansi16};
 
     proptest! {
         /// Color::rgb() creates valid colors for all u8 values
@@ -324,7 +324,10 @@ mod color_scheme_tests {
 
 mod primitive_tests {
     use super::*;
-    use dotmax::{BrailleGrid, primitives::{draw_line, draw_circle, shapes::draw_rectangle}};
+    use dotmax::{
+        primitives::{draw_circle, draw_line, shapes::draw_rectangle},
+        BrailleGrid,
+    };
 
     proptest! {
         /// Bresenham line always includes start and end points

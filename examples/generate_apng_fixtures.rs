@@ -51,9 +51,9 @@ fn generate_animated_apng(path: &Path, width: u32, height: u32, num_frames: u32,
 
     // Generate frames with different colors
     let colors: [(u8, u8, u8); 3] = [
-        (255, 0, 0),   // Red
-        (0, 255, 0),   // Green
-        (0, 0, 255),   // Blue
+        (255, 0, 0), // Red
+        (0, 255, 0), // Green
+        (0, 0, 255), // Blue
     ];
 
     for frame_idx in 0..num_frames {

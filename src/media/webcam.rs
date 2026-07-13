@@ -124,7 +124,11 @@ pub struct WebcamDevice {
 impl WebcamDevice {
     /// Creates a new `WebcamDevice` with the given identifiers.
     #[must_use]
-    pub fn new(id: impl Into<String>, name: impl Into<String>, description: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -252,8 +256,8 @@ fn list_webcams_linux() -> Vec<WebcamDevice> {
                     let device_path = path.to_string_lossy().to_string();
 
                     // Try to get device name from sysfs
-                    let device_name = get_v4l2_device_name(&device_path)
-                        .unwrap_or_else(|| name.to_string());
+                    let device_name =
+                        get_v4l2_device_name(&device_path).unwrap_or_else(|| name.to_string());
 
                     devices.push(WebcamDevice {
                         id: device_path.clone(),
@@ -379,8 +383,15 @@ fn list_webcams_windows() -> Vec<WebcamDevice> {
         Ok(out) => {
             // FFmpeg outputs device list to stderr
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            tracing::debug!("FFmpeg dshow output ({} bytes): {}", stderr.len(),
-                if stderr.len() > 200 { &stderr[..200] } else { &stderr });
+            tracing::debug!(
+                "FFmpeg dshow output ({} bytes): {}",
+                stderr.len(),
+                if stderr.len() > 200 {
+                    &stderr[..200]
+                } else {
+                    &stderr
+                }
+            );
             parse_dshow_device_list(&stderr)
         }
         Err(e) => {
@@ -642,7 +653,11 @@ impl WebcamPlayer {
         // This is important on Windows where we spawn ffmpeg subprocess to enumerate devices
         // and the ffmpeg library initialization can interfere with that
         let (device_url, input_format) = build_device_url(&device_id)?;
-        tracing::debug!("Opening device URL: {} with format: {}", device_url, input_format);
+        tracing::debug!(
+            "Opening device URL: {} with format: {}",
+            device_url,
+            input_format
+        );
 
         // Initialize FFmpeg
         ffmpeg::init().map_err(|e| DotmaxError::WebcamError {
@@ -675,11 +690,18 @@ impl WebcamPlayer {
             (320, 240)
         };
 
-        options.set("video_size", &format!("{}x{}", optimal_resolution.0, optimal_resolution.1));
+        options.set(
+            "video_size",
+            &format!("{}x{}", optimal_resolution.0, optimal_resolution.1),
+        );
         tracing::info!(
             "Terminal {}x{} needs {}x{} pixels, requesting {}x{} capture",
-            term_width, term_height, needed_width, needed_height,
-            optimal_resolution.0, optimal_resolution.1
+            term_width,
+            term_height,
+            needed_width,
+            needed_height,
+            optimal_resolution.0,
+            optimal_resolution.1
         );
 
         // Set requested frame rate - default to 30fps for responsiveness
@@ -732,28 +754,34 @@ impl WebcamPlayer {
         };
 
         // Find video stream
-        let video_stream = input_context
-            .streams()
-            .best(Type::Video)
-            .ok_or_else(|| DotmaxError::WebcamError {
-                device: device_str.clone(),
-                message: "No video stream found from webcam".to_string(),
-            })?;
+        let video_stream =
+            input_context
+                .streams()
+                .best(Type::Video)
+                .ok_or_else(|| DotmaxError::WebcamError {
+                    device: device_str.clone(),
+                    message: "No video stream found from webcam".to_string(),
+                })?;
 
         let video_stream_index = video_stream.index();
 
         // Create decoder
         let codec_params = video_stream.parameters();
-        let context = ffmpeg::codec::context::Context::from_parameters(codec_params)
-            .map_err(|e| DotmaxError::WebcamError {
-                device: device_str.clone(),
-                message: format!("Failed to create codec context: {e}"),
+        let context =
+            ffmpeg::codec::context::Context::from_parameters(codec_params).map_err(|e| {
+                DotmaxError::WebcamError {
+                    device: device_str.clone(),
+                    message: format!("Failed to create codec context: {e}"),
+                }
             })?;
 
-        let decoder = context.decoder().video().map_err(|e| DotmaxError::WebcamError {
-            device: device_str.clone(),
-            message: format!("Failed to create video decoder: {e}"),
-        })?;
+        let decoder = context
+            .decoder()
+            .video()
+            .map_err(|e| DotmaxError::WebcamError {
+                device: device_str.clone(),
+                message: format!("Failed to create video decoder: {e}"),
+            })?;
 
         let width = decoder.width();
         let height = decoder.height();
@@ -1126,11 +1154,12 @@ impl WebcamPlayer {
 
             // Create RGB image without cloning - swap buffer
             let buffer = std::mem::take(&mut self.rgb_buffer);
-            let img = image::RgbImage::from_raw(target_width, target_height, buffer)
-                .ok_or_else(|| DotmaxError::WebcamError {
+            let img = image::RgbImage::from_raw(target_width, target_height, buffer).ok_or_else(
+                || DotmaxError::WebcamError {
                     device: self.device_id.clone(),
                     message: "Failed to create image from frame data".to_string(),
-                })?;
+                },
+            )?;
 
             let dynamic_img = image::DynamicImage::ImageRgb8(img);
             let grid = render_image_with_color(
@@ -1213,9 +1242,9 @@ impl WebcamPlayer {
         // Note: For auto_threshold without dithering, we compute Otsu and apply manually
         // to avoid cloning the grayscale image
         let binary = if self.dithering == DitheringMethod::None {
-            let threshold_val = self.threshold.unwrap_or_else(|| {
-                crate::image::otsu_threshold(&gray)
-            });
+            let threshold_val = self
+                .threshold
+                .unwrap_or_else(|| crate::image::otsu_threshold(&gray));
             apply_threshold(&gray, threshold_val)
         } else if let Some(t) = self.threshold {
             apply_dithering_with_custom_threshold(&gray, self.dithering, Some(t))?
@@ -1517,11 +1546,16 @@ fn build_device_url(device_id: &WebcamDeviceId) -> Result<(String, &'static str)
             WebcamDeviceId::Index(i) => {
                 // Look up device by index from enumerated list
                 let devices = list_webcams();
-                tracing::debug!("Windows device lookup: index={}, found {} devices", i, devices.len());
+                tracing::debug!(
+                    "Windows device lookup: index={}, found {} devices",
+                    i,
+                    devices.len()
+                );
                 if *i >= devices.len() {
                     // Re-enumerate for error message (the first call may have failed transiently)
                     let devices_retry = list_webcams();
-                    let available: Vec<String> = devices_retry.iter().map(|d| d.name.clone()).collect();
+                    let available: Vec<String> =
+                        devices_retry.iter().map(|d| d.name.clone()).collect();
                     return Err(DotmaxError::CameraNotFound {
                         device: format!("index:{i}"),
                         available,
@@ -1570,7 +1604,10 @@ fn map_ffmpeg_error(device: &str, error: ffmpeg::Error) -> DotmaxError {
         };
     }
 
-    if error_str.contains("busy") || error_str.contains("in use") || error_str.contains("device or resource busy") {
+    if error_str.contains("busy")
+        || error_str.contains("in use")
+        || error_str.contains("device or resource busy")
+    {
         return DotmaxError::CameraInUse {
             device: device.to_string(),
         };
@@ -1591,7 +1628,8 @@ fn get_permission_hint() -> String {
     }
     #[cfg(target_os = "macos")]
     {
-        "Grant camera access in System Preferences > Security & Privacy > Privacy > Camera".to_string()
+        "Grant camera access in System Preferences > Security & Privacy > Privacy > Camera"
+            .to_string()
     }
     #[cfg(target_os = "windows")]
     {
@@ -1647,7 +1685,10 @@ mod tests {
     fn test_webcam_device_id_display() {
         assert_eq!(WebcamDeviceId::Default.to_string(), "default");
         assert_eq!(WebcamDeviceId::Index(0).to_string(), "index:0");
-        assert_eq!(WebcamDeviceId::Path("/dev/video0".into()).to_string(), "/dev/video0");
+        assert_eq!(
+            WebcamDeviceId::Path("/dev/video0".into()).to_string(),
+            "/dev/video0"
+        );
     }
 
     #[test]
@@ -1676,7 +1717,10 @@ mod tests {
         assert!(matches!(builder.device, WebcamDeviceId::Index(0)));
         assert_eq!(builder.resolution, Some((1280, 720)));
         assert_eq!(builder.fps, Some(30));
-        assert_eq!(builder.render_settings.dithering, DitheringMethod::FloydSteinberg);
+        assert_eq!(
+            builder.render_settings.dithering,
+            DitheringMethod::FloydSteinberg
+        );
         assert_eq!(builder.render_settings.threshold, Some(128));
         assert!((builder.render_settings.brightness - 1.2).abs() < f32::EPSILON);
     }

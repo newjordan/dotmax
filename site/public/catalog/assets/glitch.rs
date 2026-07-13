@@ -1019,7 +1019,10 @@ impl ProgressStyle for RgbSplit {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
         let filled = (ctx.eased * w as f32).round() as usize;
-        let jit = 1 + (1.0 + 1.5 * (ctx.time * TAU * 0.75).sin()).max(0.0) as usize;
+        // Round (not truncate) so the fringe width actually wanders frame to
+        // frame instead of parking at its floor for most of the loop.
+        let jit = (2.0 + 2.2 * (ctx.time * TAU * 0.75).sin()).max(0.0).round() as usize;
+        let slot = (ctx.time * 4.0) as i32;
         let y0 = h / 4;
         let y1 = h.saturating_sub(h / 4);
         // Magenta copy: shifted left/up.
@@ -1036,10 +1039,17 @@ impl ProgressStyle for RgbSplit {
                 let _ = grid.set_cell_color(x / 2, y / 4, FRINGE_CYAN);
             }
         }
-        // White core drawn last so overlap reads clean.
+        // White core drawn last so overlap reads clean; the occasional
+        // scanline pair tears sideways for a beat.
         for y in y0..y1 {
+            let band = (y / 2) as i32;
+            let tear = if hash3(band, 7, slot) < 0.12 {
+                ((hash3(band, 9, slot) - 0.5) * 5.0) as i32
+            } else {
+                0
+            };
             for x in 0..filled {
-                draw::dot(grid, x, y);
+                draw::dot_i(grid, x as i32 + tear, y as i32);
                 let _ = grid.set_cell_color(x / 2, y / 4, SIGNAL);
             }
         }

@@ -324,7 +324,10 @@ fn bench_differential_io_reduction_verification(c: &mut Criterion) {
             let reduction = ((total_cells - changed) as f64 / total_cells as f64) * 100.0;
             black_box(reduction);
             // Verify: reduction should be >60% (target: 60-80%)
-            assert!(reduction > 60.0, "I/O reduction should be >60%, got {reduction:.1}%");
+            assert!(
+                reduction > 60.0,
+                "I/O reduction should be >60%, got {reduction:.1}%"
+            );
         });
     });
 }

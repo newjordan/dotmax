@@ -1081,7 +1081,7 @@ impl ProgressStyle for IonChannels {
             // Clear membrane at channel (draw gap as empty — draw dots on either side)
             let gap_half = 2usize;
             // Left edge of channel
-            if ch_x >= gap_half + 1 {
+            if ch_x > gap_half {
                 draw::dot(grid, ch_x - gap_half - 1, outer_y);
                 draw::dot(grid, ch_x - gap_half - 1, inner_y);
             }

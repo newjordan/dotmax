@@ -1,4 +1,4 @@
-//! `tech` — dotmax progress styles as a standalone, dependency-free program.
+//! `synthwave` — dotmax progress styles as a standalone, dependency-free program.
 //!
 //! Generated from https://github.com/newjordan/dotmax (MIT OR Apache-2.0).
 //! The style code below is the crate's verbatim source; only the small
@@ -7,10 +7,10 @@
 //! Build and run (no cargo needed):
 //!
 //! ```sh
-//! rustc -O tech.rs && ./tech [style-name]
+//! rustc -O synthwave.rs && ./synthwave [style-name]
 //! ```
 
-const DEFAULT_STYLE: &str = "matrix-rain";
+const DEFAULT_STYLE: &str = "sunrise";
 
 // ===========================================================================
 // Minimal runtime — a drop-in stand-in for the dotmax types the styles use.
@@ -836,751 +836,783 @@ pub fn render_string(style: &dyn ProgressStyle, ctx: &BarContext) -> Result<Stri
 }
 
 pub mod styles {
-    pub mod tech {
-//! Tech / cyberpunk progress bars — digital rain, glitch, neon, and signal.
+    pub mod synthwave {
+//! Synthwave progress bars — outrun sunsets, neon grids, chrome and VHS.
 //!
-//! Every style in this module is stateless: all animation derives from
-//! `ctx.time` and `ctx.eased` with no mutable state. The deterministic
-//! `hash` helper produces pseudo-random values for sparkle and glitch
-//! effects without any external dependencies.
+//! Every style is a little 1985-that-never-was: a striped sun climbs as
+//! progress rises, perspective grids scroll toward the viewer, neon tubes
+//! flicker on, chrome gleams sweep past. Palette is hot pink / violet /
+//! electric cyan around a sunset core. Deterministic in `(progress, time)`.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
-use std::f32::consts::PI;
+use crate::{BrailleGrid, Color, DotmaxError};
+use std::f32::consts::TAU;
 
-// ─── deterministic hash (no external crates) ────────────────────────────────
+// ─── deterministic hash ─────────────────────────────────────────────────────
 
+/// Fast integer hash → `[0, 1)`.
 #[inline]
-fn hash(n: u32) -> u32 {
-    let mut x = n.wrapping_mul(2_654_435_761);
-    x ^= x >> 15;
-    x.wrapping_mul(2_246_822_519)
+fn hash2(x: i32, y: i32) -> f32 {
+    let mut h = (x
+        .wrapping_mul(374_761_393)
+        .wrapping_add(y.wrapping_mul(668_265_263))) as u32;
+    h = (h ^ (h >> 13)).wrapping_mul(1_274_126_177);
+    ((h ^ (h >> 16)) % 1000) as f32 / 1000.0
 }
 
-/// Map hash output to [0.0, 1.0).
+/// 3-D variant: hash `(x, y, z_int)` for time-slotted flicker.
 #[inline]
-fn hashf(n: u32) -> f32 {
-    (hash(n) % 1000) as f32 / 1000.0
+fn hash3(x: i32, y: i32, z: i32) -> f32 {
+    hash2(x ^ z.wrapping_mul(1_234_567), y ^ z.wrapping_mul(7_654_321))
 }
 
-/// All styles in the `tech` theme.
-///
-/// Returns 11 distinct cyberpunk-themed progress bar implementations, each
-/// stateless and animatable via `ctx.time`.
+// ─── theme colors — sunset neon ─────────────────────────────────────────────
+
+/// Hot pink, the signature neon.
+const SW_PINK: Color = Color::rgb(255, 64, 168);
+/// Electric cyan for horizons and highlights.
+const SW_CYAN: Color = Color::rgb(64, 230, 255);
+/// Deep violet for dark structure.
+const SW_VIOLET: Color = Color::rgb(122, 74, 226);
+/// Dusk purple for unlit track and far grid.
+const SW_DUSK: Color = Color::rgb(88, 44, 128);
+/// Sunset orange, the middle of the sun ramp.
+const SW_ORANGE: Color = Color::rgb(255, 138, 66);
+/// Sun-core yellow.
+const SW_YELLOW: Color = Color::rgb(255, 216, 102);
+/// White-hot sparkle.
+const SW_WHITE: Color = Color::rgb(255, 244, 248);
+
+/// Blend two colors at `t` in `0.0..=1.0`.
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let l = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t) as u8;
+    Color::rgb(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b))
+}
+
+/// Sun ramp: yellow at the top, orange through the middle, pink at the base.
+fn sun_ramp(t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    if t < 0.5 {
+        mix(SW_YELLOW, SW_ORANGE, t * 2.0)
+    } else {
+        mix(SW_ORANGE, SW_PINK, (t - 0.5) * 2.0)
+    }
+}
+
+/// All styles in the `synthwave` theme.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
-        Box::new(MatrixRain),
-        Box::new(NeonScanline),
-        Box::new(DataPackets),
-        Box::new(GlitchBar),
-        Box::new(TerminalTyper),
-        Box::new(HexFill),
-        Box::new(SignalBars),
-        Box::new(DownloadStream),
-        Box::new(BinaryCounter),
-        Box::new(Heartbeat),
-        Box::new(CircuitTrace),
+        Box::new(Sunrise),
+        Box::new(GridRun),
+        Box::new(NeonSign),
+        Box::new(ChromeFade),
+        Box::new(VhsTracking),
+        Box::new(RetroEq),
+        Box::new(LaserHorizon),
+        Box::new(Starfall),
+        Box::new(Outrun),
+        Box::new(NeonWave),
     ]
 }
 
-// ─── 1. Matrix digital rain ──────────────────────────────────────────────────
-
-/// Matrix-style columns of falling dots whose density rises with progress.
-struct MatrixRain;
-impl ProgressStyle for MatrixRain {
+/// The striped outrun sun climbs above a scrolling grid as progress rises.
+struct Sunrise;
+impl ProgressStyle for Sunrise {
     fn name(&self) -> &str {
-        "matrix-rain"
+        "sunrise"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Matrix digital rain: column density rises with progress"
+        "Striped sun rising over a scrolling neon grid"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
+        grid.enable_color_support();
+        let horizon = h as i32 - 5;
+        let cx = w as i32 / 2;
+        let r = 7i32;
+        // Sun center climbs from just-peeking to fully risen; a linear blend
+        // keeps the first percent visible instead of hiding in the ease-in.
+        let rise = 0.5 * ctx.progress + 0.5 * ctx.eased;
+        let cy = horizon + r - 1 - (rise * (horizon + r - 5) as f32).round() as i32;
+        let stripe_shift = (ctx.time * 4.0) as i32;
+        for dy in -r..=r {
+            let y = cy + dy;
+            if y < 0 || y >= horizon {
+                continue;
+            }
+            // Lower half of the disc carries the classic scan-gap stripes.
+            if dy > 0 && (y + stripe_shift).rem_euclid(3) == 0 {
+                continue;
+            }
+            let half = ((r * r - dy * dy) as f32).sqrt() as i32;
+            for x in (cx - half)..=(cx + half) {
+                draw::dot_i(grid, x, y);
+            }
+            let ramp = (dy + r) as f32 / (2 * r) as f32;
+            let c0 = ((cx - half) / 2).max(0) as usize;
+            let c1 = ((cx + half) / 2).max(0) as usize;
+            draw::tint_row(grid, (y / 4) as usize, c0, c1, sun_ramp(ramp));
         }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        // How many columns are "active" depends on eased progress.
-        let active_cols = ((ctx.eased * w as f32) as usize).min(w);
-
-        for col in 0..active_cols {
-            // Each column gets a unique phase offset from the hash.
-            let phase = hashf(col as u32 * 7 + 1);
-            let speed = 0.4 + 0.6 * hashf(col as u32 * 13 + 3);
-            // Fall position: wraps top-to-bottom.
-            let fall_t = (ctx.time * speed + phase).fract();
-            let head = (fall_t * h as f32) as usize;
-
-            // Draw a "raindrop" — head is bright, tail fades.
-            let tail_len = (h / 3).max(2);
-            for i in 0..tail_len {
-                let y = if head >= i { head - i } else { h + head - i };
-                if y < h {
-                    draw::dot(grid, col, y);
-                }
+        // Horizon line, lit outward from center with progress.
+        let lit = (ctx.eased * cx as f32).round() as i32;
+        draw::hline(grid, 0, w - 1, horizon as usize);
+        draw::tint_row(grid, (horizon / 4) as usize, 0, w / 2, SW_DUSK);
+        if lit > 0 {
+            let c0 = ((cx - lit) / 2).max(0) as usize;
+            let c1 = ((cx + lit) / 2) as usize;
+            draw::tint_row(grid, (horizon / 4) as usize, c0, c1, SW_CYAN);
+        }
+        // Perspective floor: converging verticals plus rolling horizontals.
+        let floor_cell = (horizon as usize / 4 + 1).min(ctx.height - 1);
+        for k in -6..=6i32 {
+            let bx = cx + k * 9;
+            let steps = h as i32 - 1 - horizon;
+            for s in 1..=steps {
+                let x = cx + (bx - cx) * s / steps.max(1);
+                draw::dot_i(grid, x, horizon + s);
             }
-
-            // Tint with palette: head bright end, tail dim start.
-            let cell_x = col / 2;
-            if cell_x < cells_w {
-                let t = col as f32 / active_cols.max(1) as f32;
-                let color = ctx.palette.sample(t);
-                for cy in 0..cells_h {
-                    draw::tint_row(grid, cy, cell_x, cell_x, color);
-                }
-            }
+        }
+        for i in 0..3 {
+            let f = (ctx.time * 0.75 + i as f32 / 3.0).fract();
+            let y = horizon + 1 + (f * f * (h as i32 - 2 - horizon) as f32) as i32;
+            draw::hline(grid, 0, w - 1, y as usize);
+        }
+        for cy2 in floor_cell..ctx.height {
+            draw::tint_row(grid, cy2, 0, ctx.width - 1, SW_VIOLET);
         }
         Ok(())
     }
 }
 
-// ─── 2. Neon scanline sweep ──────────────────────────────────────────────────
-
-/// A neon vertical bar sweeps right; eased progress determines how far it
-/// travels. The swept region glows with the palette gradient.
-struct NeonScanline;
-impl ProgressStyle for NeonScanline {
+/// A wall of light sweeps down a perspective grid toward the viewer.
+struct GridRun;
+impl ProgressStyle for GridRun {
     fn name(&self) -> &str {
-        "neon-scanline"
+        "gridrun"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Neon vertical scanline with palette glow, eased to progress"
+        "Light wall racing down an endless neon grid"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let head = ((ctx.eased * w as f32) as usize).min(w.saturating_sub(1));
-
-        // Filled track up to head.
-        // Draw a center baseline and a thick beam at the head.
-        let mid = h / 2;
-        draw::hline(grid, 0, head, mid);
-
-        // Scanline beam: full height at head, half-height one behind, etc.
-        let beam_w = (w / 20).max(1);
-        for offset in 0..beam_w {
-            if head < offset {
-                break;
+        grid.enable_color_support();
+        let vp_y = 3i32;
+        let cx = w as i32 / 2;
+        // Twinkling stars above the vanishing point.
+        let slot = (ctx.time * 2.0) as i32;
+        for i in 0..10 {
+            let sx = (hash2(i, 11) * w as f32) as i32;
+            let sy = (hash2(i, 23) * vp_y as f32) as i32;
+            if hash3(i, 0, slot) > 0.35 {
+                draw::dot_i(grid, sx, sy);
             }
-            let x = head - offset;
-            let reach = (h as f32 * (1.0 - offset as f32 / beam_w as f32)) as usize;
-            let y0 = mid.saturating_sub(reach / 2);
-            let y1 = (mid + reach / 2).min(h.saturating_sub(1));
-            draw::vline(grid, x, y0, y1);
         }
-
-        // Gradient tint from start to head.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = if filled_cells <= 1 {
-                0.0
+        // The light wall: progress pushes it from the horizon to the viewer.
+        let wall_y = vp_y + (ctx.eased * (h as i32 - 1 - vp_y) as f32).round() as i32;
+        // Converging verticals, dotted, with a clear band above the wall so
+        // the wall stays crisp against the lattice.
+        for k in -8..=8i32 {
+            let bx = cx + k * 10;
+            let steps = h as i32 - 1 - vp_y;
+            for s in (0..=steps).step_by(2) {
+                let y = vp_y + s;
+                if y < wall_y - 2 || y > wall_y + 2 {
+                    let x = cx + (bx - cx) * s / steps.max(1);
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        // Rolling horizontals, accelerating as they near the viewer.
+        for i in 0..4 {
+            let f = (ctx.time * 0.5 + i as f32 * 0.25).fract();
+            let y = vp_y + (f * f * (h as i32 - 1 - vp_y) as f32) as i32;
+            if y < wall_y - 2 || y > wall_y + 2 {
+                draw::hline(grid, 0, w - 1, y as usize);
+            }
+        }
+        for dy in 0..2 {
+            draw::hline(grid, 0, w - 1, (wall_y + dy).min(h as i32 - 1) as usize);
+        }
+        // Color: dim violet grid, pink glow below the wall, cyan wall crest.
+        for cy in 0..ctx.height {
+            let row_mid = cy as i32 * 4 + 2;
+            let c = if row_mid < wall_y {
+                SW_DUSK
+            } else if row_mid < wall_y + 4 {
+                SW_CYAN
             } else {
-                cx as f32 / (filled_cells - 1) as f32
+                SW_PINK
             };
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
+            draw::tint_row(grid, cy, 0, ctx.width - 1, c);
         }
         Ok(())
     }
 }
 
-// ─── 3. Data packets ─────────────────────────────────────────────────────────
-
-/// Discrete data "packets" slide left→right; the number flowing increases with
-/// progress. Uses cubic-out easing on each packet's internal travel.
-struct DataPackets;
-impl ProgressStyle for DataPackets {
+/// A neon tube border lights up clockwise; the readout buzzes in the middle.
+struct NeonSign;
+impl ProgressStyle for NeonSign {
     fn name(&self) -> &str {
-        "data-packets"
+        "neon-sign"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Discrete data packets stream right; flow rate scales with progress"
+        "Neon tube border flickering on, percent in lights"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let packet_w = (w / 8).max(2);
-        let gap = (w / 12).max(1);
-        let stride = packet_w + gap;
-        let n_packets = (w / stride).max(1);
-
-        // How many packets are visible is gated by progress.
-        let active = (ctx.eased * n_packets as f32).ceil() as usize;
-
-        for p in 0..active.min(n_packets) {
-            let phase = p as f32 / n_packets as f32;
-            // Each packet loops: position travels 0..w in its own time slot.
-            let t_raw = (ctx.time * 0.5 + phase).fract();
-            // Cubic-out easing for a "snap then slow" feel.
-            let t_eased = 1.0 - (1.0 - t_raw).powi(3);
-            let x0 = (t_eased * (w + packet_w) as f32) as i32 - packet_w as i32;
-
-            let row_h = (h / 2).max(1);
-            let y0 = (h - row_h) / 2;
-            for dy in 0..row_h {
-                for dx in 0..packet_w as i32 {
-                    draw::dot_i(grid, x0 + dx, (y0 + dy) as i32);
-                }
+        grid.enable_color_support();
+        let (x0, y0, x1, y1) = (1i32, 1i32, w as i32 - 2, h as i32 - 2);
+        // Walk the tube perimeter clockwise from the top-left corner.
+        let top = x1 - x0;
+        let right = y1 - y0;
+        let perim = 2 * (top + right);
+        let lit = (ctx.eased * perim as f32).round() as i32;
+        let slot = (ctx.time * 4.0) as i32;
+        for s in 0..perim {
+            let (x, y) = if s < top {
+                (x0 + s, y0)
+            } else if s < top + right {
+                (x1, y0 + (s - top))
+            } else if s < 2 * top + right {
+                (x1 - (s - top - right), y1)
+            } else {
+                (x0, y1 - (s - 2 * top - right))
+            };
+            let on = s < lit;
+            // Fresh tube segments flicker as they warm up; old ones buzz rarely.
+            let seg = s / 6;
+            let fresh = on && lit - s < perim / 8;
+            let buzz = hash3(seg, 3, slot);
+            let bright = on && !(fresh && buzz < 0.4) && buzz >= 0.05;
+            // Unlit tube is sparse glass; lit tube is a solid run of light,
+            // so the fill reads even without color — and flickering segments
+            // actually drop out of the tube, not just dim.
+            if !on && s % 3 != 0 {
+                continue;
             }
-
-            // Tint the packet's cell span.
-            let t_color = p as f32 / n_packets.max(1) as f32;
-            let color = ctx.palette.sample(t_color);
-            let cx0 = (x0 / 2).max(0) as usize;
-            let cx1 = ((x0 + packet_w as i32) / 2).clamp(0, cells_w as i32 - 1) as usize;
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx0, cx1, color);
+            if on && !bright && s % 2 != 0 {
+                continue;
             }
-        }
-        Ok(())
-    }
-}
-
-// ─── 4. Glitch bar ───────────────────────────────────────────────────────────
-
-/// A solid fill that occasionally "glitches": horizontal strips are displaced
-/// by random amounts derived from the hash function and snapped by time.
-struct GlitchBar;
-impl ProgressStyle for GlitchBar {
-    fn name(&self) -> &str {
-        "glitch"
-    }
-    fn theme(&self) -> &str {
-        "tech"
-    }
-    fn describe(&self) -> &str {
-        "Solid fill with periodic horizontal glitch displacements"
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let filled = ((ctx.eased * w as f32) as usize).min(w);
-
-        // Glitch "epoch" changes 4 times per second; drives which rows glitch.
-        let epoch = (ctx.time * 4.0) as u32;
-
-        for y in 0..h {
-            // Decide if this scanline glitches this epoch.
-            let row_hash = hash(y as u32 * 31 + epoch * 997);
-            let glitch_prob = hashf(row_hash);
-            let shift: i32 = if glitch_prob < 0.15 {
-                // Displace by up to ±1/8 of width.
-                let mag = (hashf(row_hash ^ 0xDEAD) * (w as f32 / 8.0)) as i32;
-                if row_hash & 1 == 0 {
-                    mag
+            draw::dot_i(grid, x, y);
+            let cell = ((x / 2) as usize, (y / 4) as usize);
+            let _ = grid.set_cell_color(
+                cell.0,
+                cell.1,
+                if bright {
+                    SW_PINK
+                } else if on {
+                    SW_VIOLET
                 } else {
-                    -mag
-                }
-            } else {
-                0
-            };
-
-            for x in 0..filled {
-                draw::dot_i(grid, x as i32 + shift, y as i32);
-            }
+                    SW_DUSK
+                },
+            );
         }
-
-        // Gradient tint on the filled region.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Percent readout in cyan lights, center stage.
+        if let Some(label) = &ctx.label {
+            let chars: Vec<char> = label.chars().collect();
+            let cw = ctx.width;
+            let cx0 = cw.saturating_sub(chars.len()) / 2;
+            let cy = ctx.height / 2;
+            for (i, c) in chars.iter().enumerate() {
+                draw::glyph(grid, cx0 + i, cy, *c);
+                let flick = hash3(i as i32, 9, slot) > 0.08;
+                let _ = grid.set_cell_color(cx0 + i, cy, if flick { SW_CYAN } else { SW_DUSK });
             }
         }
         Ok(())
     }
 }
 
-// ─── 5. Terminal typer ───────────────────────────────────────────────────────
-
-/// A cursor "types" across the bar, leaving a trail of filled dots; the cursor
-/// blinks at 2 Hz using `ctx.time`. Progress controls how far it has typed.
-struct TerminalTyper;
-impl ProgressStyle for TerminalTyper {
+/// A chrome bar with mirror banding and a gleam that sweeps past.
+struct ChromeFade;
+impl ProgressStyle for ChromeFade {
     fn name(&self) -> &str {
-        "terminal-typer"
+        "chrome-fade"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Cursor types across the bar; cursor blinks, trail is filled"
+        "Mirror-chrome fill with a sweeping gleam"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
+        grid.enable_color_support();
+        let top = (h / 4).max(1);
+        let bot = h.saturating_sub(h / 4 + 1).max(top);
+        let filled = (ctx.eased * w as f32).round() as usize;
+        // Track rails.
+        draw::hline(grid, 0, w - 1, top.saturating_sub(2));
+        draw::hline(grid, 0, w - 1, (bot + 2).min(h - 1));
+        for cy in 0..ctx.height {
+            draw::tint_row(grid, cy, 0, ctx.width - 1, SW_DUSK);
         }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let head = ((ctx.eased * w as f32) as usize).min(w.saturating_sub(1));
-
-        // Trail: filled region before cursor.
-        if head > 0 {
-            draw::fill_rect(grid, 0, 0, head, h);
-        }
-
-        // Blinking cursor block: blinks at 2 Hz.
-        let blink_on = (ctx.time * 2.0).fract() > 0.5;
-        if blink_on && head < w {
-            // Cursor is a full-height vertical block.
-            draw::vline(grid, head, 0, h.saturating_sub(1));
-            // Add one to the right for a fat cursor.
-            if head + 1 < w {
-                draw::vline(grid, head + 1, 0, h.saturating_sub(1));
-            }
-        }
-
-        // Tint: trail in palette gradient, cursor in bright end color.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
-        }
-        Ok(())
-    }
-}
-
-// ─── 6. Hex / binary block fill ──────────────────────────────────────────────
-
-/// The bar is divided into fixed-width "hex cells". Each cell toggles on in
-/// sequence as eased progress advances, giving a quantised, digital feel.
-struct HexFill;
-impl ProgressStyle for HexFill {
-    fn name(&self) -> &str {
-        "hex-fill"
-    }
-    fn theme(&self) -> &str {
-        "tech"
-    }
-    fn describe(&self) -> &str {
-        "Hex-cell blocks toggle on sequentially as progress advances"
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let n_cells = 16usize.min(w / 2);
-        let cell_w = w / n_cells.max(1);
-        let lit = (ctx.eased * n_cells as f32) as usize;
-
-        for i in 0..n_cells {
-            let x0 = i * cell_w;
-            // Gap of 1 dot between cells.
-            let bw = cell_w.saturating_sub(1).max(1);
-            if i < lit {
-                // Fully lit cell.
-                draw::fill_rect(grid, x0, 0, bw, h);
-            } else if i == lit {
-                // Partially lit cell — animates in with a sine flicker.
-                let flicker = ((ctx.time * 8.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
-                let bh = (flicker * h as f32) as usize;
-                let y0 = h.saturating_sub(bh);
-                draw::fill_rect(grid, x0, y0, bw, bh);
-            } else {
-                // Unlit: just outline.
-                draw::rect_outline(grid, x0, 0, bw.max(2), h.max(2));
-            }
-
-            // Tint lit cells.
-            if i <= lit {
-                let t = i as f32 / n_cells.max(1) as f32;
-                let color = ctx.palette.sample(t);
-                let cx0 = (x0 / 2).min(cells_w.saturating_sub(1));
-                let cx1 = ((x0 + bw) / 2).min(cells_w.saturating_sub(1));
-                for cy in 0..cells_h {
-                    draw::tint_row(grid, cy, cx0, cx1, color);
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-// ─── 7. Signal / WiFi bars ───────────────────────────────────────────────────
-
-/// Rising signal bars whose heights step up with progress, like a WiFi
-/// strength indicator. Bars pulse slightly via a sine wave.
-struct SignalBars;
-impl ProgressStyle for SignalBars {
-    fn name(&self) -> &str {
-        "signal-bars"
-    }
-    fn theme(&self) -> &str {
-        "tech"
-    }
-    fn describe(&self) -> &str {
-        "Rising WiFi-style signal bars that fill with progress"
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let n_bars = 8usize;
-        let bar_w = (w / n_bars / 2).max(1);
-        let gap = (w / n_bars).saturating_sub(bar_w).max(1);
-        let stride = bar_w + gap;
-
-        let lit_count = (ctx.eased * n_bars as f32).round() as usize;
-
-        for i in 0..n_bars {
-            let x0 = i * stride;
-            if x0 >= w {
-                break;
-            }
-
-            // Each bar's target height: taller bars toward the right.
-            let base_frac = (i + 1) as f32 / n_bars as f32;
-            // Pulse: active bars breathe slightly.
-            let pulse = if i < lit_count {
-                1.0 + 0.05 * (ctx.time * 2.0 * PI + i as f32 * 0.5).sin()
-            } else {
-                1.0
-            };
-            let bar_h = (base_frac * h as f32 * pulse).round() as usize;
-            let bar_h = bar_h.min(h);
-            let y0 = h.saturating_sub(bar_h);
-
-            if i < lit_count {
-                draw::fill_rect(grid, x0, y0, bar_w, bar_h);
-                let t = i as f32 / n_bars.max(1) as f32;
-                let color = ctx.palette.sample(t);
-                let cx = (x0 / 2).min(cells_w.saturating_sub(1));
-                for cy in 0..cells_h {
-                    draw::tint_row(grid, cy, cx, cx, color);
-                }
-            } else {
-                // Dim outline for inactive bars.
-                if bar_h >= 2 && bar_w >= 1 {
-                    draw::rect_outline(grid, x0, y0, bar_w.max(2), bar_h.max(2));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-// ─── 8. Download stream ──────────────────────────────────────────────────────
-
-/// A moving "buffer window" slides over a track of dots. The track density
-/// behind the window matches eased progress; the window itself scrolls.
-struct DownloadStream;
-impl ProgressStyle for DownloadStream {
-    fn name(&self) -> &str {
-        "download-stream"
-    }
-    fn theme(&self) -> &str {
-        "tech"
-    }
-    fn describe(&self) -> &str {
-        "Moving buffer window slides over a download track"
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let filled = ((ctx.eased * w as f32) as usize).min(w);
-
-        // Background track: sparse dots every 3 columns in the filled zone.
-        let mid = h / 2;
+        // Chrome body.
         for x in 0..filled {
-            if x % 3 == 0 {
-                draw::dot(grid, x, mid);
+            for y in top..=bot {
+                draw::dot(grid, x, y);
             }
         }
-
-        // Buffer window: a bright solid block that scrolls through filled zone.
-        let win_w = (w / 6).max(2);
-        if filled > win_w {
-            let travel = filled - win_w;
-            let win_x = ((ctx.time * 0.8).fract() * travel as f32) as usize;
-            let win_x = win_x.min(travel);
-            let win_h = h;
-            draw::fill_rect(grid, win_x, 0, win_w, win_h);
+        // Vertical leading edge.
+        if filled > 0 && filled < w {
+            draw::vline(grid, filled, top.saturating_sub(1), bot + 1);
         }
-
-        // Track baseline.
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
-
-        // Tint the filled region.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Banding: sky above the seam, sunset metal below. The seam bows
+        // gently with time like a horizon reflected in curved chrome.
+        let gleam = ((ctx.time * 0.25).fract() * (w as f32 + 24.0)) as i32 - 12;
+        for cy in (top / 4)..=(bot / 4) {
+            let row_mid = cy as f32 * 4.0 + 2.0;
+            let seam = (h as f32 / 2.0) + (TAU * 0.25 * ctx.time).sin() * 1.5;
+            let c = if row_mid < seam - 2.0 {
+                mix(SW_CYAN, SW_WHITE, 0.55)
+            } else if row_mid < seam {
+                SW_WHITE
+            } else if row_mid < seam + 3.0 {
+                SW_ORANGE
+            } else {
+                SW_PINK
+            };
+            let hi_cell = (filled / 2).min(ctx.width.saturating_sub(1));
+            draw::tint_row(grid, cy, 0, hi_cell, c);
+            // Gleam: a diagonal white flash sliding along the filled chrome.
+            for gx in 0..3i32 {
+                let x = gleam + gx - (cy as i32 * 2);
+                if x >= 0 && (x as usize) < filled {
+                    let _ = grid.set_cell_color((x / 2) as usize, cy, SW_WHITE);
+                }
             }
+        }
+        // Sparkle at the leading edge.
+        if filled > 1 && filled < w - 1 {
+            let sx = filled as i32;
+            let sy = (top + bot) as i32 / 2;
+            let pulse = ((ctx.time * TAU * 0.5).sin() * 2.0) as i32 + 2;
+            draw::hline(
+                grid,
+                (sx - pulse).max(0) as usize,
+                (sx + pulse) as usize,
+                sy as usize,
+            );
+            draw::vline(
+                grid,
+                sx as usize,
+                (sy - pulse).max(0) as usize,
+                (sy + pulse) as usize,
+            );
+            let _ = grid.set_cell_color((sx / 2) as usize, (sy / 4) as usize, SW_WHITE);
         }
         Ok(())
     }
 }
 
-// ─── 9. Binary counter ───────────────────────────────────────────────────────
-
-/// Progress is rendered as a binary number — each bit column toggles on/off as
-/// it would in a rising counter, giving a flickering digital readout effect.
-struct BinaryCounter;
-impl ProgressStyle for BinaryCounter {
+/// Tape fill with tracking jitter that settles as the signal locks in.
+struct VhsTracking;
+impl ProgressStyle for VhsTracking {
     fn name(&self) -> &str {
-        "binary-counter"
+        "vhs-tracking"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Progress displayed as a live binary counter in dot columns"
+        "VHS fill stabilizing as tracking locks"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
+        grid.enable_color_support();
+        let filled = (ctx.eased * w as f32) as i32;
+        let slot = (ctx.time * 6.0) as i32;
+        let unstable = 1.0 - ctx.progress;
+        // The picture: full-height fill, rows shoved sideways in bands of two
+        // dots. Jitter is worst near the leading edge and calms with progress.
+        for y in 0..h as i32 {
+            let band = y / 2;
+            let j = ((hash3(band, 1, slot) - 0.5) * 7.0 * unstable) as i32;
+            let x1 = (filled + j).clamp(0, w as i32);
+            for x in 0..x1 {
+                draw::dot_i(grid, x, y);
+            }
         }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        // Map progress to an integer value in [0, 2^n_bits).
-        let n_bits = (w / 4).clamp(4, 16);
-        let max_val = (1u32 << n_bits).saturating_sub(1);
-        let val = (ctx.eased * max_val as f32).round() as u32;
-
-        let bit_w = w / n_bits;
-        let bit_w = bit_w.max(1);
-
-        for bit in 0..n_bits {
-            // MSB on the left.
-            let bit_idx = n_bits - 1 - bit;
-            let on = (val >> bit_idx) & 1 == 1;
-            let x0 = bit * bit_w;
-            let bw = bit_w.saturating_sub(1).max(1);
-
-            if on {
-                // Lit bit: full column.
-                draw::fill_rect(grid, x0, 0, bw, h);
-                // Tint.
-                let t = bit as f32 / n_bits.max(1) as f32;
-                let color = ctx.palette.sample(t);
-                let cx = (x0 / 2).min(cells_w.saturating_sub(1));
-                for cy in 0..cells_h {
-                    draw::tint_row(grid, cy, cx, cx, color);
+        // A head-switch noise band rolls up the frame.
+        let band_y = (((1.0 - (ctx.time * 0.5).fract()) * h as f32) as i32).min(h as i32 - 2);
+        for y in band_y..(band_y + 2).min(h as i32) {
+            for x in 0..w as i32 {
+                if hash3(x, y, slot) > 0.45 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        // Washed-tape tint with chroma-fringe rows near the noise band.
+        for cy in 0..ctx.height {
+            let row_mid = cy as i32 * 4 + 2;
+            let c = if (row_mid - band_y).abs() < 3 {
+                SW_WHITE
+            } else if (row_mid - band_y).abs() < 6 {
+                if cy % 2 == 0 {
+                    SW_PINK
+                } else {
+                    SW_CYAN
                 }
             } else {
-                // Unlit bit: just the bottom dot.
-                draw::dot(grid, x0, h.saturating_sub(1));
-            }
-        }
-
-        // Time-based flicker on the LSB to suggest counting.
-        let lsb_x = (n_bits - 1) * bit_w;
-        if (ctx.time * 8.0).fract() > 0.5 {
-            draw::vline(grid, lsb_x, 0, h.saturating_sub(1));
+                mix(SW_CYAN, SW_WHITE, 0.35)
+            };
+            draw::tint_row(grid, cy, 0, ctx.width - 1, c);
         }
         Ok(())
     }
 }
 
-// ─── 10. Heartbeat / EKG ────────────────────────────────────────────────────
-
-/// An EKG trace advances with progress. A sharp spike pulses once per second
-/// driven by `ctx.time`; the baseline has filled up to `ctx.eased`.
-struct Heartbeat;
-impl ProgressStyle for Heartbeat {
+/// Bouncing equalizer columns wake up left to right with progress.
+struct RetroEq;
+impl ProgressStyle for RetroEq {
     fn name(&self) -> &str {
-        "heartbeat"
+        "retro-eq"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "EKG heartbeat line pulses in real time; trace advances with progress"
+        "Neon equalizer columns waking up with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let filled = ((ctx.eased * w as f32) as usize).min(w);
-        let base = (h * 2 / 3).min(h.saturating_sub(1));
-
-        // Draw baseline up to the filled point.
-        draw::hline(grid, 0, filled.saturating_sub(1), base);
-
-        // EKG spike: a repeating sharp bump that scrolls at ctx.time.
-        // Spike width in dots.
-        let spike_w = (w / 6).max(4);
-        // Phase: spike repeats every 1.0 seconds.
-        let phase = ctx.time.fract();
-        // Spike head position (leading edge of the filled region, scrolling).
-        let spike_center = if filled > spike_w {
-            let travel = filled - spike_w;
-            let scroll = (phase * travel as f32) as usize;
-            scroll + spike_w / 2
-        } else {
-            filled / 2
-        };
-
-        // Draw the spike shape: /\_ with sharp peak.
-        let peak_h = (h as f32 * 0.85) as usize;
-        for dx in 0..spike_w {
-            let x = spike_center.saturating_sub(spike_w / 2) + dx;
-            if x >= w {
-                break;
-            }
-            // Normalised position within spike [0,1].
-            let t = dx as f32 / spike_w.max(1) as f32;
-            let y_offset: i32 = if t < 0.25 {
-                // Rising: base → peak.
-                let rise = t / 0.25;
-                -((rise * peak_h as f32) as i32)
-            } else if t < 0.5 {
-                // Falling from peak: peak → below base (the "S" dip).
-                let fall = (t - 0.25) / 0.25;
-                -(((1.0 - fall) * peak_h as f32) as i32)
-            } else if t < 0.65 {
-                // Small negative dip.
-                let dip = (t - 0.5) / 0.15;
-                (dip * h as f32 * 0.15) as i32
+        grid.enable_color_support();
+        let bar_w = 4usize;
+        let gap = 2usize;
+        let n = w / (bar_w + gap);
+        let margin = (w - n * (bar_w + gap) + gap) / 2;
+        let active = (ctx.eased * n as f32).round() as usize;
+        for i in 0..n {
+            let x0 = i * (bar_w + gap) + margin;
+            let t = i as f32 / n.max(1) as f32;
+            let height = if i < active {
+                // Rates quantized to quarter-hertz so the 4s loop is seamless.
+                let rate = 0.5 + 0.25 * (hash2(i as i32, 5) * 4.0).floor();
+                let bounce = (TAU * (ctx.time * rate + hash2(i as i32, 9))).sin().abs();
+                (2.0 + bounce * (h as f32 - 3.0)) as usize
             } else {
-                0
+                1
             };
-            let y = (base as i32 + y_offset).clamp(0, h as i32 - 1);
-            draw::dot(grid, x, y as usize);
-        }
-
-        // Tint.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+            for y in (h - height.min(h))..h {
+                for x in x0..(x0 + bar_w).min(w) {
+                    draw::dot(grid, x, y);
+                }
+            }
+            // Column color ramps pink→cyan; the cap cell burns white.
+            let color = mix(SW_PINK, SW_CYAN, t);
+            let top_cell = (h - height.min(h)) / 4;
+            for cy in top_cell..ctx.height {
+                let c0 = x0 / 2;
+                let c1 = (x0 + bar_w - 1) / 2;
+                let c = if cy == top_cell && i < active {
+                    SW_WHITE
+                } else {
+                    color
+                };
+                draw::tint_row(grid, cy, c0, c1, c);
             }
         }
         Ok(())
     }
 }
 
-// ─── 11. Circuit trace ───────────────────────────────────────────────────────
-
-/// A circuit-board trace routes across the bar: horizontal runs punctuated by
-/// 90-degree turns and junction dots. The lit portion grows with eased progress
-/// and "current" pulses along the trace driven by `ctx.time`.
-struct CircuitTrace;
-impl ProgressStyle for CircuitTrace {
+/// A fan of sky lasers switches on beam by beam over a dark grid.
+struct LaserHorizon;
+impl ProgressStyle for LaserHorizon {
     fn name(&self) -> &str {
-        "circuit-trace"
+        "laser-horizon"
     }
     fn theme(&self) -> &str {
-        "tech"
+        "synthwave"
     }
     fn describe(&self) -> &str {
-        "Circuit board trace with routing turns, lit by progress"
+        "Sky lasers fanning on over the horizon"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let filled = ((ctx.eased * w as f32) as usize).min(w);
-
-        // Build a simple repeating trace: horizontal run, then a vertical
-        // "via" jog, then continue. Segment length varies by column using hash.
-        let seg_len = (w / 8).max(4);
-        let mut x = 0usize;
-        let mut y = h / 2;
-        let mut up = true; // next jog direction.
-
-        while x < filled {
-            // Horizontal run.
-            let run = seg_len + (hash(x as u32 * 3 + 17) % seg_len as u32) as usize;
-            let run_end = (x + run).min(filled);
-            draw::hline(grid, x, run_end.saturating_sub(1), y);
-            x = run_end;
-            if x >= filled {
-                break;
-            }
-
-            // Vertical jog (via).
-            let jog = (h / 3).max(1);
-            let (y0, y1) = if up {
-                let new_y = y.saturating_sub(jog);
-                (new_y, y)
-            } else {
-                let new_y = (y + jog).min(h.saturating_sub(1));
-                (y, new_y)
-            };
-            draw::vline(grid, x.saturating_sub(1), y0, y1);
-            // Junction dot (pad).
-            draw::dot(grid, x.saturating_sub(1), y0);
-            draw::dot(grid, x.saturating_sub(1), y1);
-            y = if up {
-                y.saturating_sub(jog)
-            } else {
-                (y + jog).min(h.saturating_sub(1))
-            };
-            up = !up;
-        }
-
-        // "Current pulse": a bright dot riding the trace, driven by time.
-        let pulse_x = ((ctx.time * 0.7).fract() * filled as f32) as usize;
-        let pulse_x = pulse_x.min(filled.saturating_sub(1));
-        // Draw a 3-dot flare around the pulse.
-        for dx in 0..3usize {
-            let px = pulse_x.saturating_sub(1) + dx;
-            if px < w {
-                draw::dot(grid, px, h / 2);
+        grid.enable_color_support();
+        let horizon = h as i32 - 4;
+        let cx = w as i32 / 2;
+        // Dark floor grid.
+        for k in -5..=5i32 {
+            let bx = cx + k * 11;
+            let steps = h as i32 - 1 - horizon;
+            for s in 1..=steps {
+                draw::dot_i(grid, cx + (bx - cx) * s / steps.max(1), horizon + s);
             }
         }
-
-        // Tint the lit region.
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..filled_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        draw::hline(grid, 0, w - 1, horizon as usize);
+        // Beams fan out over 180°, switching on with progress; the whole fan
+        // breathes side to side with time.
+        let beams = 9;
+        let lit = (ctx.eased * beams as f32).round() as i32;
+        let sway = (TAU * 0.25 * ctx.time).sin() * 0.18;
+        let mut pulse_cells: Vec<(usize, usize)> = Vec::new();
+        for b in 0..beams {
+            if b >= lit {
+                continue;
             }
+            let ang = std::f32::consts::PI * (0.08 + 0.84 * b as f32 / (beams - 1) as f32) + sway;
+            let (dx, dy) = (ang.cos(), -ang.sin());
+            let mut i = 0f32;
+            loop {
+                let x = cx as f32 + dx * i;
+                let y = horizon as f32 + dy * i;
+                if x < 0.0 || x >= w as f32 || y < 0.0 {
+                    break;
+                }
+                // Solid beam with a bright pulse racing outward.
+                draw::dot_i(grid, x as i32, y as i32);
+                if ((ctx.time * 1.0 + b as f32 * 0.25).fract() * 60.0 - i).abs() < 3.0 {
+                    pulse_cells.push((x as usize / 2, y as usize / 4));
+                }
+                i += 1.0;
+            }
+        }
+        // Tint: pink beams in the sky, cyan horizon, violet floor.
+        for cy in 0..ctx.height {
+            let row_mid = cy as i32 * 4 + 2;
+            if (row_mid - horizon).abs() <= 2 {
+                draw::tint_row(grid, cy, 0, ctx.width - 1, SW_CYAN);
+            } else if row_mid > horizon {
+                draw::tint_row(grid, cy, 0, ctx.width - 1, SW_VIOLET);
+            }
+        }
+        // Sky rows: paint only cells the beams touched, then re-flash pulses.
+        let sky_cells = (horizon as usize) / 4;
+        for cy in 0..sky_cells {
+            for cxl in 0..ctx.width {
+                let ch = grid.get_char(cxl, cy);
+                if ch != '\u{2800}' && ch != ' ' {
+                    let _ = grid.set_cell_color(cxl, cy, SW_PINK);
+                }
+            }
+        }
+        for (px, py) in pulse_cells {
+            let _ = grid.set_cell_color(px, py, SW_WHITE);
+        }
+        Ok(())
+    }
+}
+
+/// Meteors streak across a twinkling sky while the ground bar fills.
+struct Starfall;
+impl ProgressStyle for Starfall {
+    fn name(&self) -> &str {
+        "starfall"
+    }
+    fn theme(&self) -> &str {
+        "synthwave"
+    }
+    fn describe(&self) -> &str {
+        "Shooting stars over a filling neon skyline"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        grid.enable_color_support();
+        let ground = h - 3;
+        let slot = (ctx.time * 2.0) as i32;
+        // Star field.
+        for i in 0..26 {
+            let sx = (hash2(i, 31) * w as f32) as i32;
+            let sy = (hash2(i, 47) * (ground as f32 - 2.0)) as i32;
+            if hash3(i, 1, slot) > 0.3 {
+                draw::dot_i(grid, sx, sy);
+            }
+        }
+        // Shooting stars: heads on quarter-hertz cycles with six-dot tails.
+        let mut head_cells: Vec<(usize, usize)> = Vec::new();
+        for m in 0..3i32 {
+            let f = (ctx.time * 0.25 + m as f32 / 3.0).fract();
+            let sx = hash2(m, 77) * w as f32 * 0.7;
+            let head_x = sx + f * w as f32 * 0.9;
+            let head_y = f * (ground as f32 - 2.0);
+            for k in 0..6i32 {
+                let x = head_x as i32 - k * 2;
+                let y = head_y as i32 - k;
+                draw::dot_i(grid, x, y);
+                if k == 0 && x >= 0 && y >= 0 {
+                    head_cells.push((x as usize / 2, y as usize / 4));
+                }
+            }
+        }
+        // Sky tint: violet field, then white-hot meteor heads on top.
+        for cy in 0..(ground / 4) {
+            for cxl in 0..ctx.width {
+                let ch = grid.get_char(cxl, cy);
+                if ch != '\u{2800}' && ch != ' ' {
+                    let _ = grid.set_cell_color(cxl, cy, SW_VIOLET);
+                }
+            }
+        }
+        for (hx, hy) in head_cells {
+            let _ = grid.set_cell_color(hx, hy, SW_WHITE);
+        }
+        // Ground bar: solid pink fill over a sparse dotted track, so the
+        // read survives in monochrome too.
+        let filled = (ctx.eased * w as f32).round() as usize;
+        for x in (0..w).step_by(3) {
+            draw::dot(grid, x, ground + 1);
+        }
+        for y in ground..h {
+            for x in 0..filled {
+                draw::dot(grid, x, y);
+            }
+        }
+        let gcell = ground / 4;
+        draw::tint_row(grid, gcell, 0, ctx.width - 1, SW_DUSK);
+        if filled > 0 {
+            draw::tint_row(grid, gcell, 0, filled / 2, SW_PINK);
+            let _ = grid.set_cell_color((filled / 2).min(ctx.width - 1), gcell, SW_CYAN);
+        }
+        Ok(())
+    }
+}
+
+/// A little coupe drives the bar toward the sun, dashes streaming past.
+struct Outrun;
+impl ProgressStyle for Outrun {
+    fn name(&self) -> &str {
+        "outrun"
+    }
+    fn theme(&self) -> &str {
+        "synthwave"
+    }
+    fn describe(&self) -> &str {
+        "Coupe cruising the bar toward the sun"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        grid.enable_color_support();
+        let road = h as i32 - 4;
+        // Destination sun, low on the right.
+        let (sun_x, sun_r) = (w as i32 - 7, 5i32);
+        let stripe_shift = (ctx.time * 3.0) as i32;
+        for dy in -sun_r..=0 {
+            let y = road - 2 + dy;
+            if y < 0 || (dy > -2 && (y + stripe_shift).rem_euclid(2) == 0) {
+                continue;
+            }
+            let half = ((sun_r * sun_r - dy * dy) as f32).sqrt() as i32;
+            for x in (sun_x - half)..=(sun_x + half) {
+                draw::dot_i(grid, x, y);
+            }
+            draw::tint_row(
+                grid,
+                (y / 4) as usize,
+                ((sun_x - half) / 2).max(0) as usize,
+                ((sun_x + half) / 2) as usize,
+                sun_ramp((dy + sun_r) as f32 / sun_r as f32),
+            );
+        }
+        // Road with center dashes streaming left as the car "moves".
+        draw::hline(grid, 0, w - 1, road as usize);
+        let dash_off = ((ctx.time * 8.0) as i32) % 8;
+        let mut x = -dash_off;
+        while x < w as i32 {
+            for k in 0..4 {
+                draw::dot_i(grid, x + k, road + 2);
+            }
+            x += 8;
+        }
+        // The coupe: an 8×3 wedge with a spoiler, riding at eased.
+        let car_x = (ctx.eased * (w as f32 - 12.0)) as i32 + 1;
+        let car_y = road - 3;
+        for k in 2..8 {
+            draw::dot_i(grid, car_x + k, car_y);
+        }
+        for k in 0..9 {
+            draw::dot_i(grid, car_x + k, car_y + 1);
+            draw::dot_i(grid, car_x + k, car_y + 2);
+        }
+        // Wheel bumps.
+        draw::dot_i(grid, car_x + 2, car_y + 3);
+        draw::dot_i(grid, car_x + 6, car_y + 3);
+        // Exhaust puffs trailing off behind.
+        let slot = (ctx.time * 4.0) as i32;
+        for p in 1..5i32 {
+            let px = car_x - p * 3 - ((ctx.time * 8.0) as i32 % 3);
+            if px >= 0 && hash3(p, 2, slot) > 0.35 {
+                draw::dot_i(grid, px, car_y + 1 + (hash3(p, 5, slot) * 2.0) as i32);
+            }
+        }
+        // Tints: pink car, cyan road, violet dashes.
+        for cxl in 0..ctx.width {
+            draw::tint_row(grid, (road / 4) as usize, cxl, cxl, SW_CYAN);
+        }
+        let car_cell_y = (car_y / 4).max(0) as usize;
+        for cxl in (car_x / 2).max(0)..=((car_x + 9) / 2).min(ctx.width as i32 - 1) {
+            let _ = grid.set_cell_color(cxl as usize, car_cell_y, SW_PINK);
+        }
+        Ok(())
+    }
+}
+
+/// Twin neon sine ribbons snake across the bar as far as progress allows.
+struct NeonWave;
+impl ProgressStyle for NeonWave {
+    fn name(&self) -> &str {
+        "neon-wave"
+    }
+    fn theme(&self) -> &str {
+        "synthwave"
+    }
+    fn describe(&self) -> &str {
+        "Pink and cyan sine ribbons racing to the edge"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        grid.enable_color_support();
+        let mid = h as f32 / 2.0;
+        let filled = (ctx.eased * w as f32).round() as usize;
+        // Dim track line so the remaining path stays visible.
+        for x in (0..w).step_by(3) {
+            draw::dot(grid, x, mid as usize);
+        }
+        for cy in 0..ctx.height {
+            draw::tint_row(grid, cy, 0, ctx.width - 1, SW_DUSK);
+        }
+        // Two ribbons, opposite phase velocities, meeting glow in white.
+        for x in 0..filled {
+            let xf = x as f32;
+            let y1 = mid + (xf * 0.12 + TAU * 0.5 * ctx.time).sin() * (mid - 2.0);
+            let y2 = mid + (xf * 0.155 - TAU * 0.5 * ctx.time + 1.2).sin() * (mid - 2.0);
+            for (y, c) in [(y1, SW_PINK), (y2, SW_CYAN)] {
+                let yi = y as i32;
+                draw::dot_i(grid, x as i32, yi);
+                draw::dot_i(grid, x as i32, yi + 1);
+                let cell = (x / 2, (yi.max(0) as usize) / 4);
+                let close = (y1 - y2).abs() < 2.5;
+                let _ = grid.set_cell_color(
+                    cell.0,
+                    cell.1.min(ctx.height - 1),
+                    if close { SW_WHITE } else { c },
+                );
+            }
+        }
+        // Leading spark.
+        if filled > 0 && filled < w {
+            let xf = filled as f32;
+            let y = mid + (xf * 0.12 + TAU * 0.5 * ctx.time).sin() * (mid - 2.0);
+            for d in 0..3i32 {
+                draw::dot_i(grid, filled as i32 + d, y as i32);
+            }
+            let _ = grid.set_cell_color(
+                (filled / 2).min(ctx.width - 1),
+                ((y as usize) / 4).min(ctx.height - 1),
+                SW_WHITE,
+            );
         }
         Ok(())
     }
@@ -1599,7 +1631,7 @@ fn main() {
     let name = std::env::args()
         .nth(1)
         .unwrap_or_else(|| DEFAULT_STYLE.to_string());
-    let styles = progress::styles::tech::styles();
+    let styles = progress::styles::synthwave::styles();
     let Some(style) = styles.iter().find(|s| s.name() == name) else {
         eprintln!("unknown style '{name}'. available in this file:");
         for s in &styles {

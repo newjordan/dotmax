@@ -1073,7 +1073,10 @@ impl ProgressStyle for ShimmerVeil {
             if hash3(x as i32, 0, slot / 2) < 0.3 {
                 continue;
             }
-            let top = (hash3(x as i32, 1, slot / 3) * h as f32 * 0.4) as usize;
+            // Rays sway smoothly on top of the slot flicker so every frame
+            // has motion, not just the slot boundaries.
+            let sway = ((x as f32 * 0.2 + ctx.time * TAU * 0.5).sin() * 1.8 + 1.8) as usize;
+            let top = sway + (hash3(x as i32, 1, slot / 3) * h as f32 * 0.3) as usize;
             let len = 2 + (hash3(x as i32, 2, slot / 2) * h as f32 * 0.7) as usize;
             draw::vline(grid, x, top, (top + len).min(h.saturating_sub(1)));
         }

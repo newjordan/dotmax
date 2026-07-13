@@ -104,7 +104,10 @@ mod image_benchmarks {
 criterion_group!(quick_benches, bench_grid_overhead);
 
 #[cfg(feature = "image")]
-criterion_group!(quick_image_benches, image_benchmarks::bench_load_image_overhead);
+criterion_group!(
+    quick_image_benches,
+    image_benchmarks::bench_load_image_overhead
+);
 
 #[cfg(feature = "image")]
 criterion_main!(quick_benches, quick_image_benches);

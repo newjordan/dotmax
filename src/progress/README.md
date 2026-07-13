@@ -1,6 +1,6 @@
 # `dotmax::progress` — modular terminal progress styles
 
-644 loading bars, spinners, gauges, borders, screen-wipes and animated
+664 loading bars, spinners, gauges, borders, screen-wipes and animated
 visualizations for braille/block terminals, built to be **lifted out and dropped
 into other programs**. Every style is a stateless pure function of
 `(progress, time)`; everything a style needs arrives through one immutable

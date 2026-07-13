@@ -486,7 +486,11 @@ pub fn is_animated_gif(path: impl AsRef<Path>) -> Result<bool> {
         Ok(d) => d,
         Err(e) => {
             // If we can't decode as GIF, treat as static (not animated)
-            tracing::debug!("GIF decode error for {:?}: {:?}, treating as static", path, e);
+            tracing::debug!(
+                "GIF decode error for {:?}: {:?}, treating as static",
+                path,
+                e
+            );
             return Ok(false);
         }
     };
@@ -608,7 +612,11 @@ pub fn is_animated_png(path: impl AsRef<Path>) -> Result<bool> {
         Ok(r) => r,
         Err(e) => {
             // If we can't decode as PNG, treat as not animated
-            tracing::debug!("PNG decode error for {:?}: {:?}, treating as static", path, e);
+            tracing::debug!(
+                "PNG decode error for {:?}: {:?}, treating as static",
+                path,
+                e
+            );
             return Ok(false);
         }
     };

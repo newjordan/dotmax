@@ -101,10 +101,7 @@ impl Particle {
 
     /// Check if particle is within visible bounds
     fn is_visible(&self, dot_width: usize, dot_height: usize) -> bool {
-        self.x >= 0.0
-            && self.x < dot_width as f64
-            && self.y >= 0.0
-            && self.y < dot_height as f64
+        self.x >= 0.0 && self.x < dot_width as f64 && self.y >= 0.0 && self.y < dot_height as f64
     }
 }
 
@@ -122,7 +119,10 @@ impl SimpleRng {
     /// Generate next random u64
     fn next_u64(&mut self) -> u64 {
         // LCG parameters from Numerical Recipes
-        self.state = self.state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        self.state = self
+            .state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
         self.state
     }
 
@@ -138,12 +138,7 @@ impl SimpleRng {
 }
 
 /// Create a burst of particles at the given position
-fn create_explosion(
-    x: f64,
-    y: f64,
-    rng: &mut SimpleRng,
-    scheme: &ColorScheme,
-) -> Vec<Particle> {
+fn create_explosion(x: f64, y: f64, rng: &mut SimpleRng, scheme: &ColorScheme) -> Vec<Particle> {
     let mut particles = Vec::with_capacity(PARTICLES_PER_EXPLOSION);
 
     for _ in 0..PARTICLES_PER_EXPLOSION {
@@ -222,12 +217,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let spawn_y = rng.range(10.0, (dot_height / 2) as f64);
 
             // Create explosion with current color scheme
-            let mut new_particles = create_explosion(
-                spawn_x,
-                spawn_y,
-                &mut rng,
-                &schemes[current_scheme],
-            );
+            let mut new_particles =
+                create_explosion(spawn_x, spawn_y, &mut rng, &schemes[current_scheme]);
             particles.append(&mut new_particles);
 
             // Cycle to next color scheme

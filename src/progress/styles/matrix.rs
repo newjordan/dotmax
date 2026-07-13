@@ -227,6 +227,12 @@ impl ProgressStyle for Trace {
                         let x = head - k;
                         draw::dot(grid, x, mid.saturating_sub(1));
                         draw::dot(grid, x, mid);
+                        // The packet head bulges above and below the track so
+                        // the stream reads even without color.
+                        if k < 2 {
+                            draw::dot(grid, x, mid.saturating_sub(2));
+                            draw::dot(grid, x, (mid + 1).min(h - 1));
+                        }
                         let c = if k < 2 {
                             TINT_HOT
                         } else {
@@ -321,7 +327,16 @@ impl ProgressStyle for CodeColumn {
                 }
                 let chunk = hash2((x / 4) as i32, y as i32 + 31);
                 if chunk < 0.72 && hash2(x as i32, y as i32 + 17) < 0.9 {
-                    draw::glyph(grid, x, y, if chunk < 0.2 { '▓' } else { '█' });
+                    // The freshest line of code still settles: its glyphs
+                    // flicker between weights as if mid-compile.
+                    let fresh = typed - idx < cw;
+                    let slot = (ctx.time * 4.0) as i32;
+                    let heavy = if fresh && hash3(x as i32, y as i32, slot) < 0.35 {
+                        chunk >= 0.2
+                    } else {
+                        chunk < 0.2
+                    };
+                    draw::glyph(grid, x, y, if heavy { '▓' } else { '█' });
                 }
             }
         }
@@ -352,8 +367,12 @@ impl ProgressStyle for PhosphorTrail {
         let lit = (ctx.eased * total as f32).round() as usize;
         let full_rows = lit / w.max(1);
         let partial = lit % w.max(1);
+        // A CRT hum bar sweeps down the lit raster once per loop.
+        let hum = ((ctx.time * 0.25).fract() * h as f32) as usize;
         for y in 0..full_rows.min(h) {
-            draw::hline(grid, 0, w - 1, y);
+            if y != hum {
+                draw::hline(grid, 0, w - 1, y);
+            }
         }
         if full_rows < h {
             for x in 0..partial {
@@ -580,7 +599,14 @@ impl ProgressStyle for TerminalBoot {
                 if x > line_len || hash2((x / 3) as i32, y as i32 + 5) < 0.25 {
                     continue;
                 }
-                let pick = (hash2(x as i32, y as i32) * TEXT.len() as f32) as usize;
+                // The newest line of the log still churns as it prints.
+                let idx = y * cw + x;
+                let pick = if typed - idx < cw {
+                    (hash3(x as i32, y as i32, (ctx.time * 4.0) as i32) * TEXT.len() as f32)
+                        as usize
+                } else {
+                    (hash2(x as i32, y as i32) * TEXT.len() as f32) as usize
+                };
                 draw::glyph(grid, x, y, TEXT[pick.min(TEXT.len() - 1)]);
                 let shimmer = 0.3 * hash3(x as i32, y as i32, (ctx.time * 2.0) as i32);
                 let _ = grid.set_cell_color(x, y, sample_tint(0.45 + shimmer));
