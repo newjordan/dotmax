@@ -13,11 +13,21 @@ use shakmaty::{Chess, Position};
 /// Render a PGN string to a braille-encoded string.
 ///
 /// This is an agnostic output suitable for terminals or web frontends.
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::TerminalBackend`] if the PGN contains no readable game,
+/// or a [`DotmaxError`] from board rendering (invalid grid dimensions).
 pub fn render_pgn(pgn: &str, move_index: Option<usize>) -> Result<String, DotmaxError> {
     render_pgn_with_options(pgn, move_index, &RenderOptions::default())
 }
 
 /// Render a PGN string to a braille-encoded string with options.
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::TerminalBackend`] if the PGN contains no readable game,
+/// or a [`DotmaxError`] from board rendering (invalid grid dimensions).
 pub fn render_pgn_with_options(
     pgn: &str,
     move_index: Option<usize>,

@@ -57,6 +57,12 @@ impl Default for BoardColorScheme {
 }
 
 /// Render a chess position to a BrailleGrid with options.
+///
+/// # Errors
+///
+/// Returns [`DotmaxError::InvalidDimensions`] if `options.target_width` or
+/// `options.target_height` is zero or exceeds the maximum grid size. Dot and color
+/// writes are bounds-checked against the grid before being issued.
 pub fn render_position_with_options(
     pos: &Chess,
     options: &RenderOptions,
@@ -145,6 +151,11 @@ pub fn render_position_with_options(
 }
 
 /// Render a chess position to a BrailleGrid (legacy simple API).
+///
+/// # Errors
+///
+/// Propagates errors from [`render_position_with_options`]; the default 32×16 grid
+/// is always valid, so this does not fail in practice.
 pub fn render_position(pos: &Chess) -> Result<BrailleGrid, DotmaxError> {
     render_position_with_options(pos, &RenderOptions::default())
 }

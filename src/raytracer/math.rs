@@ -40,6 +40,7 @@ impl Vector3 {
     }
 
     #[inline]
+    #[must_use]
     pub fn cross(&self, other: &Vector3) -> Vector3 {
         Vector3::new(
             self.y * other.z - self.z * other.y,
@@ -49,6 +50,7 @@ impl Vector3 {
     }
 
     #[inline]
+    #[must_use]
     pub fn normalize(&self) -> Vector3 {
         let len = self.length();
         if len == 0.0 {

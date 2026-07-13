@@ -285,8 +285,8 @@ impl GifPlayer {
         let previous_canvas = vec![0u8; canvas_size];
 
         // Get terminal size for rendering
-        let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map_or((80, 24), |(w, h)| (w as usize, h as usize));
+        let (terminal_width, terminal_height) =
+            crossterm::terminal::size().map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         Ok(Self {
             path,

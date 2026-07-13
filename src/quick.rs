@@ -102,8 +102,9 @@ const DEFAULT_HEIGHT: usize = 24;
 /// Tuple of `(width, height)` in terminal cells.
 #[inline]
 fn terminal_size() -> (usize, usize) {
-    crossterm::terminal::size()
-        .map_or((DEFAULT_WIDTH, DEFAULT_HEIGHT), |(w, h)| (w as usize, h as usize))
+    crossterm::terminal::size().map_or((DEFAULT_WIDTH, DEFAULT_HEIGHT), |(w, h)| {
+        (w as usize, h as usize)
+    })
 }
 
 /// Waits for any keypress.

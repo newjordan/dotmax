@@ -107,8 +107,7 @@ impl ProgressStyle for BubblesRising {
         }
 
         // Number of bubbles tied to progress (minimum 1 while progress > 0).
-        let n_bubbles =
-            ((ctx.eased * 14.0).round() as usize).max(usize::from(ctx.progress > 0.0));
+        let n_bubbles = ((ctx.eased * 14.0).round() as usize).max(usize::from(ctx.progress > 0.0));
 
         for i in 0..n_bubbles {
             // Each bubble has a fixed column origin spread across the width.

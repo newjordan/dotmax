@@ -85,6 +85,7 @@ impl MeshData {
 
     /// Normalize the mesh to fit within a unit cube centered at origin
     /// Returns a new MeshData with transformed positions
+    #[must_use]
     pub fn normalize(&self) -> Self {
         let center = self.center();
         let max_dim = self.max_dimension();
@@ -130,6 +131,12 @@ impl MeshData {
 /// # Returns
 /// * `Ok(MeshData)` - Successfully loaded mesh data
 /// * `Err(...)` - File not found, invalid format, or missing required data
+///
+/// # Errors
+/// Returns an error if the file cannot be read or parsed as glTF, if it contains
+/// no mesh or no primitive, if the primitive lacks position or index data, if the
+/// normal count differs from the position count, if the index count is not a
+/// multiple of 3, or if any index is out of range for the vertex list.
 ///
 /// # Example
 /// ```ignore
@@ -205,8 +212,8 @@ pub fn load_gltf(path: &str) -> Result<MeshData> {
         );
     }
 
-    // Validate all indices are in bounds
-    let max_index = *indices.iter().max().unwrap();
+    // Validate all indices are in bounds (indices is non-empty, checked above)
+    let max_index = indices.iter().copied().max().unwrap_or(0);
     if max_index >= positions.len() as u32 {
         anyhow::bail!(
             "Index out of bounds: {} >= {} vertices",

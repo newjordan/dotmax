@@ -316,8 +316,8 @@ impl VideoPlayer {
         let estimated_frame_count = video_duration.map(|d| (d.as_secs_f64() * fps) as usize);
 
         // Get terminal size for rendering
-        let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map_or((80, 24), |(w, h)| (w as usize, h as usize));
+        let (terminal_width, terminal_height) =
+            crossterm::terminal::size().map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         // Calculate target pixel dimensions for braille grid
         // Each braille cell is 2 pixels wide and 4 pixels tall
