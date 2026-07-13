@@ -3,7 +3,8 @@
 use super::math::Vector3;
 
 /// Default wireframe grid spacing (radians) and tolerance (thickness in radians)
-pub const DEFAULT_WIREFRAME_STEP_RAD: f32 = 10.0_f32.to_radians();
+// `f32::to_radians` is not const-stable until Rust 1.85; MSRV is 1.70. 10 degrees == PI / 18.
+pub const DEFAULT_WIREFRAME_STEP_RAD: f32 = std::f32::consts::PI / 18.0;
 pub const DEFAULT_WIREFRAME_TOL_RAD: f32 = 0.03; // ~1.7 degrees
 
 /// Returns true if the surface normal lies on a wireframe grid line.

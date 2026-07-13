@@ -33,6 +33,8 @@ exclude = [
     "docs/sprint-*.md",
     # Test assets and fixtures (large images/files)
     "tests/visual/",
+    # Depends on the excluded tests/visual/ module; would not compile from the tarball.
+    "tests/visual_regression.rs",
     "tests/assets/",
     "tests/fixtures/",
     "tests/test_assets/",
@@ -307,6 +309,34 @@ required-features = ["raytracer", "image", "chess"]
 name = "purple_rain"
 required-features = ["raytracer", "image"]
 
+[[test]]
+name = "temporal_coherence_tests"
+required-features = ["image"]
+
+[[example]]
+name = "generate_watermark"
+required-features = ["image"]
+
+[[example]]
+name = "render_braille"
+required-features = ["image"]
+
+[[example]]
+name = "render_cuda_dojo"
+required-features = ["image"]
+
+[[example]]
+name = "webcam_viewer"
+required-features = ["video"]
+
+[[example]]
+name = "webcam_selector"
+required-features = ["video"]
+
+[[example]]
+name = "webcam_tuner"
+required-features = ["image", "video"]
+
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
@@ -323,3 +353,30 @@ cast_lossless = "allow"            # Explicit casts are clearer
 unnecessary_cast = "allow"         # Explicit casts aid readability
 needless_pass_by_value = "allow"   # Clearer in examples
 imprecise_flops = "allow"          # Performance not critical in examples
+
+# Advisory (pedantic/nursery) lints that CI's `-D warnings` would otherwise make blocking.
+# Each is allowed deliberately; `clippy::all` stays at deny and is the real quality bar.
+#
+# Fixing this would be a BREAKING API change: `ProgressStyle::{name,theme,describe}` are
+# public trait methods returning `&str`, and the lint wants `&'static str`. Narrowing the
+# trait's return type breaks every downstream implementor (see the doc example in progress/mod.rs).
+unnecessary_literal_bound = "allow"
+# Sibling of `imprecise_flops` (already allowed above). Rewriting `a * b + c` as `mul_add`
+# fuses the multiply-add, which CHANGES floating-point rounding and can therefore shift
+# rendered output (and the visual-regression baselines). It is also slower on CPUs without
+# hardware FMA. Not a win for a software renderer.
+suboptimal_flops = "allow"
+# Graphics/math code legitimately uses short, similar names: x/y/z, cx/cy, nx/ny, r/g/b.
+similar_names = "allow"
+many_single_char_names = "allow"
+# Packed color/bit constants (e.g. 0xRRGGBB) are more readable without digit separators.
+unreadable_literal = "allow"
+# Audited 2026-07-13: all 7 hits are false positives on standard formulas — the ray/sphere
+# discriminant (h^2 - ac), circle tests (dx^2 + dy^2 <= r^2), and a complex quadratic map
+# (z^2 = (x^2 - y^2) + i*2xy). The operand groupings are correct as written.
+suspicious_operation_groupings = "allow"
+# Noisy across a large rendering surface; not a correctness signal.
+must_use_candidate = "allow"
+missing_const_for_fn = "allow"
+items_after_statements = "allow"
+use_self = "allow"
