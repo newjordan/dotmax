@@ -1,6 +1,27 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+
+// Expected counts come from the committed catalog index, so regenerating the
+// catalog (new themes/styles) never breaks these tests. The tests then assert
+// the SERVED catalog matches the committed one.
+// Residual constraint: `classic` must stay the first theme with `solid` as its
+// first style — the dialog tests below open the first card by name.
+const catalogIndex = JSON.parse(
+  fs.readFileSync(new URL("../public/catalog/index.json", import.meta.url), "utf-8"),
+) as {
+  total: number;
+  fps: number;
+  frames_per_style: number;
+  themes: Array<{ name: string; count: number; kind: string }>;
+  styles: Array<{ kind: string }>;
+};
+const TOTAL = catalogIndex.total;
+const THEME_PILL_COUNT = catalogIndex.themes.length + 1; // +1 for the "All" pill
+const kindTotal = (kind: string) => catalogIndex.styles.filter((s) => s.kind === kind).length;
 
 test("example cards render terminal previews without horizontal overflow", async ({ page }, testInfo) => {
+  test.skip(true, "section parked behind SHOW_SECONDARY_SECTIONS");
   await page.goto("/");
   await page.locator("#examples").scrollIntoViewIfNeeded();
 
@@ -53,6 +74,7 @@ test("example cards render terminal previews without horizontal overflow", async
 });
 
 test("mini terminals load frame packs and advance visible animations", async ({ page }) => {
+  test.skip(true, "section parked behind SHOW_SECONDARY_SECTIONS");
   await page.goto("/");
   await page.locator("#examples").scrollIntoViewIfNeeded();
 
@@ -79,6 +101,7 @@ test("mini terminals load frame packs and advance visible animations", async ({ 
 });
 
 test("reduced motion shows static mini terminal frames", async ({ browser }) => {
+  test.skip(true, "section parked behind SHOW_SECONDARY_SECTIONS");
   const context = await browser.newContext({ reducedMotion: "reduce" });
   const page = await context.newPage();
   await page.goto("/");
@@ -118,38 +141,44 @@ test("copy buttons expose copied feedback", async ({ page }) => {
   await expect(firstCopy).toHaveAccessibleName("Copied");
 });
 
-test("loading bar catalog defaults to a curated set and expands to all 586", async ({ page }) => {
+test("style library defaults to a curated set and expands to the full catalog", async ({ page }, testInfo) => {
   await page.goto("/");
   await page.locator("#loading-bars").scrollIntoViewIfNeeded();
 
   const grid = page.locator(".loading-bars-grid");
-  await expect(grid).toHaveAttribute("data-loading-bar-count", "586");
+  await expect(grid).toHaveAttribute("data-loading-bar-count", String(TOTAL));
   // The catalog is gated: a curated 12 render by default to keep the page scannable.
   await expect(page.locator(".loading-bar-card")).toHaveCount(12);
-  await expect(page.locator(".loading-theme-pill")).toHaveCount(53);
+  await expect(page.locator(".loading-theme-pill")).toHaveCount(THEME_PILL_COUNT);
+  await expect(page.locator(".loading-kind-tab")).toHaveCount(6);
 
   // Expander reveals the full catalog on demand.
-  await page.getByRole("button", { name: /Browse all 586 styles/ }).click();
-  await expect(page.locator(".loading-bar-card")).toHaveCount(586);
+  await page.getByRole("button", { name: new RegExp(`Browse all ${TOTAL} styles`) }).click();
+  await expect(page.locator(".loading-bar-card")).toHaveCount(TOTAL);
 
-  const catalogTiming = await page.evaluate(async () => {
-    const response = await fetch("/examples/loading_bar_catalog.json");
-    const catalog = await response.json();
+  // Catalog v2: colored frames at 12 fps, split per theme, with style source.
+  // Relative fetches resolve against the page URL, so they work under any base.
+  const catalogShape = await page.evaluate(async () => {
+    const index = await (await fetch("catalog/index.json")).json();
+    const pack = await (await fetch("catalog/themes/classic.json")).json();
+    type Frame = { t: string[]; c?: string[] };
+    type Style = { frames: Frame[]; source: string; palette: string[] };
+    const styles = pack.styles as Style[];
     return {
-      fps: catalog.fps,
-      framesPerStyle: catalog.frames_per_style,
-      firstProgress: catalog.styles[0].frames[0].join("\n"),
-      quarterProgress: catalog.styles[0].frames[Math.floor(catalog.frames_per_style / 4)].join("\n"),
-      middleProgress: catalog.styles[0].frames[Math.floor(catalog.frames_per_style / 2)].join("\n"),
-      threeQuarterProgress: catalog.styles[0].frames[Math.floor((catalog.frames_per_style * 3) / 4)].join("\n"),
-      lastProgress: catalog.styles[0].frames[catalog.frames_per_style - 1].join("\n"),
+      fps: index.fps,
+      framesPerStyle: index.frames_per_style,
+      total: index.total,
+      themeCount: index.themes.length,
+      colored: styles.some((s) => s.frames.some((f) => f.c)),
+      allHaveSource: styles.every((s) => s.source.includes("impl ProgressStyle")),
     };
   });
-  expect(catalogTiming.fps).toBe(4);
-  expect(catalogTiming.framesPerStyle).toBe(32);
-  expect(catalogTiming.firstProgress).not.toBe(catalogTiming.middleProgress);
-  expect(catalogTiming.quarterProgress).toBe(catalogTiming.threeQuarterProgress);
-  expect(catalogTiming.lastProgress).not.toBe(catalogTiming.middleProgress);
+  expect(catalogShape.fps).toBe(12);
+  expect(catalogShape.framesPerStyle).toBe(48);
+  expect(catalogShape.total).toBe(TOTAL);
+  expect(catalogShape.themeCount).toBe(catalogIndex.themes.length);
+  expect(catalogShape.colored).toBe(true);
+  expect(catalogShape.allHaveSource).toBe(true);
 
   const firstCard = page.locator(".loading-bar-card").first();
   await expect(firstCard.locator(".loading-bar-output")).not.toBeEmpty();
@@ -157,10 +186,106 @@ test("loading bar catalog defaults to a curated set and expands to all 586", asy
   await page.waitForTimeout(350);
   await expect(grid).not.toHaveAttribute("data-loading-bar-frame", initialFrame ?? "");
 
+  // Color actually reaches the DOM as inline spans once packs load.
+  await expect(page.locator(".loading-bar-output span[style*='color']").first()).toBeAttached();
+
   await page.getByPlaceholder("Search wildlife, quantum, sinewave, spinner...").fill("quantum");
   const filteredCount = await page.locator(".loading-bar-card").count();
   expect(filteredCount).toBeGreaterThan(0);
-  expect(filteredCount).toBeLessThan(586);
+  expect(filteredCount).toBeLessThan(TOTAL);
+
+  // Kind tabs gate the non-bar families.
+  await page.getByPlaceholder("Search wildlife, quantum, sinewave, spinner...").fill("");
+  await page.getByRole("tab", { name: /Borders/ }).click();
+  await expect(page.locator(".loading-bar-card")).toHaveCount(kindTotal("border"));
+  await page.getByRole("tab", { name: /Spinners/ }).click();
+  await expect(page.locator(".loading-bar-card")).toHaveCount(kindTotal("spinner"));
+  await expect(page.locator(".loading-bar-output span[style*='color']").first()).toBeAttached();
+
+  await page.locator(".loading-bar-card").first().scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath(`style-library-${testInfo.project.name}.png`),
+    fullPage: false,
+  });
+});
+
+test("style cards open a detail dialog with three copy formats", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          window.localStorage.setItem("copied-value", value);
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.locator("#loading-bars").scrollIntoViewIfNeeded();
+  await page.locator(".loading-bar-card").first().click();
+
+  const dialog = page.getByRole("dialog", { name: "solid style" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(".style-dialog-tab")).toHaveCount(4);
+
+  // Default tab: dotmax crate snippet with the exact style lookup.
+  await expect(dialog.locator(".style-dialog-code")).toContainText('styles_for_theme("classic")');
+  await expect(dialog.locator(".style-dialog-code")).toContainText('s.name() == "solid"');
+
+  // Standalone tab: a full single-file program defaulting to this style.
+  await dialog.getByRole("tab", { name: "standalone .rs" }).click();
+  await expect(dialog.locator(".style-dialog-code")).toContainText('const DEFAULT_STYLE: &str = "solid";');
+  await expect(dialog.locator(".style-dialog-code")).toContainText("fn main()");
+
+  // Shell tab: zero-dependency ANSI playback script.
+  await dialog.getByRole("tab", { name: "shell script" }).click();
+  await expect(dialog.locator(".style-dialog-code")).toContainText("#!/usr/bin/env bash");
+  await expect(dialog.locator(".style-dialog-code")).toContainText("frames=(");
+
+  // Source tab: the style's Rust implementation, for reading.
+  await dialog.getByRole("tab", { name: "style source" }).click();
+  await expect(dialog.locator(".style-dialog-code")).toContainText("impl ProgressStyle for");
+
+  // Copy gives feedback and lands the content.
+  const copy = dialog.locator(".copy-button");
+  await copy.click();
+  await expect(copy).toHaveAttribute("data-copy-state", "copied");
+  const copied = await page.evaluate(() => window.localStorage.getItem("copied-value"));
+  expect(copied).toContain("impl ProgressStyle for");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});
+
+test("copied shell script actually plays ANSI frames in bash", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await page.locator("#loading-bars").scrollIntoViewIfNeeded();
+  await page.locator(".loading-bar-card").first().click();
+
+  const dialog = page.getByRole("dialog", { name: "solid style" });
+  await dialog.getByRole("tab", { name: "shell script" }).click();
+  await expect(dialog.locator(".style-dialog-code")).toContainText("#!/usr/bin/env bash");
+  const script = await dialog.locator(".style-dialog-code").innerText();
+
+  const scriptPath = testInfo.outputPath("style.sh");
+  fs.writeFileSync(scriptPath, script);
+  let stdout = "";
+  try {
+    stdout = execFileSync("bash", [scriptPath], { timeout: 1500, encoding: "utf-8" });
+  } catch (error) {
+    // The script loops forever by design; the timeout kill is expected.
+    stdout = String((error as { stdout?: string }).stdout ?? "");
+  }
+  // Frames painted: ANSI truecolor runs, cursor-up rewinds, and visible glyphs.
+  expect(stdout).toContain("[38;2;");
+  expect(stdout).toContain("[4A");
+  expect(stdout.replace(/\[[0-9;?]*[A-Za-z]/g, "").trim().length).toBeGreaterThan(0);
+
+  await page.screenshot({
+    path: testInfo.outputPath(`style-dialog-${testInfo.project.name}.png`),
+    fullPage: false,
+  });
 });
 
 test("TUI pattern workbench exposes tables folders tabs and schematics", async ({ page }) => {
@@ -243,7 +368,8 @@ test("supporting cards stay visual instead of text-only", async ({ page }, testI
   await expect(page.locator(".doc-card-visual img")).toHaveCount(5);
   await expect(page.locator(".open-source-visual img")).toHaveCount(1);
 
-  const containedImages = await page.locator(".gallery-item img, .feature-card-visual img, .doc-card-visual img, .open-source-visual img").evaluateAll((nodes) =>
+  // .gallery-item img dropped: the gallery is parked behind SHOW_SECONDARY_SECTIONS.
+  const containedImages = await page.locator(".feature-card-visual img, .doc-card-visual img, .open-source-visual img").evaluateAll((nodes) =>
     nodes.every((node) => getComputedStyle(node).objectFit === "contain"),
   );
   expect(containedImages).toBe(true);
@@ -256,6 +382,7 @@ test("supporting cards stay visual instead of text-only", async ({ page }, testI
 });
 
 test("install docs and open-source sections are visually led", async ({ page }, testInfo) => {
+  test.skip(true, "section parked behind SHOW_SECONDARY_SECTIONS");
   await page.goto("/");
 
   await page.locator("#install").scrollIntoViewIfNeeded();
@@ -288,9 +415,9 @@ test("command palette opens with Cmd/Ctrl+K and searches the catalog", async ({ 
   // Static quick actions show before typing.
   await expect(page.locator(".cmdk-item")).not.toHaveCount(0);
 
-  // Fuzzy search reaches into the 586-style loading-bar catalog.
+  // Fuzzy search reaches into the full style catalog.
   await page.getByPlaceholder("Search examples, loading bars, docs…").fill("gradient");
-  await expect(page.locator(".cmdk-group-label", { hasText: "Loading bars" })).toBeVisible();
+  await expect(page.locator(".cmdk-group-label", { hasText: "Styles" })).toBeVisible();
 
   // Escape closes it.
   await page.keyboard.press("Escape");
@@ -313,7 +440,7 @@ test("build-with-ai section exposes agent prompt and llms.txt", async ({ page })
 });
 
 test("llms.txt is served at the site root", async ({ page }) => {
-  const response = await page.request.get("/llms.txt");
+  const response = await page.request.get("llms.txt");
   expect(response.ok()).toBe(true);
   const body = await response.text();
   expect(body).toContain("# dotmax");

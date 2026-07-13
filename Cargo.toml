@@ -36,6 +36,8 @@ exclude = [
     "tests/assets/",
     "tests/fixtures/",
     "tests/test_assets/",
+    # Community website assets and generated frontend files
+    "site/",
     # Generated files
     "*.context.xml",
     # Planning docs
@@ -48,6 +50,8 @@ ratatui = "0.29"         # Terminal UI framework
 crossterm = "0.29"       # Cross-platform terminal I/O
 thiserror = "2.0"        # Error handling derive macros
 tracing = "0.1"          # Structured logging
+serde = { version = "1.0", features = ["derive"] }  # Frame-pack export format
+serde_json = "1.0"       # Static web demo frame-pack writer
 
 # Optional dependencies (feature-gated)
 image = { version = "0.25", optional = true }

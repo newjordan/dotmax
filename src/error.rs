@@ -101,6 +101,13 @@ pub enum DotmaxError {
     #[error("Terminal backend error: {0}")]
     TerminalBackend(String),
 
+    /// Frame-pack export failed
+    ///
+    /// This error is returned when static animation frame data cannot be
+    /// serialized for website or documentation previews.
+    #[error("Frame export error: {0}")]
+    FrameExport(String),
+
     /// Unicode braille character conversion failed
     ///
     /// This should rarely occur as braille Unicode range (U+2800–U+28FF) is

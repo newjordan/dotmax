@@ -29,13 +29,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { withBase } from "./lib/withBase";
 import { AgentSection } from "./components/AgentSection";
 import { CodeBlock } from "./components/CodeBlock";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { CopyButton } from "./components/CopyButton";
 import { ExampleTerminalPreview, type ExamplePreview } from "./components/ExampleTerminalPreview";
-import { LoadingBarsSection } from "./components/LoadingBarsSection";
+import { HeroShowcase } from "./components/HeroShowcase";
+import { LoaderMarquee } from "./components/LoaderMarquee";
 import { QuickStartSection } from "./components/QuickStartSection";
+import { StyleBrowserSection } from "./components/StyleBrowserSection";
 import { TuiPatternsSection } from "./components/TuiPatternsSection";
 
 const links = {
@@ -53,10 +56,13 @@ const installCommand = "cargo add dotmax --features image";
 const dependencySnippet = `[dependencies]
 dotmax = { version = "0.1", features = ["image"] }`;
 
+// Secondary sections (quick start, install, examples, gallery) are parked for
+// now. Flip SHOW_SECONDARY_SECTIONS to true to bring them back; the nav,
+// section observer, command palette, and hero anchors are all gated to match.
+const SHOW_SECONDARY_SECTIONS = false;
+
 const navItems = [
-  ["Quick start", "#quickstart"],
-  ["Examples", "#examples"],
-  ["Gallery", "#gallery"],
+  ["Styles", "#loading-bars"],
   ["Build with AI", "#build-with-ai"],
   ["Docs", "#docs"],
 ] as const;
@@ -109,10 +115,10 @@ type ExampleBlock = {
 const categories = ["All", "Rich media", "Animations", "Experimental"] as const;
 
 const categoryVisuals: Record<(typeof categories)[number], string> = {
-  All: "/gallery/color_tiger.png",
-  "Rich media": "/gallery/color_tiger.png",
-  Animations: "/gallery/gottem.png",
-  Experimental: "/gallery/sphere.png",
+  All: withBase("/gallery/color_tiger.png"),
+  "Rich media": withBase("/gallery/color_tiger.png"),
+  Animations: withBase("/gallery/gottem.png"),
+  Experimental: withBase("/gallery/sphere.png"),
 };
 
 const exampleBlocks: ExampleBlock[] = [
@@ -126,7 +132,7 @@ const exampleBlocks: ExampleBlock[] = [
     description: "The smallest useful start: create a braille grid, set dots, and render it to the terminal.",
     preview: {
       title: "examples/hello_braille.rs",
-      image: "/gallery/grid_formation.png",
+      image: withBase("/gallery/grid_formation.png"),
       imageAlt: "Braille grid formation rendered in terminal space",
       rows: [
         "dotmax: grid 80x24 ready",
@@ -152,7 +158,7 @@ show(&grid)?;`,
     description: "Lines, circles, rectangles, polygons, filled shapes, and density glyphs on one terminal canvas.",
     preview: {
       title: "examples/shapes_demo.rs",
-      framePack: "/examples/shapes_demo.json",
+      framePack: withBase("/examples/shapes_demo.json"),
       rows: [
         "primitives",
         "rectangles circles polygons",
@@ -177,7 +183,7 @@ show(&grid)?;`,
     description: "Terminal color capability detection, RGB conversion, predefined schemes, and custom palettes.",
     preview: {
       title: "examples/color_schemes_demo.rs",
-      framePack: "/examples/color_schemes_demo.json",
+      framePack: withBase("/examples/color_schemes_demo.json"),
       rows: [
         "terminal truecolor: yes",
         "heatmap | ocean | sunset",
@@ -201,7 +207,7 @@ show(&grid)?;`,
     description: "Load local image files, resize them for the current terminal, and render them as braille output.",
     preview: {
       title: "examples/view_image.rs",
-      image: "/gallery/color_tiger.png",
+      image: withBase("/gallery/color_tiger.png"),
       imageAlt: "Color image rendered as terminal braille output",
       rows: ["resized 1024x768 -> 96x42", "braille cells written: 4032", "truecolor render path"],
     },
@@ -221,7 +227,7 @@ quick::show_file("animated.gif")?;`,
     description: "Compare clean thresholding, Floyd-Steinberg, Bayer, and Atkinson output for the same image.",
     preview: {
       title: "examples/dither_comparison.rs",
-      image: "/gallery/viper_ascii_art.png",
+      image: withBase("/gallery/viper_ascii_art.png"),
       imageAlt: "Dithered terminal art output",
       rows: ["methods: clean | floyd | bayer | atkinson", "threshold 0.52 | gamma 1.00", "side-by-side preview ready"],
     },
@@ -242,7 +248,7 @@ quick::show_file("animated.gif")?;`,
     description: "Render SVG assets and text-heavy SVG fixtures into terminal-safe raster output.",
     preview: {
       title: "examples/svg_demo.rs",
-      image: "/gallery/snake_color_closeup.png",
+      image: withBase("/gallery/snake_color_closeup.png"),
       imageAlt: "Detailed terminal rendering used as a raster output preview",
       rows: [
         "svg viewport 512x512",
@@ -264,7 +270,7 @@ cargo run --example svg_font_quality --features "image svg"`,
     description: "Frame timing, redraw loops, double buffering, and cached sequences for responsive TUI motion.",
     preview: {
       title: "examples/simple_animation.rs",
-      framePack: "/examples/simple_animation.json",
+      framePack: withBase("/examples/simple_animation.json"),
       rows: [
         "fps target 30 | buffer on",
         "frame 0142  x=44  y=21",
@@ -291,7 +297,7 @@ cargo run --example svg_font_quality --features "image svg"`,
     description: "Rotating braille spinner states captured as a static frame stream for lightweight web playback.",
     preview: {
       title: "examples/animations/loading_spinner.rs",
-      framePack: "/examples/loading_spinner.json",
+      framePack: withBase("/examples/loading_spinner.json"),
       rows: ["loading.", "spinner states", "braille arc trail"],
     },
     snippet: `let angle = frame as f64 * 36.0_f64.to_radians();
@@ -309,7 +315,7 @@ renderer.render(&grid)?;`,
     description: "Scrolling sine waves rendered with colored line primitives and replayed from compact frames.",
     preview: {
       title: "examples/animations/waveform.rs",
-      framePack: "/examples/waveform.json",
+      framePack: withBase("/examples/waveform.json"),
       rows: ["waveform demo", "three phase-shifted waves", "line primitives"],
     },
     snippet: `draw_line_colored(&mut grid, px, py, x, y, color, None)?;
@@ -326,7 +332,7 @@ renderer.render(&grid)?;`,
     description: "Particle bursts with per-cell color fading, captured without running a browser-side Rust process.",
     preview: {
       title: "examples/animations/fireworks.rs",
-      framePack: "/examples/fireworks.json",
+      framePack: withBase("/examples/fireworks.json"),
       rows: ["fireworks particles", "deterministic bursts", "color fades"],
     },
     snippet: `grid.set_dot(x, y)?;
@@ -343,7 +349,7 @@ grid.set_cell_color(x / 2, y / 4, particle.faded_color())?;`,
     description: "A catalog of terminal loading bars and progress loaders built as reusable dotmax rendering styles.",
     preview: {
       title: "examples/loading_bars.rs",
-      framePack: "/examples/loading_bars.json",
+      framePack: withBase("/examples/loading_bars.json"),
       rows: [
         "classic       [############------] 62%",
         "sinewave      ~~~^^^~~~^^^~~~",
@@ -369,7 +375,7 @@ grid.set_cell_color(x / 2, y / 4, particle.faded_color())?;`,
     description: "Decode video frames and route them through the same terminal image renderer.",
     preview: {
       title: "examples/video_player.rs",
-      image: "/gallery/gottem.png",
+      image: withBase("/gallery/gottem.png"),
       imageAlt: "Animated media rendered in a terminal preview",
       rows: ["frame 0188 / 0420 | 24 fps", "decoder -> resize -> braille", "terminal media path"],
     },
@@ -387,7 +393,7 @@ cargo run --example render_tuner --features video -- demo.mp4`,
     description: "Live camera input with interactive controls for brightness, contrast, gamma, threshold, and dithering.",
     preview: {
       title: "examples/webcam_tuner.rs",
-      image: "/gallery/snake_color_closeup.png",
+      image: withBase("/gallery/snake_color_closeup.png"),
       imageAlt: "Live input style terminal tuning preview",
       rows: [
         "device /dev/video0 | 1280x720",
@@ -409,7 +415,7 @@ cargo run --example webcam_tuner --features video`,
     description: "CPU raytraced forms and wireframe experiments rendered back into braille terminal output.",
     preview: {
       title: "examples/raytrace_sphere.rs",
-      image: "/gallery/sphere.png",
+      image: withBase("/gallery/sphere.png"),
       imageAlt: "Wireframe sphere rendered as terminal graphics",
       rows: ["samples 32 | lights 2", "wireframe + shaded braille", "terminal 3D output"],
     },
@@ -427,7 +433,7 @@ cargo run --example zone_stream --release --features "raytracer image"`,
     description: "Parked for now. The pet experiment did not work well enough, so it belongs on the wishlist instead of the examples path.",
     preview: {
       title: "dotamax_pets",
-      image: "/gallery/gottem.png",
+      image: withBase("/gallery/gottem.png"),
       imageAlt: "Experimental animated terminal output placeholder",
       rows: [
         "status: wishlist",
@@ -446,42 +452,42 @@ const gallery = [
   {
     title: "Color tiger",
     caption: "Full color image rendering through braille cells.",
-    src: "/gallery/color_tiger.png",
+    src: withBase("/gallery/color_tiger.png"),
   },
   {
     title: "Viper tuner",
     caption: "Terminal art with live render controls.",
-    src: "/gallery/viper_ascii_art.png",
+    src: withBase("/gallery/viper_ascii_art.png"),
   },
   {
     title: "Snake closeup",
     caption: "High detail color terminal output.",
-    src: "/gallery/snake_color_closeup.png",
+    src: withBase("/gallery/snake_color_closeup.png"),
   },
   {
     title: "GIF playback",
     caption: "Animated media rendered in terminal space.",
-    src: "/gallery/gottem.png",
+    src: withBase("/gallery/gottem.png"),
   },
   {
     title: "Grid formation",
     caption: "Oscilloscope-style visualization output.",
-    src: "/gallery/grid_formation.png",
+    src: withBase("/gallery/grid_formation.png"),
   },
   {
     title: "Audio spectrograph",
     caption: "Dense signal visualizations for CLI tools.",
-    src: "/gallery/audio_spectrograph.png",
+    src: withBase("/gallery/audio_spectrograph.png"),
   },
   {
     title: "Sphere",
     caption: "Wireframe 3D rendered as terminal graphics.",
-    src: "/gallery/sphere.png",
+    src: withBase("/gallery/sphere.png"),
   },
   {
     title: "OBJ model",
     caption: "Model previews and experimental 3D output.",
-    src: "/gallery/snake_head_obj.png",
+    src: withBase("/gallery/snake_head_obj.png"),
   },
 ];
 
@@ -490,35 +496,35 @@ const docs = [
     title: "Getting started",
     icon: BookOpen,
     href: links.gettingStarted,
-    visual: "/gallery/grid_formation.png",
+    visual: withBase("/gallery/grid_formation.png"),
     text: "Install dotmax, create your first BrailleGrid, draw shapes, and render to a terminal.",
   },
   {
     title: "Examples",
     icon: Boxes,
     href: links.examples,
-    visual: "/gallery/viper_ascii_art.png",
+    visual: withBase("/gallery/viper_ascii_art.png"),
     text: "Run image, animation, color, webcam, video, SVG, primitive, and progress examples.",
   },
   {
     title: "Terminal compatibility",
     icon: Monitor,
     href: links.terminal,
-    visual: "/gallery/snake_color_closeup.png",
+    visual: withBase("/gallery/snake_color_closeup.png"),
     text: "Check viewport behavior across Windows Terminal, WSL, macOS, Linux, and unknown terminals.",
   },
   {
     title: "Performance",
     icon: Gauge,
     href: links.performance,
-    visual: "/gallery/audio_spectrograph.png",
+    visual: withBase("/gallery/audio_spectrograph.png"),
     text: "Use differential rendering, frame timing, and batching to keep terminal output responsive.",
   },
   {
     title: "API docs",
     icon: Code2,
     href: links.docs,
-    visual: "/gallery/sphere.png",
+    visual: withBase("/gallery/sphere.png"),
     text: "Browse modules for grids, primitives, color schemes, rendering, animation, and quick helpers.",
   },
 ];
@@ -566,43 +572,6 @@ function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; acti
   );
 }
 
-function TerminalPreview() {
-  const rows = [
-    "$ cargo run --example image_browser --features \"image svg\"",
-    "dotmax: detected terminal 120x36, truecolor",
-    "",
-    "examples 52+       modules grid image media color",
-    "resize pipeline    7.90 ms",
-    "terminal render    2.10 ms",
-  ];
-
-  return (
-    <div className="terminal-preview">
-      <div className="terminal-top">
-        <div className="window-controls" aria-hidden="true">
-          <span className="bg-coral" />
-          <span className="bg-amber" />
-          <span className="bg-terminal" />
-        </div>
-        <span>examples/image_browser.rs</span>
-      </div>
-      <div className="terminal-body">
-        <img
-          src="/gallery/snake_color_closeup.png"
-          alt="A snake photograph rendered as high-detail truecolor braille cells in a terminal"
-          fetchPriority="high"
-          decoding="async"
-        />
-        <div className="terminal-overlay">
-          {rows.map((row, index) => (
-            <p key={index}>{row || "\u00a0"}</p>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Hero() {
   return (
     <section className="hero-docs-shell">
@@ -624,13 +593,13 @@ function Hero() {
           </div>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <a className="button button-primary" href="#examples">
+            <a className="button button-primary" href="#loading-bars">
               <Boxes size={18} />
-              Browse examples
+              Browse styles
             </a>
-            <a className="button button-secondary" href="#quickstart">
+            <a className="button button-secondary" href="#patterns">
               <Play size={18} />
-              Quick start
+              TUI patterns
             </a>
             <a className="button button-ghost" href={links.github} target="_blank" rel="noreferrer">
               <Github size={18} />
@@ -656,7 +625,7 @@ function Hero() {
           </div>
         </div>
         <div className="hero-preview-stack">
-          <TerminalPreview />
+          <HeroShowcase />
         </div>
       </div>
     </section>
@@ -904,12 +873,12 @@ function GallerySection() {
 
 function UseCasesSection() {
   const useCases = [
-    ["Ratatui dashboards", "Charts, status panels, thumbnails, and compact visual summaries.", "/gallery/grid_formation.png"],
-    ["CLI inspection tools", "Inspect images, video frames, generated output, and model artifacts in place.", "/gallery/snake_head_obj.png"],
-    ["Terminal media", "Render PNG, JPG, GIF, APNG, SVG, video, and webcam streams with features enabled.", "/gallery/gottem.png"],
-    ["Games and simulations", "Build tiny terminal scenes, particles, board overlays, and animation loops.", "/gallery/snake_color_closeup.png"],
-    ["Monitoring", "Turn telemetry into heatmaps, spectrographs, and dense status surfaces.", "/gallery/audio_spectrograph.png"],
-    ["Generative art", "Use braille cells as a high-resolution terminal canvas.", "/gallery/color_tiger.png"],
+    ["Ratatui dashboards", "Charts, status panels, thumbnails, and compact visual summaries.", withBase("/gallery/grid_formation.png")],
+    ["CLI inspection tools", "Inspect images, video frames, generated output, and model artifacts in place.", withBase("/gallery/snake_head_obj.png")],
+    ["Terminal media", "Render PNG, JPG, GIF, APNG, SVG, video, and webcam streams with features enabled.", withBase("/gallery/gottem.png")],
+    ["Games and simulations", "Build tiny terminal scenes, particles, board overlays, and animation loops.", withBase("/gallery/snake_color_closeup.png")],
+    ["Monitoring", "Turn telemetry into heatmaps, spectrographs, and dense status surfaces.", withBase("/gallery/audio_spectrograph.png")],
+    ["Generative art", "Use braille cells as a high-resolution terminal canvas.", withBase("/gallery/color_tiger.png")],
   ];
 
   return (
@@ -968,7 +937,7 @@ function OpenSourceSection() {
     <section className="section border-t border-line">
       <div className="open-source-band">
         <div className="open-source-visual">
-          <img src="/gallery/color_tiger.png" alt="Full color terminal rendering from dotmax" loading="lazy" />
+          <img src={withBase("/gallery/color_tiger.png")} alt="Full color terminal rendering from dotmax" loading="lazy" />
           <div className="open-source-visual-caption">
             <span>terminal render</span>
             <strong>MIT / Apache-2.0</strong>
@@ -1021,28 +990,32 @@ function Footer() {
   );
 }
 
-const sectionIds = ["quickstart", "examples", "gallery", "build-with-ai", "docs"] as const;
+const sectionIds = ["loading-bars", "patterns", "build-with-ai", "docs"] as const;
 
 function useCommandItems(): CommandItem[] {
   return useMemo(() => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const quickActions: CommandItem[] = [
       { id: "qa-install", group: "Quick actions", label: "Copy install command", hint: "⌘I", icon: Copy, action: { type: "copy", value: installCommand } },
-      { id: "qa-llms", group: "Quick actions", label: "Copy llms.txt URL", icon: FileText, action: { type: "copy", value: `${origin}/llms.txt` } },
+      { id: "qa-llms", group: "Quick actions", label: "Copy llms.txt URL", icon: FileText, action: { type: "copy", value: `${origin}${withBase("/llms.txt")}` } },
       { id: "qa-github", group: "Quick actions", label: "Open GitHub repository", icon: Github, action: { type: "link", href: links.github } },
       { id: "qa-docs", group: "Quick actions", label: "Open API docs (docs.rs)", icon: BookOpen, action: { type: "link", href: links.docs } },
       { id: "qa-crate", group: "Quick actions", label: "Open crates.io", icon: PackagePlus, action: { type: "link", href: links.crate } },
     ];
 
-    const exampleItems: CommandItem[] = exampleBlocks.map((example) => ({
-      id: `ex-${example.title}`,
-      group: "Examples",
-      label: example.title,
-      hint: example.category,
-      icon: example.icon,
-      keywords: example.tags.join(" "),
-      action: { type: "scroll", target: "#examples" },
-    }));
+    // Per-example palette entries scroll to #examples, which is parked behind
+    // SHOW_SECONDARY_SECTIONS. They return automatically when the flag is on.
+    const exampleItems: CommandItem[] = SHOW_SECONDARY_SECTIONS
+      ? exampleBlocks.map((example) => ({
+          id: `ex-${example.title}`,
+          group: "Examples",
+          label: example.title,
+          hint: example.category,
+          icon: example.icon,
+          keywords: example.tags.join(" "),
+          action: { type: "scroll", target: "#examples" },
+        }))
+      : [];
 
     const docItems: CommandItem[] = docs.map((doc) => ({
       id: `doc-${doc.title}`,
@@ -1053,10 +1026,9 @@ function useCommandItems(): CommandItem[] {
     }));
 
     const sectionItems: CommandItem[] = [
-      { id: "sec-quickstart", group: "Jump to", label: "Quick start", icon: Play, action: { type: "scroll", target: "#quickstart" } },
-      { id: "sec-examples", group: "Jump to", label: "Examples", icon: Boxes, action: { type: "scroll", target: "#examples" } },
-      { id: "sec-gallery", group: "Jump to", label: "Gallery", icon: ImageIcon, action: { type: "scroll", target: "#gallery" } },
-      { id: "sec-bars", group: "Jump to", label: "Loading bars", icon: LoaderCircle, action: { type: "scroll", target: "#loading-bars" } },
+      // Quick start / Examples / Gallery jump items are parked with their
+      // sections behind SHOW_SECONDARY_SECTIONS.
+      { id: "sec-bars", group: "Jump to", label: "Style library", icon: LoaderCircle, action: { type: "scroll", target: "#loading-bars" } },
       { id: "sec-patterns", group: "Jump to", label: "TUI patterns", icon: Layers3, action: { type: "scroll", target: "#patterns" } },
       { id: "sec-ai", group: "Jump to", label: "Build with AI", icon: Bot, action: { type: "scroll", target: "#build-with-ai" } },
       { id: "sec-docs", group: "Jump to", label: "Docs", icon: BookOpen, action: { type: "scroll", target: "#docs" } },
@@ -1108,16 +1080,23 @@ export default function App() {
     <main>
       <Nav onOpenPalette={() => setPaletteOpen(true)} activeSection={activeSection} />
       <Hero />
-      <QuickStartSection />
-      <InstallSection />
-      <ExamplesSection />
-      <GallerySection />
-      <LoadingBarsSection />
+      <LoaderMarquee />
+      <StyleBrowserSection />
       <TuiPatternsSection />
       <AgentSection />
       <DocsSection />
       <UseCasesSection />
       <OpenSourceSection />
+      {/* Parked behind SHOW_SECONDARY_SECTIONS — kept in their old relative
+          order so re-enabling drops them back in a sane spot. */}
+      {SHOW_SECONDARY_SECTIONS && (
+        <>
+          <QuickStartSection />
+          <InstallSection />
+          <ExamplesSection />
+          <GallerySection />
+        </>
+      )}
       <Footer />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={commandItems} />
     </main>

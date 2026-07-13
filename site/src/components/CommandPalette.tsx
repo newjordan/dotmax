@@ -1,10 +1,12 @@
 import { Check, CornerDownLeft, Search, type LucideIcon } from "lucide-react";
+import { loadCatalogIndex } from "../catalog/packs";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type CommandAction =
   | { type: "scroll"; target: string }
   | { type: "link"; href: string }
-  | { type: "copy"; value: string };
+  | { type: "copy"; value: string }
+  | { type: "style"; id: string };
 
 export type CommandItem = {
   id: string;
@@ -16,7 +18,7 @@ export type CommandItem = {
   action: CommandAction;
 };
 
-type LoadingBarStyle = { id: string; theme: string; name: string; description: string; command: string };
+type CatalogStyle = { id: string; theme: string; name: string; kind: string; description: string };
 
 export function CommandPalette({
   open,
@@ -34,23 +36,22 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Lazily pull the loading-bar catalog so all 586 styles stay findable here.
+  // Lazily pull the catalog index so every style stays findable here.
   useEffect(() => {
     if (!open || barItems.length > 0) return;
     let cancelled = false;
-    fetch("/examples/loading_bar_catalog.json")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data: { styles: LoadingBarStyle[] }) => {
+    loadCatalogIndex()
+      .then((data: { styles: CatalogStyle[] }) => {
         if (cancelled) return;
         setBarItems(
           data.styles.map((s) => ({
             id: `bar-${s.id}`,
-            group: "Loading bars",
+            group: "Styles",
             label: s.name,
             hint: s.theme,
             icon: Search,
-            keywords: `${s.theme} ${s.description}`,
-            action: { type: "scroll", target: "#loading-bars" } as CommandAction,
+            keywords: `${s.theme} ${s.kind} ${s.description}`,
+            action: { type: "style", id: s.id } as CommandAction,
           })),
         );
       })
@@ -76,7 +77,7 @@ export function CommandPalette({
     const q = query.trim().toLowerCase();
     const matched =
       q.length === 0
-        ? items // when empty, show only the curated static items (not 586 bars)
+        ? items // when empty, show only the curated static items (not the full style catalog)
         : all.filter((item) => `${item.label} ${item.group} ${item.hint ?? ""} ${item.keywords ?? ""}`.toLowerCase().includes(q));
     return matched.slice(0, q.length === 0 ? matched.length : 40);
   }, [query, all, items]);
@@ -106,6 +107,14 @@ export function CommandPalette({
     if (action.type === "link") {
       window.open(action.href, "_blank", "noopener,noreferrer");
       onClose();
+      return;
+    }
+    if (action.type === "style") {
+      onClose();
+      window.setTimeout(() => {
+        document.querySelector("#loading-bars")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.dispatchEvent(new CustomEvent("dotmax:open-style", { detail: { id: action.id } }));
+      }, 50);
       return;
     }
     // scroll

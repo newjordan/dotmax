@@ -1,4 +1,5 @@
 import { Bot, Check, ClipboardCopy, ExternalLink, FileText, Terminal } from "lucide-react";
+import { withBase } from "../lib/withBase";
 import { useState } from "react";
 
 const githubUrl = "https://github.com/newjordan/dotmax";
@@ -27,7 +28,7 @@ function CopyPill({ value, label }: { value: string; label: string }) {
 }
 
 export function AgentSection() {
-  const llmsUrl = `${siteOrigin()}/llms.txt`;
+  const llmsUrl = `${siteOrigin()}${withBase("/llms.txt")}`;
 
   const agentPrompt = `You are adding terminal graphics to a Rust project with the \`dotmax\` crate.
 
@@ -39,7 +40,7 @@ Core API:
 - dotmax::grid::BrailleGrid               // the cell canvas
 - dotmax::prelude::*                       // draw_line / draw_circle / draw_rectangle
 - dotmax::animation::AnimationLoop         // .fps(n).on_frame(..).run()
-- dotmax::progress::all_styles()           // 586 progress/loading-bar styles
+- dotmax::progress::all_styles()           // 644 progress/loading-bar styles
 
 Full machine-readable reference: ${llmsUrl}
 Write idiomatic, compiling Rust. Ask before enabling the "video" feature (it needs FFmpeg).`;
@@ -87,7 +88,7 @@ ${llmsUrl}`;
             the site root for any agent under context pressure.
           </p>
           <div className="ai-editor-row">
-            <a className="copy-pill" href="/llms.txt" target="_blank" rel="noreferrer">
+            <a className="copy-pill" href={withBase("/llms.txt")} target="_blank" rel="noreferrer">
               <FileText size={16} />
               Open llms.txt
             </a>

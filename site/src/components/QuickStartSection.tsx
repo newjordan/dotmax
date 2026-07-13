@@ -1,4 +1,5 @@
 import { Boxes, PackagePlus, Play } from "lucide-react";
+import { withBase } from "../lib/withBase";
 import { CopyButton } from "./CopyButton";
 
 const installLine = "cargo add dotmax --features image";
@@ -58,7 +59,7 @@ export function QuickStartSection() {
           </div>
           <div className="relative flex-1 bg-ink p-3">
             <img
-              src="/gallery/grid_formation.png"
+              src={withBase("/gallery/grid_formation.png")}
               alt="A circle and diagonal line drawn with dotmax primitives, rendered as green braille dots in a terminal"
               className="h-full max-h-[280px] w-full rounded-lg object-contain opacity-90"
               loading="lazy"

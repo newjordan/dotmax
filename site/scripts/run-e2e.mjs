@@ -3,7 +3,13 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const host = process.env.E2E_HOST ?? "127.0.0.1";
 const port = process.env.E2E_PORT ?? "4173";
-const baseURL = `http://${host}:${port}`;
+// E2E_CMD=preview serves the built dist/ (vite preview) instead of the dev
+// server; E2E_BASE=/dotmax/ additionally serves it under a subpath, which is
+// how the GitHub Pages smoke test (tests/base-path.spec.ts) runs.
+const command = process.env.E2E_CMD === "preview" ? "preview" : "dev";
+let basePath = process.env.E2E_BASE ?? "";
+if (basePath && !basePath.endsWith("/")) basePath += "/";
+const baseURL = `http://${host}:${port}${basePath || ""}`;
 const isWindows = process.platform === "win32";
 const viteBin = `node_modules/.bin/vite${isWindows ? ".cmd" : ""}`;
 const playwrightBin = `node_modules/.bin/playwright${isWindows ? ".cmd" : ""}`;
@@ -25,7 +31,12 @@ function runCommand(command, args) {
 
 function startServer() {
   serverExited = false;
-  server = spawn(viteBin, ["--host", host, "--port", port, "--strictPort"], {
+  const args =
+    command === "preview"
+      ? ["preview", "--host", host, "--port", port, "--strictPort"]
+      : ["--host", host, "--port", port, "--strictPort"];
+  if (basePath) args.push("--base", basePath);
+  server = spawn(viteBin, args, {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
@@ -73,7 +84,8 @@ function runPlaywright() {
     };
     delete testEnv.FORCE_COLOR;
 
-    const testProcess = spawn(playwrightBin, ["test"], {
+    const args = process.env.BASE_PATH_E2E ? ["test", "tests/base-path.spec.ts"] : ["test"];
+    const testProcess = spawn(playwrightBin, args, {
       stdio: "inherit",
       env: testEnv,
     });

@@ -78,8 +78,10 @@
 
 // Core modules (Epic 2)
 pub mod error;
+pub mod frame_export;
 pub mod grid;
 pub mod prelude;
+pub mod progress;
 pub mod quick;
 pub mod render;
 
@@ -88,6 +90,7 @@ pub mod utils;
 
 // Re-export public types for convenience
 pub use error::DotmaxError;
+pub use frame_export::{capture_frame, write_frame_pack, DotmaxFrame, DotmaxFramePack};
 pub use grid::{BrailleGrid, Color};
 pub use render::{TerminalBackend, TerminalCapabilities, TerminalRenderer, TerminalType};
 
@@ -107,7 +110,12 @@ pub use color::scheme_builder::ColorSchemeBuilder;
 pub use color::apply::{apply_color_scheme, apply_colors_to_grid};
 
 // Re-export animation types (Epic 6, Stories 6.1, 6.2, 6.3, 6.4, 6.5)
-pub use animation::{AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer, PrerenderedAnimation};
+pub use animation::{
+    AnimationLoop, AnimationLoopBuilder, DifferentialRenderer, FrameBuffer, FrameTimer, PrerenderedAnimation,
+};
+
+// Re-export progress-bar types (modular loading bars)
+pub use progress::{all_styles, styles_for_theme, BarContext, Easing, Palette, ProgressStyle};
 
 /// Convenience type alias for Results using `DotmaxError`
 ///
