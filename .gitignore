@@ -52,3 +52,11 @@ tests/fixtures/images/tiger_huge.png
 tests/fixtures/images/viper_4k.png
 tests/fixtures/images/viper_ultra_tall.png
 tests/fixtures/images/viper_ultra_wide.png
+
+# Local scratch experiments (not part of the crate)
+/examples/mikey.rs
+/examples/raphe.rs
+/examples/truck.rs
+/examples/gif_to_pack.rs
+/src/image/*.jpg
+/src/image/*.png
