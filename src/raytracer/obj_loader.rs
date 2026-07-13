@@ -29,6 +29,11 @@ fn parse_index(tok: &str, len: usize) -> Option<usize> {
 }
 
 /// Load a very simple OBJ (triangles/quads) into MeshData
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, or if it contains no
+/// geometry (no vertex positions, or no faces referencing them).
 pub fn load_obj<P: AsRef<Path>>(path: P) -> Result<MeshData> {
     let file = File::open(&path)
         .with_context(|| format!("Failed to open OBJ file: {}", path.as_ref().display()))?;
