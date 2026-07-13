@@ -23,7 +23,7 @@ fn plot_circle(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
         return;
     }
     // Circumference ≈ 2πr; sample at ≥2 dots per step so we don't miss any dot.
-    let steps = ((2.0 * PI * r).ceil() as usize * 2).max(8).min(2048);
+    let steps = ((2.0 * PI * r).ceil() as usize * 2).clamp(8, 2048);
     for i in 0..steps {
         let angle = 2.0 * PI * i as f32 / steps as f32;
         let px = cx + r * angle.cos();
@@ -36,7 +36,7 @@ fn plot_circle(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
 fn plot_line(grid: &mut BrailleGrid, x0: f32, y0: f32, x1: f32, y1: f32) {
     let dx = x1 - x0;
     let dy = y1 - y0;
-    let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1).min(4096);
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize).clamp(1, 4096);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
         let px = x0 + dx * t;
@@ -362,7 +362,7 @@ impl ProgressStyle for FruitOfLife {
         // Phase 1 (eased 0→0.5): reveal circles one by one.
         // Phase 2 (eased 0.5→1): draw connecting lines between all centres.
         let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let line_frac = ((ctx.eased - 0.5) * 2.0).max(0.0).min(1.0);
+        let line_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
 
         let reveal_circles = (circle_frac * total as f32).ceil() as usize;
         for (i, &(px, py)) in centres.iter().enumerate().take(reveal_circles.min(total)) {
@@ -568,18 +568,21 @@ impl ProgressStyle for TripodOfLife {
 
         // 3 circle centres at 120° intervals.
         let mut circle_centres = [(0f32, 0f32); 3];
-        for i in 0..3 {
+        for (i, centre) in circle_centres.iter_mut().enumerate() {
             let a = rot + i as f32 * 2.0 * PI / 3.0;
-            circle_centres[i] = (cx + r * 0.5 * a.cos(), cy + r * 0.5 * a.sin());
+            *centre = (cx + r * 0.5 * a.cos(), cy + r * 0.5 * a.sin());
         }
 
         // Reveal circles (phase 1: eased 0→0.5), then spoke arms (phase 2: 0.5→1).
         let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let arm_frac = ((ctx.eased - 0.5) * 2.0).max(0.0).min(1.0);
+        let arm_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
 
         let reveal_circles = (circle_frac * 3.0).ceil() as usize;
-        for i in 0..reveal_circles.min(3) {
-            let (px, py) = circle_centres[i];
+        for (i, &(px, py)) in circle_centres
+            .iter()
+            .enumerate()
+            .take(reveal_circles.min(3))
+        {
             plot_circle(grid, px, py, r);
             let color = ctx.palette.sample(i as f32 / 2.0);
             let (cw, ch) = grid.dimensions();

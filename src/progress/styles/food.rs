@@ -249,6 +249,8 @@ impl ProgressStyle for PizzaSlices {
                     }
                     let mut angle = fy.atan2(fx);
                     // Normalise angle into [a0, a1] range.
+                    // atan2 ∈ [-π, π] and a0 < 3π/2, so this runs at most twice.
+                    #[allow(clippy::while_float)]
                     while angle < a0 {
                         angle += 2.0 * PI;
                     }

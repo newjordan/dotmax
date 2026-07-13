@@ -5,18 +5,19 @@
 //! Run with:
 //!   cargo bench --bench color_schemes
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use dotmax::color::schemes::{
     blue_purple, cyan_magenta, get_scheme, grayscale, green_yellow, heat_map, list_schemes,
     monochrome, rainbow, ColorScheme,
 };
+use std::hint::black_box;
 
 /// Benchmark sample() for a single scheme
 fn bench_sample_single(c: &mut Criterion) {
     let scheme = rainbow();
 
     c.bench_function("sample_single_intensity", |b| {
-        b.iter(|| black_box(scheme.sample(black_box(0.5))))
+        b.iter(|| black_box(scheme.sample(black_box(0.5))));
     });
 }
 
@@ -30,7 +31,7 @@ fn bench_sample_gradient(c: &mut Criterion) {
                 let intensity = i as f32 / 99.0;
                 black_box(scheme.sample(black_box(intensity)));
             }
-        })
+        });
     });
 }
 
@@ -50,7 +51,7 @@ fn bench_sample_all_schemes(c: &mut Criterion) {
 
     for (name, scheme) in schemes {
         group.bench_with_input(BenchmarkId::new("sample", name), &scheme, |b, scheme| {
-            b.iter(|| black_box(scheme.sample(black_box(0.5))))
+            b.iter(|| black_box(scheme.sample(black_box(0.5))));
         });
     }
 
@@ -77,11 +78,11 @@ fn bench_discovery(c: &mut Criterion) {
     group.bench_function("list_schemes", |b| b.iter(|| black_box(list_schemes())));
 
     group.bench_function("get_scheme_hit", |b| {
-        b.iter(|| black_box(get_scheme(black_box("rainbow"))))
+        b.iter(|| black_box(get_scheme(black_box("rainbow"))));
     });
 
     group.bench_function("get_scheme_miss", |b| {
-        b.iter(|| black_box(get_scheme(black_box("nonexistent"))))
+        b.iter(|| black_box(get_scheme(black_box("nonexistent"))));
     });
 
     group.finish();
@@ -99,7 +100,7 @@ fn bench_custom_scheme(c: &mut Criterion) {
                 Color::rgb(0, 0, 255),
             ];
             black_box(ColorScheme::new("custom", colors))
-        })
+        });
     });
 }
 
@@ -109,19 +110,19 @@ fn bench_boundary_conditions(c: &mut Criterion) {
     let mut group = c.benchmark_group("boundary_conditions");
 
     group.bench_function("sample_0.0", |b| {
-        b.iter(|| black_box(scheme.sample(black_box(0.0))))
+        b.iter(|| black_box(scheme.sample(black_box(0.0))));
     });
 
     group.bench_function("sample_1.0", |b| {
-        b.iter(|| black_box(scheme.sample(black_box(1.0))))
+        b.iter(|| black_box(scheme.sample(black_box(1.0))));
     });
 
     group.bench_function("sample_negative_clamped", |b| {
-        b.iter(|| black_box(scheme.sample(black_box(-0.5))))
+        b.iter(|| black_box(scheme.sample(black_box(-0.5))));
     });
 
     group.bench_function("sample_above_1_clamped", |b| {
-        b.iter(|| black_box(scheme.sample(black_box(1.5))))
+        b.iter(|| black_box(scheme.sample(black_box(1.5))));
     });
 
     group.finish();

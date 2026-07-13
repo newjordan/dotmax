@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grid = builder.render()?;
     let mut unicode = grid.to_unicode_grid();
     if invert_output {
-        for row in unicode.iter_mut() {
+        for row in &mut unicode {
             for ch in row.iter_mut() {
                 let bits = (*ch as u32).saturating_sub(0x2800) as u8;
                 *ch = char::from_u32(0x2800 + (!bits as u32)).unwrap_or(*ch);

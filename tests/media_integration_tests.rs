@@ -259,7 +259,6 @@ mod svg_routing_tests {
 
 #[cfg(feature = "video")]
 mod video_routing_tests {
-    use super::*;
     use dotmax::media::{detect_format_from_bytes, MediaFormat, VideoCodec};
 
     #[test]

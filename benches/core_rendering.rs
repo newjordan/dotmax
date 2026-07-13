@@ -65,7 +65,7 @@ fn bench_grid_clear(c: &mut Criterion) {
             }
         }
 
-        group.bench_with_input(BenchmarkId::new("clear", label), &(), |b, _| {
+        group.bench_with_input(BenchmarkId::new("clear", label), &(), |b, ()| {
             b.iter(|| {
                 grid.clear();
                 black_box(&grid);

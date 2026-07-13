@@ -14,11 +14,12 @@
 
 #![cfg(feature = "image")]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use dotmax::image::{
     adjust_brightness, adjust_contrast, adjust_gamma, apply_threshold, auto_threshold,
     load_from_path, otsu_threshold, resize_to_terminal, to_grayscale,
 };
+use std::hint::black_box;
 use std::path::Path;
 
 /// Benchmark grayscale conversion for terminal-sized image (160×96)

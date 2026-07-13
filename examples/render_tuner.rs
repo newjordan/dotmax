@@ -48,6 +48,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
+use std::fmt::Write as _;
 use std::io::{stdout, Write};
 
 /// Current render settings being tuned.
@@ -193,7 +194,7 @@ fn render_grid_line(grid: &BrailleGrid, y: usize, max_width: usize) -> String {
 #[inline]
 fn flush_color_batch(output: &mut String, chars: &[char], color: Option<dotmax::Color>) {
     if let Some(c) = color {
-        output.push_str(&format!("\x1b[38;2;{};{};{}m", c.r, c.g, c.b));
+        let _ = write!(output, "\x1b[38;2;{};{};{}m", c.r, c.g, c.b);
     }
     output.extend(chars.iter());
 }
@@ -409,7 +410,7 @@ fn load_media(path: &Path) -> dotmax::Result<(MediaSource, bool)> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
+        .map(str::to_lowercase)
         .unwrap_or_default();
 
     // Check if it's a video format
@@ -455,11 +456,11 @@ fn run_image_tuner(img: image::DynamicImage, file_path: &str) -> dotmax::Result<
                 if let Event::Key(key) = event::read()? {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break,
-                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                        KeyCode::Char('d' | 'D') => {
                             settings.cycle_dithering();
                             needs_redraw = true;
                         }
-                        KeyCode::Char('t') | KeyCode::Char('T') => {
+                        KeyCode::Char('t' | 'T') => {
                             settings.toggle_threshold_mode();
                             needs_redraw = true;
                         }
@@ -495,15 +496,15 @@ fn run_image_tuner(img: image::DynamicImage, file_path: &str) -> dotmax::Result<
                             settings.adjust_gamma(-0.1);
                             needs_redraw = true;
                         }
-                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                        KeyCode::Char('m' | 'M') => {
                             settings.cycle_color_mode();
                             needs_redraw = true;
                         }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                        KeyCode::Char('r' | 'R') => {
                             settings = TunerSettings::default();
                             needs_redraw = true;
                         }
-                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                        KeyCode::Char('s' | 'S') => {
                             settings.show_snippet = !settings.show_snippet;
                             needs_redraw = true;
                         }
@@ -616,12 +617,12 @@ fn run_video_tuner(video_path: &str) -> dotmax::Result<()> {
                             settings.paused = !settings.paused;
                             hud_dirty = true;
                         }
-                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                        KeyCode::Char('d' | 'D') => {
                             settings.cycle_dithering();
                             player.set_dithering(settings.dithering);
                             hud_dirty = true;
                         }
-                        KeyCode::Char('t') | KeyCode::Char('T') => {
+                        KeyCode::Char('t' | 'T') => {
                             settings.toggle_threshold_mode();
                             player.set_threshold(settings.threshold);
                             hud_dirty = true;
@@ -666,18 +667,18 @@ fn run_video_tuner(video_path: &str) -> dotmax::Result<()> {
                             player.set_gamma(settings.gamma);
                             hud_dirty = true;
                         }
-                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                        KeyCode::Char('m' | 'M') => {
                             settings.cycle_color_mode();
                             player.set_color_mode(settings.color_mode);
                             hud_dirty = true;
                         }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                        KeyCode::Char('r' | 'R') => {
                             settings = TunerSettings::default();
                             player = create_video_player(video_path, &settings)?;
                             frame_buffer = FrameBuffer::new(); // Reset buffer on player reset
                             hud_dirty = true;
                         }
-                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                        KeyCode::Char('s' | 'S') => {
                             settings.show_snippet = !settings.show_snippet;
                             hud_dirty = true;
                         }
@@ -736,7 +737,7 @@ fn run_video_tuner(video_path: &str) -> dotmax::Result<()> {
 
                     // Wait for frame timing
                     if render_time < delay {
-                        std::thread::sleep(delay - render_time);
+                        std::thread::sleep(delay.saturating_sub(render_time));
                     }
                 }
                 Some(Err(e)) => return Err(e),
@@ -811,12 +812,12 @@ fn draw_video_frame_optimized(
 
     for (y, line_content) in changed_lines {
         // Move cursor to line position and write the pre-rendered line
-        output.push_str(&format!("\x1b[{};1H{}", y + 1, line_content));
+        let _ = write!(output, "\x1b[{};1H{}", y + 1, line_content);
     }
 
     // Position cursor for HUD (always at bottom)
     let hud_start_row = params.term_height.saturating_sub(params.hud_height);
-    output.push_str(&format!("\x1b[{};1H", hud_start_row + 1));
+    let _ = write!(output, "\x1b[{};1H", hud_start_row + 1);
 
     // Write frame content in one syscall
     write!(stdout, "{}", output)?;
@@ -884,8 +885,7 @@ fn draw_hud_optimized(
         settings.dithering_name(),
         settings
             .threshold
-            .map(|t| format!("{}", t))
-            .unwrap_or_else(|| "Auto".to_string()),
+            .map_or_else(|| "Auto".to_string(), |t| t.to_string()),
         fps,
         render_fps, // Show render FPS in parentheses
     );
@@ -966,8 +966,7 @@ fn draw_hud(
             settings.dithering_name(),
             settings
                 .threshold
-                .map(|t| format!("{}", t))
-                .unwrap_or_else(|| "Auto".to_string()),
+                .map_or_else(|| "Auto".to_string(), |t| t.to_string()),
             fps
         )
     } else {
@@ -976,8 +975,7 @@ fn draw_hud(
             settings.dithering_name(),
             settings
                 .threshold
-                .map(|t| format!("{}", t))
-                .unwrap_or_else(|| "Auto".to_string()),
+                .map_or_else(|| "Auto".to_string(), |t| t.to_string()),
             render_time.as_secs_f64() * 1000.0
         )
     };

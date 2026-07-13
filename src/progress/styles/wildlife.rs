@@ -170,7 +170,7 @@ impl ProgressStyle for GallopingHorse {
             draw::dot_i(grid, lx, knee_y);
             // Lower leg + hoof.
             draw::dot_i(grid, lx, foot_y);
-            if foot_y + 1 <= base as i32 {
+            if foot_y < base as i32 {
                 draw::dot_i(grid, lx, foot_y + 1); // hoof ground touch
             }
         }
@@ -836,7 +836,7 @@ impl ProgressStyle for Murmuration {
 
         // Flock: a cloud of dots with per-dot sine offsets.
         // We generate a deterministic but chaotic-looking distribution.
-        let n_birds = ((front_x / 3).max(1)).min(60);
+        let n_birds = (front_x / 3).clamp(1, 60);
 
         for b in 0..n_birds {
             // Each bird has a unique phase and speed.

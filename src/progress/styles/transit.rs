@@ -498,7 +498,7 @@ impl ProgressStyle for SubwayMap {
         }
 
         // ── Stations ──
-        let n_stations = ((dw / 8).max(3)).min(16);
+        let n_stations = (dw / 8).clamp(3, 16);
         let station_r = (dh as i32 / 6).max(1);
 
         for s in 0..n_stations {
@@ -1206,7 +1206,7 @@ impl ProgressStyle for FerryCrossing {
             (wake_y0 + wake_angle_dots).min(dh as i32 - 1),
         );
         // Ripple dots along wake
-        for w in (0..wake_len as usize).step_by(4.max(1)) {
+        for w in (0..wake_len as usize).step_by(4) {
             let phase = w as f32 / wake_len as f32;
             let spread = (phase * wake_angle_dots as f32) as i32;
             let wx = stern_x - w as i32;

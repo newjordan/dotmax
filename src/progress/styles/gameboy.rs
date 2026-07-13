@@ -13,6 +13,7 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, DotmaxError};
+use std::cmp::Ordering;
 use std::f32::consts::PI;
 
 /// All styles in the `gameboy` theme.
@@ -252,7 +253,7 @@ impl ProgressStyle for TetrisGb {
         let base_row = ch.saturating_sub(stack_rows);
 
         // Tetromino columns vary phase slightly for the ragged skyline.
-        let col_w = 2usize.max(1); // 2 cells per "block column"
+        let col_w = 2usize; // 2 cells per "block column"
         let block_cols = (cw / col_w).max(1);
 
         for bc in 0..block_cols {
@@ -568,7 +569,7 @@ impl ProgressStyle for Tamagotchi {
         let pet_y = 1i32;
         // Walk animation: bobble up/down with time.
         let walk_frame = ((ctx.time * 4.0) as usize) % 2;
-        let bob = if walk_frame == 0 { 0i32 } else { 1i32 };
+        let bob = i32::from(walk_frame != 0);
 
         // Body: oval.
         let bx = pet_x;
@@ -797,16 +798,20 @@ impl ProgressStyle for HeartContainers {
 
         for h_idx in 0..max_hearts {
             let cx_start = h_idx * heart_w;
-            let heart_shade = if h_idx < full_hearts {
-                // Fully filled heart.
-                4usize
-            } else if h_idx == full_hearts {
-                // Partially filled — shade by partial fraction + pulse.
-                let lvl = (partial_frac * 3.0 + pulse * 0.5) as usize;
-                (lvl + 1).min(4)
-            } else {
-                // Empty heart container.
-                2
+            let heart_shade = match h_idx.cmp(&full_hearts) {
+                Ordering::Less => {
+                    // Fully filled heart.
+                    4usize
+                }
+                Ordering::Equal => {
+                    // Partially filled — shade by partial fraction + pulse.
+                    let lvl = (partial_frac * 3.0 + pulse * 0.5) as usize;
+                    (lvl + 1).min(4)
+                }
+                Ordering::Greater => {
+                    // Empty heart container.
+                    2
+                }
             };
 
             // Each heart: top row is 2 bumps (shade 4 at edges, 3 in middle),
@@ -816,7 +821,7 @@ impl ProgressStyle for HeartContainers {
             let bot_row = ch / 2;
 
             // Top bumps.
-            for cy in top_row..top_row + 1 {
+            for cy in top_row..=top_row {
                 if cy < ch {
                     for off in 0..heart_w {
                         let cx = cx_start + off;
@@ -827,7 +832,7 @@ impl ProgressStyle for HeartContainers {
                 }
             }
             // Bottom V.
-            for cy in bot_row..bot_row + 1 {
+            for cy in bot_row..=bot_row {
                 if cy < ch {
                     // Middle cell shade (V tip).
                     let mid_cx = cx_start + heart_w / 2;
@@ -1109,16 +1114,14 @@ impl ProgressStyle for WarioTreasure {
                     ctx.palette.sample(0.9),
                 );
             }
-            if fill_rows > 0 && fill_start <= cy && cy < ch.saturating_sub(1) {
-                if chest_start < cw {
-                    draw::tint_row(
-                        grid,
-                        cy,
-                        chest_start + 1,
-                        (chest_start + chest_w.saturating_sub(2)).min(cw.saturating_sub(1)),
-                        ctx.palette.sample(ctx.eased),
-                    );
-                }
+            if fill_rows > 0 && fill_start <= cy && cy < ch.saturating_sub(1) && chest_start < cw {
+                draw::tint_row(
+                    grid,
+                    cy,
+                    chest_start + 1,
+                    (chest_start + chest_w.saturating_sub(2)).min(cw.saturating_sub(1)),
+                    ctx.palette.sample(ctx.eased),
+                );
             }
         }
         Ok(())
@@ -1156,7 +1159,7 @@ impl ProgressStyle for LcdPinball {
         draw::vline(grid, w.saturating_sub(1), 0, h.saturating_sub(1));
 
         // ── Bumpers: shade ovals in a row near the top ────────────────────────
-        let bumper_count = (cw / 3).max(1).min(5);
+        let bumper_count = (cw / 3).clamp(1, 5);
         let bumper_spacing = cw / (bumper_count + 1);
         let lit_bumpers = (ctx.eased * bumper_count as f32).round() as usize;
 

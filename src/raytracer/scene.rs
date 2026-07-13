@@ -17,6 +17,12 @@ pub struct Scene {
     pub(crate) mesh_edges: Option<Vec<(Vector3, Vector3)>>,
 }
 
+impl Default for Scene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scene {
     pub fn new() -> Self {
         Self {
@@ -62,6 +68,10 @@ impl Scene {
     /// * `Ok(Scene)` - Scene with loaded model and light
     /// * `Err(...)` - Failed to load model
     ///
+    /// # Errors
+    /// Returns an error if the glTF/GLB file cannot be loaded (see [`load_gltf`]):
+    /// missing or unparseable file, no mesh data, or invalid geometry.
+    ///
     /// # Example
     /// ```no_run
     /// use dotmax::raytracer::Scene;
@@ -71,17 +81,20 @@ impl Scene {
     pub fn new_with_model(path: &str) -> Result<Self> {
         // Load mesh data from glTF file
         let mesh_data = load_gltf(path)?;
-        Self::from_mesh_data(mesh_data)
+        Ok(Self::from_mesh_data(mesh_data))
     }
 
     /// Create a scene with an OBJ model loaded from file (simple importer)
+    ///
+    /// # Errors
+    /// Returns an error if the OBJ file cannot be read or parsed (see [`load_obj`]).
     pub fn new_with_obj_model(path: &str) -> Result<Self> {
         let data = load_obj(path)?;
-        Self::from_mesh_data(data)
+        Ok(Self::from_mesh_data(data))
     }
 
     /// Common builder from MeshData: normalize, build mesh, add default light
-    fn from_mesh_data(mesh_data: MeshData) -> Result<Self> {
+    fn from_mesh_data(mesh_data: MeshData) -> Self {
         // Normalize the mesh to fit in a standard view (centered at origin, scaled to ~2 units)
         let normalized_data = mesh_data.normalize();
 
@@ -134,12 +147,12 @@ impl Scene {
         // Position it above and to the side for good visibility
         let light = Light::new(Vector3::new(2.0, 2.0, 2.0), 1.0);
 
-        Ok(Self {
+        Self {
             objects: vec![mesh],
             lights: vec![light],
             mesh_vertices: Some(positions),
             mesh_edges: Some(edges),
-        })
+        }
     }
 
     /// If the scene was created from a mesh, returns cached vertex positions

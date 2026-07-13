@@ -671,9 +671,8 @@ impl WebcamPlayer {
         // Calculate optimal capture resolution based on terminal size
         // Braille cells are 2x4 pixels, so terminal of 200x50 = 400x200 pixels needed
         // Request slightly higher to allow for aspect ratio adjustment
-        let (term_width, term_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as u32, h as u32))
-            .unwrap_or((80, 24));
+        let (term_width, term_height) =
+            crossterm::terminal::size().map_or((80, 24), |(w, h)| (w as u32, h as u32));
 
         // Target pixels needed (with some headroom)
         let needed_width = term_width * 2;
@@ -743,14 +742,11 @@ impl WebcamPlayer {
             .map_err(|e| map_ffmpeg_error(&device_str, e))?;
 
         // Extract input context from the generic context
-        let input_context = match context {
-            ffmpeg::format::context::Context::Input(input) => input,
-            _ => {
-                return Err(DotmaxError::WebcamError {
-                    device: device_str,
-                    message: "Unexpected output context when opening webcam".to_string(),
-                });
-            }
+        let ffmpeg::format::context::Context::Input(input_context) = context else {
+            return Err(DotmaxError::WebcamError {
+                device: device_str,
+                message: "Unexpected output context when opening webcam".to_string(),
+            });
         };
 
         // Find video stream
@@ -795,9 +791,8 @@ impl WebcamPlayer {
         };
 
         // Get terminal size
-        let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+        let (terminal_width, terminal_height) =
+            crossterm::terminal::size().map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         // Calculate target pixel dimensions for braille grid
         let target_pixel_width = (terminal_width * 2) as u32;
@@ -1045,9 +1040,8 @@ impl WebcamPlayer {
         loop {
             match self.decoder.receive_frame(&mut self.decoded_frame) {
                 Ok(()) => {
-                    got_frame = true;
                     // Keep draining - we want the LATEST frame
-                    continue;
+                    got_frame = true;
                 }
                 Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => {
                     // No more frames queued in decoder
@@ -1094,8 +1088,7 @@ impl WebcamPlayer {
                     return Some(Ok(()));
                 }
                 Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => {
-                    // Need more packets
-                    continue;
+                    // Need more packets - loop around and read another one
                 }
                 Err(e) => {
                     return Some(Err(DotmaxError::WebcamError {

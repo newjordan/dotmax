@@ -868,7 +868,7 @@ impl ProgressStyle for UsbTransfer {
             let x0 = x0.min(w.saturating_sub(dev_w + 3));
 
             // Packet shape: small rectangle, 3-dot wide, 2-dot tall.
-            let pkt_w = (w / 20).max(2).min(4);
+            let pkt_w = (w / 20).clamp(2, 4);
             let pkt_h = 2usize.min(h);
             let py0 = mid.saturating_sub(pkt_h / 2);
             draw::fill_rect(grid, x0, py0, pkt_w, pkt_h);
@@ -946,10 +946,10 @@ impl ProgressStyle for GearTrain {
                 let theta = i as f32 / steps as f32 * 2.0 * PI + angle_offset;
                 // Is this angle at a tooth?
                 let tooth_phase = (theta * n_teeth as f32 / (2.0 * PI)).fract();
-                let tooth_bump = if tooth_phase < 0.25 || tooth_phase > 0.75 {
-                    tooth_len
-                } else {
+                let tooth_bump = if (0.25..=0.75).contains(&tooth_phase) {
                     0.0
+                } else {
+                    tooth_len
                 };
                 let r_here = r_f + tooth_bump;
                 let dx = (theta.cos() * r_here) as i32;
@@ -977,8 +977,8 @@ impl ProgressStyle for GearTrain {
         let gear_ratio = big_r as f32 / small_r.max(1) as f32;
         let small_angle = -ctx.time * omega_big * gear_ratio;
 
-        let n_teeth_big = (big_r / 2).max(4).min(16);
-        let n_teeth_small = (small_r / 2).max(3).min(8);
+        let n_teeth_big = (big_r / 2).clamp(4, 16);
+        let n_teeth_small = (small_r / 2).clamp(3, 8);
 
         draw_gear(grid, big_cx, big_cy, big_r, n_teeth_big, big_angle);
         // Only draw small gear if it fits within the grid.
@@ -1003,7 +1003,7 @@ impl ProgressStyle for GearTrain {
                 tiny_cx,
                 small_cy,
                 tiny_r,
-                (tiny_r / 2).max(3).min(6),
+                (tiny_r / 2).clamp(3, 6),
                 tiny_angle,
             );
         }
@@ -1067,11 +1067,10 @@ impl ProgressStyle for EinkRefresh {
                     let linear = cy * cells_w + cx;
                     let h_val = hash(linear as u32 * 13 + 7);
                     let shade_level = match h_val % 5 {
-                        0 => 1,     // ░
-                        1 => 2,     // ▒
-                        2 => 3,     // ▓
-                        3 | 4 => 4, // █
-                        _ => 4,
+                        0 => 1, // ░
+                        1 => 2, // ▒
+                        2 => 3, // ▓
+                        _ => 4, // █
                     };
                     draw::shade(grid, cx, cy, shade_level);
                     let t = cx as f32 / cells_w.max(1) as f32;

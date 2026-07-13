@@ -233,6 +233,11 @@ fn normalize_intensity(intensity: f32) -> f32 {
 // ============================================================================
 
 #[cfg(test)]
+// Exact float equality is the property under test: normalize_intensity must clamp to
+// exactly 0.0/1.0 (including for NaN and the infinities) and be the identity in range.
+// Every compared value is exactly representable, so an epsilon comparison would weaken
+// these assertions rather than fix them.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::color::schemes::{

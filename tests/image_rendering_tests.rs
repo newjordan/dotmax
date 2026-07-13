@@ -11,6 +11,28 @@ mod image_pipeline_tests {
     };
     use std::path::Path;
 
+    /// Build an RGB image of the given size in memory.
+    ///
+    /// The extreme-size cases below used to load `viper_4k.png`, `viper_ultra_tall.png`
+    /// and `viper_ultra_wide.png` — ~31 MB of fixtures that are gitignored. That meant
+    /// the tests only passed on a machine which already had the files; on a fresh clone
+    /// (and in CI under `--all-features`) they failed on a missing file. Synthesizing
+    /// the pixels keeps the dimensions and the pipeline under test while making the
+    /// tests self-contained. The value varies per pixel so `auto_threshold` sees a real
+    /// distribution rather than a flat image.
+    fn synthetic_rgb(width: u32, height: u32) -> image::DynamicImage {
+        let mut raw = vec![0u8; width as usize * height as usize * 3];
+        for (i, px) in raw.chunks_exact_mut(3).enumerate() {
+            let v = (i % 251) as u8;
+            px[0] = v;
+            px[1] = v ^ 0x55;
+            px[2] = v ^ 0xAA;
+        }
+        let buf =
+            image::RgbImage::from_raw(width, height, raw).expect("raw buffer sized correctly");
+        image::DynamicImage::ImageRgb8(buf)
+    }
+
     #[test]
     fn test_full_pipeline_with_threshold() {
         // Load test image
@@ -190,9 +212,8 @@ mod image_pipeline_tests {
     // Story 3.5.5: Integration tests for extreme aspect ratio images
     #[test]
     fn test_extreme_wide_aspect_ratio_renders_successfully() {
-        // Test with viper_ultra_wide.png (10000×4000, 2.5:1 aspect ratio)
-        let img_path = Path::new("tests/fixtures/images/viper_ultra_wide.png");
-        let img = load_from_path(img_path).expect("Failed to load extreme wide image");
+        // 10000×4000, 2.5:1 aspect ratio
+        let img = synthetic_rgb(10000, 4000);
 
         // Verify dimensions
         assert_eq!(img.width(), 10000);
@@ -220,9 +241,8 @@ mod image_pipeline_tests {
 
     #[test]
     fn test_extreme_tall_aspect_ratio_renders_successfully() {
-        // Test with viper_ultra_tall.png (4000×10000, 1:2.5 aspect ratio)
-        let img_path = Path::new("tests/fixtures/images/viper_ultra_tall.png");
-        let img = load_from_path(img_path).expect("Failed to load extreme tall image");
+        // 4000×10000, 1:2.5 aspect ratio
+        let img = synthetic_rgb(4000, 10000);
 
         // Verify dimensions
         assert_eq!(img.width(), 4000);
@@ -276,9 +296,8 @@ mod image_pipeline_tests {
 
     #[test]
     fn test_very_large_square_image_no_regression() {
-        // Test with viper_4k.png (4000×4000) to ensure normal large images work
-        let img_path = Path::new("tests/fixtures/images/viper_4k.png");
-        let img = load_from_path(img_path).expect("Failed to load large square image");
+        // 4000×4000 — ensure normal large images still work
+        let img = synthetic_rgb(4000, 4000);
 
         // Verify dimensions
         assert_eq!(img.width(), 4000);
@@ -679,7 +698,7 @@ mod svg_pipeline_tests {
     }
 
     #[test]
-    #[ignore] // TODO: SVG background handling issue from Story 3.6 - test fails with 95% black pixels, needs investigation separately from Story 3.5.5 performance optimization
+    #[ignore = "SVG background handling bug (Story 3.6): renders 95% black pixels; needs separate investigation"]
     fn test_svg_dark_background_light_content_renders_correctly() {
         // Regression test for adaptive background bug (2025-11-20)
         // SVG with dark background (#4d4d4d) and light/white content should render visibly

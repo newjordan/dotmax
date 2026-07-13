@@ -284,10 +284,8 @@ impl ProgressStyle for CascadeWipe {
                     3
                 } else if depth >= 1.0 {
                     2
-                } else if depth >= 0.0 {
-                    1
                 } else {
-                    0
+                    usize::from(depth >= 0.0)
                 };
                 if level > 0 {
                     draw::shade(grid, x, y, level);

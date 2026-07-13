@@ -888,7 +888,6 @@ impl ProgressStyle for TuningFork {
 
         // Vibration amplitude: fades to 0 as eased → 1.
         let raw_amp = 1.0 - ctx.eased;
-        let _freq = 440.0_f32; // visually representative; 440 Hz A4 reference pitch
         let vis_freq = 4.0; // oscillations per second at screen speed
         let amp = raw_amp * tine_base_sep as f32;
 

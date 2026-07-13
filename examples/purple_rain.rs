@@ -38,7 +38,7 @@ use std::{
 };
 
 // ───────────────────────── tiny xorshift RNG ─────────────────────────
-thread_local! { static RNG: StdCell<u32> = StdCell::new(0x1234_5678); }
+thread_local! { static RNG: StdCell<u32> = const { StdCell::new(0x1234_5678) }; }
 fn r_u32() -> u32 {
     RNG.with(|c| {
         let mut x = c.get();
@@ -63,8 +63,7 @@ fn seed_from_clock() {
     let nanos = Instant::now().elapsed().as_nanos() as u32
         ^ std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
+            .map_or(0, |d| d.subsec_nanos());
     RNG.with(|c| c.set(nanos | 1));
 }
 
@@ -174,7 +173,7 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
         }
         let vertical_split = rect.w >= rect.h;
         // Alternate which side the leaf sits on each step; `cw` flips polarity.
-        let leaf_far = ((step % 2 == 0) ^ !cw) != false;
+        let leaf_far = (step % 2 == 0) ^ !cw;
 
         if vertical_split {
             let leaf_w = ((rect.w as f32) * PHI_COMPLEMENT).round().max(3.0) as i32;
@@ -185,7 +184,6 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     w: leaf_w,
                     h: rect.h,
                 });
-                rect.w -= leaf_w;
             } else {
                 out.push(Rect {
                     x: rect.x,
@@ -194,8 +192,8 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     h: rect.h,
                 });
                 rect.x += leaf_w;
-                rect.w -= leaf_w;
             }
+            rect.w -= leaf_w;
         } else {
             let leaf_h = ((rect.h as f32) * PHI_COMPLEMENT).round().max(2.0) as i32;
             if leaf_far {
@@ -205,7 +203,6 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     w: rect.w,
                     h: leaf_h,
                 });
-                rect.h -= leaf_h;
             } else {
                 out.push(Rect {
                     x: rect.x,
@@ -214,8 +211,8 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     h: leaf_h,
                 });
                 rect.y += leaf_h;
-                rect.h -= leaf_h;
             }
+            rect.h -= leaf_h;
         }
     }
     out.push(rect);
@@ -370,12 +367,9 @@ fn load_image(
             .render()
             .ok()?;
         let (gw, gh) = grid.dimensions();
-        let mut cells: Vec<Vec<char>> = vec![vec![' '; gw]; gh];
-        for y in 0..gh {
-            for x in 0..gw {
-                cells[y][x] = grid.get_char(x, y);
-            }
-        }
+        let cells: Vec<Vec<char>> = (0..gh)
+            .map(|y| (0..gw).map(|x| grid.get_char(x, y)).collect())
+            .collect();
         if luma.is_none() {
             luma = Some(grid.get_raw_patterns().to_vec());
         }
@@ -876,7 +870,6 @@ fn build_scene(w: i32, h: i32) -> Scene {
         }
     }
 
-    let _ui_rects = [ui_chess, ui_viper, ui_vhead];
     // NOTE: fib zones are NOT filtered — chaos paints under everything,
     // and UI re-paints on top of the chaos in a final pass (see render()).
 
@@ -897,7 +890,7 @@ fn build_scene(w: i32, h: i32) -> Scene {
     };
     push_ui(ui_chess, Formation::ChessBoard, &mut tap_accum);
     // SCARY SNAKES — guaranteed visible at decent size.
-    let viper_idx = if assets.len() > 1 { 1 } else { 0 };
+    let viper_idx = usize::from(assets.len() > 1);
     let vhead_idx = if assets.len() > 2 { 2 } else { viper_idx };
     push_ui(
         ui_viper,
@@ -1366,9 +1359,9 @@ fn paint_raytrace(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let buf = render_with_orientation(&rt, &cam, w, h, mode, orient);
 
     let ramp: &[char] = &[' ', '·', ':', '-', '=', '+', '*', '#', '%', '@'];
-    for ry in 0..h {
-        for rx in 0..w {
-            let v = buf[ry][rx].clamp(0.0, 1.0);
+    for (ry, buf_row) in buf.iter().enumerate().take(h) {
+        for (rx, &raw) in buf_row.iter().enumerate().take(w) {
+            let v = raw.clamp(0.0, 1.0);
             let idx = ((v * (ramp.len() - 1) as f32).round() as usize).min(ramp.len() - 1);
             let ch = ramp[idx];
             let i = if v > 0.30 { 0.90 } else { 0.22 };
@@ -1402,10 +1395,9 @@ fn paint_block_strata(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
         let level_idx = match stripe {
             0..=1 => 0,
             2..=4 => 1,
-            5..=8 => 2,
-            9..=12 => 3,
+            9..=12 | 16..=18 => 3,
             13..=15 => 4,
-            16..=18 => 3,
+            // 5..=8 and 19 — the shoulders of the band.
             _ => 2,
         };
         let (ch, i) = levels[level_idx];
@@ -1618,15 +1610,13 @@ fn paint_cellular(
     let t_shift = (zone.pulse * 2.0) as i64;
 
     // Seed top row from stream bits.
-    let mut row = vec![false; zw];
-    for rx in 0..zw {
-        let s = sample(stream, base + rx as i64 + t_shift) as u32;
-        row[rx] = (s & 1) == 1;
-    }
+    let mut row: Vec<bool> = (0..zw)
+        .map(|rx| (sample(stream, base + rx as i64 + t_shift) as u32) & 1 == 1)
+        .collect();
     // Paint row, then evolve.
     for ry in 0..zh {
-        for rx in 0..zw {
-            let (ch, i) = if row[rx] { ('█', 0.93) } else { ('·', 0.18) };
+        for (rx, &alive) in row.iter().enumerate() {
+            let (ch, i) = if alive { ('█', 0.93) } else { ('·', 0.18) };
             put(
                 grid,
                 zone.rect.x + rx as i32,
@@ -1734,7 +1724,7 @@ fn paint_density_grid(
 }
 
 /// 10. AttentionMatrix — sparse transformer-attention pattern: diagonal band,
-/// a few sink columns, rare hotspots. Everything else mostly dark.
+///     a few sink columns, rare hotspots. Everything else mostly dark.
 fn paint_attention(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let color = color_for(zone.side);
     let zw = zone.rect.w;
@@ -1920,10 +1910,10 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
 }
 
 /// 12. ImagePanel — streams a pre-rendered braille image into the zone with
-/// glitching effects. Source: dotmax's full ImageRenderer pipeline
-/// (Floyd-Steinberg → Otsu → braille mapping). Each frame, a few rows get
-/// scanline-torn, a sprinkle of cells get block-char corrupted, and bursts
-/// of stream chars bleed through as noise.
+///     glitching effects. Source: dotmax's full ImageRenderer pipeline
+///     (Floyd-Steinberg → Otsu → braille mapping). Each frame, a few rows get
+///     scanline-torn, a sprinkle of cells get block-char corrupted, and bursts
+///     of stream chars bleed through as noise.
 // ─────────────── abstract dither-phase system ───────────────
 //
 // Instead of a smooth per-cell wave, the composition is in one of two
@@ -2129,10 +2119,10 @@ fn paint_image_panel(
             let (ch, intensity, fg_override) = if on_front {
                 // Sweep front — sacred glyph marks the moment of transition.
                 (sweep_front_glyph(front_kind), 1.0, Some((255, 50, 50)))
-            } else if h & 0x7f == 0 {
+            } else if h.trailing_zeros() >= 7 {
                 let blocks: &[char] = &['█', '▓', '▒', '░'];
                 (blocks[(h as usize >> 7) % blocks.len()], 1.0, None)
-            } else if h & 0x3f == 0 {
+            } else if h.trailing_zeros() >= 6 {
                 let sc = sample(ctx.stream, base_stream + (ry as i64) * 7 + rx as i64);
                 (sc, 0.85, None)
             } else if img_ch == '\u{2800}' {
@@ -2183,9 +2173,9 @@ fn paint_image_panel(
 }
 
 /// 13. RaytraceCube — wireframe cube on BLACK background. Built from 8
-/// corners + 12 edges, rotated via raytracer's yaw/pitch helper. Lines
-/// rasterized with Bresenham. Zero mask, zero pipes — pure geometry in
-/// the middle of the chaos.
+///     corners + 12 edges, rotated via raytracer's yaw/pitch helper. Lines
+///     rasterized with Bresenham. Zero mask, zero pipes — pure geometry in
+///     the middle of the chaos.
 fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -2378,7 +2368,7 @@ fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &Pa
         Formation::RegisterDump => paint_register_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::TextmarkConverter => paint_textmark(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::Cellular1D { rule } => {
-            paint_cellular(grid, zone, zone_id, rule, ctx.stream, ctx.cursor)
+            paint_cellular(grid, zone, zone_id, rule, ctx.stream, ctx.cursor);
         }
         Formation::Marquee => paint_marquee(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::DensityGrid => paint_density_grid(grid, zone, zone_id, ctx.stream, ctx.cursor),
@@ -2442,7 +2432,7 @@ fn apply_transform(c: char, t: Transform) -> char {
         Transform::BitRev => {
             if c.is_ascii() {
                 let mut b = c as u8;
-                b = (b >> 4) | (b << 4);
+                b = b.rotate_left(4);
                 b = ((b >> 2) & 0x33) | ((b << 2) & 0xcc);
                 b = ((b >> 1) & 0x55) | ((b << 1) & 0xaa);
                 if (b as char).is_ascii_graphic() {
@@ -2799,8 +2789,8 @@ fn paint_glitch_insertion(
     let vh = variant.h as i32;
     // crop.x/.y is the source offset where this insertion's (0,0) maps to.
     // Native 1:1 sampling — image scrolls/crops, never warps.
-    let off_x = ins.crop.map(|c| c.x).unwrap_or(0);
-    let off_y = ins.crop.map(|c| c.y).unwrap_or(0);
+    let off_x = ins.crop.map_or(0, |c| c.x);
+    let off_y = ins.crop.map_or(0, |c| c.y);
 
     let age = (cursor - ins.spawn_cursor) / ins.duration_chars.max(0.01);
     let life_factor = if age < 0.15 {
@@ -3094,7 +3084,7 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     // 7) Flip: mirror every row horizontally at the very end so the creed
     // flips too — the mirror universe has its own scripture.
     if scene.flipped {
-        for row in grid.iter_mut() {
+        for row in &mut grid {
             row.reverse();
         }
     }
@@ -3161,16 +3151,15 @@ fn main() -> io::Result<()> {
                 if let Event::Key(k) = event::read()? {
                     match (k.code, k.modifiers) {
                         // Always-on quit
-                        (KeyCode::Esc, _) => break,
+                        (KeyCode::Esc | KeyCode::Char('q'), _) => break,
                         (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => break,
                         // Toggles moved to Ctrl-modified so plain f/r are typeable.
                         (KeyCode::Char('f'), m) if m.contains(KeyModifiers::CONTROL) => {
-                            scene.flipped = !scene.flipped
+                            scene.flipped = !scene.flipped;
                         }
                         (KeyCode::Char('r'), m) if m.contains(KeyModifiers::CONTROL) => {
-                            scene.reversed = !scene.reversed
+                            scene.reversed = !scene.reversed;
                         }
-                        (KeyCode::Char('q'), _) => break,
                         _ => {}
                     }
                 }
@@ -3185,7 +3174,7 @@ fn main() -> io::Result<()> {
 
             let elapsed = last.elapsed();
             if elapsed < target {
-                std::thread::sleep(target - elapsed);
+                std::thread::sleep(target.saturating_sub(elapsed));
             }
         }
         Ok(())

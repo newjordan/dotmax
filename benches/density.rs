@@ -4,9 +4,10 @@
 //!
 //! Run with: `cargo bench --bench density`
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use dotmax::density::DensitySet;
 use dotmax::BrailleGrid;
+use std::hint::black_box;
 
 /// Benchmark single intensity mapping for all predefined density sets
 fn bench_density_mapping(c: &mut Criterion) {
@@ -181,7 +182,7 @@ fn bench_custom_density_creation(c: &mut Criterion) {
     let sizes = vec![5, 10, 50, 100, 256];
 
     for size in sizes {
-        let chars: Vec<char> = (0..size).map(|i| (i as u8 as char)).collect();
+        let chars: Vec<char> = (0..size).map(|i| i as u8 as char).collect();
 
         group.bench_with_input(
             BenchmarkId::from_parameter(size),

@@ -32,8 +32,8 @@ pub fn render_with_orientation(
 ) -> Vec<Vec<f32>> {
     let mut buffer = vec![vec![0.0_f32; width]; height];
 
-    for y in 0..height {
-        for x in 0..width {
+    for (y, row) in buffer.iter_mut().enumerate() {
+        for (x, pixel) in row.iter_mut().enumerate() {
             let u = if width > 1 {
                 x as f32 / (width as f32 - 1.0)
             } else {
@@ -46,8 +46,9 @@ pub fn render_with_orientation(
             };
             let ray = camera.get_ray(u, v);
 
-            let intensity = if let Some(hit) = scene.hit(&ray, 0.001, f32::MAX) {
-                match mode {
+            let intensity = scene
+                .hit(&ray, 0.001, f32::MAX)
+                .map_or(0.0, |hit| match mode {
                     RenderMode::Wireframe { step_rad, tol_rad } => {
                         // Apply optional orientation to the normal before grid test
                         if is_on_wireframe_normal_rotated(
@@ -69,12 +70,9 @@ pub fn render_with_orientation(
                         }
                         sum.clamp(0.0, 1.0)
                     }
-                }
-            } else {
-                0.0
-            };
+                });
 
-            buffer[y][x] = intensity;
+            *pixel = intensity;
         }
     }
 
@@ -82,6 +80,9 @@ pub fn render_with_orientation(
 }
 
 /// Simple edge/vertex renderer for mesh scenes with hidden-line removal.
+// Public API re-exported from `raytracer::mod`; grouping the parameters into a
+// struct would be a breaking change for downstream callers.
+#[allow(clippy::too_many_arguments)]
 pub fn render_edges_with_orientation(
     scene: &Scene,
     camera: &Camera,
@@ -203,7 +204,7 @@ pub fn render_edges_with_orientation(
 
     // Draw vertices on top (will only appear if nearest at that pixel)
     let vert_r = (vertex_px.max(1) / 2).max(0);
-    for &p in verts.iter() {
+    for &p in verts {
         if let Some((x, y, d)) = project(p) {
             draw_disc(x, y, vert_r, d, &mut set_px_depth);
         }

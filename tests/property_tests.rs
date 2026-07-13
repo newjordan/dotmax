@@ -517,7 +517,7 @@ mod density_tests {
                 .map(|i| char::from_u32(32 + i as u32).unwrap_or(' '))
                 .collect();
 
-            let result = DensitySet::new("Custom".to_string(), chars.clone());
+            let result = DensitySet::new("Custom".to_string(), chars);
             prop_assert!(result.is_ok());
 
             let density = result.unwrap();

@@ -133,7 +133,7 @@ fn parse_args() -> Result<Options, String> {
             }
             _ => {
                 if opts.video_path.is_empty() {
-                    opts.video_path = args[i].clone();
+                    opts.video_path.clone_from(&args[i]);
                 } else {
                     return Err(format!("Unexpected argument: {}", args[i]));
                 }
@@ -213,8 +213,7 @@ fn main() -> dotmax::Result<()> {
     println!(
         "  Threshold:  {}",
         opts.threshold
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| "Auto (Otsu)".to_string())
+            .map_or_else(|| "Auto (Otsu)".to_string(), |t| t.to_string())
     );
     println!("  Brightness: {:.2}", opts.brightness);
     println!("  Contrast:   {:.2}", opts.contrast);

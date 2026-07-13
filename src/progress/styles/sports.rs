@@ -447,7 +447,7 @@ impl ProgressStyle for SwimmingLaps {
         } else {
             swim_x as i32 + 2
         };
-        let kick_off = (stroke * -1.0).round() as i32;
+        let kick_off = (-stroke).round() as i32;
         draw::dot_i(grid, kick_x, sy as i32 + kick_off);
         draw::dot_i(grid, kick_x, sy as i32 + kick_off + 1);
 
@@ -499,7 +499,7 @@ impl ProgressStyle for Archery {
         // Bullseye target: concentric rings on the right.
         let target_cx = w.saturating_sub(3) as i32;
         let target_cy = mid as i32;
-        let max_r = ((h / 2).min(3)).max(1) as i32;
+        let max_r = (h / 2).clamp(1, 3) as i32;
         for r in (1..=max_r).rev() {
             // Approximate circle with 8 cardinal dots.
             for &(dx, dy) in &[
@@ -691,7 +691,7 @@ impl ProgressStyle for Darts {
         // Dartboard: concentric dot-rings on the right, centered.
         let board_cx = w.saturating_sub(2) as i32;
         let board_cy = mid as i32;
-        let n_rings = ((h / 2).min(4)).max(1);
+        let n_rings = (h / 2).clamp(1, 4);
         for r in 1..=n_rings {
             let radius = r as i32;
             // Draw partial ellipse (wider than tall) using parametric dots.
@@ -1084,7 +1084,7 @@ impl ProgressStyle for CyclingPeloton {
         let lead_x = lead_x.min(w.saturating_sub(1));
 
         // Number of riders: scales with bar width, minimum 2.
-        let n_riders = (w / 10).max(2).min(8);
+        let n_riders = (w / 10).clamp(2, 8);
         // Pack depth behind leader.
         let pack_depth = (n_riders as f32 * 5.0) as usize;
 

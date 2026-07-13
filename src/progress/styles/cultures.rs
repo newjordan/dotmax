@@ -826,7 +826,7 @@ impl ProgressStyle for PaisleySwirl {
         }
 
         // Number of paisley seeds tiling the bar.
-        let n_seeds: usize = ((dw / (dh.max(1) * 2)).max(1)).min(12);
+        let n_seeds: usize = (dw / (dh.max(1) * 2)).clamp(1, 12);
         let seed_w = dw / n_seeds.max(1);
 
         let eased_e = ease(Easing::QuadOut, ctx.eased);
@@ -905,7 +905,7 @@ impl ProgressStyle for KenteWeave {
         }
 
         // Strip width in dots (both warp and weft).
-        let strip = ((dh / 4).max(1)).min(6).min(dw);
+        let strip = (dh / 4).clamp(1, 6).min(dw);
         let n_warp = (dw / (strip * 2).max(1)).max(1);
         let n_weft = (dh / (strip * 2).max(1)).max(1);
 

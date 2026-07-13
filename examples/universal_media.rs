@@ -29,6 +29,7 @@
 use dotmax::media::{detect_format, detect_format_from_bytes, MediaContent, MediaFormat};
 use dotmax::quick;
 use std::env;
+use std::fmt::Write as _;
 use std::io::Read;
 use std::path::Path;
 
@@ -172,11 +173,10 @@ fn demonstrate_format_detection() {
 
     for (name, bytes) in test_cases {
         let format = detect_format_from_bytes(&bytes);
-        let hex: String = bytes
-            .iter()
-            .take(8)
-            .map(|b| format!("{:02X} ", b))
-            .collect();
+        let mut hex = String::new();
+        for b in bytes.iter().take(8) {
+            let _ = write!(hex, "{b:02X} ");
+        }
         println!("{:12} | {} | -> {}", name, hex.trim(), format);
     }
 

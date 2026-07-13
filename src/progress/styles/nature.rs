@@ -113,7 +113,7 @@ impl ProgressStyle for GrassBlade {
             return Ok(());
         }
 
-        let blade_spacing = 3usize.max(1);
+        let blade_spacing = 3usize;
         let base_y = h.saturating_sub(1);
         let max_growth = h.saturating_sub(1);
 

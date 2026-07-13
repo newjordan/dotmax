@@ -328,6 +328,11 @@ pub const ALL_EASINGS: [Easing; 31] = [
 ];
 
 #[cfg(test)]
+// Exact float equality is the property under test here: the easing curves must
+// hit their endpoints exactly (0.0 and 1.0) and lerp must be exact at the
+// midpoint. All compared values are exactly representable in f32, so an epsilon
+// comparison would weaken the assertions rather than fix them.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

@@ -328,7 +328,7 @@ fn run_webcam_tuner(camera_index: usize) -> dotmax::Result<()> {
         player.height(),
         player.fps()
     );
-    std::thread::sleep(Duration::from_millis(1000));
+    std::thread::sleep(Duration::from_secs(1));
 
     // Enter raw mode and alternate screen
     terminal::enable_raw_mode()?;

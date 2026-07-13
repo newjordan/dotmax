@@ -258,15 +258,13 @@ impl ProgressStyle for GoldenSpiral {
         // Arc start angles — one quarter-circle sweep per square, clockwise.
         let arc_starts: [f32; 4] = [PI, 3.0 * PI / 2.0, 0.0, PI / 2.0];
 
-        let mut dir_idx = 0usize;
         // Pivot = arc center in normalised units (starts at origin = grid center).
         let mut px_n: f32 = 0.0;
         let mut py_n: f32 = 0.0;
         let (dcx, dcy) = center(dw, dh);
 
-        for i in 0..n_show {
-            let side = fibs[i];
-            let a_start = arc_starts[dir_idx % 4];
+        for (i, &side) in fibs.iter().take(n_show).enumerate() {
+            let a_start = arc_starts[i % 4];
             let a_end = a_start - PI / 2.0; // quarter circle, clockwise in screen
 
             // Convert normalised pivot to dot-space.
@@ -274,7 +272,7 @@ impl ProgressStyle for GoldenSpiral {
             let arc_cy = dcy + py_n * unit; // norm y positive = down = dot-space y positive
 
             // Draw the outline of the square.
-            let (ddx, ddy) = dirs[dir_idx % 4];
+            let (ddx, ddy) = dirs[i % 4];
             // The square occupies from (px_n, py_n) extending in the direction
             // perpendicular to current movement.  Just draw the arc; suppress
             // the square outline for cleaner look (arc alone reads well).
@@ -284,7 +282,7 @@ impl ProgressStyle for GoldenSpiral {
                 // For direction 0 (right): square is to the right, corners at
                 // (px_n, py_n), (px_n+s, py_n), (px_n+s, py_n-s), (px_n, py_n-s).
                 // For simplicity, derive from dir and perp.
-                let perp = match dir_idx % 4 {
+                let perp = match i % 4 {
                     0 => (0.0, -1.0), // right-moving: square extends up (norm)
                     1 => (1.0, 0.0),  // down-moving:  square extends right
                     2 => (0.0, 1.0),  // left-moving:  square extends down
@@ -311,7 +309,7 @@ impl ProgressStyle for GoldenSpiral {
             arc(grid, arc_cx, arc_cy, side * unit, a_start, a_end);
 
             // Advance pivot.
-            let (adx, ady) = match dir_idx % 4 {
+            let (adx, ady) = match i % 4 {
                 0 => (side, 0.0),  // moved right → pivot goes right by side
                 1 => (0.0, side),  // moved down  → pivot goes down by side
                 2 => (-side, 0.0), // moved left  → pivot goes left by side
@@ -321,7 +319,6 @@ impl ProgressStyle for GoldenSpiral {
             // That corner is pivot + current_dir*side (the arc center was at start pivot).
             px_n += adx;
             py_n += ady;
-            dir_idx += 1;
         }
 
         Ok(())
@@ -387,7 +384,7 @@ impl ProgressStyle for GoldenRectangle {
         drawn += 1;
 
         let mut next_rects: Vec<(f32, f32, f32, f32, bool)> = Vec::new();
-        let mut current = rects.clone();
+        let mut current = rects;
 
         for _d in 0..depth.saturating_sub(1) {
             next_rects.clear();
@@ -438,7 +435,7 @@ impl ProgressStyle for GoldenRectangle {
             if next_rects.is_empty() {
                 break;
             }
-            current = next_rects.clone();
+            current.clone_from(&next_rects);
         }
         let _ = drawn;
         Ok(())
@@ -483,12 +480,10 @@ impl ProgressStyle for FibonacciSquares {
 
         let mut px_n: f32 = 0.0;
         let mut py_n: f32 = 0.0;
-        let mut dir_idx = 0usize;
 
-        for i in 0..n_show {
-            let side = fibs[i];
-            let (ddx, ddy) = dirs[dir_idx % 4];
-            let (ppx, ppy) = perps[dir_idx % 4];
+        for (i, &side) in fibs.iter().take(n_show).enumerate() {
+            let (ddx, ddy) = dirs[i % 4];
+            let (ppx, ppy) = perps[i % 4];
             let s = side;
             // Four corners in norm units.
             let c0 = (px_n, py_n);
@@ -506,7 +501,7 @@ impl ProgressStyle for FibonacciSquares {
                 bresenham(grid, p0x, p0y, p1x, p1y);
             }
             // Advance pivot.
-            let step = match dir_idx % 4 {
+            let step = match i % 4 {
                 0 => (side, 0.0),
                 1 => (0.0, side),
                 2 => (-side, 0.0),
@@ -514,7 +509,6 @@ impl ProgressStyle for FibonacciSquares {
             };
             px_n += step.0;
             py_n += step.1;
-            dir_idx += 1;
         }
         Ok(())
     }
@@ -719,17 +713,14 @@ impl ProgressStyle for GoldenGnomon {
         for _d in 0..depth.saturating_sub(1) {
             let mut next: Vec<(Pt, Pt, Pt, bool)> = Vec::new();
             for &(a, b, c, is_gnomon) in &tris {
+                // P on AB s.t. AP = 1/PHI * |AB|, for both subdivisions.
+                let p = lerp_pt(a, b, 1.0 / PHI);
                 if is_gnomon {
-                    // Gnomon subdivision: P on AB s.t. AP = 1/PHI * |AB|.
-                    let p = lerp_pt(a, b, 1.0 / PHI);
                     next.push((p, a, c, true)); // smaller gnomon
-                    next.push((b, p, c, false)); // golden triangle
                 } else {
-                    // Golden-tri: P on AB s.t. AP = 1/PHI * |AB|.
-                    let p = lerp_pt(a, b, 1.0 / PHI);
                     next.push((c, p, a, true)); // gnomon
-                    next.push((b, p, c, false)); // smaller golden-tri
                 }
+                next.push((b, p, c, false)); // golden triangle
             }
             // Draw all triangles at this depth.
             for &(a, b, c, _) in &next {

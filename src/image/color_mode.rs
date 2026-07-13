@@ -750,6 +750,13 @@ pub fn render_image_with_color(
 /// Same as [`render_image_with_color`] but accepts per-frame jitter parameters
 /// for ambient (temporal) dithering. With `JitterParams::NONE` it is identical
 /// to the deterministic entry point.
+///
+/// # Errors
+///
+/// Returns [`DotmaxError`] if:
+/// - `brightness` or `contrast` is outside `0.0..=2.0`, or `gamma` is outside `0.1..=3.0`
+/// - The image is empty (zero width or height)
+/// - Grid allocation fails or a color write falls outside the grid
 #[allow(clippy::too_many_arguments)]
 pub fn render_image_with_color_jittered(
     image: &DynamicImage,

@@ -974,14 +974,14 @@ mod tests {
         for code in 0..8 {
             let escape = ansi16_fg_escape(code);
             assert!(escape.starts_with("\x1b[3"));
-            assert!(escape.ends_with("m"));
+            assert!(escape.ends_with('m'));
         }
 
         // Bright colors (8-15)
         for code in 8..16 {
             let escape = ansi16_fg_escape(code);
             assert!(escape.starts_with("\x1b[9"));
-            assert!(escape.ends_with("m"));
+            assert!(escape.ends_with('m'));
         }
     }
 

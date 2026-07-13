@@ -230,6 +230,9 @@ mod tests {
     use super::*;
 
     #[test]
+    // The nested `returns_result` fn exists *because* it always returns `Ok`: it proves the
+    // re-exported `Result<T>` alias is usable as a return type. Unwrapping it defeats the test.
+    #[allow(clippy::unnecessary_wraps)]
     fn test_core_types_accessible() {
         // Test BrailleGrid
         let grid = BrailleGrid::new(10, 5).unwrap();
@@ -287,6 +290,9 @@ mod tests {
     }
 
     #[test]
+    // These bindings are the assertion: they only have to *name* and type-check each re-export.
+    // Having no runtime effect is the point, so the effect-free-binding lint is expected here.
+    #[allow(clippy::no_effect_underscore_binding)]
     fn test_color_types_accessible() {
         // Test ColorCapability
         let _cap = ColorCapability::TrueColor;
@@ -309,6 +315,8 @@ mod tests {
 
     #[test]
     #[cfg(feature = "image")]
+    // Effect-free by design: the binding exists only to prove the re-export type-checks.
+    #[allow(clippy::no_effect_underscore_binding)]
     fn test_image_types_accessible() {
         // Test ImageRenderer
         let _renderer = ImageRenderer::new();
@@ -319,6 +327,8 @@ mod tests {
 
     #[test]
     #[cfg(feature = "image")]
+    // Effect-free by design: the fn-pointer bindings only assert the re-exported signatures.
+    #[allow(clippy::no_effect_underscore_binding)]
     fn test_media_types_accessible() {
         // Test MediaContent enum variants are accessible
         // We can't easily construct them without real files, but we can verify
@@ -342,6 +352,8 @@ mod tests {
 
     #[test]
     #[cfg(feature = "video")]
+    // Effect-free by design: the bindings only assert the re-exported types/signatures exist.
+    #[allow(clippy::no_effect_underscore_binding)]
     fn test_webcam_types_accessible() {
         // Test WebcamDevice
         let device = WebcamDevice::new("/dev/video0", "Test Camera", "Test description");
@@ -368,6 +380,9 @@ mod tests {
     }
 
     #[test]
+    // `_use_result_alias` must return `Ok` unconditionally: it is a compile-time check that the
+    // `Result<T>` alias coexists with every other re-export without a naming conflict.
+    #[allow(clippy::unnecessary_wraps)]
     fn test_no_naming_conflicts() {
         // This test verifies that all re-exported items can be used together
         // without naming conflicts. If this compiles, there are no conflicts.

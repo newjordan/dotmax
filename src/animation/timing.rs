@@ -418,6 +418,10 @@ impl Default for FrameTimer {
 }
 
 #[cfg(test)]
+// Exact float equality is the property under test: these assert exact stored/reset
+// values (a 0.5 stop, 0.0 fps after reset, exactly-zero shading for a perpendicular
+// light). All are exactly representable, so an epsilon compare would weaken them.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

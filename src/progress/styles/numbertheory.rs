@@ -137,7 +137,7 @@ impl ProgressStyle for Sieve {
         }
 
         // N = number of integers we lay across the width (at least 2).
-        let n = w.max(2).min(2000);
+        let n = w.clamp(2, 2000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Build sieve for 1..=n.
@@ -166,9 +166,9 @@ impl ProgressStyle for Sieve {
         };
 
         // Draw: one dot-column per integer.
-        for k in 1..=revealed {
+        for (k, &comp) in composite.iter().enumerate().skip(1).take(revealed) {
             let x = ((k - 1) * w / n).min(w.saturating_sub(1));
-            let is_p = !composite[k];
+            let is_p = !comp;
             // Primes: full column; composites: half-height bottom tick.
             if is_p {
                 draw::vline(grid, x, 0, h.saturating_sub(1));
@@ -214,7 +214,7 @@ impl ProgressStyle for UlamSpiral {
         let cy = (h / 2) as i32;
 
         // Cap N to avoid spiraling off into unreachable cells.
-        let n = (w * h).min(4000).max(1);
+        let n = (w * h).clamp(1, 4000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Generate Ulam spiral coords for 1..=revealed.
@@ -282,24 +282,23 @@ impl ProgressStyle for PrimeCounting {
             return Ok(());
         }
 
-        let n = w.max(2).min(3000);
+        let n = w.clamp(2, 3000);
         let revealed_x = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Precompute π(k) for k in 1..=n.
         let mut pi = 0usize;
         let mut prime_counts = vec![0usize; n + 1];
-        for k in 1..=n {
+        for (k, count) in prime_counts.iter_mut().enumerate().skip(1) {
             if is_prime(k as u64) {
                 pi += 1;
             }
-            prime_counts[k] = pi;
+            *count = pi;
         }
         let pi_max = prime_counts[n].max(1);
 
         // Draw the step curve up to revealed_x.
-        for k in 1..=revealed_x {
+        for (k, &count) in prime_counts.iter().enumerate().skip(1).take(revealed_x) {
             let x = ((k - 1) * w / n).min(w.saturating_sub(1));
-            let count = prime_counts[k];
             // Map prime count to y (bottom = 0 primes, top = pi_max).
             let bar_h = (count * h / pi_max).min(h);
             let y0 = h.saturating_sub(bar_h);
@@ -341,7 +340,7 @@ impl ProgressStyle for Collatz {
         }
 
         // Number of seeds = width in dots, max 500.
-        let n_seeds = w.min(500).max(1);
+        let n_seeds = w.clamp(1, 500);
         let revealed = ((ctx.eased * n_seeds as f32).round() as usize).min(n_seeds);
 
         // Collatz stopping time for seed k.
@@ -428,7 +427,7 @@ impl ProgressStyle for FibonacciSpiral {
         for (arc_idx, &fib) in fibs.iter().enumerate().take(revealed) {
             let r = fib as f32;
             let angle_start = start_angles[arc_idx % 4];
-            let steps = ((r * PI / 2.0) as usize).max(4).min(256);
+            let steps = ((r * PI / 2.0) as usize).clamp(4, 256);
 
             for s in 0..=steps {
                 let theta = angle_start + (s as f32 / steps as f32) * (PI / 2.0);
@@ -455,12 +454,12 @@ impl ProgressStyle for FibonacciSpiral {
             // cursor centre — approximate; recompute centre for last arc.
             let mut cxl = cx;
             let mut cyl = cy;
-            for i in 0..last_idx {
+            for (i, &fib) in fibs.iter().enumerate().take(last_idx) {
                 match i % 4 {
-                    0 => cyl -= fibs[i] as i32,
-                    1 => cxl -= fibs[i] as i32,
-                    2 => cyl += fibs[i] as i32,
-                    _ => cxl += fibs[i] as i32,
+                    0 => cyl -= fib as i32,
+                    1 => cxl -= fib as i32,
+                    2 => cyl += fib as i32,
+                    _ => cxl += fib as i32,
                 }
             }
             let px = cxl + (theta.cos() * r) as i32;
@@ -518,8 +517,8 @@ impl ProgressStyle for PascalMod {
             // The Pascal triangle at row r has r+1 non-trivial entries; we
             // spread them symmetrically across the width.
             let entries = (r + 1).min(row_len);
-            for c in 0..entries {
-                if row[c] % modulus != 0 {
+            for (c, &val) in row.iter().enumerate().take(entries) {
+                if val % modulus != 0 {
                     // Map entry position to x.
                     let x = if entries <= 1 {
                         w / 2
@@ -561,7 +560,7 @@ impl ProgressStyle for TotientHistogram {
             return Ok(());
         }
 
-        let n = w.max(2).min(2000);
+        let n = w.clamp(2, 2000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n).max(1);
 
         // Compute totient for k in 2..=revealed.
@@ -855,7 +854,7 @@ impl ProgressStyle for Recaman {
             return Ok(());
         }
 
-        let max_terms = w.min(60).max(2);
+        let max_terms = w.clamp(2, 60);
         let revealed = ((ctx.eased * max_terms as f32).round() as usize).clamp(1, max_terms);
 
         // Build Recamán sequence.
@@ -895,7 +894,7 @@ impl ProgressStyle for Recaman {
             // Above baseline for backward jumps (a→b where b<a), below for forward.
             let above = !forward;
 
-            let steps = ((arc_r * PI) as usize).max(4).min(256);
+            let steps = ((arc_r * PI) as usize).clamp(4, 256);
             for s in 0..=steps {
                 let theta = s as f32 / steps as f32 * PI;
                 let dx = (theta.cos() * arc_r).round() as i32;

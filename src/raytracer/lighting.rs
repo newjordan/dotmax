@@ -25,6 +25,10 @@ pub fn calculate_diffuse_shading(point: Vector3, normal: Vector3, light: &Light)
 }
 
 #[cfg(test)]
+// Exact float equality is the property under test: these assert exact stored/reset
+// values (a 0.5 stop, 0.0 fps after reset, exactly-zero shading for a perpendicular
+// light). All are exactly representable, so an epsilon compare would weaken them.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

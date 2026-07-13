@@ -551,7 +551,6 @@ impl ProgressStyle for TerminalVelocity {
             return Ok(());
         }
         let wf = w as f32;
-        let _hf = h as f32;
 
         // Physics: τ = 1 (normalised), v_t = 1
         let tau = 1.0_f32;
@@ -1120,7 +1119,7 @@ impl ProgressStyle for Doppler {
             }
 
             // Draw circle outline (dot approximation)
-            let circ_steps = ((radius * PI * 2.0) as usize + 8).max(8).min(128);
+            let circ_steps = ((radius * PI * 2.0) as usize + 8).clamp(8, 128);
             let mut prev_c: Option<(i32, i32)> = None;
             for s in 0..=circ_steps {
                 let angle = s as f32 / circ_steps as f32 * 2.0 * PI;

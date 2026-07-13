@@ -20,7 +20,7 @@ fn parse_index(tok: &str, len: usize) -> Option<usize> {
         }
         // negative
         let n = len as i32;
-        idx = n + idx; // idx is negative
+        idx += n; // idx is negative
         if idx >= 0 {
             return Some(idx as usize);
         }
@@ -29,6 +29,11 @@ fn parse_index(tok: &str, len: usize) -> Option<usize> {
 }
 
 /// Load a very simple OBJ (triangles/quads) into MeshData
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, or if it contains no
+/// geometry (no vertex positions, or no faces referencing them).
 pub fn load_obj<P: AsRef<Path>>(path: P) -> Result<MeshData> {
     let file = File::open(&path)
         .with_context(|| format!("Failed to open OBJ file: {}", path.as_ref().display()))?;
@@ -71,10 +76,10 @@ pub fn load_obj<P: AsRef<Path>>(path: P) -> Result<MeshData> {
                 let z: f32 = parts[3].parse().unwrap_or(0.0);
                 normals.push(Vector3::new(x, y, z));
             }
-        } else if s.starts_with("f ") {
+        } else if let Some(face_spec) = s.strip_prefix("f ") {
             // faces: triangulate fan
             let mut face_verts: Vec<u32> = Vec::new();
-            for tok in s[2..].split_whitespace() {
+            for tok in face_spec.split_whitespace() {
                 // formats: v, v//vn, v/vt, v/vt/vn
                 let mut v_idx: Option<usize> = None;
                 let mut vn_idx: Option<usize> = None;

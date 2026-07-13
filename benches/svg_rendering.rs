@@ -4,11 +4,12 @@
 
 #![cfg(all(feature = "svg", feature = "image"))]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use dotmax::image::{
     apply_dithering, auto_threshold, load_svg_from_path, pixels_to_braille, to_grayscale,
     DitheringMethod,
 };
+use std::hint::black_box;
 use std::path::Path;
 
 /// Benchmark small SVG rasterization (<5KB icon)

@@ -166,7 +166,7 @@ fn arc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32, a_start: f32, a_end: f3
         return;
     }
     let span = (a_end - a_start).abs();
-    let steps = ((r * span).ceil() as usize).max(4).min(1024);
+    let steps = ((r * span).ceil() as usize).clamp(4, 1024);
     let mut prev: Option<(i32, i32)> = None;
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
@@ -262,7 +262,7 @@ impl ProgressStyle for SriYantra {
         }
 
         // Draw outer lotus ring (8 petals as arcs)
-        if reveal >= total + 1 {
+        if reveal > total {
             let petal_r = r * 0.18;
             let ring_r = r * 1.05;
             let n_petals = 8usize;
@@ -655,7 +655,7 @@ impl ProgressStyle for Rangoli {
         // Grid of pulli dots arranged in concentric diamond rings.
         // Each ring k has 4k dots at distance k*step from center.
         let step = (r_max / 4.0).max(2.0);
-        let n_rings = ((r_max / step) as usize).max(1).min(4);
+        let n_rings = ((r_max / step) as usize).clamp(1, 4);
         let total_dots = 1 + (1..=n_rings).map(|k| 4 * k).sum::<usize>();
         let reveal = (ctx.eased * (total_dots + n_rings * 4) as f32).round() as usize;
 
@@ -940,7 +940,7 @@ impl ProgressStyle for VesicaRosette {
         let reveal = (ctx.eased * (n_petals + 2) as f32).round() as usize;
 
         // Outer enclosing circle
-        if reveal >= n_petals + 1 {
+        if reveal > n_petals {
             circle(grid, cx, cy, r * 1.00);
         }
 

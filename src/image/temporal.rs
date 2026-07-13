@@ -557,18 +557,16 @@ impl DotTemporalFilter {
     pub fn filter(&mut self, dots: &[bool]) -> Vec<bool> {
         let expected_len = self.width * self.height;
 
-        // Initialize confidence if needed
-        if self.confidence.is_none()
-            || self
-                .confidence
-                .as_ref()
-                .is_some_and(|c| c.len() != expected_len)
-        {
-            // Initialize all dots to 0.5 (neutral)
-            self.confidence = Some(vec![0.5; expected_len]);
+        // Initialize confidence if absent or sized for a different grid.
+        // All dots start at 0.5 (neutral).
+        let conf = self
+            .confidence
+            .get_or_insert_with(|| vec![0.5; expected_len]);
+        if conf.len() != expected_len {
+            conf.clear();
+            conf.resize(expected_len, 0.5);
         }
 
-        let conf = self.confidence.as_mut().unwrap();
         let inv_alpha = 1.0 - self.alpha;
 
         dots.iter()
@@ -669,7 +667,7 @@ impl TemporalCoherence {
     /// 1. Frame blending (if enabled)
     /// 2. Hysteresis thresholding (if enabled)
     ///
-    /// Note: Dot-level filtering is applied separately via [`process_dots`].
+    /// Note: Dot-level filtering is applied separately via [`Self::process_dots`].
     ///
     /// # Arguments
     ///
@@ -722,20 +720,14 @@ impl TemporalCoherence {
         }
 
         // Initialize or resize dot filter
-        match &mut self.dot_filter {
-            Some(filter) => {
-                filter.resize(width, height);
-            }
-            None => {
-                self.dot_filter = Some(DotTemporalFilter::new(
-                    self.config.dot_filter_alpha,
-                    width,
-                    height,
-                ));
-            }
-        }
+        let alpha = self.config.dot_filter_alpha;
+        let filter = self
+            .dot_filter
+            .get_or_insert_with(|| DotTemporalFilter::new(alpha, width, height));
+        // No-op when the filter was just created with these dimensions.
+        filter.resize(width, height);
 
-        self.dot_filter.as_mut().unwrap().filter(dots)
+        filter.filter(dots)
     }
 
     /// Updates the configuration.
