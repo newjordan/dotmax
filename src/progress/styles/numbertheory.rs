@@ -166,9 +166,9 @@ impl ProgressStyle for Sieve {
         };
 
         // Draw: one dot-column per integer.
-        for k in 1..=revealed {
+        for (k, &comp) in composite.iter().enumerate().skip(1).take(revealed) {
             let x = ((k - 1) * w / n).min(w.saturating_sub(1));
-            let is_p = !composite[k];
+            let is_p = !comp;
             // Primes: full column; composites: half-height bottom tick.
             if is_p {
                 draw::vline(grid, x, 0, h.saturating_sub(1));
@@ -288,18 +288,17 @@ impl ProgressStyle for PrimeCounting {
         // Precompute π(k) for k in 1..=n.
         let mut pi = 0usize;
         let mut prime_counts = vec![0usize; n + 1];
-        for k in 1..=n {
+        for (k, count) in prime_counts.iter_mut().enumerate().skip(1) {
             if is_prime(k as u64) {
                 pi += 1;
             }
-            prime_counts[k] = pi;
+            *count = pi;
         }
         let pi_max = prime_counts[n].max(1);
 
         // Draw the step curve up to revealed_x.
-        for k in 1..=revealed_x {
+        for (k, &count) in prime_counts.iter().enumerate().skip(1).take(revealed_x) {
             let x = ((k - 1) * w / n).min(w.saturating_sub(1));
-            let count = prime_counts[k];
             // Map prime count to y (bottom = 0 primes, top = pi_max).
             let bar_h = (count * h / pi_max).min(h);
             let y0 = h.saturating_sub(bar_h);
@@ -455,12 +454,12 @@ impl ProgressStyle for FibonacciSpiral {
             // cursor centre — approximate; recompute centre for last arc.
             let mut cxl = cx;
             let mut cyl = cy;
-            for i in 0..last_idx {
+            for (i, &fib) in fibs.iter().enumerate().take(last_idx) {
                 match i % 4 {
-                    0 => cyl -= fibs[i] as i32,
-                    1 => cxl -= fibs[i] as i32,
-                    2 => cyl += fibs[i] as i32,
-                    _ => cxl += fibs[i] as i32,
+                    0 => cyl -= fib as i32,
+                    1 => cxl -= fib as i32,
+                    2 => cyl += fib as i32,
+                    _ => cxl += fib as i32,
                 }
             }
             let px = cxl + (theta.cos() * r) as i32;
@@ -518,8 +517,8 @@ impl ProgressStyle for PascalMod {
             // The Pascal triangle at row r has r+1 non-trivial entries; we
             // spread them symmetrically across the width.
             let entries = (r + 1).min(row_len);
-            for c in 0..entries {
-                if row[c] % modulus != 0 {
+            for (c, &val) in row.iter().enumerate().take(entries) {
+                if val % modulus != 0 {
                     // Map entry position to x.
                     let x = if entries <= 1 {
                         w / 2

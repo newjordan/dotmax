@@ -101,6 +101,9 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 // Shared helpers
 // ────────────────────────────────────────────────────────────────────────────
 
+/// A triangle tagged with its kind: `(kind, p, q, r)`, vertices in unit space.
+type MarkedTri = (bool, [f32; 2], [f32; 2], [f32; 2]);
+
 /// Grid center in dot-space.
 #[inline]
 fn center(dw: usize, dh: usize) -> (f32, f32) {
@@ -219,7 +222,7 @@ impl ProgressStyle for PenroseP3 {
         // Each triangle: type=Acute, vertices (p,q,r) in unit space.
         // Acute triangle: two short sides length 1, long side PHI.
         //   p = center, q & r on the circle at angles (k±36°)*π/180
-        let mut tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> = Vec::new();
+        let mut tris: Vec<MarkedTri> = Vec::new();
         for k in 0..10usize {
             let a1 = (k as f32 * 36.0) * PI / 180.0;
             let a2 = (k as f32 * 36.0 + 36.0) * PI / 180.0;
@@ -260,9 +263,7 @@ impl ProgressStyle for PenroseP3 {
 
 /// One deflation step for P3 Robinson triangles.
 /// is_acute=true → "acute" (fat-rhombus) triangle, false → "obtuse" (thin-rhombus).
-fn deflate_p3(
-    tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])>,
-) -> Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> {
+fn deflate_p3(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
     let mut out = Vec::with_capacity(tris.len() * 2);
     for (is_acute, p, q, r) in tris {
         if is_acute {
@@ -328,7 +329,7 @@ impl ProgressStyle for PenroseP2 {
         let reveal_frac = (ctx.eased * 4.0).fract();
 
         // Seed: 5 golden triangles forming a "star" at the origin.
-        let mut tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> = Vec::new();
+        let mut tris: Vec<MarkedTri> = Vec::new();
         for k in 0..5usize {
             let a_mid = (k as f32 * 72.0 + 90.0) * PI / 180.0;
             let a_lo = (k as f32 * 72.0 + 90.0 - 36.0) * PI / 180.0;
@@ -365,9 +366,7 @@ impl ProgressStyle for PenroseP2 {
     }
 }
 
-fn deflate_p2(
-    tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])>,
-) -> Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> {
+fn deflate_p2(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
     let mut out = Vec::with_capacity(tris.len() * 2);
     for (is_gt, p, q, r) in tris {
         if is_gt {
@@ -659,13 +658,12 @@ impl ProgressStyle for DeBruijnPentagrid {
         let gammas: [f32; 5] = [0.1, 0.2, -0.15, 0.05, -0.08]; // irrational offsets
         let n_families = (ctx.eased * 5.0).ceil() as usize;
 
-        for fam in 0..n_families.min(5) {
+        for (fam, &gamma) in gammas.iter().enumerate().take(n_families.min(5)) {
             let angle = fam as f32 * 72.0 * PI / 180.0 + rot;
             let perp_x = angle.cos();
             let perp_y = -angle.sin();
             let line_x = -angle.sin();
             let line_y = -angle.cos();
-            let gamma = gammas[fam];
 
             // Draw ~9 parallel lines (4 on each side of center).
             let lines = 9i32;
