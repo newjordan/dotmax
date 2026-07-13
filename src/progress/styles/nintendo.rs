@@ -380,7 +380,7 @@ impl ProgressStyle for TetrisWell {
             let row_mod = (inner_h - 1 - y) % 4;
             if row_mod == 3 {
                 // "Mortar" gap — sparse dots.
-                for x in (1..inner_w + 1).step_by(3) {
+                for x in (1..=inner_w).step_by(3) {
                     draw::dot(grid, x, y);
                 }
             } else {

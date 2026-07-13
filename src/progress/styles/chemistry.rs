@@ -841,7 +841,7 @@ impl ProgressStyle for BoltzmannDistribution {
         }
 
         // Re-check max after shimmer
-        let max_h = heights.iter().cloned().fold(0.0_f32, f32::max).max(0.001);
+        let max_h = heights.iter().copied().fold(0.0_f32, f32::max).max(0.001);
 
         // Draw each column using vblock glyphs from the bottom up
         for col in 0..cw {

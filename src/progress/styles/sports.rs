@@ -447,7 +447,7 @@ impl ProgressStyle for SwimmingLaps {
         } else {
             swim_x as i32 + 2
         };
-        let kick_off = (stroke * -1.0).round() as i32;
+        let kick_off = (-stroke).round() as i32;
         draw::dot_i(grid, kick_x, sy as i32 + kick_off);
         draw::dot_i(grid, kick_x, sy as i32 + kick_off + 1);
 

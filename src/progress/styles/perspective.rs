@@ -1016,7 +1016,7 @@ impl ProgressStyle for ParallaxLayers {
                     if dot_y < dh {
                         draw::dot(grid, px, dot_y);
                     }
-                    if y >= py + 1 {
+                    if y > py {
                         draw::dot(grid, px, y - py - 1);
                     }
                 }

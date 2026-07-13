@@ -348,8 +348,7 @@ impl ApngPlayer {
 
         // Get terminal size for rendering
         let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+            .map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         // Allocate frame buffer
         let frame_buffer = vec![0u8; png_reader.output_buffer_size().unwrap_or(canvas_size)];

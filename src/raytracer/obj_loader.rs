@@ -20,7 +20,7 @@ fn parse_index(tok: &str, len: usize) -> Option<usize> {
         }
         // negative
         let n = len as i32;
-        idx = n + idx; // idx is negative
+        idx += n; // idx is negative
         if idx >= 0 {
             return Some(idx as usize);
         }

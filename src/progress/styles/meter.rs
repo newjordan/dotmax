@@ -253,7 +253,7 @@ impl ProgressStyle for RingProgress {
 
         // Filled arc — dense dots over eased fraction.
         let filled_steps = ((r as f32 * 2.0 * PI * ctx.eased.clamp(0.0, 1.0)).round() as usize)
-            .max(if ctx.eased > 0.0 { 1 } else { 0 });
+            .max(usize::from(ctx.eased > 0.0));
         for i in 0..=filled_steps {
             let t = if filled_steps == 0 {
                 0.0

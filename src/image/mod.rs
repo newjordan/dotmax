@@ -166,8 +166,7 @@ fn clock_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0xA5A5_5A5A_5A5A_A5A5)
+        .map_or(0xA5A5_5A5A_5A5A_A5A5, |d| d.as_nanos() as u64)
 }
 
 /// Resize mode configuration for [`ImageRenderer`].

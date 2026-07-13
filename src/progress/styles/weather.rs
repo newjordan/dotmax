@@ -832,7 +832,7 @@ impl ProgressStyle for FrostCrystals {
         // Each edge has a set of roots spaced every 4 dots along the edge.
         // From each root, a main spine grows inward; then side branches sprout
         // every few dots, each in the perpendicular direction.
-        let branch_spacing = 4usize.max(1);
+        let branch_spacing = 4usize;
         let branch_len_frac = 0.4_f32;
 
         // Left edge.

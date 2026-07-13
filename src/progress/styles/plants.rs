@@ -406,7 +406,7 @@ impl ProgressStyle for IvyTrellis {
         }
 
         // Draw trellis: vertical posts every 8 dots, two horizontal rails.
-        let post_spacing = 8usize.max(1);
+        let post_spacing = 8usize;
         let rail1 = h / 4;
         let rail2 = 3 * h / 4;
         // Top rail.
@@ -446,7 +446,7 @@ impl ProgressStyle for IvyTrellis {
         }
 
         // Tendrils: small clockwise spirals hanging off the bottom vine.
-        let tendril_spacing = 12usize.max(1);
+        let tendril_spacing = 12usize;
         let tendril_count = vine_end_dot / tendril_spacing;
         for t_idx in 0..tendril_count {
             let tx = (t_idx * tendril_spacing + tendril_spacing / 2).min(w.saturating_sub(1));

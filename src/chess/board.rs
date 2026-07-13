@@ -81,7 +81,7 @@ pub fn render_position_with_options(
     let square_height_dots = (height_cells * 4) / 8;
 
     for rank in Rank::ALL.iter().rev() {
-        for file in File::ALL.iter() {
+        for file in &File::ALL {
             let square = Square::from_coords(*file, *rank);
             let is_light = (u32::from(*file) + u32::from(*rank)) % 2 != 0;
 

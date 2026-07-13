@@ -196,9 +196,9 @@ impl ProgressStyle for Skyscraper {
 
         // Crane: vertical mast above the building top.
         if floors >= max_floors.saturating_sub(1) || floors > 0 {
-            let mast_top_y = dh.saturating_sub(floors + 2).max(0) as i32;
+            let mast_top_y = dh.saturating_sub(floors + 2) as i32;
             let mast_x = (bld_x1 as i32).min(dw as i32 - 1);
-            let building_top_y = dh.saturating_sub(floors + 1).max(0) as i32;
+            let building_top_y = dh.saturating_sub(floors + 1) as i32;
             // Mast (vertical post).
             for y in mast_top_y..=building_top_y {
                 draw::dot_i(grid, mast_x, y);
@@ -1045,7 +1045,7 @@ impl ProgressStyle for Blueprint {
         if ctx.eased > 0.85 {
             let dim_p = (ctx.eased - 0.85) / 0.15;
             // Dimension line along the top.
-            let y_dim = (dh / 8).saturating_sub(2).max(0);
+            let y_dim = (dh / 8).saturating_sub(2);
             let x_end = (dim_p * dw as f32) as usize;
             draw::hline(grid, 0, x_end.min(dw.saturating_sub(1)), y_dim);
             // Arrow heads.

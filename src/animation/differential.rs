@@ -448,7 +448,7 @@ mod tests {
         let mut renderer = DifferentialRenderer::new();
         renderer.last_frame = Some(BrailleGrid::new(10, 10).unwrap());
 
-        let cloned = renderer.clone();
+        let cloned = renderer;
         assert!(cloned.has_previous_frame());
     }
 }

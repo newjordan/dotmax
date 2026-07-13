@@ -286,8 +286,7 @@ impl GifPlayer {
 
         // Get terminal size for rendering
         let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+            .map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         Ok(Self {
             path,

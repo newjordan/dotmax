@@ -1206,7 +1206,7 @@ impl ProgressStyle for FerryCrossing {
             (wake_y0 + wake_angle_dots).min(dh as i32 - 1),
         );
         // Ripple dots along wake
-        for w in (0..wake_len as usize).step_by(4.max(1)) {
+        for w in (0..wake_len as usize).step_by(4) {
             let phase = w as f32 / wake_len as f32;
             let spread = (phase * wake_angle_dots as f32) as i32;
             let wx = stern_x - w as i32;

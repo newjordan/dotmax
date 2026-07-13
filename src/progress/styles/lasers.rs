@@ -884,7 +884,7 @@ impl ProgressStyle for ParticleAccelerator {
             for w_step in 1..wake_len {
                 // Probability falls off with distance.
                 if w_step * 3 < wake_len * 2 {
-                    let wx = if pos >= w_step { pos - w_step } else { 0 };
+                    let wx = pos.saturating_sub(w_step);
                     draw::dot_i(grid, wx as i32, mid as i32);
                 }
             }

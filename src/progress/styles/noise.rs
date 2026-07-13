@@ -837,7 +837,7 @@ impl ProgressStyle for TopoContour {
                 // Draw at contour bands: every 1/n_levels interval near an isoline.
                 let band = (n * n_levels as f32).fract();
                 // A dot is on the isoline if the band value is near 0 or 1.
-                if band < 0.12 || band > 0.88 {
+                if !(0.12..=0.88).contains(&band) {
                     draw::dot(grid, dx, dy);
                 }
             }

@@ -19,7 +19,7 @@ use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
-const PHI: f32 = 1.6180339887;
+const PHI: f32 = 1.618_034;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -586,7 +586,7 @@ impl ProgressStyle for AmmannBars {
                 let step = if use_long { l_step } else { s_step };
                 // Update Fibonacci-like counter (Beatty sequence approximation).
                 let old_a = fib_a;
-                fib_a = fib_a + fib_b;
+                fib_a += fib_b;
                 fib_b = old_a;
                 let fib_a_c = fib_a;
                 let fib_b_c = fib_b;

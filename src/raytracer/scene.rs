@@ -17,6 +17,12 @@ pub struct Scene {
     pub(crate) mesh_edges: Option<Vec<(Vector3, Vector3)>>,
 }
 
+impl Default for Scene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scene {
     pub fn new() -> Self {
         Self {

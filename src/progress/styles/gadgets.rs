@@ -946,7 +946,7 @@ impl ProgressStyle for GearTrain {
                 let theta = i as f32 / steps as f32 * 2.0 * PI + angle_offset;
                 // Is this angle at a tooth?
                 let tooth_phase = (theta * n_teeth as f32 / (2.0 * PI)).fract();
-                let tooth_bump = if tooth_phase < 0.25 || tooth_phase > 0.75 {
+                let tooth_bump = if !(0.25..=0.75).contains(&tooth_phase) {
                     tooth_len
                 } else {
                     0.0

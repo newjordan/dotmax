@@ -334,7 +334,7 @@ impl ProgressStyle for Bounce {
             if i >= 8 && i % 2 == 1 {
                 continue;
             }
-            let half: i32 = if i < 3 { 1 } else { 0 };
+            let half: i32 = i32::from(i < 3);
             for dy in -half..=half {
                 draw::dot_i(grid, tx, cy + dy);
             }

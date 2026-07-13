@@ -203,7 +203,7 @@ pub fn render_edges_with_orientation(
 
     // Draw vertices on top (will only appear if nearest at that pixel)
     let vert_r = (vertex_px.max(1) / 2).max(0);
-    for &p in verts.iter() {
+    for &p in verts {
         if let Some((x, y, d)) = project(p) {
             draw_disc(x, y, vert_r, d, &mut set_px_depth);
         }

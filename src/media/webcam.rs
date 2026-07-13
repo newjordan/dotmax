@@ -672,8 +672,7 @@ impl WebcamPlayer {
         // Braille cells are 2x4 pixels, so terminal of 200x50 = 400x200 pixels needed
         // Request slightly higher to allow for aspect ratio adjustment
         let (term_width, term_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as u32, h as u32))
-            .unwrap_or((80, 24));
+            .map_or((80, 24), |(w, h)| (w as u32, h as u32));
 
         // Target pixels needed (with some headroom)
         let needed_width = term_width * 2;
@@ -796,8 +795,7 @@ impl WebcamPlayer {
 
         // Get terminal size
         let (terminal_width, terminal_height) = crossterm::terminal::size()
-            .map(|(w, h)| (w as usize, h as usize))
-            .unwrap_or((80, 24));
+            .map_or((80, 24), |(w, h)| (w as usize, h as usize));
 
         // Calculate target pixel dimensions for braille grid
         let target_pixel_width = (terminal_width * 2) as u32;

@@ -170,7 +170,7 @@ impl ProgressStyle for GallopingHorse {
             draw::dot_i(grid, lx, knee_y);
             // Lower leg + hoof.
             draw::dot_i(grid, lx, foot_y);
-            if foot_y + 1 <= base as i32 {
+            if foot_y < base as i32 {
                 draw::dot_i(grid, lx, foot_y + 1); // hoof ground touch
             }
         }

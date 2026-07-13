@@ -425,7 +425,7 @@ impl ProgressStyle for RabbitHops {
         for x in (0..wi).step_by(2) {
             draw::dot_i(grid, x, ground);
         }
-        for k in 0..(wi / 9 + 1) {
+        for k in 0..=(wi / 9) {
             let gx = k * 9 + 4;
             draw::dot_i(grid, gx, ground - 1);
             draw::dot_i(grid, gx + 1, ground - 2);
@@ -805,7 +805,7 @@ impl ProgressStyle for AntMarch {
             draw::dot(grid, (ant_x + 2).min(w - 1), base);
             // Legs (3 pairs): alternate up/down with phase.
             for leg in 0..3usize {
-                let leg_y_off = if (leg + leg_up) % 2 == 0 { 0i32 } else { 1i32 };
+                let leg_y_off = i32::from((leg + leg_up) % 2 != 0);
                 // Left leg.
                 draw::dot_i(
                     grid,

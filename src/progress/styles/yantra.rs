@@ -262,7 +262,7 @@ impl ProgressStyle for SriYantra {
         }
 
         // Draw outer lotus ring (8 petals as arcs)
-        if reveal >= total + 1 {
+        if reveal > total {
             let petal_r = r * 0.18;
             let ring_r = r * 1.05;
             let n_petals = 8usize;
@@ -940,7 +940,7 @@ impl ProgressStyle for VesicaRosette {
         let reveal = (ctx.eased * (n_petals + 2) as f32).round() as usize;
 
         // Outer enclosing circle
-        if reveal >= n_petals + 1 {
+        if reveal > n_petals {
             circle(grid, cx, cy, r * 1.00);
         }
 

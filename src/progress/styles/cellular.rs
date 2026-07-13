@@ -393,7 +393,7 @@ impl BriansBrain {
         for y in 0..h {
             for x in 0..w {
                 let v = hash2(x as u32, y as u32) % 5;
-                board[y][x] = if v == 0 { 1 } else { 0 };
+                board[y][x] = u8::from(v == 0);
             }
         }
         board
@@ -424,11 +424,7 @@ impl BriansBrain {
                                 }
                             }
                         }
-                        if n == 2 {
-                            1
-                        } else {
-                            0
-                        }
+                        u8::from(n == 2)
                     }
                 };
             }
@@ -464,11 +460,10 @@ impl ProgressStyle for BriansBrain {
         for y in 0..h.min(board.len()) {
             for x in 0..w {
                 let reveal_frac = (x + y) as f32 / max_sum as f32;
-                if reveal_frac <= ctx.eased {
-                    if x < board[y].len() && board[y][x] == 1 {
+                if reveal_frac <= ctx.eased
+                    && x < board[y].len() && board[y][x] == 1 {
                         draw::dot(grid, x, y);
                     }
-                }
             }
         }
 

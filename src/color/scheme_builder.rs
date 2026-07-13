@@ -299,7 +299,7 @@ mod tests {
         let builder = ColorSchemeBuilder::new("clone_test")
             .add_color(0.0, Color::black())
             .add_color(1.0, Color::white());
-        let cloned = builder.clone();
+        let cloned = builder;
         assert_eq!(cloned.name, "clone_test");
         assert_eq!(cloned.stops.len(), 2);
     }

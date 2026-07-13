@@ -551,7 +551,7 @@ impl ProgressStyle for TesseractSpin {
         let mut edges: Vec<(usize, usize)> = Vec::with_capacity(32);
         for i in 0..16usize {
             for j in (i + 1)..16usize {
-                if (i ^ j).count_ones() == 1 {
+                if (i ^ j).is_power_of_two() {
                     edges.push((i, j));
                 }
             }

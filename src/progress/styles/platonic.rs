@@ -374,7 +374,7 @@ impl ProgressStyle for Dodecahedron {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Circumradius of icosahedron with these coords = √(1+φ²) ≈ 1.902.
-const ICOSA_SCALE: f32 = 1.0 / 1.902_113_0;
+const ICOSA_SCALE: f32 = 1.0 / 1.902_113;
 
 const ICOSA_VERTS: [[f32; 3]; 12] = [
     // (0, ±1, ±φ).

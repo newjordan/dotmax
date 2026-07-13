@@ -103,8 +103,7 @@ const DEFAULT_HEIGHT: usize = 24;
 #[inline]
 fn terminal_size() -> (usize, usize) {
     crossterm::terminal::size()
-        .map(|(w, h)| (w as usize, h as usize))
-        .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT))
+        .map_or((DEFAULT_WIDTH, DEFAULT_HEIGHT), |(w, h)| (w as usize, h as usize))
 }
 
 /// Waits for any keypress.
@@ -858,12 +857,11 @@ fn play_webcam_internal(mut player: crate::media::WebcamPlayer) -> Result<()> {
                 // Check for events with short timeout
                 if event::poll(Duration::from_millis(5))? {
                     match event::read()? {
-                        Event::Key(key_event) => {
+                        Event::Key(key_event)
                             // Stop on any key (except modifiers alone)
-                            if !matches!(key_event.code, KeyCode::Modifier(_)) {
+                            if !matches!(key_event.code, KeyCode::Modifier(_)) => {
                                 return Ok(());
                             }
-                        }
                         Event::Resize(w, h) => {
                             // Handle terminal resize
                             player.handle_resize(w as usize, h as usize);

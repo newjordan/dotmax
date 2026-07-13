@@ -387,7 +387,7 @@ impl ProgressStyle for GoldenRectangle {
         drawn += 1;
 
         let mut next_rects: Vec<(f32, f32, f32, f32, bool)> = Vec::new();
-        let mut current = rects.clone();
+        let mut current = rects;
 
         for _d in 0..depth.saturating_sub(1) {
             next_rects.clear();
