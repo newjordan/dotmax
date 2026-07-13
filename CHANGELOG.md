@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-05-30
+
+### Added
+
+- Modular `dotmax::progress` loader/progress style system with 586 bundled styles across 52 themes.
+- Terminal loading-bar browser example: `cargo run --example loading_bars`.
+- Single-page loader cell sheet generator: `cargo run --example loading_bar_sheet`.
+- Checked-in HTML preview sheet at `docs/progress_loader_sheet.html`.
+
+### Fixed
+
+- Added the manifest-declared `examples/test_video_decode.rs` file so clean checkouts can parse the crate manifest.
+
 ## [0.1.0] - 2025-11-26
 
 Initial release of dotmax - a high-performance terminal braille rendering library for Rust.
