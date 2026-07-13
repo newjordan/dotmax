@@ -39,6 +39,8 @@ exclude = [
     # Community website assets and generated frontend files
     "site/",
     # Local scratch assets and WIP examples (not part of the crate)
+    "*.log",
+    "docs/examples/",
     "src/image/",
     "dotamax_pets/",
     "examples/mikey.rs",
