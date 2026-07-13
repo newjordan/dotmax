@@ -551,7 +551,6 @@ impl ProgressStyle for TerminalVelocity {
             return Ok(());
         }
         let wf = w as f32;
-        let _hf = h as f32;
 
         // Physics: τ = 1 (normalised), v_t = 1
         let tau = 1.0_f32;

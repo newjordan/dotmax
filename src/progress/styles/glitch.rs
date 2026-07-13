@@ -349,10 +349,8 @@ impl ProgressStyle for Bitcrush {
             let fc = col as f32;
             let state = if fc + 1.0 <= lit {
                 2 // solid
-            } else if fc < lit {
-                1 // popping in
             } else {
-                0
+                i32::from(fc < lit) // 1 = popping in, 0 = empty
             };
             if state == 0 {
                 continue;

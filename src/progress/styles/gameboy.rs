@@ -13,6 +13,7 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, DotmaxError};
+use std::cmp::Ordering;
 use std::f32::consts::PI;
 
 /// All styles in the `gameboy` theme.
@@ -797,16 +798,20 @@ impl ProgressStyle for HeartContainers {
 
         for h_idx in 0..max_hearts {
             let cx_start = h_idx * heart_w;
-            let heart_shade = if h_idx < full_hearts {
-                // Fully filled heart.
-                4usize
-            } else if h_idx == full_hearts {
-                // Partially filled — shade by partial fraction + pulse.
-                let lvl = (partial_frac * 3.0 + pulse * 0.5) as usize;
-                (lvl + 1).min(4)
-            } else {
-                // Empty heart container.
-                2
+            let heart_shade = match h_idx.cmp(&full_hearts) {
+                Ordering::Less => {
+                    // Fully filled heart.
+                    4usize
+                }
+                Ordering::Equal => {
+                    // Partially filled — shade by partial fraction + pulse.
+                    let lvl = (partial_frac * 3.0 + pulse * 0.5) as usize;
+                    (lvl + 1).min(4)
+                }
+                Ordering::Greater => {
+                    // Empty heart container.
+                    2
+                }
             };
 
             // Each heart: top row is 2 bumps (shade 4 at edges, 3 in middle),
@@ -1109,16 +1114,15 @@ impl ProgressStyle for WarioTreasure {
                     ctx.palette.sample(0.9),
                 );
             }
-            if fill_rows > 0 && fill_start <= cy && cy < ch.saturating_sub(1)
-                && chest_start < cw {
-                    draw::tint_row(
-                        grid,
-                        cy,
-                        chest_start + 1,
-                        (chest_start + chest_w.saturating_sub(2)).min(cw.saturating_sub(1)),
-                        ctx.palette.sample(ctx.eased),
-                    );
-                }
+            if fill_rows > 0 && fill_start <= cy && cy < ch.saturating_sub(1) && chest_start < cw {
+                draw::tint_row(
+                    grid,
+                    cy,
+                    chest_start + 1,
+                    (chest_start + chest_w.saturating_sub(2)).min(cw.saturating_sub(1)),
+                    ctx.palette.sample(ctx.eased),
+                );
+            }
         }
         Ok(())
     }

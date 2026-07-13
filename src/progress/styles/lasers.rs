@@ -730,13 +730,11 @@ impl ProgressStyle for FiberPulse {
                 let py = v_off + fiber_amp * (x_frac * freq * 2.0 * PI + phase_off).sin();
                 // Intensity falls off from centre of pulse.
                 let dist = (dp as i32 - pulse_half as i32).abs();
+                // Core dot.
+                draw::dot_i(grid, ppx as i32, py as i32);
                 if dist <= 2 {
-                    // Core dot.
-                    draw::dot_i(grid, ppx as i32, py as i32);
                     draw::dot_i(grid, ppx as i32, py as i32 - 1);
                     draw::dot_i(grid, ppx as i32, py as i32 + 1);
-                } else {
-                    draw::dot_i(grid, ppx as i32, py as i32);
                 }
             }
 

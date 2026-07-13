@@ -288,12 +288,9 @@ impl ProgressStyle for CastleBuild {
             let _y1 = h.saturating_sub(course * course_h + 1);
 
             // Alternate stone patterns: solid courses and mortar-jointed rows.
-            if course % 2 == 0 {
-                // Solid course
-                draw::fill_rect(grid, 0, y0, w, course_h);
-            } else {
+            draw::fill_rect(grid, 0, y0, w, course_h);
+            if course % 2 != 0 {
                 // Jointed course: solid but with gaps at alternating x positions
-                draw::fill_rect(grid, 0, y0, w, course_h);
                 // Mortar joints (knock out single dots) — staggered per course
                 let offset = (course / 2) % 2;
                 let joint_spacing = 4usize;
@@ -505,10 +502,9 @@ impl ProgressStyle for ShieldCharge {
         let boss_r = (arm_w / 2).max(1);
         for dy in -boss_r..=boss_r {
             for dx in -boss_r..=boss_r {
-                if dx * dx + dy * dy <= boss_r * boss_r
-                    && glint {
-                        draw::dot_i(grid, cx + dx, cy + dy);
-                    }
+                if dx * dx + dy * dy <= boss_r * boss_r && glint {
+                    draw::dot_i(grid, cx + dx, cy + dy);
+                }
             }
         }
 

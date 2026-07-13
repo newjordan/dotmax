@@ -877,11 +877,11 @@ impl ProgressStyle for CosmicWeb {
             edges.push((i, (i + NUM_NODES as usize / 2) % NUM_NODES as usize));
         }
         // Remove exact duplicates (normalise so a < b).
-        edges.iter_mut().for_each(|(a, b)| {
+        for (a, b) in &mut edges {
             if *a > *b {
                 std::mem::swap(a, b);
             }
-        });
+        }
         edges.sort_unstable();
         edges.dedup();
 

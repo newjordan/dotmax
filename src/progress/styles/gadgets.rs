@@ -946,10 +946,10 @@ impl ProgressStyle for GearTrain {
                 let theta = i as f32 / steps as f32 * 2.0 * PI + angle_offset;
                 // Is this angle at a tooth?
                 let tooth_phase = (theta * n_teeth as f32 / (2.0 * PI)).fract();
-                let tooth_bump = if !(0.25..=0.75).contains(&tooth_phase) {
-                    tooth_len
-                } else {
+                let tooth_bump = if (0.25..=0.75).contains(&tooth_phase) {
                     0.0
+                } else {
+                    tooth_len
                 };
                 let r_here = r_f + tooth_bump;
                 let dx = (theta.cos() * r_here) as i32;
@@ -1067,11 +1067,10 @@ impl ProgressStyle for EinkRefresh {
                     let linear = cy * cells_w + cx;
                     let h_val = hash(linear as u32 * 13 + 7);
                     let shade_level = match h_val % 5 {
-                        0 => 1,     // ░
-                        1 => 2,     // ▒
-                        2 => 3,     // ▓
-                        3 | 4 => 4, // █
-                        _ => 4,
+                        0 => 1, // ░
+                        1 => 2, // ▒
+                        2 => 3, // ▓
+                        _ => 4, // █
                     };
                     draw::shade(grid, cx, cy, shade_level);
                     let t = cx as f32 / cells_w.max(1) as f32;

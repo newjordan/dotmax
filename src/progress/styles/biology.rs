@@ -1008,9 +1008,6 @@ impl ProgressStyle for VirusSpread {
             return Ok(());
         }
 
-        // Total tissue cells; infected fraction = eased
-        let _total = cw * ch;
-
         // Infection spreads in a diagonal wave from top-left
         // Cell order: sorted by (cx + cy) ascending (Manhattan distance from origin)
         // We can approximate by iterating and checking if (cx+cy) / (cw+ch-2) <= eased

@@ -28,6 +28,8 @@ use std::f32::consts::PI;
 // Deterministic hash helper for seeding
 // ---------------------------------------------------------------------------
 
+// Hot path: called per-dot inside every chaos render loop; inlining is deliberate.
+#[allow(clippy::inline_always)]
 #[inline(always)]
 fn hash(n: u32) -> u32 {
     let mut x = n.wrapping_mul(2_654_435_761);
