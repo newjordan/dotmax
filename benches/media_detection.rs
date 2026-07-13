@@ -2,7 +2,8 @@
 //!
 //! Story 9.1 AC: #7 - Format detection must complete in <5ms
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -34,19 +35,19 @@ fn bench_detect_format_from_bytes(c: &mut Criterion) {
     let unknown_bytes = [0x00u8; 16];
 
     c.bench_function("detect_format_from_bytes/png", |b| {
-        b.iter(|| detect_format_from_bytes(black_box(&png_bytes)))
+        b.iter(|| detect_format_from_bytes(black_box(&png_bytes)));
     });
 
     c.bench_function("detect_format_from_bytes/jpeg", |b| {
-        b.iter(|| detect_format_from_bytes(black_box(&jpeg_bytes)))
+        b.iter(|| detect_format_from_bytes(black_box(&jpeg_bytes)));
     });
 
     c.bench_function("detect_format_from_bytes/gif", |b| {
-        b.iter(|| detect_format_from_bytes(black_box(&gif_bytes)))
+        b.iter(|| detect_format_from_bytes(black_box(&gif_bytes)));
     });
 
     c.bench_function("detect_format_from_bytes/unknown", |b| {
-        b.iter(|| detect_format_from_bytes(black_box(&unknown_bytes)))
+        b.iter(|| detect_format_from_bytes(black_box(&unknown_bytes)));
     });
 }
 
@@ -77,7 +78,7 @@ fn bench_detect_format_file(c: &mut Criterion) {
     let path = temp_file.path();
 
     c.bench_function("detect_format/1mb_png_file", |b| {
-        b.iter(|| detect_format(black_box(path)))
+        b.iter(|| detect_format(black_box(path)));
     });
 }
 
@@ -95,7 +96,7 @@ fn bench_extension_fallback(c: &mut Criterion) {
     let path = temp_file.path();
 
     c.bench_function("detect_format/extension_fallback", |b| {
-        b.iter(|| detect_format(black_box(path)))
+        b.iter(|| detect_format(black_box(path)));
     });
 }
 

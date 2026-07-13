@@ -182,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sleep to maintain target frame rate
         if frame_elapsed < target_frame_time {
-            std::thread::sleep(target_frame_time - frame_elapsed);
+            std::thread::sleep(target_frame_time.saturating_sub(frame_elapsed));
         }
 
         // Print FPS to stderr every second (doesn't interfere with terminal graphics)

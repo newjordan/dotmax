@@ -9,10 +9,11 @@
 
 #![cfg(feature = "image")]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use dotmax::image::{
     auto_threshold, load_from_path, pixels_to_braille, resize_to_dimensions, to_grayscale,
 };
+use std::hint::black_box;
 use std::path::Path;
 
 /// Benchmark braille mapping for standard terminal size (160×96 pixels = 80×24 cells)
@@ -22,7 +23,7 @@ fn bench_pixels_to_braille_standard(c: &mut Criterion) {
         .expect("Failed to load sample image");
     let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
     let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_160x96", |b| {
@@ -39,7 +40,7 @@ fn bench_pixels_to_braille_large(c: &mut Criterion) {
         .expect("Failed to load sample image");
     let resized = resize_to_dimensions(&img, 400, 200, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
     let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_400x200", |b| {
@@ -56,7 +57,7 @@ fn bench_pixels_to_braille_small(c: &mut Criterion) {
         .expect("Failed to load sample image");
     let resized = resize_to_dimensions(&img, 40, 24, true).expect("Failed to resize");
     let gray = to_grayscale(&resized);
-    let gray_dynamic = image::DynamicImage::ImageLuma8(gray.clone());
+    let gray_dynamic = image::DynamicImage::ImageLuma8(gray);
     let binary = auto_threshold(&gray_dynamic);
 
     c.bench_function("pixels_to_braille_40x24", |b| {

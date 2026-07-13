@@ -9,6 +9,7 @@
 
 use dotmax::progress::{all_styles, render_lines, themes, BarContext, Easing};
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,10 +19,10 @@ const FRAMES: usize = 12;
 const FRAME_STEP_SECS: f32 = 0.18;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let output = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("docs/progress_loader_sheet.html"));
+    let output = env::args_os().nth(1).map_or_else(
+        || PathBuf::from("docs/progress_loader_sheet.html"),
+        PathBuf::from,
+    );
 
     let styles = all_styles();
     let mut html = String::new();
@@ -78,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         html_escape_into(style.describe(), &mut html);
         html.push_str("</div>\n");
         html.push_str("  <div class=\"corner bottom-right\">");
-        html.push_str(&format!("{CELL_W}x{CELL_H} / {FRAMES}f"));
+        let _ = write!(html, "{CELL_W}x{CELL_H} / {FRAMES}f");
         html.push_str("</div>\n");
         html.push_str("</article>\n");
     }
@@ -211,12 +212,13 @@ h1 {
     html.push_str("  </style>\n</head>\n<body>\n<header>\n");
     html.push_str("  <h1>dotmax loader cell sheet</h1>\n");
     html.push_str("  <div class=\"meta\">");
-    html.push_str(&format!(
+    let _ = write!(
+        html,
         "{} styles, {} themes, {} animation frames per cell",
         style_count,
         themes().len(),
         FRAMES
-    ));
+    );
     html.push_str("</div>\n</header>\n");
 }
 

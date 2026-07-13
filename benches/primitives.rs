@@ -25,7 +25,7 @@ fn bench_line_drawing(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_line");
 
     // Test different line lengths: small (10px), medium (100px), large (1000px)
-    for length in [10, 100, 1000].iter() {
+    for length in &[10, 100, 1000] {
         group.bench_with_input(BenchmarkId::from_parameter(length), length, |b, &length| {
             // Grid large enough to hold the line
             let mut grid =
@@ -64,7 +64,7 @@ fn bench_line_octants(c: &mut Criterion) {
         ("shallow_positive", 0, 100, 199, 120),
     ];
 
-    for (name, x0, y0, x1, y1) in test_cases.iter() {
+    for (name, x0, y0, x1, y1) in &test_cases {
         group.bench_function(*name, |b| {
             b.iter(|| {
                 draw_line(
@@ -90,7 +90,7 @@ fn bench_thick_line_drawing(c: &mut Criterion) {
     let mut grid = BrailleGrid::new(100, 100).unwrap();
 
     // Test different thicknesses on 1000px line
-    for thickness in [1, 3, 5, 7, 10].iter() {
+    for thickness in &[1, 3, 5, 7, 10] {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("thickness_{}", thickness)),
             thickness,
@@ -172,7 +172,7 @@ fn bench_circle_drawing(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_circle");
 
     // Test different radii: small (10), medium (50), large (100), very large (500)
-    for radius in [10, 50, 100, 500].iter() {
+    for radius in &[10, 50, 100, 500] {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("radius_{}", radius)),
             radius,
@@ -204,7 +204,7 @@ fn bench_circle_filled(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_circle_filled");
 
     // Test different radii: small (10), medium (50), large (100)
-    for radius in [10, 50, 100].iter() {
+    for radius in &[10, 50, 100] {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("radius_{}", radius)),
             radius,
@@ -237,7 +237,7 @@ fn bench_circle_thick(c: &mut Criterion) {
 
     let radius = 100;
     // Test different thicknesses
-    for thickness in [1, 3, 5, 7, 10].iter() {
+    for thickness in &[1, 3, 5, 7, 10] {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("thickness_{}", thickness)),
             thickness,

@@ -13,7 +13,7 @@
 //! Press f to invert the world.   Press r to unwind it.
 //! Press q / Esc to leave the room.
 //!
-//! Run:  cargo run --example zone_stream --release --features "raytracer image"
+//! Run:  cargo run --example raphe --release --features "raytracer image"
 
 use crossterm::{
     cursor,
@@ -22,14 +22,12 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use dotmax::chess::board::{render_position_with_options, RenderOptions};
 use dotmax::image::{DitheringMethod, ImageRenderer};
 use dotmax::raytracer::wireframe::rotate_vec_yaw_pitch_roll;
 use dotmax::raytracer::{
     render_with_orientation, Camera, RenderMode, Scene as RtScene, Sphere, Vector3,
     WireframeRotation,
 };
-use shakmaty::{Chess, Position};
 use std::{
     cell::Cell as StdCell,
     io::{self, Write},
@@ -184,6 +182,7 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     w: leaf_w,
                     h: rect.h,
                 });
+                rect.w -= leaf_w;
             } else {
                 out.push(Rect {
                     x: rect.x,
@@ -192,8 +191,8 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     h: rect.h,
                 });
                 rect.x += leaf_w;
+                rect.w -= leaf_w;
             }
-            rect.w -= leaf_w;
         } else {
             let leaf_h = ((rect.h as f32) * PHI_COMPLEMENT).round().max(2.0) as i32;
             if leaf_far {
@@ -203,6 +202,7 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     w: rect.w,
                     h: leaf_h,
                 });
+                rect.h -= leaf_h;
             } else {
                 out.push(Rect {
                     x: rect.x,
@@ -211,8 +211,8 @@ fn fib_spiral(initial: Rect, max_depth: usize, cw: bool) -> Vec<Rect> {
                     h: leaf_h,
                 });
                 rect.y += leaf_h;
+                rect.h -= leaf_h;
             }
-            rect.h -= leaf_h;
         }
     }
     out.push(rect);
@@ -289,8 +289,6 @@ enum Formation {
     RegisterDump,
     /// Stream char → arrow → ROT13 / nibble transform.
     TextmarkConverter,
-    /// Elementary CA (rule 30 or 110) seeded from stream bits.
-    Cellular1D { rule: u8 },
     /// Scrolling stream text with bright middle band, dim above/below.
     Marquee,
     /// 2-cell-block density mosaic from stream bytes.
@@ -311,8 +309,6 @@ enum Formation {
     Atm,
     /// "ENTER AGENT" slot — labeled panel for one player.
     AgentSlot { player: u8 },
-    /// Live chess board rendered via dotmax::chess from a shakmaty position.
-    ChessBoard,
     /// Big "[ CASH OUT ]" payout button.
     PayoutButton,
     /// Live text input — captures typing, shows prompt + buffer + cursor.
@@ -323,6 +319,7 @@ enum Formation {
 /// so it stands out from the deep-red field. Use this for any UI chrome
 /// that absolutely must read clearly.
 const UI_WHITE: (u8, u8, u8) = (255, 255, 255);
+const MATRIX_GREEN: (u8, u8, u8) = (32, 255, 84);
 
 /// A single dither-variant render of an image.
 struct ImageVariant {
@@ -367,9 +364,12 @@ fn load_image(
             .render()
             .ok()?;
         let (gw, gh) = grid.dimensions();
-        let cells: Vec<Vec<char>> = (0..gh)
-            .map(|y| (0..gw).map(|x| grid.get_char(x, y)).collect())
-            .collect();
+        let mut cells: Vec<Vec<char>> = vec![vec![' '; gw]; gh];
+        for y in 0..gh {
+            for x in 0..gw {
+                cells[y][x] = grid.get_char(x, y);
+            }
+        }
         if luma.is_none() {
             luma = Some(grid.get_raw_patterns().to_vec());
         }
@@ -434,6 +434,7 @@ fn load_image_assets() -> Vec<ImageAsset> {
             "./tests/fixtures/images/extras/frog_02.png",
             "FROG2",
         ),
+        ("src/image/mikey.jpg", "./src/image/mikey.jpg", "MIKEY"),
     ];
     let mut out = Vec::new();
     for &(p1, p2, name) in candidates {
@@ -459,9 +460,7 @@ fn pick_formation(rect: Rect) -> Formation {
         // Tall/narrow — vertical-friendly stuff.
         match r % 3 {
             0 => Formation::ParseDump,
-            1 => Formation::Cellular1D {
-                rule: if r & 1 == 0 { 30 } else { 110 },
-            },
+            1 => Formation::BlockStrata,
             _ => Formation::BlockStrata,
         }
     } else if (aspect - 1.0).abs() < 0.45 && rect.w >= 10 && rect.h >= 6 {
@@ -470,9 +469,7 @@ fn pick_formation(rect: Rect) -> Formation {
             0 => Formation::Raytrace,
             1 => Formation::AttentionMatrix,
             2 => Formation::DensityGrid,
-            _ => Formation::Cellular1D {
-                rule: if r & 1 == 0 { 30 } else { 110 },
-            },
+            _ => Formation::RegisterDump,
         }
     } else {
         // Mid aspect — everything fair game.
@@ -481,9 +478,7 @@ fn pick_formation(rect: Rect) -> Formation {
             1 => Formation::RegisterDump,
             2 => Formation::DensityGrid,
             3 => Formation::TextmarkConverter,
-            4 => Formation::Cellular1D {
-                rule: if r & 1 == 0 { 30 } else { 110 },
-            },
+            4 => Formation::ParseDump,
             5 => Formation::BlockStrata,
             6 => Formation::AttentionMatrix,
             7 => Formation::ProbField,
@@ -545,12 +540,8 @@ struct Scene {
     /// Edge-anchored noise injection feeds.
     noise_feeds: Vec<NoiseFeed>,
     /// Rects that streamers/feeds skip — cube window + UI rects (ATM,
-    /// AgentSlots, ChessBoard, PayoutButton, TerminalInput).
+    /// AgentSlots, PayoutButton, TerminalInput).
     protected_rects: Vec<Rect>,
-    /// Live chess game played by random legal moves — the betting subject.
-    chess_pos: Chess,
-    /// Cursor value when last chess move was played.
-    chess_last_move_at: f32,
     /// ATM balance — visible on the panel.
     balance: u32,
     /// Cursor when balance last ticked (jitters every ~0.3s with ±2% swings).
@@ -574,7 +565,6 @@ struct PaintCtx<'a> {
     zones: &'a [Zone],
     adjacency: &'a [Vec<u16>],
     assets: &'a [ImageAsset],
-    chess_pos: &'a Chess,
     balance: u32,
     input_buffer: &'a str,
 }
@@ -688,23 +678,6 @@ fn build_scene(w: i32, h: i32) -> Scene {
     // ─── Size-aware layout ─── compute every UI rect from (w, h) so the
     // betting interface scales up to fill any terminal size, always large.
     //
-    // Chess is centered. Square aspect: cell width = 2 × cell height (since
-    // braille cells are ~2:1 tall).
-    let chess_h = ((h as f32 * 0.55) as i32).clamp(8, 36);
-    let mut chess_w = chess_h * 2;
-    if chess_w > w * 5 / 8 {
-        chess_w = (w * 5 / 8) & !1; // even
-                                    // recompute height to maintain aspect
-    }
-    let chess_w = chess_w.clamp(16, 80);
-    let chess_h = (chess_w / 2).clamp(8, 36);
-    let ui_chess = Rect {
-        x: (w - chess_w) / 2,
-        y: ((h - chess_h) / 2 - 1).max(2),
-        w: chess_w,
-        h: chess_h,
-    };
-
     let panel_w = (w / 7).clamp(18, 28);
     let panel_h = (h / 9).clamp(4, 6);
 
@@ -734,7 +707,7 @@ fn build_scene(w: i32, h: i32) -> Scene {
     };
 
     let term_h = 3_i32;
-    let term_w = (chess_w + 4).min(w - 4);
+    let term_w = (w * 3 / 4).clamp(20, w - 4);
     let ui_term = Rect {
         x: (w - term_w) / 2,
         y: h - term_h - 1,
@@ -742,21 +715,33 @@ fn build_scene(w: i32, h: i32) -> Scene {
         h: term_h,
     };
 
-    // ─── Dedicated SNAKE image slots ─── carved next to the chess board so
-    // the vipers stay visible and big.  Tall narrow strips on each side.
-    let img_left_h = (ui_term.y - (ui_agent_a.y + ui_agent_a.h) - 2).max(8);
-    let ui_viper = Rect {
-        x: 1,
-        y: ui_agent_a.y + ui_agent_a.h + 1,
-        w: panel_w,
-        h: img_left_h,
+    let middle_top = 2;
+    let middle_bottom = ui_term.y - 2;
+    let middle_h = (middle_bottom - middle_top).max(6);
+    let raphe_h = (middle_h * 2 / 3).clamp(8, 26);
+    let raphe_gap = 2;
+    let available = (w - 2 * raphe_gap).max(12);
+    let raphe_w = (available / 3).clamp(12, 60);
+    let row_w = raphe_w * 3 + 2 * raphe_gap;
+    let ui_raphe_mid_y = middle_top + (middle_h - raphe_h) / 2;
+    let row_x = ((w - row_w) / 2).max(1);
+    let ui_raphe_left = Rect {
+        x: row_x,
+        y: ui_raphe_mid_y,
+        w: raphe_w,
+        h: raphe_h,
     };
-    let img_right_h = (ui_term.y - (ui_payout.y + ui_payout.h) - 2).max(6);
-    let ui_vhead = Rect {
-        x: w - panel_w - 1,
-        y: ui_payout.y + ui_payout.h + 1,
-        w: panel_w,
-        h: img_right_h,
+    let ui_raphe_center = Rect {
+        x: row_x + raphe_w + raphe_gap,
+        y: ui_raphe_mid_y,
+        w: raphe_w,
+        h: raphe_h,
+    };
+    let ui_raphe_right = Rect {
+        x: row_x + 2 * (raphe_w + raphe_gap),
+        y: ui_raphe_mid_y,
+        w: raphe_w,
+        h: raphe_h,
     };
 
     // Sort the surviving zones by area for asset/formation assignment.
@@ -767,23 +752,26 @@ fn build_scene(w: i32, h: i32) -> Scene {
 
     // Seed image panels into the biggest non-Nested survivors.
     if !assets.is_empty() {
-        let mut assigned = 0usize;
-        let want = assets.len().min(sorted_by_area.len());
+        let raphe_idx = assets.iter().position(|a| a.name == "MIKEY").unwrap_or(0);
         for &i in &sorted_by_area {
             let r = zones[i].base_rect;
             if r.w < 10 || r.h < 6 {
                 continue;
             }
-            zones[i].formation = Formation::ImagePanel {
-                asset: assigned % assets.len(),
-            };
-            assigned += 1;
-            if assigned >= want {
-                break;
-            }
+            zones[i].formation = Formation::ImagePanel { asset: raphe_idx };
         }
     }
 
+    let _ui_rects = [
+        ui_atm,
+        ui_agent_a,
+        ui_agent_b,
+        ui_payout,
+        ui_term,
+        ui_raphe_left,
+        ui_raphe_center,
+        ui_raphe_right,
+    ];
     // NOTE: fib zones are NOT filtered — chaos paints under everything,
     // and UI re-paints on top of the chaos in a final pass (see render()).
 
@@ -813,20 +801,26 @@ fn build_scene(w: i32, h: i32) -> Scene {
         Formation::AgentSlot { player: 1 },
         &mut tap_accum,
     );
-    push_ui(ui_chess, Formation::ChessBoard, &mut tap_accum);
     push_ui(ui_payout, Formation::PayoutButton, &mut tap_accum);
     push_ui(ui_term, Formation::TerminalInput, &mut tap_accum);
-    // SCARY SNAKES — guaranteed visible at decent size.
-    let viper_idx = usize::from(assets.len() > 1);
-    let vhead_idx = if assets.len() > 2 { 2 } else { viper_idx };
+    let raphe_idx = if assets.is_empty() {
+        0
+    } else {
+        assets.iter().position(|a| a.name == "MIKEY").unwrap_or(0)
+    };
     push_ui(
-        ui_viper,
-        Formation::ImagePanel { asset: viper_idx },
+        ui_raphe_left,
+        Formation::ImagePanel { asset: raphe_idx },
         &mut tap_accum,
     );
     push_ui(
-        ui_vhead,
-        Formation::ImagePanel { asset: vhead_idx },
+        ui_raphe_center,
+        Formation::ImagePanel { asset: raphe_idx },
+        &mut tap_accum,
+    );
+    push_ui(
+        ui_raphe_right,
+        Formation::ImagePanel { asset: raphe_idx },
         &mut tap_accum,
     );
 
@@ -1029,8 +1023,6 @@ fn build_scene(w: i32, h: i32) -> Scene {
         streamers,
         noise_feeds,
         protected_rects,
-        chess_pos: Chess::default(),
-        chess_last_move_at: 0.0,
         balance: 42_069,
         balance_last_tick: 0.0,
         input_buffer: String::new(),
@@ -1063,18 +1055,6 @@ fn tick(scene: &mut Scene, dt: f32) {
     scene.cursor += scene.flow_rate * dt * sign;
     for z in &mut scene.zones {
         z.pulse += dt * z.pulse_rate * sign;
-    }
-    // Advance the chess game — one random legal move every ~1.2 seconds (60 cursor units).
-    if scene.cursor - scene.chess_last_move_at > 60.0 {
-        scene.chess_last_move_at = scene.cursor;
-        let moves = scene.chess_pos.legal_moves();
-        if moves.is_empty() {
-            scene.chess_pos = Chess::default();
-        } else {
-            let idx = (r_u32() as usize) % moves.len();
-            let mv = moves[idx];
-            scene.chess_pos.play_unchecked(mv);
-        }
     }
     // Balance tick — every ~14 cursor units (~0.3s) jitter by ±~2%.
     if scene.cursor - scene.balance_last_tick > 14.0 {
@@ -1298,9 +1278,9 @@ fn paint_raytrace(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let buf = render_with_orientation(&rt, &cam, w, h, mode, orient);
 
     let ramp: &[char] = &[' ', '·', ':', '-', '=', '+', '*', '#', '%', '@'];
-    for (ry, row) in buf.iter().enumerate().take(h) {
-        for (rx, &depth) in row.iter().enumerate().take(w) {
-            let v = depth.clamp(0.0, 1.0);
+    for ry in 0..h {
+        for rx in 0..w {
+            let v = buf[ry][rx].clamp(0.0, 1.0);
             let idx = ((v * (ramp.len() - 1) as f32).round() as usize).min(ramp.len() - 1);
             let ch = ramp[idx];
             let i = if v > 0.30 { 0.90 } else { 0.22 };
@@ -1331,12 +1311,13 @@ fn paint_block_strata(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     // Step-function over y: 20-row cycle with custom profile.
     for ry in 0..zone.rect.h {
         let stripe = (ry + scroll).rem_euclid(20);
-        // Bands 5..=8 and 19 both land on level 2, so they share the wildcard arm.
         let level_idx = match stripe {
             0..=1 => 0,
             2..=4 => 1,
-            9..=12 | 16..=18 => 3,
+            5..=8 => 2,
+            9..=12 => 3,
             13..=15 => 4,
+            16..=18 => 3,
             _ => 2,
         };
         let (ch, i) = levels[level_idx];
@@ -1529,61 +1510,7 @@ fn paint_textmark(
     }
 }
 
-/// 6. Cellular1D — elementary CA, seeded from the stream, evolves top-to-bottom.
-fn paint_cellular(
-    grid: &mut [Vec<PxCell>],
-    zone: &Zone,
-    zone_id: u16,
-    rule: u8,
-    stream: &[char],
-    cursor: f32,
-) {
-    let color = color_for(zone.side);
-    let zw = zone.rect.w as usize;
-    let zh = zone.rect.h as usize;
-    if zw < 3 || zh < 2 {
-        paint_fill(grid, zone, zone_id, '·', 0.20);
-        return;
-    }
-    let base: i64 = (cursor as i64) - (zone.tap_offset as i64);
-    let t_shift = (zone.pulse * 2.0) as i64;
-
-    // Seed top row from stream bits.
-    let mut row: Vec<bool> = (0..zw)
-        .map(|rx| {
-            let s = sample(stream, base + rx as i64 + t_shift) as u32;
-            (s & 1) == 1
-        })
-        .collect();
-    // Paint row, then evolve.
-    for ry in 0..zh {
-        for (rx, &alive) in row.iter().enumerate() {
-            let (ch, i) = if alive { ('█', 0.93) } else { ('·', 0.18) };
-            put(
-                grid,
-                zone.rect.x + rx as i32,
-                zone.rect.y + ry as i32,
-                ch,
-                color,
-                i,
-                zone_id,
-            );
-        }
-        if ry + 1 >= zh {
-            break;
-        }
-        let prev = row.clone();
-        for rx in 0..zw {
-            let l = prev[(rx + zw - 1) % zw];
-            let c = prev[rx];
-            let r = prev[(rx + 1) % zw];
-            let pat = ((l as u8) << 2) | ((c as u8) << 1) | (r as u8);
-            row[rx] = ((rule >> pat) & 1) == 1;
-        }
-    }
-}
-
-/// 8. Marquee — scrolling stream text with bright middle band.
+/// 7. Marquee — scrolling stream text with bright middle band.
 fn paint_marquee(
     grid: &mut [Vec<PxCell>],
     zone: &Zone,
@@ -1666,7 +1593,7 @@ fn paint_density_grid(
 }
 
 /// 10. AttentionMatrix — sparse transformer-attention pattern: diagonal band,
-///     a few sink columns, rare hotspots. Everything else mostly dark.
+/// a few sink columns, rare hotspots. Everything else mostly dark.
 fn paint_attention(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let color = color_for(zone.side);
     let zw = zone.rect.w;
@@ -1852,10 +1779,10 @@ fn paint_prob_field(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &P
 }
 
 /// 12. ImagePanel — streams a pre-rendered braille image into the zone with
-///     glitching effects. Source: dotmax's full ImageRenderer pipeline
-///     (Floyd-Steinberg → Otsu → braille mapping). Each frame, a few rows get
-///     scanline-torn, a sprinkle of cells get block-char corrupted, and bursts
-///     of stream chars bleed through as noise.
+/// glitching effects. Source: dotmax's full ImageRenderer pipeline
+/// (Floyd-Steinberg → Otsu → braille mapping). Each frame, a few rows get
+/// scanline-torn, a sprinkle of cells get block-char corrupted, and bursts
+/// of stream chars bleed through as noise.
 // ─────────────── abstract dither-phase system ───────────────
 //
 // Instead of a smooth per-cell wave, the composition is in one of two
@@ -1970,7 +1897,6 @@ fn paint_image_panel(
     asset_idx: usize,
     ctx: &PaintCtx,
 ) {
-    let color = color_for(zone.side);
     let zw = zone.rect.w;
     let zh = zone.rect.h;
     if ctx.assets.is_empty() || asset_idx >= ctx.assets.len() {
@@ -1982,6 +1908,12 @@ fn paint_image_panel(
         paint_fill(grid, zone, zone_id, '·', 0.3);
         return;
     }
+    let is_raphe = asset.name == "MIKEY";
+    let color = if is_raphe {
+        MATRIX_GREEN
+    } else {
+        color_for(zone.side)
+    };
     let n_variants = asset.variants.len();
     // Per-zone offset (seconds) — each panel runs on its own dither clock.
     // tap_offset is a stable per-zone integer; modulate it to seconds.
@@ -2048,11 +1980,19 @@ fn paint_image_panel(
             let h = ihash(rx, ry, pulse_i);
             let (ch, intensity, fg_override) = if on_front {
                 // Sweep front — sacred glyph marks the moment of transition.
-                (sweep_front_glyph(front_kind), 1.0, Some((255, 50, 50)))
-            } else if h.trailing_zeros() >= 7 {
+                (
+                    sweep_front_glyph(front_kind),
+                    1.0,
+                    Some(if is_raphe {
+                        MATRIX_GREEN
+                    } else {
+                        (255, 50, 50)
+                    }),
+                )
+            } else if h & 0x7f == 0 {
                 let blocks: &[char] = &['█', '▓', '▒', '░'];
                 (blocks[(h as usize >> 7) % blocks.len()], 1.0, None)
-            } else if h.trailing_zeros() >= 6 {
+            } else if h & 0x3f == 0 {
                 let sc = sample(ctx.stream, base_stream + (ry as i64) * 7 + rx as i64);
                 (sc, 0.85, None)
             } else if img_ch == '\u{2800}' {
@@ -2075,10 +2015,15 @@ fn paint_image_panel(
 
     // Top-left: asset name.
     let label = asset.name;
+    let label_color = if is_raphe {
+        MATRIX_GREEN
+    } else {
+        (255, 50, 50)
+    };
     for (i, ch) in label.chars().enumerate() {
         let lx = zone.rect.x + 1 + i as i32;
         if i as i32 + 1 < zw {
-            put(grid, lx, zone.rect.y, ch, (255, 50, 50), 1.0, zone_id);
+            put(grid, lx, zone.rect.y, ch, label_color, 1.0, zone_id);
         }
     }
     // Bottom-right: dither phase tag — calculated readout of state.
@@ -2097,15 +2042,15 @@ fn paint_image_panel(
     for (i, ch) in tag.chars().enumerate() {
         let lx = tag_x_start + i as i32;
         if lx >= zone.rect.x && lx < zone.rect.x + zw {
-            put(grid, lx, tag_y, ch, (255, 50, 50), 1.0, zone_id);
+            put(grid, lx, tag_y, ch, label_color, 1.0, zone_id);
         }
     }
 }
 
 /// 13. RaytraceCube — wireframe cube on BLACK background. Built from 8
-///     corners + 12 edges, rotated via raytracer's yaw/pitch helper. Lines
-///     rasterized with Bresenham. Zero mask, zero pipes — pure geometry in
-///     the middle of the chaos.
+/// corners + 12 edges, rotated via raytracer's yaw/pitch helper. Lines
+/// rasterized with Bresenham. Zero mask, zero pipes — pure geometry in
+/// the middle of the chaos.
 fn paint_raytrace_cube(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16) {
     let zw = zone.rect.w;
     let zh = zone.rect.h;
@@ -2309,9 +2254,6 @@ fn paint_box_border(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, intensi
     );
 }
 
-// 8 args = `put`'s 7 plus a right-hand clip bound. Bundling them into a struct would
-// churn every one of the ~9 UI call sites for no readability gain in a demo.
-#[allow(clippy::too_many_arguments)]
 fn put_str(
     grid: &mut [Vec<PxCell>],
     x: i32,
@@ -2322,11 +2264,13 @@ fn put_str(
     oid: u16,
     max_x: i32,
 ) {
-    for (cx, ch) in (x..).zip(s.chars()) {
+    let mut cx = x;
+    for ch in s.chars() {
         if cx >= max_x {
             break;
         }
         put(grid, cx, y, ch, color, i, oid);
+        cx += 1;
     }
 }
 
@@ -2434,69 +2378,6 @@ fn paint_agent_slot(
             zone_id,
             max_x,
         );
-    }
-}
-
-/// Live chess board — converts shakmaty position to braille via dotmax::chess.
-/// During global dither sweeps, a sacred sweep-front cuts across the board so
-/// the chess "dithers into" the center in lockstep with the image panels.
-fn paint_chess_board(
-    grid: &mut [Vec<PxCell>],
-    zone: &Zone,
-    zone_id: u16,
-    pos: &Chess,
-    cursor: f32,
-) {
-    paint_fill(grid, zone, zone_id, ' ', 0.04);
-    let opts = RenderOptions {
-        target_width: Some(zone.rect.w as usize),
-        target_height: Some(zone.rect.h as usize),
-        ..Default::default()
-    };
-    if let Ok(braille_grid) = render_position_with_options(pos, &opts) {
-        let (gw, gh) = braille_grid.dimensions();
-        // Determine sweep state for the dither overlay.
-        let phase = dither_phase(cursor, 4, 0.0);
-        for ry in 0..zone.rect.h.min(gh as i32) {
-            for rx in 0..zone.rect.w.min(gw as i32) {
-                let ch = braille_grid.get_char(rx as usize, ry as usize);
-                let (color, intensity) = if ch == '\u{2800}' || ch == ' ' {
-                    ((50, 5, 5), 0.30)
-                } else {
-                    (UI_WHITE, 1.0)
-                };
-                put(
-                    grid,
-                    zone.rect.x + rx,
-                    zone.rect.y + ry,
-                    ch,
-                    color,
-                    intensity,
-                    zone_id,
-                );
-            }
-        }
-        // Chess "dithers in" — sweep front overlay during transitions.
-        if let DitherPhase::Sweep { t, kind, .. } = phase {
-            let zw = zone.rect.w;
-            let zh = zone.rect.h;
-            for ry in 0..zh {
-                for rx in 0..zw {
-                    let p = sweep_progress(rx, ry, zw, zh, kind);
-                    if (p - t).abs() < 0.04 {
-                        put(
-                            grid,
-                            zone.rect.x + rx,
-                            zone.rect.y + ry,
-                            sweep_front_glyph(kind),
-                            UI_WHITE,
-                            1.0,
-                            zone_id,
-                        );
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -2608,9 +2489,6 @@ fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &Pa
         Formation::ParseDump => paint_parse_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::RegisterDump => paint_register_dump(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::TextmarkConverter => paint_textmark(grid, zone, zone_id, ctx.stream, ctx.cursor),
-        Formation::Cellular1D { rule } => {
-            paint_cellular(grid, zone, zone_id, rule, ctx.stream, ctx.cursor);
-        }
         Formation::Marquee => paint_marquee(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::DensityGrid => paint_density_grid(grid, zone, zone_id, ctx.stream, ctx.cursor),
         Formation::AttentionMatrix => paint_attention(grid, zone, zone_id),
@@ -2621,7 +2499,6 @@ fn paint_formation(grid: &mut [Vec<PxCell>], zone: &Zone, zone_id: u16, ctx: &Pa
         Formation::AgentSlot { player } => {
             paint_agent_slot(grid, zone, zone_id, player, ctx.input_buffer);
         }
-        Formation::ChessBoard => paint_chess_board(grid, zone, zone_id, ctx.chess_pos, ctx.cursor),
         Formation::PayoutButton => paint_payout_button(grid, zone, zone_id, ctx.cursor),
         Formation::TerminalInput => {
             paint_terminal_input(grid, zone, zone_id, ctx.input_buffer, ctx.cursor);
@@ -3267,7 +3144,6 @@ fn is_ui_formation(f: &Formation) -> bool {
         f,
         Formation::Atm
             | Formation::AgentSlot { .. }
-            | Formation::ChessBoard
             | Formation::PayoutButton
             | Formation::TerminalInput
     )
@@ -3281,7 +3157,6 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
         zones: &scene.zones,
         adjacency: &scene.adjacency,
         assets: &scene.assets,
-        chess_pos: &scene.chess_pos,
         balance: scene.balance,
         input_buffer: &scene.input_buffer,
     };
@@ -3329,7 +3204,7 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     for ins in &scene.glitch_inserts {
         paint_glitch_insertion(&mut grid, ins, &scene.assets, scene.cursor);
     }
-    // 7) UI zones (chess + ATM + agents + payout + terminal) re-paint LAST
+    // 7) UI zones (ATM + agents + payout + terminal) re-paint LAST
     //    so the betting interface stays readable, but chaos leaks through
     //    every cell where the UI's intensity is below the chaos behind it.
     for i in 0..scene.zones.len() {

@@ -11,7 +11,8 @@
 #![allow(clippy::items_after_statements)]
 #![allow(deprecated)] // criterion::black_box is deprecated but still used in existing benches
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use std::path::Path;
 
 #[cfg(feature = "image")]

@@ -7,6 +7,7 @@
 //! frame.
 
 use dotmax::image::{DitheringMethod, ImageRenderer};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,7 @@ fn env_f32(key: &str, default: f32) -> f32 {
 
 fn env_u8(key: &str, default: u8) -> Option<u8> {
     match std::env::var(key).ok().as_deref() {
-        Some("auto") | Some("AUTO") | Some("") => None,
+        Some("auto" | "AUTO" | "") => None,
         Some(s) => s.parse().ok(),
         None => Some(default),
     }
@@ -47,7 +48,7 @@ fn env_dither(key: &str) -> DitheringMethod {
         .map(str::to_lowercase)
         .as_deref()
     {
-        Some("floyd") | Some("floydsteinberg") => DitheringMethod::FloydSteinberg,
+        Some("floyd" | "floydsteinberg") => DitheringMethod::FloydSteinberg,
         Some("bayer") => DitheringMethod::Bayer,
         Some("atkinson") => DitheringMethod::Atkinson,
         _ => DitheringMethod::None,
@@ -163,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Flip the 8 dot bits of each braille glyph (0x2800 + bits)
                 // so filled ↔ empty — useful when dithering gave a solid
                 // background.
-                for row in unicode.iter_mut() {
+                for row in &mut unicode {
                     for ch in row.iter_mut() {
                         let bits = (*ch as u32).saturating_sub(0x2800) as u8;
                         *ch = char::from_u32(0x2800 + (!bits as u32)).unwrap_or(*ch);
@@ -188,10 +189,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let svg_h = grid.height() as f32 * row_h;
 
             let mut svg = String::with_capacity(4096);
-            svg.push_str(&format!(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {:.2} {:.2}\" width=\"{:.0}\" height=\"{:.0}\" font-family=\"ui-monospace,Menlo,Consolas,monospace\" font-size=\"{}\">\n",
-                svg_w, svg_h, svg_w, svg_h, font_px
-            ));
+            let _ = writeln!(
+                svg,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {svg_w:.2} {svg_h:.2}\" width=\"{svg_w:.0}\" height=\"{svg_h:.0}\" font-family=\"ui-monospace,Menlo,Consolas,monospace\" font-size=\"{font_px}\">"
+            );
             svg.push_str("<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>\n");
             for (row_idx, row) in unicode.iter().enumerate() {
                 let line: String = row.iter().collect();
@@ -200,10 +201,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .replace('&', "&amp;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;");
-                svg.push_str(&format!(
-                    "<text x=\"0\" y=\"{:.2}\" xml:space=\"preserve\" textLength=\"{:.2}\" lengthAdjust=\"spacingAndGlyphs\">{}</text>\n",
-                    y, svg_w, escaped
-                ));
+                let _ = writeln!(
+                    svg,
+                    "<text x=\"0\" y=\"{y:.2}\" xml:space=\"preserve\" textLength=\"{svg_w:.2}\" lengthAdjust=\"spacingAndGlyphs\">{escaped}</text>"
+                );
             }
             svg.push_str("</svg>\n");
 

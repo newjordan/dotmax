@@ -6,9 +6,10 @@
 //! - Bayer: <10ms for 160×96 images
 //! - Atkinson: <12ms for 160×96 images
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use dotmax::image::{apply_dithering, to_grayscale, DitheringMethod};
-use image::{DynamicImage, GrayImage, Luma};
+use criterion::{criterion_group, criterion_main, Criterion};
+use dotmax::image::{apply_dithering, DitheringMethod};
+use image::{GrayImage, Luma};
+use std::hint::black_box;
 
 /// Helper: Create a grayscale gradient image for consistent benchmarking
 fn create_gradient_image(width: u32, height: u32) -> GrayImage {

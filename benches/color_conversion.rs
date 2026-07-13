@@ -6,11 +6,12 @@
 //! - `rgb_to_truecolor_escape`: <50ns per conversion
 //! - `rgb_to_terminal_color`: <150ns per conversion (includes capability check)
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use dotmax::color::convert::{
     rgb_to_ansi16, rgb_to_ansi256, rgb_to_terminal_color, rgb_to_truecolor_escape,
 };
 use dotmax::ColorCapability;
+use std::hint::black_box;
 
 /// Benchmark rgb_to_ansi256 conversion.
 ///
@@ -20,23 +21,23 @@ fn bench_rgb_to_ansi256(c: &mut Criterion) {
 
     // Test with different color types
     group.bench_function("pure_red", |b| {
-        b.iter(|| rgb_to_ansi256(black_box(255), black_box(0), black_box(0)))
+        b.iter(|| rgb_to_ansi256(black_box(255), black_box(0), black_box(0)));
     });
 
     group.bench_function("pure_green", |b| {
-        b.iter(|| rgb_to_ansi256(black_box(0), black_box(255), black_box(0)))
+        b.iter(|| rgb_to_ansi256(black_box(0), black_box(255), black_box(0)));
     });
 
     group.bench_function("pure_blue", |b| {
-        b.iter(|| rgb_to_ansi256(black_box(0), black_box(0), black_box(255)))
+        b.iter(|| rgb_to_ansi256(black_box(0), black_box(0), black_box(255)));
     });
 
     group.bench_function("gray", |b| {
-        b.iter(|| rgb_to_ansi256(black_box(128), black_box(128), black_box(128)))
+        b.iter(|| rgb_to_ansi256(black_box(128), black_box(128), black_box(128)));
     });
 
     group.bench_function("random_color", |b| {
-        b.iter(|| rgb_to_ansi256(black_box(173), black_box(94), black_box(212)))
+        b.iter(|| rgb_to_ansi256(black_box(173), black_box(94), black_box(212)));
     });
 
     // Batch conversion benchmark (1000 colors)
@@ -49,7 +50,7 @@ fn bench_rgb_to_ansi256(c: &mut Criterion) {
                     }
                 }
             }
-        })
+        });
     });
 
     group.finish();
@@ -62,19 +63,19 @@ fn bench_rgb_to_ansi16(c: &mut Criterion) {
     let mut group = c.benchmark_group("rgb_to_ansi16");
 
     group.bench_function("pure_red", |b| {
-        b.iter(|| rgb_to_ansi16(black_box(255), black_box(0), black_box(0)))
+        b.iter(|| rgb_to_ansi16(black_box(255), black_box(0), black_box(0)));
     });
 
     group.bench_function("pure_green", |b| {
-        b.iter(|| rgb_to_ansi16(black_box(0), black_box(255), black_box(0)))
+        b.iter(|| rgb_to_ansi16(black_box(0), black_box(255), black_box(0)));
     });
 
     group.bench_function("gray", |b| {
-        b.iter(|| rgb_to_ansi16(black_box(128), black_box(128), black_box(128)))
+        b.iter(|| rgb_to_ansi16(black_box(128), black_box(128), black_box(128)));
     });
 
     group.bench_function("random_color", |b| {
-        b.iter(|| rgb_to_ansi16(black_box(173), black_box(94), black_box(212)))
+        b.iter(|| rgb_to_ansi16(black_box(173), black_box(94), black_box(212)));
     });
 
     // Batch conversion benchmark
@@ -87,7 +88,7 @@ fn bench_rgb_to_ansi16(c: &mut Criterion) {
                     }
                 }
             }
-        })
+        });
     });
 
     group.finish();
@@ -100,15 +101,15 @@ fn bench_rgb_to_truecolor_escape(c: &mut Criterion) {
     let mut group = c.benchmark_group("rgb_to_truecolor_escape");
 
     group.bench_function("typical", |b| {
-        b.iter(|| rgb_to_truecolor_escape(black_box(255), black_box(128), black_box(0)))
+        b.iter(|| rgb_to_truecolor_escape(black_box(255), black_box(128), black_box(0)));
     });
 
     group.bench_function("zeros", |b| {
-        b.iter(|| rgb_to_truecolor_escape(black_box(0), black_box(0), black_box(0)))
+        b.iter(|| rgb_to_truecolor_escape(black_box(0), black_box(0), black_box(0)));
     });
 
     group.bench_function("max_values", |b| {
-        b.iter(|| rgb_to_truecolor_escape(black_box(255), black_box(255), black_box(255)))
+        b.iter(|| rgb_to_truecolor_escape(black_box(255), black_box(255), black_box(255)));
     });
 
     group.finish();
@@ -131,7 +132,9 @@ fn bench_rgb_to_terminal_color(c: &mut Criterion) {
             BenchmarkId::new("capability", format!("{:?}", capability)),
             &capability,
             |b, cap| {
-                b.iter(|| rgb_to_terminal_color(black_box(255), black_box(128), black_box(0), *cap))
+                b.iter(|| {
+                    rgb_to_terminal_color(black_box(255), black_box(128), black_box(0), *cap)
+                });
             },
         );
     }
@@ -151,7 +154,7 @@ fn bench_rgb_to_terminal_color(c: &mut Criterion) {
                     black_box(rgb_to_terminal_color(r, g, 128, cap));
                 }
             }
-        })
+        });
     });
 
     group.finish();
@@ -174,7 +177,7 @@ fn bench_throughput(c: &mut Criterion) {
                 ));
             }
             black_box(sum)
-        })
+        });
     });
 
     group.bench_function("ansi16_1m_conversions", |b| {
@@ -184,7 +187,7 @@ fn bench_throughput(c: &mut Criterion) {
                 sum += u32::from(rgb_to_ansi16(black_box(173), black_box(94), black_box(212)));
             }
             black_box(sum)
-        })
+        });
     });
 
     group.finish();

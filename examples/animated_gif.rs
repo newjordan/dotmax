@@ -32,8 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let path = args
         .get(1)
-        .map(String::as_str)
-        .unwrap_or("tests/fixtures/media/animated.gif");
+        .map_or("tests/fixtures/media/animated.gif", String::as_str);
 
     println!("Animated GIF Player - dotmax Story 9.2");
     println!("=====================================\n");

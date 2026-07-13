@@ -16,8 +16,15 @@ use dotmax::progress::{styles_for_theme, themes, BarContext, Easing, ProgressSty
 use dotmax::BrailleGrid;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
+
+/// An exact 8-bit RGB triple, used as the palette lookup key.
+type Rgb = (u8, u8, u8);
+
+/// A style's palette (hex strings, indexed) plus the exact-RGB -> index lookup.
+type Palette = (Vec<String>, HashMap<Rgb, u8>);
 
 const WIDTH: usize = 44;
 const HEIGHT: usize = 4;
@@ -171,7 +178,7 @@ fn capture_style_frames(style: &dyn ProgressStyle) -> Result<Vec<RawFrame>, dotm
 /// Build a ≤256-color palette for one style and a lookup from exact RGB to
 /// palette index. Falls back to 5-bit channel quantization, then to
 /// nearest-of-most-frequent if a style somehow exceeds 256 colors.
-fn build_palette(frames: &[RawFrame]) -> (Vec<String>, HashMap<(u8, u8, u8), u8>) {
+fn build_palette(frames: &[RawFrame]) -> Palette {
     let mut counts: HashMap<(u8, u8, u8), u32> = HashMap::new();
     let mut order: Vec<(u8, u8, u8)> = Vec::new();
     for frame in frames {
@@ -264,7 +271,9 @@ fn encode_frames(frames: &[RawFrame], map: &HashMap<(u8, u8, u8), u8>) -> Vec<Fr
                         let mut encoded = String::with_capacity(row.len() * 2);
                         for color in row {
                             match color.and_then(|c| map.get(&c)) {
-                                Some(index) => encoded.push_str(&format!("{index:02x}")),
+                                Some(index) => {
+                                    let _ = write!(encoded, "{index:02x}");
+                                }
                                 None => encoded.push_str(".."),
                             }
                         }
@@ -441,7 +450,7 @@ fn extract_style_source(theme_src: &str, struct_name: &str) -> Option<String> {
 
 /// Minimal grid runtime — API-compatible subset of `dotmax::BrailleGrid` with
 /// identical braille bit mapping and `set_char` override semantics.
-const RUNTIME_ROOT: &str = r##"
+const RUNTIME_ROOT: &str = r"
 // ===========================================================================
 // Minimal runtime — a drop-in stand-in for the dotmax types the styles use.
 // Identical braille dot mapping and glyph-override semantics to the crate.
@@ -570,11 +579,11 @@ impl BrailleGrid {
         Ok(())
     }
 }
-"##;
+";
 
 fn build_main(theme: &str) -> String {
     format!(
-        r##"
+        r#"
 fn main() {{
     let name = std::env::args()
         .nth(1)
@@ -627,7 +636,7 @@ fn main() {{
         frame += 1;
     }}
 }}
-"##,
+"#,
         theme = theme,
     )
 }
@@ -676,7 +685,8 @@ fn build_standalone(
     );
 
     let mut out = String::new();
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "//! `{theme}` — dotmax progress styles as a standalone, dependency-free program.\n\
          //!\n\
          //! Generated from https://github.com/newjordan/dotmax (MIT OR Apache-2.0).\n\
@@ -688,10 +698,8 @@ fn build_standalone(
          //! ```sh\n\
          //! rustc -O {theme}.rs && ./{theme} [style-name]\n\
          //! ```\n\n"
-    ));
-    out.push_str(&format!(
-        "const DEFAULT_STYLE: &str = \"{default_style}\";\n"
-    ));
+    );
+    let _ = writeln!(out, "const DEFAULT_STYLE: &str = \"{default_style}\";");
     out.push_str(RUNTIME_ROOT);
     out.push_str("\npub mod progress {\n");
     out.push_str(&core);

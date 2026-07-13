@@ -8,7 +8,7 @@
 //!
 //! Performance target: < 5ms overhead for convenience functions
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 
 // ============================================================================
@@ -47,7 +47,7 @@ fn bench_grid_overhead(c: &mut Criterion) {
 
 #[cfg(feature = "image")]
 mod image_benchmarks {
-    use super::*;
+    use super::{black_box, Criterion};
     use dotmax::image::ImageRenderer;
     use dotmax::quick;
     use std::path::Path;
