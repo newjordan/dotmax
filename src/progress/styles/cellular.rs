@@ -356,9 +356,9 @@ impl ProgressStyle for GameOfLife {
         // eased controls a left-to-right reveal column.
         let reveal_x = (ctx.eased * w as f32).round() as usize;
 
-        for y in 0..h.min(board.len()) {
+        for (y, row) in board.iter().enumerate().take(h) {
             for x in 0..reveal_x.min(w) {
-                if x < board[y].len() && board[y][x] {
+                if x < row.len() && row[x] {
                     draw::dot(grid, x, y);
                 }
             }
@@ -390,10 +390,10 @@ impl BriansBrain {
     fn initial(w: usize, h: usize) -> Vec<Vec<u8>> {
         let mut board = vec![vec![0u8; w]; h];
         // Scatter some firing seeds using the hash function.
-        for y in 0..h {
-            for x in 0..w {
+        for (y, row) in board.iter_mut().enumerate() {
+            for (x, cell) in row.iter_mut().enumerate() {
                 let v = hash2(x as u32, y as u32) % 5;
-                board[y][x] = u8::from(v == 0);
+                *cell = u8::from(v == 0);
             }
         }
         board
@@ -457,13 +457,12 @@ impl ProgressStyle for BriansBrain {
 
         // progress controls a diagonal reveal: cells with (x+y)/max_sum <= eased are shown.
         let max_sum = (w + h).saturating_sub(2).max(1);
-        for y in 0..h.min(board.len()) {
+        for (y, row) in board.iter().enumerate().take(h) {
             for x in 0..w {
                 let reveal_frac = (x + y) as f32 / max_sum as f32;
-                if reveal_frac <= ctx.eased
-                    && x < board[y].len() && board[y][x] == 1 {
-                        draw::dot(grid, x, y);
-                    }
+                if reveal_frac <= ctx.eased && x < row.len() && row[x] == 1 {
+                    draw::dot(grid, x, y);
+                }
             }
         }
 
@@ -638,9 +637,9 @@ impl ProgressStyle for CyclicCA {
 
         // Draw cells that are in "high" states (upper half of N_STATES range).
         let half = Self::N_STATES / 2;
-        for y in 0..h.min(board.len()) {
+        for (y, row) in board.iter().enumerate().take(h) {
             for x in 0..reveal_x.min(w) {
-                if x < board[y].len() && board[y][x] >= half {
+                if x < row.len() && row[x] >= half {
                     draw::dot(grid, x, y);
                 }
             }
@@ -706,67 +705,64 @@ impl Wireworld {
         let total = perimeter.len().max(1);
         let lit = (fill_frac * total as f32) as usize;
 
-        for i in 0..lit.min(total) {
-            let (x, y) = perimeter[i];
+        for &(x, y) in perimeter.iter().take(lit.min(total)) {
             board[y][x] = Self::CONDUCTOR;
         }
         board
     }
 
-    fn inject_electron(board: &mut Vec<Vec<u8>>, electron_pos: usize) {
+    fn inject_electron(board: &mut [Vec<u8>], electron_pos: usize) {
         // Walk the perimeter to find the conductor cell at position `electron_pos`.
         let h = board.len();
         let w = if h == 0 { 0 } else { board[0].len() };
         let mut idx = 0usize;
-        'outer: for pass in 0..2usize {
-            // Top row.
-            for x in 0..w {
-                if board[0][x] == Self::CONDUCTOR {
+        // Top row.
+        if let Some(top) = board.first_mut() {
+            for cell in top {
+                if *cell == Self::CONDUCTOR {
                     if idx == electron_pos {
-                        board[0][x] = if pass == 0 { Self::HEAD } else { Self::TAIL };
-                        break 'outer;
+                        *cell = Self::HEAD;
+                        return;
                     }
                     idx += 1;
                 }
             }
-            // Right column.
-            for y in 1..h {
-                let rx = w.saturating_sub(1);
-                if board[y][rx] == Self::CONDUCTOR {
+        }
+        // Right column.
+        let rx = w.saturating_sub(1);
+        for row in board.iter_mut().skip(1) {
+            if row[rx] == Self::CONDUCTOR {
+                if idx == electron_pos {
+                    row[rx] = Self::HEAD;
+                    return;
+                }
+                idx += 1;
+            }
+        }
+        // Bottom row reversed.
+        if h > 1 {
+            let by = h - 1;
+            for x in (0..w.saturating_sub(1)).rev() {
+                if board[by][x] == Self::CONDUCTOR {
                     if idx == electron_pos {
-                        board[y][rx] = if pass == 0 { Self::HEAD } else { Self::TAIL };
-                        break 'outer;
+                        board[by][x] = Self::HEAD;
+                        return;
                     }
                     idx += 1;
                 }
             }
-            // Bottom row reversed.
-            if h > 1 {
-                let by = h - 1;
-                for x in (0..w.saturating_sub(1)).rev() {
-                    if board[by][x] == Self::CONDUCTOR {
-                        if idx == electron_pos {
-                            board[by][x] = if pass == 0 { Self::HEAD } else { Self::TAIL };
-                            break 'outer;
-                        }
-                        idx += 1;
+        }
+        // Left column reversed.
+        if w > 1 && h > 1 {
+            for y in (1..h.saturating_sub(1)).rev() {
+                if board[y][0] == Self::CONDUCTOR {
+                    if idx == electron_pos {
+                        board[y][0] = Self::HEAD;
+                        return;
                     }
+                    idx += 1;
                 }
             }
-            // Left column reversed.
-            if w > 1 && h > 1 {
-                for y in (1..h.saturating_sub(1)).rev() {
-                    if board[y][0] == Self::CONDUCTOR {
-                        if idx == electron_pos {
-                            board[y][0] = if pass == 0 { Self::HEAD } else { Self::TAIL };
-                            break 'outer;
-                        }
-                        idx += 1;
-                    }
-                }
-            }
-            // Only one pass needed — if we're here electron_pos > total conductors.
-            break;
         }
     }
 
@@ -840,10 +836,10 @@ impl ProgressStyle for Wireworld {
             board = Self::step(&board);
         }
 
-        for y in 0..h.min(board.len()) {
+        for (y, row) in board.iter().enumerate().take(h) {
             for x in 0..w {
-                if x < board[y].len() {
-                    match board[y][x] {
+                if x < row.len() {
+                    match row[x] {
                         Self::CONDUCTOR => draw::dot(grid, x, y),
                         Self::HEAD => {
                             // Draw HEAD brighter by also dotting adjacent positions.
@@ -855,7 +851,7 @@ impl ProgressStyle for Wireworld {
                                 draw::dot(grid, x.saturating_sub(1), y);
                             }
                         }
-                        Self::TAIL => {} // tail is invisible (just went dark)
+                        // TAIL is invisible (just went dark), as is EMPTY.
                         _ => {}
                     }
                 }
