@@ -1081,7 +1081,9 @@ mod tests {
                         assert!(grid.width() > 0);
                         assert!(grid.height() > 0);
                     }
-                    _ => panic!("Expected Static variant for PNG"),
+                    crate::media::MediaContent::Animated(_) => {
+                        panic!("Expected Static variant for PNG")
+                    }
                 }
             }
         }

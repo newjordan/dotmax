@@ -35,7 +35,7 @@ use dotmax::{
     },
     BrailleGrid,
 };
-use visual::{capture_grid, compare_with_baseline, generate_baseline};
+use visual::capture_grid;
 
 // =============================================================================
 // Grid Pattern Tests

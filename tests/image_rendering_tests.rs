@@ -679,7 +679,7 @@ mod svg_pipeline_tests {
     }
 
     #[test]
-    #[ignore] // TODO: SVG background handling issue from Story 3.6 - test fails with 95% black pixels, needs investigation separately from Story 3.5.5 performance optimization
+    #[ignore = "SVG background handling bug (Story 3.6): renders 95% black pixels; needs separate investigation"]
     fn test_svg_dark_background_light_content_renders_correctly() {
         // Regression test for adaptive background bug (2025-11-20)
         // SVG with dark background (#4d4d4d) and light/white content should render visibly

@@ -28,6 +28,11 @@
 //! 2. Review changes in `tests/visual/baselines/`
 //! 3. Commit new baselines if changes are intentional
 
+// BASELINE_DIR and the two baseline helpers below are maintenance tooling, driven by
+// UPDATE_BASELINES=1 when adding or refreshing a visual test. The regression suite
+// itself compares captured grids inline, so they are not called from it.
+#![allow(dead_code)]
+
 use dotmax::BrailleGrid;
 use std::fs;
 use std::path::Path;
