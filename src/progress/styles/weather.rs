@@ -380,7 +380,7 @@ impl ProgressStyle for RainbowArc {
             Color::rgb(255, 0, 0),   // red (outermost)
         ];
 
-        for band in 0..bands {
+        for (band, &color) in band_colors.iter().enumerate() {
             // Band `band` becomes visible when progress crosses its threshold.
             let threshold = band as f32 / bands as f32;
             if ctx.eased < threshold {
@@ -407,7 +407,6 @@ impl ProgressStyle for RainbowArc {
             }
 
             // Apply band color.
-            let color = band_colors[band];
             let (cw, ch) = grid.dimensions();
             for cy_c in 0..ch {
                 draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);

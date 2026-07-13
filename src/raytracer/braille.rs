@@ -1,6 +1,6 @@
 //! Braille conversion and green ANSI styling (VIZ-012)
 
-/// Map a block intensity [0,1] to a Braille character U+2800..U+28FF.
+/// Map a block intensity `[0, 1]` to a Braille character U+2800..U+28FF.
 /// We approximate brightness by dot density; this is not a spatial 2x4 sampling.
 pub fn intensity_to_braille_char(intensity: f32) -> char {
     let i = intensity.clamp(0.0, 1.0);
@@ -58,9 +58,9 @@ pub fn intensity_buffer_to_green_braille(buffer: &[Vec<f32>]) -> String {
     for y in (0..height).step_by(step_y) {
         for x in (0..width).step_by(step_x) {
             let mut max_i = 0.0_f32;
-            for yy in y..(y + step_y).min(height) {
-                for xx in x..(x + step_x).min(width) {
-                    max_i = max_i.max(buffer[yy][xx]);
+            for row in buffer.iter().take((y + step_y).min(height)).skip(y) {
+                for &v in row.iter().take((x + step_x).min(width)).skip(x) {
+                    max_i = max_i.max(v);
                 }
             }
             let ch = intensity_to_braille_char(max_i);

@@ -71,10 +71,10 @@ pub fn load_obj<P: AsRef<Path>>(path: P) -> Result<MeshData> {
                 let z: f32 = parts[3].parse().unwrap_or(0.0);
                 normals.push(Vector3::new(x, y, z));
             }
-        } else if s.starts_with("f ") {
+        } else if let Some(face_spec) = s.strip_prefix("f ") {
             // faces: triangulate fan
             let mut face_verts: Vec<u32> = Vec::new();
-            for tok in s[2..].split_whitespace() {
+            for tok in face_spec.split_whitespace() {
                 // formats: v, v//vn, v/vt, v/vt/vn
                 let mut v_idx: Option<usize> = None;
                 let mut vn_idx: Option<usize> = None;

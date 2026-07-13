@@ -626,11 +626,7 @@ impl ProgressStyle for PineappleLattice {
                     let ny = (row * cell_y + next_y_off + drift_y) % (h + cell_y);
                     if ny < h {
                         let mid_x = (cx2 + nx) / 2;
-                        let mid_y = if ry < ny {
-                            (ry + ny) / 2
-                        } else {
-                            (ny + ry) / 2
-                        };
+                        let mid_y = (ry + ny) / 2;
                         draw::dot(grid, mid_x.min(w - 1), mid_y.min(h - 1));
                     }
                 }
