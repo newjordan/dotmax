@@ -6,6 +6,26 @@ Render anything in terminal braille. Images, GIFs, videos, webcam - one line of 
 [![Documentation](https://docs.rs/dotmax/badge.svg)](https://docs.rs/dotmax)
 [![License](https://img.shields.io/crates/l/dotmax.svg)](https://github.com/newjordan/dotmax#license)
 
+**Browse the live style catalog: [dotmax-sable.vercel.app](https://dotmax-sable.vercel.app)**
+
+## 644 loading animations, built in
+
+`dotmax::progress` ships 644 loading bars, spinners, borders, wipes and meters
+across 57 themes (matrix rain, aurora, fire, glitch, fireworks, fractals,
+cellular automata, sacred geometry, retro consoles, ...). Every style is a
+stateless pure function of `(progress, time)` — preview them all running live
+on [the site](https://dotmax-sable.vercel.app), then take any of them home as a
+dotmax snippet, a dependency-free standalone `.rs` file, or a plain shell
+script.
+
+```rust
+use dotmax::progress::{styles_for_theme, render_string, BarContext, Easing};
+
+let styles = styles_for_theme("matrix");
+let ctx = BarContext::new(0.42, 1.5, 44, 4).with_easing(Easing::CubicInOut);
+println!("{}", render_string(styles[0].as_ref(), &ctx).unwrap());
+```
+
 ## Gallery
 
 ### Color Rendering

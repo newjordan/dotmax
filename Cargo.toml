@@ -1,13 +1,13 @@
 [package]
 name = "dotmax"
-version = "0.1.7"
+version = "0.1.9"
 authors = ["Frosty"]
 edition = "2021"
 rust-version = "1.70"
 description = "High-performance terminal braille rendering for images, animations, and graphics"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/newjordan/dotmax"
-homepage = "https://github.com/newjordan/dotmax"
+homepage = "https://dotmax-sable.vercel.app"
 documentation = "https://docs.rs/dotmax"
 readme = "README.md"
 keywords = ["terminal", "braille", "graphics", "cli", "visualization"]
@@ -38,6 +38,15 @@ exclude = [
     "tests/test_assets/",
     # Community website assets and generated frontend files
     "site/",
+    # Local scratch assets and WIP examples (not part of the crate)
+    "src/image/",
+    "dotamax_pets/",
+    "examples/mikey.rs",
+    "examples/raphe.rs",
+    "examples/truck.rs",
+    "examples/gif_to_pack.rs",
+    "docs/progress_loader_sheet.html",
+    "docs/web_resource_workbench_report.md",
     # Generated files
     "*.context.xml",
     # Planning docs

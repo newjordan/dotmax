@@ -10,7 +10,7 @@
 //!
 //! # Controls
 //! - `→` / `space` : next style      `←` : previous style
-//! - `]` / `[`     : jump to next / previous theme (52 themes, ~500 styles)
+//! - `]` / `[`     : jump to next / previous theme (57 themes, 644 styles)
 //! - `a`           : auto-advance on/off (default on)
 //! - `p`           : pause/resume the fill animation
 //! - `t`           : cycle the easing curve applied to the fill
