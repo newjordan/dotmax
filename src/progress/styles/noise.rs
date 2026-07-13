@@ -820,7 +820,7 @@ impl ProgressStyle for TopoContour {
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let n_levels = ((ctx.eased * 8.0) as usize).max(1).min(8);
+        let n_levels = ((ctx.eased * 8.0) as usize).clamp(1, 8);
         let scale = 3.5 / dw as f32;
         let sy = 3.0 / dh.max(1) as f32;
         let t = ctx.time * 0.2;

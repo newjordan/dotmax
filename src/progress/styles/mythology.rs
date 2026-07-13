@@ -246,7 +246,7 @@ impl ProgressStyle for HydraHeads {
 
         let base_y = (h - 1) as i32;
         // One head per 10%.
-        let n_heads = ((ctx.eased * 10.0).ceil() as usize).max(1).min(10);
+        let n_heads = ((ctx.eased * 10.0).ceil() as usize).clamp(1, 10);
 
         // Body base: thick horizontal bar at the bottom.
         let body_w = (w as f32 * 0.4).round() as usize;
@@ -344,7 +344,7 @@ impl ProgressStyle for KrakenDepths {
         // Seafloor.
         draw::hline(grid, 0, w - 1, floor_y as usize);
 
-        let n_tent = ((ctx.eased * 8.0).ceil() as usize).max(1).min(8);
+        let n_tent = ((ctx.eased * 8.0).ceil() as usize).clamp(1, 8);
         let tent_spacing = (w / n_tent.max(1)).max(1);
 
         for i in 0..n_tent {

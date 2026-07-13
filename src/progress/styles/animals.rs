@@ -301,7 +301,7 @@ impl ProgressStyle for FishSchool {
         }
         let front_x = (ctx.eased * w as f32) as usize;
         // Number of fish scales with bar width.
-        let n_fish = (w / 8).max(2).min(10);
+        let n_fish = (w / 8).clamp(2, 10);
         let amp = (h / 2).saturating_sub(1).max(1) as f32 * 0.8;
         let mid = h as f32 / 2.0;
         for i in 0..n_fish {
@@ -773,7 +773,7 @@ impl ProgressStyle for AntMarch {
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let n_ants = (w / 7).max(1).min(8);
+        let n_ants = (w / 7).clamp(1, 8);
         let base = (h - 1).min(h.saturating_sub(1));
         let head_x = (ctx.eased * w as f32) as usize;
         // Ant spacing: packed in the filled region.

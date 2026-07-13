@@ -424,7 +424,7 @@ impl ProgressStyle for SunPattern {
         //   right_wing = (cos(a-36°), sin(a-36°)) * (1/PHI)
 
         // Number of concentric "rings" to draw (1-3 based on eased).
-        let rings = ((ctx.eased * 3.0) as usize).max(1).min(3);
+        let rings = ((ctx.eased * 3.0) as usize).clamp(1, 3);
 
         for ring in 0..rings {
             let ring_scale = scale / (1.0 + ring as f32 * 0.6);

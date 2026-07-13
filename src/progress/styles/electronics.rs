@@ -446,9 +446,9 @@ impl ProgressStyle for SevenSegment {
 
         // Determine how many digits we can fit.
         // Each digit needs ~6 dot-columns wide and full height.
-        let digit_w = (w / 4).max(3).min(12);
+        let digit_w = (w / 4).clamp(3, 12);
         let gap = 2usize;
-        let n_digits = ((w + gap) / (digit_w + gap)).max(1).min(4);
+        let n_digits = ((w + gap) / (digit_w + gap)).clamp(1, 4);
 
         // Current count: 0..=10^n_digits - 1
         let max_val = 10usize.pow(n_digits as u32).saturating_sub(1);

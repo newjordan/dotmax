@@ -852,7 +852,7 @@ impl ProgressStyle for LunarLander {
         let descent_range = surface_y.saturating_sub(6);
         let lander_y = (ctx.eased * descent_range as f32) as i32;
 
-        let bw: i32 = (w as i32 / 8).max(2).min(5);
+        let bw: i32 = (w as i32 / 8).clamp(2, 5);
         let bh: i32 = 2.max((h as i32 / 8).min(3));
 
         // Body rectangle.

@@ -23,7 +23,7 @@ fn plot_circle(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
         return;
     }
     // Circumference ≈ 2πr; sample at ≥2 dots per step so we don't miss any dot.
-    let steps = ((2.0 * PI * r).ceil() as usize * 2).max(8).min(2048);
+    let steps = ((2.0 * PI * r).ceil() as usize * 2).clamp(8, 2048);
     for i in 0..steps {
         let angle = 2.0 * PI * i as f32 / steps as f32;
         let px = cx + r * angle.cos();
@@ -36,7 +36,7 @@ fn plot_circle(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
 fn plot_line(grid: &mut BrailleGrid, x0: f32, y0: f32, x1: f32, y1: f32) {
     let dx = x1 - x0;
     let dy = y1 - y0;
-    let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1).min(4096);
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize).clamp(1, 4096);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
         let px = x0 + dx * t;
@@ -362,7 +362,7 @@ impl ProgressStyle for FruitOfLife {
         // Phase 1 (eased 0→0.5): reveal circles one by one.
         // Phase 2 (eased 0.5→1): draw connecting lines between all centres.
         let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let line_frac = ((ctx.eased - 0.5) * 2.0).max(0.0).min(1.0);
+        let line_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
 
         let reveal_circles = (circle_frac * total as f32).ceil() as usize;
         for (i, &(px, py)) in centres.iter().enumerate().take(reveal_circles.min(total)) {
@@ -575,7 +575,7 @@ impl ProgressStyle for TripodOfLife {
 
         // Reveal circles (phase 1: eased 0→0.5), then spoke arms (phase 2: 0.5→1).
         let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let arm_frac = ((ctx.eased - 0.5) * 2.0).max(0.0).min(1.0);
+        let arm_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
 
         let reveal_circles = (circle_frac * 3.0).ceil() as usize;
         for i in 0..reveal_circles.min(3) {

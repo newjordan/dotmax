@@ -1120,7 +1120,7 @@ impl ProgressStyle for Doppler {
             }
 
             // Draw circle outline (dot approximation)
-            let circ_steps = ((radius * PI * 2.0) as usize + 8).max(8).min(128);
+            let circ_steps = ((radius * PI * 2.0) as usize + 8).clamp(8, 128);
             let mut prev_c: Option<(i32, i32)> = None;
             for s in 0..=circ_steps {
                 let angle = s as f32 / circ_steps as f32 * 2.0 * PI;

@@ -762,7 +762,7 @@ impl ProgressStyle for EnergyLevels {
         let dhf = dh as f32;
 
         // Number of levels — scale with height
-        let n_levels = ((dh / 3).max(2)).min(8) as usize;
+        let n_levels = (dh / 3).clamp(2, 8) as usize;
         // Each level holds 2 electrons (spin up/down)
         let n_electrons_max = n_levels * 2;
         let n_filled = (ctx.eased * n_electrons_max as f32).round() as usize;

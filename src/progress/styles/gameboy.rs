@@ -1155,7 +1155,7 @@ impl ProgressStyle for LcdPinball {
         draw::vline(grid, w.saturating_sub(1), 0, h.saturating_sub(1));
 
         // ── Bumpers: shade ovals in a row near the top ────────────────────────
-        let bumper_count = (cw / 3).max(1).min(5);
+        let bumper_count = (cw / 3).clamp(1, 5);
         let bumper_spacing = cw / (bumper_count + 1);
         let lit_bumpers = (ctx.eased * bumper_count as f32).round() as usize;
 

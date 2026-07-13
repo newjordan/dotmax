@@ -359,7 +359,7 @@ impl ProgressStyle for GothicArch {
 
         let base_y = dh.saturating_sub(1) as i32;
         // How many arches to draw based on width.
-        let arch_count = ((dw / 10).max(1)).min(5);
+        let arch_count = (dw / 10).clamp(1, 5);
         let arch_slot_w = dw / arch_count;
 
         for a in 0..arch_count {

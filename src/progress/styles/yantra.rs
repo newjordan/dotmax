@@ -166,7 +166,7 @@ fn arc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32, a_start: f32, a_end: f3
         return;
     }
     let span = (a_end - a_start).abs();
-    let steps = ((r * span).ceil() as usize).max(4).min(1024);
+    let steps = ((r * span).ceil() as usize).clamp(4, 1024);
     let mut prev: Option<(i32, i32)> = None;
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
@@ -655,7 +655,7 @@ impl ProgressStyle for Rangoli {
         // Grid of pulli dots arranged in concentric diamond rings.
         // Each ring k has 4k dots at distance k*step from center.
         let step = (r_max / 4.0).max(2.0);
-        let n_rings = ((r_max / step) as usize).max(1).min(4);
+        let n_rings = ((r_max / step) as usize).clamp(1, 4);
         let total_dots = 1 + (1..=n_rings).map(|k| 4 * k).sum::<usize>();
         let reveal = (ctx.eased * (total_dots + n_rings * 4) as f32).round() as usize;
 

@@ -498,7 +498,7 @@ impl ProgressStyle for SubwayMap {
         }
 
         // ── Stations ──
-        let n_stations = ((dw / 8).max(3)).min(16);
+        let n_stations = (dw / 8).clamp(3, 16);
         let station_r = (dh as i32 / 6).max(1);
 
         for s in 0..n_stations {

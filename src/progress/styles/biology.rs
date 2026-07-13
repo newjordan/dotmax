@@ -530,7 +530,7 @@ impl ProgressStyle for ProteinFolding {
             return Ok(());
         }
 
-        let n_residues = (w / 4).max(4).min(32);
+        let n_residues = (w / 4).clamp(4, 32);
         let mid_y = (h / 2) as f32;
         // Folded target: a compact spiral / blob centered in the bar
         let blob_r = (w.min(h) as f32 * 0.30).max(2.0);
@@ -1072,7 +1072,7 @@ impl ProgressStyle for IonChannels {
         draw::hline(grid, 0, w.saturating_sub(1), inner_y);
 
         // Ion channels: vertical gaps in the membrane with a gate indicator
-        let n_channels = ((w / 10).max(1)).min(8);
+        let n_channels = (w / 10).clamp(1, 8);
         for ci in 0..n_channels {
             let ch_x = (ci * w / n_channels + w / (n_channels * 2).max(1)).min(w - 1);
             // Gate open fraction oscillates with time and ci phase

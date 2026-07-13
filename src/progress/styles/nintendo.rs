@@ -395,7 +395,7 @@ impl ProgressStyle for TetrisWell {
             if blink && piece_y < inner_h {
                 // Randomise piece shape by time bucket (cycles through shapes).
                 let shape = ((ctx.time * 0.5) as usize) % 5;
-                let pw = (inner_w.min(8)).max(1);
+                let pw = inner_w.clamp(1, 8);
                 let px0 = 1 + (inner_w.saturating_sub(pw)) / 2;
                 match shape {
                     0 => draw::hline(grid, px0, (px0 + 3).min(dw.saturating_sub(1)), piece_y), // I
@@ -882,7 +882,7 @@ impl ProgressStyle for DonkeyBarrel {
         }
 
         // ── Girders: horizontal bands ──
-        let n_girders = ((dh / 3).max(1)).min(4);
+        let n_girders = (dh / 3).clamp(1, 4);
         let girder_gap = dh / (n_girders + 1).max(1);
 
         for g in 0..n_girders {

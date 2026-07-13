@@ -137,7 +137,7 @@ impl ProgressStyle for Sieve {
         }
 
         // N = number of integers we lay across the width (at least 2).
-        let n = w.max(2).min(2000);
+        let n = w.clamp(2, 2000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Build sieve for 1..=n.
@@ -214,7 +214,7 @@ impl ProgressStyle for UlamSpiral {
         let cy = (h / 2) as i32;
 
         // Cap N to avoid spiraling off into unreachable cells.
-        let n = (w * h).min(4000).max(1);
+        let n = (w * h).clamp(1, 4000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Generate Ulam spiral coords for 1..=revealed.
@@ -282,7 +282,7 @@ impl ProgressStyle for PrimeCounting {
             return Ok(());
         }
 
-        let n = w.max(2).min(3000);
+        let n = w.clamp(2, 3000);
         let revealed_x = ((ctx.eased * n as f32).round() as usize).min(n);
 
         // Precompute π(k) for k in 1..=n.
@@ -341,7 +341,7 @@ impl ProgressStyle for Collatz {
         }
 
         // Number of seeds = width in dots, max 500.
-        let n_seeds = w.min(500).max(1);
+        let n_seeds = w.clamp(1, 500);
         let revealed = ((ctx.eased * n_seeds as f32).round() as usize).min(n_seeds);
 
         // Collatz stopping time for seed k.
@@ -428,7 +428,7 @@ impl ProgressStyle for FibonacciSpiral {
         for (arc_idx, &fib) in fibs.iter().enumerate().take(revealed) {
             let r = fib as f32;
             let angle_start = start_angles[arc_idx % 4];
-            let steps = ((r * PI / 2.0) as usize).max(4).min(256);
+            let steps = ((r * PI / 2.0) as usize).clamp(4, 256);
 
             for s in 0..=steps {
                 let theta = angle_start + (s as f32 / steps as f32) * (PI / 2.0);
@@ -561,7 +561,7 @@ impl ProgressStyle for TotientHistogram {
             return Ok(());
         }
 
-        let n = w.max(2).min(2000);
+        let n = w.clamp(2, 2000);
         let revealed = ((ctx.eased * n as f32).round() as usize).min(n).max(1);
 
         // Compute totient for k in 2..=revealed.
@@ -855,7 +855,7 @@ impl ProgressStyle for Recaman {
             return Ok(());
         }
 
-        let max_terms = w.min(60).max(2);
+        let max_terms = w.clamp(2, 60);
         let revealed = ((ctx.eased * max_terms as f32).round() as usize).clamp(1, max_terms);
 
         // Build Recamán sequence.
@@ -895,7 +895,7 @@ impl ProgressStyle for Recaman {
             // Above baseline for backward jumps (a→b where b<a), below for forward.
             let above = !forward;
 
-            let steps = ((arc_r * PI) as usize).max(4).min(256);
+            let steps = ((arc_r * PI) as usize).clamp(4, 256);
             for s in 0..=steps {
                 let theta = s as f32 / steps as f32 * PI;
                 let dx = (theta.cos() * arc_r).round() as i32;
