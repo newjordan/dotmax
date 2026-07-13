@@ -669,7 +669,7 @@ impl TemporalCoherence {
     /// 1. Frame blending (if enabled)
     /// 2. Hysteresis thresholding (if enabled)
     ///
-    /// Note: Dot-level filtering is applied separately via [`process_dots`].
+    /// Note: Dot-level filtering is applied separately via [`Self::process_dots`].
     ///
     /// # Arguments
     ///

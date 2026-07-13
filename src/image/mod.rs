@@ -323,8 +323,8 @@ impl ImageRenderer {
     ///
     /// Each `render()` call still advances the frame counter — pin the seed
     /// when you want a deterministic animation (e.g., generating a fixed set
-    /// of frames for a preview). Pass `None` (or call [`unpin_ambient_seed`]
-    /// — see below) to fall back to clock-driven seeding.
+    /// of frames for a preview). Leave the seed unset (the default) to fall
+    /// back to clock-driven seeding.
     #[must_use]
     pub fn ambient_seed(mut self, seed: u64) -> Self {
         self.ambient_seed = Some(seed);

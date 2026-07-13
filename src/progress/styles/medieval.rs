@@ -737,7 +737,7 @@ impl ProgressStyle for TorchFlame {
             // Handle: bottom third.
             let handle_h = (h / 3).max(1);
             let handle_top = (h - handle_h) as i32;
-            draw::vline(grid, tx as usize, handle_top as usize, (h - 1));
+            draw::vline(grid, tx as usize, handle_top as usize, h - 1);
             // Torch head: slightly wider.
             let head_y = handle_top - 2;
             draw::hline(
