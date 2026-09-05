@@ -874,7 +874,7 @@ fn hash3(x: i32, y: i32, z: i32) -> f32 {
 // ─── palette ────────────────────────────────────────────────────────────────
 
 /// Deep indigo — the night the stories happen in.
-const F_NIGHT: Color = Color::rgb(58, 72, 150);
+const F_NIGHT: Color = Color::rgb(96, 112, 205);
 /// Dusk indigo for unlit structure.
 const F_DUSK: Color = Color::rgb(68, 74, 118);
 /// Lantern gold.
@@ -888,7 +888,7 @@ const F_SAGE: Color = Color::rgb(127, 208, 160);
 /// Phosphor green — the terminal's own colour.
 const F_PHOSPHOR: Color = Color::rgb(110, 231, 160);
 /// Ink blue-black for wet ink.
-const F_INK: Color = Color::rgb(40, 48, 96);
+const F_INK: Color = Color::rgb(76, 90, 178);
 /// Paper cream.
 const F_PAPER: Color = Color::rgb(236, 226, 198);
 
