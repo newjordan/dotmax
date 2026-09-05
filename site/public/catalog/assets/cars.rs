@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1552,17 +1554,17 @@ impl ProgressStyle for GearShifter {
         line(grid, col_xs[0], mid_y, col_xs[col_count - 1], mid_y);
 
         // Vertical gate lines from mid_y to each gear slot
-        for col in 0..col_count {
-            line(grid, col_xs[col], mid_y, col_xs[col], row_ys[0]);
-            line(grid, col_xs[col], mid_y, col_xs[col], row_ys[1]);
+        for &col_x in &col_xs {
+            line(grid, col_x, mid_y, col_x, row_ys[0]);
+            line(grid, col_x, mid_y, col_x, row_ys[1]);
         }
 
         // Gate dots at each gear position
-        for col in 0..col_count {
-            for row in 0..2usize {
-                draw::dot_i(grid, col_xs[col] - 1, row_ys[row]);
-                draw::dot_i(grid, col_xs[col], row_ys[row]);
-                draw::dot_i(grid, col_xs[col] + 1, row_ys[row]);
+        for &col_x in &col_xs {
+            for &row_y in &row_ys {
+                draw::dot_i(grid, col_x - 1, row_y);
+                draw::dot_i(grid, col_x, row_y);
+                draw::dot_i(grid, col_x + 1, row_y);
             }
         }
 

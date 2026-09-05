@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1007,8 +1009,8 @@ impl ProgressStyle for Oscilloscope {
         }
 
         // Draw graticule: sparse horizontal and vertical lines.
-        let h_divs = 4usize.max(1);
-        let v_divs = 8usize.max(1);
+        let h_divs = 4usize;
+        let v_divs = 8usize;
         for di in 0..=h_divs {
             let y = di * h / h_divs.max(1);
             let y = y.min(h - 1);
@@ -1285,9 +1287,9 @@ impl ProgressStyle for SevenSegment {
 
         // Determine how many digits we can fit.
         // Each digit needs ~6 dot-columns wide and full height.
-        let digit_w = (w / 4).max(3).min(12);
+        let digit_w = (w / 4).clamp(3, 12);
         let gap = 2usize;
-        let n_digits = ((w + gap) / (digit_w + gap)).max(1).min(4);
+        let n_digits = ((w + gap) / (digit_w + gap)).clamp(1, 4);
 
         // Current count: 0..=10^n_digits - 1
         let max_val = 10usize.pow(n_digits as u32).saturating_sub(1);
@@ -1456,7 +1458,7 @@ impl ProgressStyle for BinaryBus {
 
                 if bit {
                     // HIGH: draw a line at top of cell.
-                    draw::hline(grid, x0, x1, y.saturating_sub(1).max(0));
+                    draw::hline(grid, x0, x1, y.saturating_sub(1));
                     draw::hline(grid, x0, x1, y);
                 } else {
                     // LOW: draw a line at bottom (just one dot row).
@@ -1627,9 +1629,9 @@ impl ProgressStyle for PwmDuty {
         let (cw, ch) = grid.dimensions();
         for col in 0..cw {
             let xi_mid = col * 2 + 1;
-            let phase = (xi_mid + scroll) % (period * 2 / 1).max(2); // dot phase
+            let phase = (xi_mid + scroll) % (period * 2).max(2); // dot phase
             let cell_period = period / 2; // cells per period (each cell = 2 dots)
-            let cell_on = (on_time / 2).max(if on_time > 0 { 1 } else { 0 });
+            let cell_on = (on_time / 2).max(usize::from(on_time > 0));
             let cell_phase = (col + scroll / 2) % cell_period.max(1);
             if cell_phase < cell_on && cell_period > 0 {
                 // Use shade to indicate ON time.

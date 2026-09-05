@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1216,10 +1218,10 @@ impl ProgressStyle for Phyllotaxis {
         let scale = fit_scale(dw, dh);
 
         let golden_angle: f32 = 2.0 * PI * (1.0 - 1.0 / 1.618_033_9); // ≈ 137.508°
-        let n_max: usize = 400;
-        let n_plot = (ctx.eased * n_max as f32).round() as usize;
+        let n_max: f32 = 400.0;
+        let n_plot = (ctx.eased * n_max).round() as usize;
         // c chosen so the outermost seed lands near the grid edge.
-        let c = scale / (n_max as f32).sqrt();
+        let c = scale / n_max.sqrt();
         let rot = ctx.time * 0.15;
 
         for n in 0..n_plot {
@@ -1402,8 +1404,8 @@ impl ProgressStyle for MaurerRose {
         let k: f32 = 5.0;
         let d_deg: f32 = 71.0; // step in degrees
         let d_rad = d_deg * PI / 180.0;
-        let n_total: usize = 361; // one full revolution in d-degree steps
-        let n_chords = (ctx.eased * n_total as f32).round() as usize;
+        let n_total: f32 = 361.0; // one full revolution in d-degree steps
+        let n_chords = (ctx.eased * n_total).round() as usize;
         let rot = ctx.time * 0.15;
 
         // Compute successive chord endpoints.

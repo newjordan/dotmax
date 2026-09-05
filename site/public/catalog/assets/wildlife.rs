@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1009,7 +1011,7 @@ impl ProgressStyle for GallopingHorse {
             draw::dot_i(grid, lx, knee_y);
             // Lower leg + hoof.
             draw::dot_i(grid, lx, foot_y);
-            if foot_y + 1 <= base as i32 {
+            if foot_y < base as i32 {
                 draw::dot_i(grid, lx, foot_y + 1); // hoof ground touch
             }
         }
@@ -1675,7 +1677,7 @@ impl ProgressStyle for Murmuration {
 
         // Flock: a cloud of dots with per-dot sine offsets.
         // We generate a deterministic but chaotic-looking distribution.
-        let n_birds = ((front_x / 3).max(1)).min(60);
+        let n_birds = (front_x / 3).clamp(1, 60);
 
         for b in 0..n_birds {
             // Each bird has a unique phase and speed.

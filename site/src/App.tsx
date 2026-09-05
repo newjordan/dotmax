@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Layers3,
   LoaderCircle,
+  Menu,
   Monitor,
   Orbit,
   PackagePlus,
@@ -26,6 +27,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Terminal,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -35,11 +37,14 @@ import { CodeBlock } from "./components/CodeBlock";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { CopyButton } from "./components/CopyButton";
 import { ExampleTerminalPreview, type ExamplePreview } from "./components/ExampleTerminalPreview";
+import { HeroBackdrop } from "./components/HeroBackdrop";
 import { HeroShowcase } from "./components/HeroShowcase";
 import { LoaderMarquee } from "./components/LoaderMarquee";
 import { QuickStartSection } from "./components/QuickStartSection";
 import { StyleBrowserSection } from "./components/StyleBrowserSection";
 import { TuiPatternsSection } from "./components/TuiPatternsSection";
+import { WidgetShowcaseSection } from "./components/WidgetShowcaseSection";
+import { useReveal } from "./hooks/useReveal";
 
 const links = {
   github: "https://github.com/newjordan/dotmax",
@@ -530,6 +535,25 @@ const docs = [
 ];
 
 function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; activeSection: string }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    const media = window.matchMedia("(min-width: 1024px)");
+    const onResize = () => {
+      if (media.matches) setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    media.addEventListener("change", onResize);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      media.removeEventListener("change", onResize);
+    };
+  }, [menuOpen]);
+
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 bg-page/85 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -537,7 +561,7 @@ function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; acti
           <span>dm</span>
           <strong>dotmax</strong>
         </a>
-        <nav className="ml-6 hidden items-center gap-6 text-sm lg:flex">
+        <nav className="ml-6 hidden items-center gap-6 text-sm lg:flex" aria-label="Primary">
           {navItems.map(([label, href]) => (
             <a
               className={activeSection === href.slice(1) ? "nav-link nav-link-active" : "nav-link"}
@@ -556,7 +580,7 @@ function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; acti
           </kbd>
         </button>
         <a
-          className="icon-button icon-button-light"
+          className="icon-button icon-button-light hidden sm:inline-flex"
           href={links.crate}
           target="_blank"
           rel="noreferrer"
@@ -564,10 +588,52 @@ function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; acti
         >
           <PackagePlus size={17} />
         </a>
-        <a className="icon-button icon-button-light" href={links.github} target="_blank" rel="noreferrer" aria-label="Open GitHub">
+        <a
+          className="icon-button icon-button-light hidden sm:inline-flex"
+          href={links.github}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open GitHub"
+        >
           <Github size={17} />
         </a>
+        <button
+          className="icon-button icon-button-light lg:hidden"
+          type="button"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-nav"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X size={17} /> : <Menu size={17} />}
+        </button>
       </div>
+      {menuOpen && (
+        <nav id="mobile-nav" className="mobile-nav lg:hidden" aria-label="Mobile">
+          {navItems.map(([label, href]) => (
+            <a
+              className={activeSection === href.slice(1) ? "mobile-nav-link mobile-nav-link-active" : "mobile-nav-link"}
+              href={href}
+              key={href}
+              onClick={() => setMenuOpen(false)}
+            >
+              {label}
+              <ChevronRight size={16} />
+            </a>
+          ))}
+          <div className="mobile-nav-links">
+            <a className="pill-link" href={links.github} target="_blank" rel="noreferrer">
+              <Github size={14} /> GitHub
+            </a>
+            <a className="pill-link" href={links.crate} target="_blank" rel="noreferrer">
+              <PackagePlus size={14} /> crates.io
+            </a>
+            <a className="pill-link" href={links.docs} target="_blank" rel="noreferrer">
+              <BookOpen size={14} /> docs.rs
+            </a>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }
@@ -575,8 +641,9 @@ function Nav({ onOpenPalette, activeSection }: { onOpenPalette: () => void; acti
 function Hero() {
   return (
     <section className="hero-docs-shell">
+      <HeroBackdrop />
       <div className="hero-docs-grid">
-        <div className="relative z-10 flex flex-col justify-center">
+        <div className="relative z-10 flex flex-col justify-center hero-copy-col">
           <span className="eyebrow mb-5 self-start">Open source Rust terminal graphics</span>
           <h1>
             Turn any media into
@@ -883,13 +950,13 @@ function UseCasesSection() {
 
   return (
     <section className="section border-y border-line bg-panel/60">
-      <div className="section-heading">
+      <div className="section-heading" data-reveal>
         <span className="eyebrow">Use cases</span>
         <h2>Useful when your terminal app needs more than rows of text.</h2>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {useCases.map(([title, text, visual]) => (
-          <article className="feature-card" key={title}>
+          <article className="feature-card" key={title} data-reveal>
             <div className="feature-card-visual">
               <img src={visual} alt="" loading="lazy" />
               <Activity size={18} />
@@ -906,7 +973,7 @@ function UseCasesSection() {
 function DocsSection() {
   return (
     <section id="docs" className="section">
-      <div className="section-heading">
+      <div className="section-heading" data-reveal>
         <span className="eyebrow">Docs</span>
         <h2>Follow the same path from first render to production tuning.</h2>
         <p>
@@ -915,7 +982,7 @@ function DocsSection() {
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {docs.map((doc) => (
-          <a className="doc-card" href={doc.href} key={doc.title} target="_blank" rel="noreferrer">
+          <a className="doc-card" href={doc.href} key={doc.title} target="_blank" rel="noreferrer" data-reveal>
             <div className="doc-card-visual">
               <img src={doc.visual} alt="" loading="lazy" />
               <span className="feature-icon">
@@ -935,7 +1002,7 @@ function DocsSection() {
 function OpenSourceSection() {
   return (
     <section className="section border-t border-line">
-      <div className="open-source-band">
+      <div className="open-source-band" data-reveal>
         <div className="open-source-visual">
           <img src={withBase("/gallery/color_tiger.png")} alt="Full color terminal rendering from dotmax" loading="lazy" />
           <div className="open-source-visual-caption">
@@ -1042,6 +1109,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>("");
   const commandItems = useCommandItems();
+  useReveal();
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -1083,6 +1151,7 @@ export default function App() {
       <LoaderMarquee />
       <StyleBrowserSection />
       <TuiPatternsSection />
+      <WidgetShowcaseSection />
       <AgentSection />
       <DocsSection />
       <UseCasesSection />

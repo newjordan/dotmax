@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1140,7 +1142,7 @@ impl ProgressStyle for FishSchool {
         }
         let front_x = (ctx.eased * w as f32) as usize;
         // Number of fish scales with bar width.
-        let n_fish = (w / 8).max(2).min(10);
+        let n_fish = (w / 8).clamp(2, 10);
         let amp = (h / 2).saturating_sub(1).max(1) as f32 * 0.8;
         let mid = h as f32 / 2.0;
         for i in 0..n_fish {
@@ -1264,7 +1266,7 @@ impl ProgressStyle for RabbitHops {
         for x in (0..wi).step_by(2) {
             draw::dot_i(grid, x, ground);
         }
-        for k in 0..(wi / 9 + 1) {
+        for k in 0..=(wi / 9) {
             let gx = k * 9 + 4;
             draw::dot_i(grid, gx, ground - 1);
             draw::dot_i(grid, gx + 1, ground - 2);
@@ -1612,7 +1614,7 @@ impl ProgressStyle for AntMarch {
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let n_ants = (w / 7).max(1).min(8);
+        let n_ants = (w / 7).clamp(1, 8);
         let base = (h - 1).min(h.saturating_sub(1));
         let head_x = (ctx.eased * w as f32) as usize;
         // Ant spacing: packed in the filled region.
@@ -1644,7 +1646,7 @@ impl ProgressStyle for AntMarch {
             draw::dot(grid, (ant_x + 2).min(w - 1), base);
             // Legs (3 pairs): alternate up/down with phase.
             for leg in 0..3usize {
-                let leg_y_off = if (leg + leg_up) % 2 == 0 { 0i32 } else { 1i32 };
+                let leg_y_off = i32::from((leg + leg_up) % 2 != 0);
                 // Left leg.
                 draw::dot_i(
                     grid,

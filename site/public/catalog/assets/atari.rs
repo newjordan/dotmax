@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1691,7 +1693,7 @@ impl ProgressStyle for LunarLander {
         let descent_range = surface_y.saturating_sub(6);
         let lander_y = (ctx.eased * descent_range as f32) as i32;
 
-        let bw: i32 = (w as i32 / 8).max(2).min(5);
+        let bw: i32 = (w as i32 / 8).clamp(2, 5);
         let bh: i32 = 2.max((h as i32 / 8).min(3));
 
         // Body rectangle.

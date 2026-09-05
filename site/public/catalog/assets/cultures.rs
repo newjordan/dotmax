@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1665,7 +1667,7 @@ impl ProgressStyle for PaisleySwirl {
         }
 
         // Number of paisley seeds tiling the bar.
-        let n_seeds: usize = ((dw / (dh.max(1) * 2)).max(1)).min(12);
+        let n_seeds: usize = (dw / (dh.max(1) * 2)).clamp(1, 12);
         let seed_w = dw / n_seeds.max(1);
 
         let eased_e = ease(Easing::QuadOut, ctx.eased);
@@ -1744,7 +1746,7 @@ impl ProgressStyle for KenteWeave {
         }
 
         // Strip width in dots (both warp and weft).
-        let strip = ((dh / 4).max(1)).min(6).min(dw);
+        let strip = (dh / 4).clamp(1, 6).min(dw);
         let n_warp = (dw / (strip * 2).max(1)).max(1);
         let n_weft = (dh / (strip * 2).max(1)).max(1);
 

@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1680,12 +1682,12 @@ impl ProgressStyle for BoltzmannDistribution {
         }
 
         // Re-check max after shimmer
-        let max_h = heights.iter().cloned().fold(0.0_f32, f32::max).max(0.001);
+        let max_h = heights.iter().copied().fold(0.0_f32, f32::max).max(0.001);
 
         // Draw each column using vblock glyphs from the bottom up
-        for col in 0..cw {
-            let norm = heights[col] / max_h; // [0,1]
-                                             // Each column spans ch cells vertically; fill bottom-up
+        for (col, &height) in heights.iter().enumerate() {
+            let norm = height / max_h; // [0,1]
+                                       // Each column spans ch cells vertically; fill bottom-up
             let total_eighths = (norm * ch as f32 * 8.0).round() as usize;
             let full_cells = total_eighths / 8;
             let partial = total_eighths % 8;
@@ -1702,7 +1704,7 @@ impl ProgressStyle for BoltzmannDistribution {
             }
 
             // Colour: hot bins (near peak) get end-palette colour
-            let t = heights[col] / max_h;
+            let t = height / max_h;
             for cy in 0..ch {
                 draw::tint_row(grid, cy, col, col, ctx.palette.sample(t));
             }

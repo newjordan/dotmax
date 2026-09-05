@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1601,7 +1603,7 @@ impl ProgressStyle for EnergyLevels {
         let dhf = dh as f32;
 
         // Number of levels — scale with height
-        let n_levels = ((dh / 3).max(2)).min(8) as usize;
+        let n_levels = (dh / 3).clamp(2, 8) as usize;
         // Each level holds 2 electrons (spin up/down)
         let n_electrons_max = n_levels * 2;
         let n_filled = (ctx.eased * n_electrons_max as f32).round() as usize;
@@ -1777,7 +1779,7 @@ impl ProgressStyle for QuantumWalk {
 
         let mut densities = vec![0.0_f32; cw];
         let mut max_d = 0.0_f32;
-        for cx in 0..cw {
+        for (cx, density) in densities.iter_mut().enumerate() {
             // Map column to position x ∈ [-nf, nf]
             let x = (cx as f32 / cwf - 0.5) * 2.0 * nf;
             // QW envelope: arcsine law ≈ (n² - x²)^(-1/2), zero outside
@@ -1786,15 +1788,15 @@ impl ProgressStyle for QuantumWalk {
             // Animated interference ripple inside the distribution
             let ripple = 1.0 + 0.25 * (PI * x / sigma.max(0.1) + drift_phase).cos();
             let d = envelope * ripple.max(0.0);
-            densities[cx] = d;
+            *density = d;
             if d > max_d {
                 max_d = d;
             }
         }
         let max_d = max_d.max(1e-9);
 
-        for cx in 0..cw {
-            let norm = (densities[cx] / max_d).clamp(0.0, 1.0);
+        for (cx, &density) in densities.iter().enumerate() {
+            let norm = (density / max_d).clamp(0.0, 1.0);
             // vblock per cell row
             for cy in 0..ch {
                 let row_thresh = 1.0 - cy as f32 / chf;

@@ -1500,7 +1500,7 @@ code {
 }
 
 .loading-bars-toolbar {
-  @apply sticky top-[4.05rem] z-30 mb-5 grid gap-3 rounded-xl border border-line bg-ink/95 p-3 backdrop-blur lg:grid-cols-[minmax(260px,380px)_1fr] lg:items-start;
+  @apply z-30 mb-5 grid gap-3 rounded-xl border border-line bg-ink/95 p-3 backdrop-blur lg:sticky lg:top-[4.05rem] lg:grid-cols-[minmax(260px,380px)_1fr] lg:items-start;
 }
 
 .loading-theme-strip {
@@ -2297,5 +2297,315 @@ code {
   }
   .hero-showcase-live {
     animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Wave 10 polish: mobile nav, hero backdrop + controls, scroll reveal,
+   style-browser collections/sort/surprise, dialog navigation + palette
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* --- Mobile navigation ------------------------------------------------- */
+.mobile-nav {
+  @apply grid gap-1 border-t border-line bg-page/95 px-4 py-3 backdrop-blur-xl sm:px-6;
+  animation: fade-in 0.16s ease-out both;
+}
+
+.mobile-nav-link {
+  @apply flex min-h-11 items-center justify-between rounded-lg px-3 text-sm font-medium text-paper transition hover:bg-panel2;
+}
+
+.mobile-nav-link svg {
+  @apply text-subtle;
+}
+
+.mobile-nav-link-active {
+  @apply bg-terminal/10 text-terminal;
+}
+
+.mobile-nav-links {
+  @apply mt-2 flex flex-wrap gap-2 border-t border-line pt-3;
+}
+
+/* --- Hero backdrop (ambient braille field) ----------------------------- */
+.hero-backdrop {
+  @apply pointer-events-none absolute inset-0 overflow-hidden;
+  mask-image: radial-gradient(75% 80% at 72% 40%, black 10%, transparent 75%);
+  -webkit-mask-image: radial-gradient(75% 80% at 72% 40%, black 10%, transparent 75%);
+}
+
+.hero-backdrop canvas {
+  @apply block;
+}
+
+.hero-copy-col {
+  @apply relative z-10;
+}
+
+/* --- Hero showcase controls + rotation progress ----------------------- */
+.hero-showcase-terminal .terminal-top {
+  @apply gap-3;
+}
+
+.hero-showcase-title {
+  @apply min-w-0 flex-1 truncate text-center;
+}
+
+.hero-showcase-controls {
+  @apply flex shrink-0 items-center gap-1;
+}
+
+.hero-showcase-control {
+  @apply inline-flex size-6 cursor-pointer items-center justify-center rounded-md border border-transparent text-subtle transition hover:border-line hover:bg-panel hover:text-terminal;
+}
+
+.hero-showcase-output {
+  text-shadow: 0 0 12px rgba(110, 231, 160, 0.22);
+}
+
+.hero-showcase-progress {
+  @apply relative h-px w-full overflow-hidden bg-line/60;
+}
+
+.hero-showcase-progress span {
+  @apply absolute inset-y-0 left-0 block w-full origin-left bg-terminal/70;
+  transform: scaleX(0);
+  animation: hero-progress linear both;
+}
+
+.hero-showcase[data-hero-paused="true"] .hero-showcase-progress span {
+  animation-play-state: paused;
+}
+
+.hero-showcase[data-hero-paused="true"] .hero-showcase-live {
+  animation-play-state: paused;
+  opacity: 0.55;
+}
+
+.hero-showcase-dot {
+  @apply size-2 cursor-pointer rounded-full bg-line2 transition;
+}
+
+.hero-showcase-dot:hover {
+  @apply scale-125 bg-muted;
+}
+
+@keyframes hero-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* --- Scroll reveal ----------------------------------------------------- */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+[data-reveal="in"] {
+  opacity: 1;
+  transform: none;
+  will-change: auto;
+}
+
+/* Grid children stagger by DOM order (cheap, no JS). */
+.grid > [data-reveal]:nth-child(2),
+.ai-grid > [data-reveal]:nth-child(2) {
+  transition-delay: 70ms;
+}
+.grid > [data-reveal]:nth-child(3),
+.ai-grid > [data-reveal]:nth-child(3) {
+  transition-delay: 140ms;
+}
+.grid > [data-reveal]:nth-child(4) {
+  transition-delay: 210ms;
+}
+.grid > [data-reveal]:nth-child(5) {
+  transition-delay: 280ms;
+}
+.grid > [data-reveal]:nth-child(6) {
+  transition-delay: 350ms;
+}
+
+/* --- Style browser: head side, collections, sort, kind chips ---------- */
+.loading-bars-head-side {
+  @apply flex flex-wrap items-stretch gap-3;
+}
+
+.surprise-button {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-terminal/35 bg-terminal/10 px-4 text-sm font-semibold text-terminal transition hover:border-terminal hover:bg-terminal hover:text-ink active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.loading-sort {
+  @apply inline-flex w-fit gap-1 rounded-lg border border-line bg-panel p-1;
+}
+
+.loading-sort-button {
+  @apply inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-[0.7rem] text-muted transition hover:text-paper;
+}
+
+.loading-sort-button-active {
+  @apply bg-panel3 text-paper;
+}
+
+.loading-theme-column {
+  @apply grid min-w-0 gap-2;
+}
+
+.loading-collection-strip {
+  @apply flex flex-wrap gap-2;
+}
+
+.loading-collection-chip {
+  @apply inline-flex min-h-8 items-center gap-2 rounded-md border border-line bg-ink px-3 py-1.5 text-xs font-medium text-paper transition hover:border-cyan/60 hover:bg-cyan/10 hover:text-cyan;
+}
+
+.loading-collection-chip span {
+  @apply font-mono text-[0.65rem] text-subtle;
+}
+
+.loading-collection-chip-active {
+  @apply border-cyan bg-cyan text-ink hover:bg-cyan hover:text-ink;
+}
+
+.loading-collection-chip-active span {
+  @apply text-ink/70;
+}
+
+.kind-chip {
+  @apply rounded-full border px-2 py-0.5 text-[0.65rem] uppercase tracking-wide;
+}
+
+.kind-chip-bar {
+  @apply border-terminal/35 bg-terminal/10 text-terminal;
+}
+
+.kind-chip-spinner {
+  @apply border-cyan/40 bg-cyan/10 text-cyan;
+}
+
+.kind-chip-border {
+  @apply border-amber/40 bg-amber/10 text-amber;
+}
+
+.kind-chip-wipe {
+  @apply border-coral/40 bg-coral/10 text-coral;
+}
+
+.kind-chip-meter {
+  @apply border-paper/25 bg-paper/10 text-paper;
+}
+
+.loading-bar-card-open {
+  @apply pointer-events-none absolute bottom-2 right-2 rounded-md border border-terminal/40 bg-ink/90 px-2 py-0.5 font-mono text-[0.62rem] text-terminal opacity-0 transition;
+  transform: translateY(4px);
+}
+
+.loading-bar-card:hover .loading-bar-card-open,
+.loading-bar-card:focus-within .loading-bar-card-open {
+  opacity: 1;
+  transform: none;
+}
+
+.loading-bar-card:hover .loading-bar-output {
+  text-shadow: 0 0 10px rgba(110, 231, 160, 0.25);
+}
+
+.loading-bars-empty {
+  @apply mt-6 flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line bg-panel/60 p-8 text-sm text-muted;
+}
+
+.expander-row {
+  @apply mt-6 flex flex-wrap items-center justify-center gap-3;
+}
+
+.expander-row .expander-button {
+  @apply mx-0 mt-0;
+}
+
+.expander-button-ghost {
+  @apply border-transparent bg-transparent text-muted hover:border-line hover:bg-panel/60;
+}
+
+.widget-showcase-card {
+  min-width: 0;
+}
+
+/* --- Style dialog: navigation + palette -------------------------------- */
+.style-dialog-head-actions {
+  @apply flex shrink-0 items-center gap-1.5;
+}
+
+.style-dialog-position {
+  @apply mr-1 font-mono text-[0.68rem] text-subtle;
+}
+
+.style-dialog-preview-output {
+  animation: hero-fade 0.3s ease-out both;
+}
+
+.style-dialog-palette {
+  @apply mt-3 flex flex-wrap items-center gap-1.5;
+}
+
+.style-dialog-palette > span:not(.style-dialog-palette-label) {
+  @apply block size-4 rounded-sm border border-white/10;
+}
+
+.style-dialog-palette-label {
+  @apply ml-1 font-mono text-[0.65rem] text-subtle;
+}
+
+@media (max-width: 640px) {
+  /* Keep the controls; drop the title text so the bar fits a phone. */
+  .hero-showcase-title {
+    display: none;
+  }
+  .hero-showcase-control {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .style-dialog-position {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .hero-showcase-progress {
+    display: none;
+  }
+  .mobile-nav,
+  .style-dialog-preview-output {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .loading-collection-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+  .loading-collection-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .loading-collection-chip {
+    flex-shrink: 0;
+  }
+  .loading-theme-strip {
+    max-height: 5.5rem;
   }
 }

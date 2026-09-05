@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1390,7 +1392,6 @@ impl ProgressStyle for TerminalVelocity {
             return Ok(());
         }
         let wf = w as f32;
-        let _hf = h as f32;
 
         // Physics: τ = 1 (normalised), v_t = 1
         let tau = 1.0_f32;
@@ -1959,7 +1960,7 @@ impl ProgressStyle for Doppler {
             }
 
             // Draw circle outline (dot approximation)
-            let circ_steps = ((radius * PI * 2.0) as usize + 8).max(8).min(128);
+            let circ_steps = ((radius * PI * 2.0) as usize + 8).clamp(8, 128);
             let mut prev_c: Option<(i32, i32)> = None;
             for s in 0..=circ_steps {
                 let angle = s as f32 / circ_steps as f32 * 2.0 * PI;

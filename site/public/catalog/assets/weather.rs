@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1219,7 +1221,7 @@ impl ProgressStyle for RainbowArc {
             Color::rgb(255, 0, 0),   // red (outermost)
         ];
 
-        for band in 0..bands {
+        for (band, &color) in band_colors.iter().enumerate() {
             // Band `band` becomes visible when progress crosses its threshold.
             let threshold = band as f32 / bands as f32;
             if ctx.eased < threshold {
@@ -1246,7 +1248,6 @@ impl ProgressStyle for RainbowArc {
             }
 
             // Apply band color.
-            let color = band_colors[band];
             let (cw, ch) = grid.dimensions();
             for cy_c in 0..ch {
                 draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
@@ -1671,7 +1672,7 @@ impl ProgressStyle for FrostCrystals {
         // Each edge has a set of roots spaced every 4 dots along the edge.
         // From each root, a main spine grows inward; then side branches sprout
         // every few dots, each in the perpendicular direction.
-        let branch_spacing = 4usize.max(1);
+        let branch_spacing = 4usize;
         let branch_len_frac = 0.4_f32;
 
         // Left edge.

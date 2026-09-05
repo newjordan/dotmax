@@ -106,7 +106,7 @@ export function TuiPatternsSection() {
   return (
     <section id="patterns" className="section patterns-section">
       <div className="patterns-head">
-        <div className="section-heading">
+        <div className="section-heading" data-reveal>
           <span className="eyebrow">TUI pattern workbench</span>
           <h2>Reusable interface pieces for Rust terminal software.</h2>
           <p>

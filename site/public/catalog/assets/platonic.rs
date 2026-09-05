@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -870,20 +872,32 @@ use crate::{BrailleGrid, Color, DotmaxError};
 
 // ── Shared 3-D helpers ────────────────────────────────────────────────────────
 
-/// Rotate `(x, y, z)` about X by `ax` then Y by `ay` (extrinsic Euler XY),
-/// then orthographically project onto the dot lattice centred at `(cx, cy)`.
+/// Euler angles `(ax, ay)`, dot-space centre `(cx, cy)` and uniform `scale` in
+/// dots-per-unit — the camera every projected vertex is pushed through.
+#[derive(Clone, Copy)]
+struct View {
+    ax: f32,
+    ay: f32,
+    cx: i32,
+    cy: i32,
+    scale: f32,
+}
+
+/// Rotate `(x, y, z)` about X by `view.ax` then Y by `view.ay` (extrinsic Euler
+/// XY), then orthographically project onto the dot lattice centred at
+/// `(view.cx, view.cy)`.
 ///
 /// Returns `(screen_x, screen_y)` as `i32` for `draw::dot_i`.
 #[inline]
-fn project(x: f32, y: f32, z: f32, ax: f32, ay: f32, cx: i32, cy: i32, scale: f32) -> (i32, i32) {
-    let (sax, cax) = ax.sin_cos();
+fn project(x: f32, y: f32, z: f32, view: &View) -> (i32, i32) {
+    let (sax, cax) = view.ax.sin_cos();
     let y1 = y * cax - z * sax;
     let z1 = y * sax + z * cax;
-    let (say, cay) = ay.sin_cos();
+    let (say, cay) = view.ay.sin_cos();
     let x2 = x * cay + z1 * say;
     let y2 = y1;
-    let sx = cx + (x2 * scale).round() as i32;
-    let sy = cy - (y2 * scale).round() as i32;
+    let sx = view.cx + (x2 * view.scale).round() as i32;
+    let sy = view.cy - (y2 * view.scale).round() as i32;
     (sx, sy)
 }
 
@@ -929,19 +943,12 @@ fn grid_centre_scale(grid: &BrailleGrid, shrink: f32) -> (i32, i32, f32) {
     (cx, cy, scale)
 }
 
-/// Project a slice of 3-D vertices with given rotation angles, returning
-/// screen-space `(i32, i32)` for each.
-fn project_verts(
-    verts: &[[f32; 3]],
-    ax: f32,
-    ay: f32,
-    cx: i32,
-    cy: i32,
-    scale: f32,
-) -> Vec<(i32, i32)> {
+/// Project a slice of 3-D vertices through `view`, returning screen-space
+/// `(i32, i32)` for each.
+fn project_verts(verts: &[[f32; 3]], view: &View) -> Vec<(i32, i32)> {
     verts
         .iter()
-        .map(|&[x, y, z]| project(x, y, z, ax, ay, cx, cy, scale))
+        .map(|&[x, y, z]| project(x, y, z, view))
         .collect()
 }
 
@@ -989,7 +996,14 @@ impl ProgressStyle for Tetrahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
         let ax = ctx.time * 0.41;
         let ay = ctx.time * 0.63;
-        let pts = project_verts(&TETRA_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&TETRA_VERTS, &view);
         let n_show = (ctx.eased * TETRA_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &TETRA_EDGES, n_show);
         Ok(())
@@ -1046,7 +1060,14 @@ impl ProgressStyle for Cube {
         let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
         let ax = ctx.time * 0.37;
         let ay = ctx.time * 0.51;
-        let pts = project_verts(&CUBE_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&CUBE_VERTS, &view);
         let n_show = (ctx.eased * CUBE_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &CUBE_EDGES, n_show);
         Ok(())
@@ -1095,7 +1116,14 @@ impl ProgressStyle for Octahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
         let ax = ctx.time * 0.44;
         let ay = ctx.time * 0.59;
-        let pts = project_verts(&OCTA_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&OCTA_VERTS, &view);
         let n_show = (ctx.eased * OCTA_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &OCTA_EDGES, n_show);
         Ok(())
@@ -1200,7 +1228,14 @@ impl ProgressStyle for Dodecahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, DODECA_SCALE);
         let ax = ctx.time * 0.29;
         let ay = ctx.time * 0.47;
-        let pts = project_verts(&DODECA_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&DODECA_VERTS, &view);
         let n_show = (ctx.eased * DODECA_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &DODECA_EDGES, n_show);
         Ok(())
@@ -1213,7 +1248,7 @@ impl ProgressStyle for Dodecahedron {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Circumradius of icosahedron with these coords = √(1+φ²) ≈ 1.902.
-const ICOSA_SCALE: f32 = 1.0 / 1.902_113_0;
+const ICOSA_SCALE: f32 = 1.0 / 1.902_113;
 
 const ICOSA_VERTS: [[f32; 3]; 12] = [
     // (0, ±1, ±φ).
@@ -1287,7 +1322,14 @@ impl ProgressStyle for Icosahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, ICOSA_SCALE);
         let ax = ctx.time * 0.33;
         let ay = ctx.time * 0.54;
-        let pts = project_verts(&ICOSA_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&ICOSA_VERTS, &view);
         let n_show = (ctx.eased * ICOSA_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &ICOSA_EDGES, n_show);
         Ok(())
@@ -1301,7 +1343,6 @@ impl ProgressStyle for Icosahedron {
 /// The merkaba has two interlocked tetrahedra.  One uses the canonical upward
 /// tetrahedron; the other is its inversion (downward — dual).  They counter-rotate
 /// with time so the Merkaba field animates distinctly even without edge-reveal.
-
 struct Merkaba;
 impl ProgressStyle for Merkaba {
     fn name(&self) -> &str {
@@ -1324,10 +1365,24 @@ impl ProgressStyle for Merkaba {
         let ay_dn = -ctx.time * 0.57;
 
         // Upward tetrahedron (same as TETRA_VERTS).
-        let pts_up = project_verts(&TETRA_VERTS, ax_up, ay_up, cx, cy, scale);
+        let view_up = View {
+            ax: ax_up,
+            ay: ay_up,
+            cx,
+            cy,
+            scale,
+        };
+        let pts_up = project_verts(&TETRA_VERTS, &view_up);
         // Downward tetrahedron (invert y).
+        let view_dn = View {
+            ax: ax_dn,
+            ay: ay_dn,
+            cx,
+            cy,
+            scale,
+        };
         let tetra_down: [[f32; 3]; 4] = TETRA_VERTS.map(|[x, y, z]| [x, -y, z]);
-        let pts_dn = project_verts(&tetra_down, ax_dn, ay_dn, cx, cy, scale);
+        let pts_dn = project_verts(&tetra_down, &view_dn);
 
         // Reveal first tetrahedron on eased 0→0.5, second on 0.5→1.
         let total_edges = TETRA_EDGES.len() * 2;
@@ -1364,16 +1419,27 @@ impl ProgressStyle for StarOctangulum {
         // Both tetrahedra share the same rotation (co-rotating, not counter-rotating).
         let ax = ctx.time * 0.35;
         let ay = ctx.time * 0.52;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
 
         // Upward tet — scaled to circumradius 1.
-        let pts_up = project_verts(&TETRA_VERTS, ax, ay, cx, cy, scale);
+        let pts_up = project_verts(&TETRA_VERTS, &view);
         // Downward tet — invert all three axes for the dual orientation.
         let tetra_dual: [[f32; 3]; 4] = TETRA_VERTS.map(|[x, y, z]| [-x, -y, -z]);
-        let pts_dn = project_verts(&tetra_dual, ax, ay, cx, cy, scale);
+        let pts_dn = project_verts(&tetra_dual, &view);
 
         // Also draw the inner octahedron formed by the intersection.
         // Octahedron vertices are midpoints of the stella's edges (unit sphere).
-        let pts_oct = project_verts(&OCTA_VERTS, ax, ay, cx, cy, scale * 0.577_350_3);
+        let view_oct = View {
+            scale: scale * 0.577_350_3,
+            ..view
+        };
+        let pts_oct = project_verts(&OCTA_VERTS, &view_oct);
 
         let total = TETRA_EDGES.len() * 2 + OCTA_EDGES.len();
         let n_show = (ctx.eased * total as f32).ceil() as usize;
@@ -1414,7 +1480,7 @@ const CUBOCTA_VERTS: [[f32; 3]; 12] = [
 ];
 
 /// Cuboctahedron circumradius = √2, so shrink.
-const CUBOCTA_SCALE: f32 = 1.0 / 1.414_213_6;
+const CUBOCTA_SCALE: f32 = 1.0 / std::f32::consts::SQRT_2;
 
 /// 24 edges of the cuboctahedron.  Each vertex has degree 4.
 /// Two vertices are adjacent iff their distance = √2 (= edge length here).
@@ -1465,7 +1531,14 @@ impl ProgressStyle for Cuboctahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, CUBOCTA_SCALE);
         let ax = ctx.time * 0.31;
         let ay = ctx.time * 0.49;
-        let pts = project_verts(&CUBOCTA_VERTS, ax, ay, cx, cy, scale);
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
+        let pts = project_verts(&CUBOCTA_VERTS, &view);
         let n_show = (ctx.eased * CUBOCTA_EDGES.len() as f32).ceil() as usize;
         draw_edges_partial(grid, &pts, &CUBOCTA_EDGES, n_show);
         Ok(())
@@ -1495,14 +1568,28 @@ impl ProgressStyle for NestedSolids {
         // Outer octahedron — slower rotation, revealed in first half of eased.
         let ax_oct = ctx.time * 0.27;
         let ay_oct = ctx.time * 0.41;
-        let pts_oct = project_verts(&OCTA_VERTS, ax_oct, ay_oct, cx, cy, scale);
+        let view_oct = View {
+            ax: ax_oct,
+            ay: ay_oct,
+            cx,
+            cy,
+            scale,
+        };
+        let pts_oct = project_verts(&OCTA_VERTS, &view_oct);
 
         // Inner cube — faster rotation, revealed in second half, scaled to inradius.
         // Inradius of octahedron = 1/√3 ≈ 0.577, so cube circumradius ≈ 0.577.
         let cube_inner_scale = scale * 0.577_350_3; // fit cube inside octahedron
         let ax_cube = ctx.time * 0.55;
         let ay_cube = ctx.time * 0.71;
-        let pts_cube = project_verts(&CUBE_VERTS, ax_cube, ay_cube, cx, cy, cube_inner_scale);
+        let view_cube = View {
+            ax: ax_cube,
+            ay: ay_cube,
+            cx,
+            cy,
+            scale: cube_inner_scale,
+        };
+        let pts_cube = project_verts(&CUBE_VERTS, &view_cube);
 
         let n_show = (ctx.eased * (OCTA_EDGES.len() + CUBE_EDGES.len()) as f32).ceil() as usize;
         let n_oct = n_show.min(OCTA_EDGES.len());
@@ -1540,13 +1627,24 @@ impl ProgressStyle for StellatedDodecahedron {
         let (cx, cy, scale) = grid_centre_scale(grid, DODECA_SCALE * 0.72);
         let ax = ctx.time * 0.25;
         let ay = ctx.time * 0.43;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
 
         // Draw the dodecahedron base skeleton first.
-        let pts_dodeca = project_verts(&DODECA_VERTS, ax, ay, cx, cy, scale);
+        let pts_dodeca = project_verts(&DODECA_VERTS, &view);
 
         // The 12 spike tips — icosahedron vertices scaled outward by φ.
         let spike_scale = scale * PHI * ICOSA_SCALE;
-        let pts_spikes = project_verts(&ICOSA_VERTS, ax, ay, cx, cy, spike_scale);
+        let view_spikes = View {
+            scale: spike_scale,
+            ..view
+        };
+        let pts_spikes = project_verts(&ICOSA_VERTS, &view_spikes);
 
         // Each spike tip connects to the 5 nearest dodecahedron vertices.
         // For simplicity: each icosahedron vertex (face centre) connects to the
@@ -1730,6 +1828,14 @@ impl ProgressStyle for UnfoldingNet {
         // Cube spans ±0.5.  Map net scale to roughly 0.4 → 1.0 of display scale.
         let net_s = scale / 3.0;
         let cube_s = scale;
+        // Scale: lerp from net_s to cube_s.
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale: net_s + (cube_s - net_s) * t,
+        };
 
         for fi in 0..6usize {
             // Interpolate each corner between net and cube.
@@ -1740,9 +1846,7 @@ impl ProgressStyle for UnfoldingNet {
                     let x = nx + (cx2 - nx) * t;
                     let y = ny + (cy2 - ny) * t;
                     let z = nz + (cz - nz) * t;
-                    // Scale: lerp from net_s to cube_s.
-                    let s = net_s + (cube_s - net_s) * t;
-                    project(x, y, z, ax, ay, cx, cy, s)
+                    project(x, y, z, &view)
                 })
                 .collect();
 

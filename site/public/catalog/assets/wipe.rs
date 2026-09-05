@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1197,8 +1199,8 @@ impl ProgressStyle for Checkerboard {
         let (dw, dh) = draw::dot_dims(grid);
         // Tile size: 4 dots wide × 4 dots tall (a 2×1 cell block — distinct from
         // the Bayer-dither which operates per dot with a 4×4 matrix).
-        let tile_w = 4usize.max(1);
-        let tile_h = 4usize.max(1);
+        let tile_w = 4usize;
+        let tile_h = 4usize;
         // Each tile has a phase in [0, 1): even tiles have phase 0, odd 0.5.
         // A tile is revealed when ctx.eased > phase.
         for ty in 0.. {
@@ -1257,7 +1259,7 @@ impl ProgressStyle for VenetianBlinds {
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         // Slat height in dots — 8 dots = 2 cell rows.
-        let slat_h = 8usize.max(1);
+        let slat_h = 8usize;
         let num_slats = (dh + slat_h - 1) / slat_h;
         for s in 0..num_slats {
             let top = s * slat_h;
@@ -1272,7 +1274,7 @@ impl ProgressStyle for VenetianBlinds {
         }
         // Tint alternating slats.
         let (cw, ch) = grid.dimensions();
-        let slat_c = 2usize.max(1);
+        let slat_c = 2usize;
         for cy_idx in 0..ch {
             let slat_idx = cy_idx / slat_c;
             let t = if slat_idx % 2 == 0 { 0.25 } else { 0.75 };
@@ -1595,8 +1597,8 @@ impl ProgressStyle for Pixelate {
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cw, ch) = grid.dimensions();
         // Block size in cells (2 wide × 1 tall — avoids conflating with Bayer).
-        let block_w = 2usize.max(1);
-        let block_h = 1usize.max(1);
+        let block_w = 2usize;
+        let block_h = 1;
         // Each block has a pseudorandom order based on its grid position so that
         // blocks light up in a spatial-hash order rather than simple scan order.
         // We use a cheap integer hash of (block_col, block_row).

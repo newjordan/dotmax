@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight, Shuffle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { frameHtml } from "../catalog/frameHtml";
 import { currentFrame, useTickerFrame } from "../catalog/frameTicker";
@@ -21,22 +22,31 @@ export function HeroShowcase() {
   const [ref, inView] = useInView<HTMLDivElement>();
   const [shown, setShown] = useState(0);
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  // Bumps whenever the user picks a style so the rotation timer (and the
+  // progress bar) restart from zero instead of mid-cycle.
+  const [cycle, setCycle] = useState(0);
   // Frame offset so every style starts its run at frame 0 when it appears.
   const offsetRef = useRef(0);
+  // Touch swipe: horizontal drags over the terminal step styles.
+  const touchRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
   const frame = useTickerFrame(inView && !reducedMotion && pack !== null);
 
   const styles = pack?.styles ?? [];
-  const style = styles.length > 0 ? styles[shown % styles.length] : null;
+  const count = styles.length;
+  const style = count > 0 ? styles[shown % count] : null;
+  const paused = hovered || focused;
 
   useEffect(() => {
-    if (!pack || reducedMotion || !inView || hovered) return undefined;
+    if (!pack || reducedMotion || !inView || paused) return undefined;
     const timer = window.setInterval(() => {
       offsetRef.current = currentFrame();
       setShown((current) => (current + 1) % pack.styles.length);
     }, ROTATE_MS);
     return () => window.clearInterval(timer);
-  }, [pack, reducedMotion, inView, hovered]);
+    // `cycle` is a dependency on purpose: a manual pick restarts the interval.
+  }, [pack, reducedMotion, inView, paused, cycle]);
 
   const staticFrame = pack ? Math.floor(pack.frames_per_style / 4) : 0;
   const html = style
@@ -45,13 +55,51 @@ export function HeroShowcase() {
   const [theme = "", name = ""] = style ? style.id.split("/") : [];
 
   function select(index: number) {
+    if (count === 0) return;
     offsetRef.current = currentFrame();
-    setShown(index);
+    setShown(((index % count) + count) % count);
+    setCycle((current) => current + 1);
+  }
+
+  function shuffle() {
+    if (count < 2) return;
+    let pick = shown % count;
+    while (pick === shown % count) pick = Math.floor(Math.random() * count);
+    select(pick);
   }
 
   function openStyle() {
     if (!style) return;
     window.dispatchEvent(new CustomEvent("dotmax:open-style", { detail: { id: style.id } }));
+  }
+
+  function onKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      select(shown + 1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      select(shown - 1);
+    }
+  }
+
+  const active = shown % Math.max(1, count);
+
+  function onTouchStart(event: React.TouchEvent) {
+    const touch = event.touches[0];
+    touchRef.current = touch ? { x: touch.clientX, y: touch.clientY, t: Date.now() } : null;
+  }
+
+  function onTouchEnd(event: React.TouchEvent) {
+    const start = touchRef.current;
+    touchRef.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // A deliberate horizontal flick: mostly sideways, at least 40px, under 600ms.
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - start.t > 600) return;
+    select(dx < 0 ? shown + 1 : shown - 1);
   }
 
   return (
@@ -60,8 +108,16 @@ export function HeroShowcase() {
       ref={ref}
       data-hero-style={style?.id ?? ""}
       data-hero-frame={reducedMotion ? staticFrame : frame}
+      data-hero-paused={paused ? "true" : "false"}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
+      onKeyDown={onKeyDown}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
       <div className="terminal-preview hero-showcase-terminal">
         <div className="terminal-top">
@@ -70,7 +126,20 @@ export function HeroShowcase() {
             <span className="bg-amber" />
             <span className="bg-terminal" />
           </div>
-          <span>{style ? `dotmax · ${theme}/${name}` : "dotmax · loading styles"}</span>
+          <span className="hero-showcase-title">{style ? `dotmax · ${theme}/${name}` : "dotmax · loading styles"}</span>
+          {count > 1 && (
+            <div className="hero-showcase-controls" role="group" aria-label="Showcase controls">
+              <button type="button" className="hero-showcase-control" onClick={() => select(shown - 1)} aria-label="Previous style">
+                <ChevronLeft size={14} />
+              </button>
+              <button type="button" className="hero-showcase-control" onClick={shuffle} aria-label="Random style">
+                <Shuffle size={13} />
+              </button>
+              <button type="button" className="hero-showcase-control" onClick={() => select(shown + 1)} aria-label="Next style">
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
         <button
           className="hero-showcase-body"
@@ -102,21 +171,23 @@ export function HeroShowcase() {
             )}
           </div>
         </button>
+        {!reducedMotion && style && (
+          <div className="hero-showcase-progress" aria-hidden="true">
+            <span key={`${style.id}-${cycle}`} style={{ animationDuration: `${ROTATE_MS}ms` }} />
+          </div>
+        )}
       </div>
-      {styles.length > 1 && (
+      {count > 1 && (
         <div className="hero-showcase-dots" role="tablist" aria-label="Showcase styles">
           {styles.map((entry, index) => (
             <button
               key={entry.id}
               role="tab"
               type="button"
-              aria-selected={index === shown % styles.length}
+              aria-selected={index === active}
               aria-label={`Show ${entry.name}`}
-              className={
-                index === shown % styles.length
-                  ? "hero-showcase-dot hero-showcase-dot-active"
-                  : "hero-showcase-dot"
-              }
+              title={entry.id}
+              className={index === active ? "hero-showcase-dot hero-showcase-dot-active" : "hero-showcase-dot"}
               onClick={() => select(index)}
             />
           ))}

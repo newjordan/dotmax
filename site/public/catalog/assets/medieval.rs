@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1052,7 +1054,14 @@ impl ProgressStyle for BowDraw {
         line_dots(grid, nock_x, mid_y, bow_x, stave_bot);
 
         // Arrow: shaft from nock leftward to fletching.
-        if !release {
+        if release {
+            // Arrow has flown — draw it travelling rightward off-screen via time.
+            let flight_x = (bow_x + (ctx.time % 0.8 * w as f32 * 1.5) as i32).min(w as i32 + 4);
+            draw::dot_i(grid, flight_x, mid_y);
+            draw::dot_i(grid, flight_x + 1, mid_y);
+            draw::dot_i(grid, flight_x + 2, mid_y - 1);
+            draw::dot_i(grid, flight_x + 2, mid_y + 1);
+        } else {
             let arrow_len = (w as i32 * 3 / 5).max(2);
             let arrow_start = nock_x;
             let arrow_end = (arrow_start - arrow_len).max(bow_x + 2);
@@ -1071,13 +1080,6 @@ impl ProgressStyle for BowDraw {
                 draw::dot_i(grid, arrow_end - 1, mid_y - 1);
                 draw::dot_i(grid, arrow_end - 1, mid_y + 1);
             }
-        } else {
-            // Arrow has flown — draw it travelling rightward off-screen via time.
-            let flight_x = (bow_x + (ctx.time % 0.8 * w as f32 * 1.5) as i32).min(w as i32 + 4);
-            draw::dot_i(grid, flight_x, mid_y);
-            draw::dot_i(grid, flight_x + 1, mid_y);
-            draw::dot_i(grid, flight_x + 2, mid_y - 1);
-            draw::dot_i(grid, flight_x + 2, mid_y + 1);
         }
 
         // Tint: warm wood across stave region, highlight at string.
@@ -1127,12 +1129,9 @@ impl ProgressStyle for CastleBuild {
             let _y1 = h.saturating_sub(course * course_h + 1);
 
             // Alternate stone patterns: solid courses and mortar-jointed rows.
-            if course % 2 == 0 {
-                // Solid course
-                draw::fill_rect(grid, 0, y0, w, course_h);
-            } else {
+            draw::fill_rect(grid, 0, y0, w, course_h);
+            if course % 2 != 0 {
                 // Jointed course: solid but with gaps at alternating x positions
-                draw::fill_rect(grid, 0, y0, w, course_h);
                 // Mortar joints (knock out single dots) — staggered per course
                 let offset = (course / 2) % 2;
                 let joint_spacing = 4usize;
@@ -1344,10 +1343,8 @@ impl ProgressStyle for ShieldCharge {
         let boss_r = (arm_w / 2).max(1);
         for dy in -boss_r..=boss_r {
             for dx in -boss_r..=boss_r {
-                if dx * dx + dy * dy <= boss_r * boss_r {
-                    if glint {
-                        draw::dot_i(grid, cx + dx, cy + dy);
-                    }
+                if dx * dx + dy * dy <= boss_r * boss_r && glint {
+                    draw::dot_i(grid, cx + dx, cy + dy);
                 }
             }
         }
@@ -1577,7 +1574,7 @@ impl ProgressStyle for TorchFlame {
             // Handle: bottom third.
             let handle_h = (h / 3).max(1);
             let handle_top = (h - handle_h) as i32;
-            draw::vline(grid, tx as usize, handle_top as usize, (h - 1).max(0));
+            draw::vline(grid, tx as usize, handle_top as usize, h - 1);
             // Torch head: slightly wider.
             let head_y = handle_top - 2;
             draw::hline(

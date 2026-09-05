@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -847,6 +849,7 @@ pub mod styles {
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, DotmaxError};
+use std::cmp::Ordering;
 use std::f32::consts::PI;
 
 // ─── deterministic hash (no external crates) ────────────────────────────────
@@ -1201,18 +1204,22 @@ impl ProgressStyle for HexFill {
             let x0 = i * cell_w;
             // Gap of 1 dot between cells.
             let bw = cell_w.saturating_sub(1).max(1);
-            if i < lit {
-                // Fully lit cell.
-                draw::fill_rect(grid, x0, 0, bw, h);
-            } else if i == lit {
-                // Partially lit cell — animates in with a sine flicker.
-                let flicker = ((ctx.time * 8.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
-                let bh = (flicker * h as f32) as usize;
-                let y0 = h.saturating_sub(bh);
-                draw::fill_rect(grid, x0, y0, bw, bh);
-            } else {
-                // Unlit: just outline.
-                draw::rect_outline(grid, x0, 0, bw.max(2), h.max(2));
+            match i.cmp(&lit) {
+                Ordering::Less => {
+                    // Fully lit cell.
+                    draw::fill_rect(grid, x0, 0, bw, h);
+                }
+                Ordering::Equal => {
+                    // Partially lit cell — animates in with a sine flicker.
+                    let flicker = ((ctx.time * 8.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+                    let bh = (flicker * h as f32) as usize;
+                    let y0 = h.saturating_sub(bh);
+                    draw::fill_rect(grid, x0, y0, bw, bh);
+                }
+                Ordering::Greater => {
+                    // Unlit: just outline.
+                    draw::rect_outline(grid, x0, 0, bw.max(2), h.max(2));
+                }
             }
 
             // Tint lit cells.

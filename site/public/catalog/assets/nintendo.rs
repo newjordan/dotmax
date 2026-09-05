@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1219,7 +1221,7 @@ impl ProgressStyle for TetrisWell {
             let row_mod = (inner_h - 1 - y) % 4;
             if row_mod == 3 {
                 // "Mortar" gap — sparse dots.
-                for x in (1..inner_w + 1).step_by(3) {
+                for x in (1..=inner_w).step_by(3) {
                     draw::dot(grid, x, y);
                 }
             } else {
@@ -1234,7 +1236,7 @@ impl ProgressStyle for TetrisWell {
             if blink && piece_y < inner_h {
                 // Randomise piece shape by time bucket (cycles through shapes).
                 let shape = ((ctx.time * 0.5) as usize) % 5;
-                let pw = (inner_w.min(8)).max(1);
+                let pw = inner_w.clamp(1, 8);
                 let px0 = 1 + (inner_w.saturating_sub(pw)) / 2;
                 match shape {
                     0 => draw::hline(grid, px0, (px0 + 3).min(dw.saturating_sub(1)), piece_y), // I
@@ -1721,7 +1723,7 @@ impl ProgressStyle for DonkeyBarrel {
         }
 
         // ── Girders: horizontal bands ──
-        let n_girders = ((dh / 3).max(1)).min(4);
+        let n_girders = (dh / 3).clamp(1, 4);
         let girder_gap = dh / (n_girders + 1).max(1);
 
         for g in 0..n_girders {

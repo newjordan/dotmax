@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1716,11 +1718,11 @@ impl ProgressStyle for CosmicWeb {
             edges.push((i, (i + NUM_NODES as usize / 2) % NUM_NODES as usize));
         }
         // Remove exact duplicates (normalise so a < b).
-        edges.iter_mut().for_each(|(a, b)| {
+        for (a, b) in &mut edges {
             if *a > *b {
                 std::mem::swap(a, b);
             }
-        });
+        }
         edges.sort_unstable();
         edges.dedup();
 

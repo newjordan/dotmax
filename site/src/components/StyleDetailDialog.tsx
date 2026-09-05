@@ -1,7 +1,19 @@
-import { Box, FileCode2, Package, Pause, Play, ScrollText, Snail, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { frameHtml } from "../catalog/frameHtml";
-import { useTickerFrame } from "../catalog/frameTicker";
+import {
+  Box,
+  ChevronLeft,
+  ChevronRight,
+  Dices,
+  FileCode2,
+  Package,
+  Pause,
+  Play,
+  ScrollText,
+  Snail,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { densestFrame, frameHtml } from "../catalog/frameHtml";
+import { currentFrame, useTickerFrame } from "../catalog/frameTicker";
 import { loadStandalone, useThemePack } from "../catalog/packs";
 import { dotmaxSnippet, patchStandalone, shellScript } from "../catalog/snippets";
 import type { StyleMeta } from "../catalog/types";
@@ -25,7 +37,17 @@ const tabNotes: Record<TabId, string> = {
   source: "Excerpt for reading. Theme helper functions live in the standalone file, which is the runnable copy.",
 };
 
-export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose: () => void }) {
+const HEX_COLOR = /^#[0-9a-f]{6}$/;
+
+type Props = {
+  meta: StyleMeta;
+  onClose: () => void;
+  /** The list the dialog can step through with ← → (the browser's current filter). */
+  siblings?: StyleMeta[];
+  onNavigate?: (meta: StyleMeta) => void;
+};
+
+export function StyleDetailDialog({ meta, onClose, siblings, onNavigate }: Props) {
   const pack = useThemePack(meta.theme);
   const [tab, setTab] = useState<TabId>("dotmax");
   const [standalone, setStandalone] = useState<string | null>(null);
@@ -35,8 +57,33 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
 
   const style = pack?.styles.find((entry) => entry.name === meta.name) ?? null;
   const frame = useTickerFrame(!prefersReducedMotion && !paused && style !== null);
-  const shownFrame = halfSpeed ? Math.floor(frame / 2) : frame;
-  const staticFrame = pack ? Math.floor(pack.frames_per_style / 4) : 0;
+  // Styles ping-pong progress across the loop, so the shared ticker can land
+  // on the near-empty 0% phase the instant the dialog opens. Re-anchor the
+  // playhead per style so the first visible frame is its densest one.
+  const anchorRef = useRef<{ id: string; offset: number } | null>(null);
+  if (style && anchorRef.current?.id !== meta.id) {
+    anchorRef.current = { id: meta.id, offset: currentFrame() - densestFrame(style) };
+  }
+  const localFrame = frame - (anchorRef.current?.id === meta.id ? anchorRef.current.offset : 0);
+  const shownFrame = halfSpeed ? Math.floor(localFrame / 2) : localFrame;
+
+  const list = siblings && siblings.length > 1 ? siblings : null;
+  const position = list ? list.findIndex((entry) => entry.id === meta.id) : -1;
+  const canNavigate = list !== null && position >= 0 && typeof onNavigate === "function";
+
+  function step(delta: number) {
+    if (!canNavigate || !list || !onNavigate) return;
+    const next = (position + delta + list.length) % list.length;
+    onNavigate(list[next]);
+  }
+
+  function random() {
+    if (!canNavigate || !list || !onNavigate) return;
+    if (list.length < 2) return;
+    let pick = position;
+    while (pick === position) pick = Math.floor(Math.random() * list.length);
+    onNavigate(list[pick]);
+  }
 
   useEffect(() => {
     let live = true;
@@ -55,6 +102,20 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+      } else if (event.key === "ArrowRight" && canNavigate) {
+        event.preventDefault();
+        step(1);
+      } else if (event.key === "ArrowLeft" && canNavigate) {
+        event.preventDefault();
+        step(-1);
+      } else if ((event.key === "r" || event.key === "R") && canNavigate && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        random();
+      } else if (event.key === " " && style && !prefersReducedMotion) {
+        const target = event.target as HTMLElement | null;
+        if (target && (target.tagName === "BUTTON" || target.tagName === "INPUT")) return;
+        event.preventDefault();
+        setPaused((current) => !current);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -63,7 +124,8 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, canNavigate, position, list, style, prefersReducedMotion]);
 
   const tabContent = useMemo<string | null>(() => {
     if (tab === "dotmax") return dotmaxSnippet(meta);
@@ -73,8 +135,19 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
   }, [tab, meta, standalone, style, pack]);
 
   const previewHtml = style
-    ? frameHtml(style, prefersReducedMotion ? staticFrame : shownFrame)
+    ? frameHtml(style, prefersReducedMotion ? densestFrame(style) : shownFrame)
     : null;
+
+  // Distinct palette swatches, in order of first appearance (max 12).
+  const swatches = useMemo(() => {
+    if (!style) return [];
+    const seen: string[] = [];
+    for (const color of style.palette) {
+      if (HEX_COLOR.test(color) && !seen.includes(color)) seen.push(color);
+      if (seen.length >= 12) break;
+    }
+    return seen;
+  }, [style]);
 
   return (
     <div className="style-dialog-overlay" role="dialog" aria-modal="true" aria-label={`${meta.name} style`} onMouseDown={onClose}>
@@ -85,9 +158,27 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
             <h3>{meta.name}</h3>
             <span className="style-dialog-kind">{meta.kind}</span>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close style details">
-            <X size={16} />
-          </button>
+          <div className="style-dialog-head-actions">
+            {canNavigate && list && (
+              <>
+                <span className="style-dialog-position" aria-live="polite">
+                  {position + 1} / {list.length}
+                </span>
+                <button className="icon-button" type="button" onClick={() => step(-1)} aria-label="Previous style (←)" title="Previous (←)">
+                  <ChevronLeft size={16} />
+                </button>
+                <button className="icon-button" type="button" onClick={() => step(1)} aria-label="Next style (→)" title="Next (→)">
+                  <ChevronRight size={16} />
+                </button>
+                <button className="icon-button" type="button" onClick={random} aria-label="Random style (R)" title="Random (R)">
+                  <Dices size={16} />
+                </button>
+              </>
+            )}
+            <button className="icon-button" type="button" onClick={onClose} aria-label="Close style details">
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <p className="style-dialog-description">{meta.description}</p>
 
@@ -109,7 +200,7 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
                 type="button"
                 aria-pressed={paused}
                 aria-label={paused ? "Resume playback" : "Pause playback"}
-                title={paused ? "Play" : "Pause"}
+                title={paused ? "Play (space)" : "Pause (space)"}
                 onClick={() => setPaused((current) => !current)}
               >
                 {paused ? <Play size={14} /> : <Pause size={14} />}
@@ -117,13 +208,24 @@ export function StyleDetailDialog({ meta, onClose }: { meta: StyleMeta; onClose:
             </div>
           )}
           {previewHtml ? (
-            <pre dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <pre key={meta.id} className="style-dialog-preview-output" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           ) : (
             <pre aria-hidden="true" className="style-skeleton">
               {"⠀".repeat(44)}
             </pre>
           )}
         </div>
+
+        {swatches.length > 0 && (
+          <div className="style-dialog-palette" aria-label="Style palette">
+            {swatches.map((color) => (
+              <span key={color} style={{ background: color }} title={color} />
+            ))}
+            <span className="style-dialog-palette-label">
+              {style ? `${style.palette.length} colors` : ""}
+            </span>
+          </div>
+        )}
 
         <div className="style-dialog-tabs" role="tablist" aria-label="Copy formats">
           {tabs.map(({ id, label, icon: Icon }) => (

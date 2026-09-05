@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1369,7 +1371,7 @@ impl ProgressStyle for ProteinFolding {
             return Ok(());
         }
 
-        let n_residues = (w / 4).max(4).min(32);
+        let n_residues = (w / 4).clamp(4, 32);
         let mid_y = (h / 2) as f32;
         // Folded target: a compact spiral / blob centered in the bar
         let blob_r = (w.min(h) as f32 * 0.30).max(2.0);
@@ -1847,9 +1849,6 @@ impl ProgressStyle for VirusSpread {
             return Ok(());
         }
 
-        // Total tissue cells; infected fraction = eased
-        let _total = cw * ch;
-
         // Infection spreads in a diagonal wave from top-left
         // Cell order: sorted by (cx + cy) ascending (Manhattan distance from origin)
         // We can approximate by iterating and checking if (cx+cy) / (cw+ch-2) <= eased
@@ -1911,7 +1910,7 @@ impl ProgressStyle for IonChannels {
         draw::hline(grid, 0, w.saturating_sub(1), inner_y);
 
         // Ion channels: vertical gaps in the membrane with a gate indicator
-        let n_channels = ((w / 10).max(1)).min(8);
+        let n_channels = (w / 10).clamp(1, 8);
         for ci in 0..n_channels {
             let ch_x = (ci * w / n_channels + w / (n_channels * 2).max(1)).min(w - 1);
             // Gate open fraction oscillates with time and ci phase

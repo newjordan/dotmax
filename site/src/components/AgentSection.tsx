@@ -51,7 +51,7 @@ ${llmsUrl}`;
 
   return (
     <section id="build-with-ai" className="section ai-section">
-      <div className="section-heading">
+      <div className="section-heading" data-reveal>
         <span className="eyebrow">Agents &amp; AI tools</span>
         <h2>Built to be built by agents.</h2>
         <p>
@@ -61,7 +61,7 @@ ${llmsUrl}`;
       </div>
 
       <div className="ai-grid">
-        <article className="ai-card">
+        <article className="ai-card" data-reveal>
           <span className="ai-card-icon">
             <Bot size={20} />
           </span>
@@ -78,7 +78,7 @@ ${llmsUrl}`;
           </div>
         </article>
 
-        <article className="ai-card">
+        <article className="ai-card" data-reveal>
           <span className="ai-card-icon">
             <FileText size={20} />
           </span>
@@ -96,7 +96,7 @@ ${llmsUrl}`;
           </div>
         </article>
 
-        <article className="ai-card">
+        <article className="ai-card" data-reveal>
           <span className="ai-card-icon">
             <Terminal size={20} />
           </span>

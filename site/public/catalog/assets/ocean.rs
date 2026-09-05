@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -946,8 +948,7 @@ impl ProgressStyle for BubblesRising {
         }
 
         // Number of bubbles tied to progress (minimum 1 while progress > 0).
-        let n_bubbles =
-            ((ctx.eased * 14.0).round() as usize).max(if ctx.progress > 0.0 { 1 } else { 0 });
+        let n_bubbles = ((ctx.eased * 14.0).round() as usize).max(usize::from(ctx.progress > 0.0));
 
         for i in 0..n_bubbles {
             // Each bubble has a fixed column origin spread across the width.
@@ -1472,7 +1473,7 @@ impl ProgressStyle for Seaweed {
 
         // Number of fronds filling from left.
         let filled_w = (ctx.eased * w as f32).round() as usize;
-        let n_fronds = (filled_w / 2).max(if ctx.progress > 0.0 { 1 } else { 0 });
+        let n_fronds = (filled_w / 2).max(usize::from(ctx.progress > 0.0));
 
         for fi in 0..n_fronds {
             let fx = (fi * filled_w) / n_fronds.max(1);

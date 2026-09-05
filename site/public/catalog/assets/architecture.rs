@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1035,9 +1037,9 @@ impl ProgressStyle for Skyscraper {
 
         // Crane: vertical mast above the building top.
         if floors >= max_floors.saturating_sub(1) || floors > 0 {
-            let mast_top_y = dh.saturating_sub(floors + 2).max(0) as i32;
+            let mast_top_y = dh.saturating_sub(floors + 2) as i32;
             let mast_x = (bld_x1 as i32).min(dw as i32 - 1);
-            let building_top_y = dh.saturating_sub(floors + 1).max(0) as i32;
+            let building_top_y = dh.saturating_sub(floors + 1) as i32;
             // Mast (vertical post).
             for y in mast_top_y..=building_top_y {
                 draw::dot_i(grid, mast_x, y);
@@ -1198,7 +1200,7 @@ impl ProgressStyle for GothicArch {
 
         let base_y = dh.saturating_sub(1) as i32;
         // How many arches to draw based on width.
-        let arch_count = ((dw / 10).max(1)).min(5);
+        let arch_count = (dw / 10).clamp(1, 5);
         let arch_slot_w = dw / arch_count;
 
         for a in 0..arch_count {
@@ -1884,7 +1886,7 @@ impl ProgressStyle for Blueprint {
         if ctx.eased > 0.85 {
             let dim_p = (ctx.eased - 0.85) / 0.15;
             // Dimension line along the top.
-            let y_dim = (dh / 8).saturating_sub(2).max(0);
+            let y_dim = (dh / 8).saturating_sub(2);
             let x_end = (dim_p * dw as f32) as usize;
             draw::hline(grid, 0, x_end.min(dw.saturating_sub(1)), y_dim);
             // Arrow heads.

@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -858,7 +860,7 @@ use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
-const PHI: f32 = 1.6180339887;
+const PHI: f32 = 1.618_034;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -939,6 +941,9 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 // ────────────────────────────────────────────────────────────────────────────
 // Shared helpers
 // ────────────────────────────────────────────────────────────────────────────
+
+/// A triangle tagged with its kind: `(kind, p, q, r)`, vertices in unit space.
+type MarkedTri = (bool, [f32; 2], [f32; 2], [f32; 2]);
 
 /// Grid center in dot-space.
 #[inline]
@@ -1058,7 +1063,7 @@ impl ProgressStyle for PenroseP3 {
         // Each triangle: type=Acute, vertices (p,q,r) in unit space.
         // Acute triangle: two short sides length 1, long side PHI.
         //   p = center, q & r on the circle at angles (k±36°)*π/180
-        let mut tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> = Vec::new();
+        let mut tris: Vec<MarkedTri> = Vec::new();
         for k in 0..10usize {
             let a1 = (k as f32 * 36.0) * PI / 180.0;
             let a2 = (k as f32 * 36.0 + 36.0) * PI / 180.0;
@@ -1099,9 +1104,7 @@ impl ProgressStyle for PenroseP3 {
 
 /// One deflation step for P3 Robinson triangles.
 /// is_acute=true → "acute" (fat-rhombus) triangle, false → "obtuse" (thin-rhombus).
-fn deflate_p3(
-    tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])>,
-) -> Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> {
+fn deflate_p3(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
     let mut out = Vec::with_capacity(tris.len() * 2);
     for (is_acute, p, q, r) in tris {
         if is_acute {
@@ -1167,7 +1170,7 @@ impl ProgressStyle for PenroseP2 {
         let reveal_frac = (ctx.eased * 4.0).fract();
 
         // Seed: 5 golden triangles forming a "star" at the origin.
-        let mut tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> = Vec::new();
+        let mut tris: Vec<MarkedTri> = Vec::new();
         for k in 0..5usize {
             let a_mid = (k as f32 * 72.0 + 90.0) * PI / 180.0;
             let a_lo = (k as f32 * 72.0 + 90.0 - 36.0) * PI / 180.0;
@@ -1204,9 +1207,7 @@ impl ProgressStyle for PenroseP2 {
     }
 }
 
-fn deflate_p2(
-    tris: Vec<(bool, [f32; 2], [f32; 2], [f32; 2])>,
-) -> Vec<(bool, [f32; 2], [f32; 2], [f32; 2])> {
+fn deflate_p2(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
     let mut out = Vec::with_capacity(tris.len() * 2);
     for (is_gt, p, q, r) in tris {
         if is_gt {
@@ -1263,7 +1264,7 @@ impl ProgressStyle for SunPattern {
         //   right_wing = (cos(a-36°), sin(a-36°)) * (1/PHI)
 
         // Number of concentric "rings" to draw (1-3 based on eased).
-        let rings = ((ctx.eased * 3.0) as usize).max(1).min(3);
+        let rings = ((ctx.eased * 3.0) as usize).clamp(1, 3);
 
         for ring in 0..rings {
             let ring_scale = scale / (1.0 + ring as f32 * 0.6);
@@ -1425,7 +1426,7 @@ impl ProgressStyle for AmmannBars {
                 let step = if use_long { l_step } else { s_step };
                 // Update Fibonacci-like counter (Beatty sequence approximation).
                 let old_a = fib_a;
-                fib_a = fib_a + fib_b;
+                fib_a += fib_b;
                 fib_b = old_a;
                 let fib_a_c = fib_a;
                 let fib_b_c = fib_b;
@@ -1498,13 +1499,12 @@ impl ProgressStyle for DeBruijnPentagrid {
         let gammas: [f32; 5] = [0.1, 0.2, -0.15, 0.05, -0.08]; // irrational offsets
         let n_families = (ctx.eased * 5.0).ceil() as usize;
 
-        for fam in 0..n_families.min(5) {
+        for (fam, &gamma) in gammas.iter().enumerate().take(n_families.min(5)) {
             let angle = fam as f32 * 72.0 * PI / 180.0 + rot;
             let perp_x = angle.cos();
             let perp_y = -angle.sin();
             let line_x = -angle.sin();
             let line_y = -angle.cos();
-            let gamma = gammas[fam];
 
             // Draw ~9 parallel lines (4 on each side of center).
             let lines = 9i32;

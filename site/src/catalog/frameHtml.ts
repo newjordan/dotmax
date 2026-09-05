@@ -60,3 +60,29 @@ export function frameHtml(style: StylePack, frameIndex: number): string {
   cache[index] = result;
   return result;
 }
+
+const denseCache = new WeakMap<StylePack, number>();
+
+/**
+ * Index of the frame with the most lit cells — the best "first impression"
+ * frame to show when a style appears, since styles ping-pong through a
+ * near-empty 0% phase. Computed once per style.
+ */
+export function densestFrame(style: StylePack): number {
+  const cached = denseCache.get(style);
+  if (cached !== undefined) return cached;
+  let best = 0;
+  let bestInk = -1;
+  style.frames.forEach((frame, index) => {
+    let ink = 0;
+    for (const row of frame.t) {
+      for (const ch of row) if (ch !== "\u2800" && ch !== " ") ink += 1;
+    }
+    if (ink > bestInk) {
+      bestInk = ink;
+      best = index;
+    }
+  });
+  denseCache.set(style, best);
+  return best;
+}

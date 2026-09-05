@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -872,44 +874,45 @@ use std::f32::consts::PI;
 
 // ── Shared 3-D projection helper ─────────────────────────────────────────────
 
-/// Rotate `(x, y, z)` about the X-axis by `ax` radians then the Y-axis by
-/// `ay` radians (standard Euler XY extrinsic), then orthographically project
-/// the result onto the dot lattice centred at `(cx, cy)` with uniform `scale`
-/// dots-per-unit.
-///
-/// Returns `(sx, sy)` as `i32` — suitable for `draw::dot_i`.
-#[inline]
-fn project(x: f32, y: f32, z: f32, ax: f32, ay: f32, cx: i32, cy: i32, scale: f32) -> (i32, i32) {
-    // Rotate about X axis.
-    let (sax, cax) = ax.sin_cos();
-    let y1 = y * cax - z * sax;
-    let z1 = y * sax + z * cax;
-    // Rotate about Y axis.
-    let (say, cay) = ay.sin_cos();
-    let x2 = x * cay + z1 * say;
-    let y2 = y1;
-    // Orthographic projection (drop z2, flip y for screen coords).
-    let sx = cx + (x2 * scale).round() as i32;
-    let sy = cy - (y2 * scale).round() as i32;
-    (sx, sy)
-}
-
-/// Plot a parametric curve segment from `t0` to `t1` (in `[0, 2π]` or
-/// `[0, 1]`), sampling `steps` evenly-spaced points, using `f(t) -> (x,y,z)`.
-/// Each point is rotated and projected with the given angles / centre / scale.
-#[inline]
-fn plot_curve<F>(
-    grid: &mut BrailleGrid,
-    t0: f32,
-    t1: f32,
-    steps: usize,
+/// Euler angles `(ax, ay)`, dot-space centre `(cx, cy)` and uniform `scale` in
+/// dots-per-unit — the camera every projected point is pushed through.
+#[derive(Clone, Copy)]
+struct View {
     ax: f32,
     ay: f32,
     cx: i32,
     cy: i32,
     scale: f32,
-    f: F,
-) where
+}
+
+/// Rotate `(x, y, z)` about the X-axis by `view.ax` radians then the Y-axis by
+/// `view.ay` radians (standard Euler XY extrinsic), then orthographically project
+/// the result onto the dot lattice centred at `(view.cx, view.cy)` with uniform
+/// `view.scale` dots-per-unit.
+///
+/// Returns `(sx, sy)` as `i32` — suitable for `draw::dot_i`.
+#[inline]
+fn project(x: f32, y: f32, z: f32, view: &View) -> (i32, i32) {
+    // Rotate about X axis.
+    let (sax, cax) = view.ax.sin_cos();
+    let y1 = y * cax - z * sax;
+    let z1 = y * sax + z * cax;
+    // Rotate about Y axis.
+    let (say, cay) = view.ay.sin_cos();
+    let x2 = x * cay + z1 * say;
+    let y2 = y1;
+    // Orthographic projection (drop z2, flip y for screen coords).
+    let sx = view.cx + (x2 * view.scale).round() as i32;
+    let sy = view.cy - (y2 * view.scale).round() as i32;
+    (sx, sy)
+}
+
+/// Plot a parametric curve segment from `t0` to `t1` (in `[0, 2π]` or
+/// `[0, 1]`), sampling `steps` evenly-spaced points, using `f(t) -> (x,y,z)`.
+/// Each point is rotated and projected through `view`.
+#[inline]
+fn plot_curve<F>(grid: &mut BrailleGrid, t0: f32, t1: f32, steps: usize, view: &View, f: F)
+where
     F: Fn(f32) -> (f32, f32, f32),
 {
     if steps == 0 {
@@ -918,7 +921,7 @@ fn plot_curve<F>(
     for i in 0..=steps {
         let t = t0 + (t1 - t0) * (i as f32 / steps as f32);
         let (x, y, z) = f(t);
-        let (sx, sy) = project(x, y, z, ax, ay, cx, cy, scale);
+        let (sx, sy) = project(x, y, z, view);
         draw::dot_i(grid, sx, sy);
     }
 }
@@ -955,13 +958,20 @@ impl ProgressStyle for MobiusStrip {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.37;
         let ay = ctx.time * 0.53;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         // Reveal u from 0 to eased·2π across ~20 stripes in v.
         let u_max = ctx.eased * 2.0 * PI;
         let u_steps = 120usize;
         let v_lines = 9usize; // v ∈ [-1, 1] in v_lines steps
         for vi in 0..v_lines {
             let v = -1.0 + 2.0 * vi as f32 / (v_lines - 1).max(1) as f32;
-            plot_curve(grid, 0.0, u_max, u_steps, ax, ay, cx, cy, scale, |u| {
+            plot_curve(grid, 0.0, u_max, u_steps, &view, |u| {
                 let half = 0.5 * v * (u / 2.0).cos();
                 let x = (1.0 + half) * u.cos();
                 let y = (1.0 + half) * u.sin();
@@ -993,6 +1003,13 @@ impl ProgressStyle for TorusWireframe {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.4 + 0.4;
         let ay = ctx.time * 0.6;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         let r_big = 1.0_f32;
         let r_small = 0.38_f32;
         let n_lat = 14usize; // latitude circles (constant v)
@@ -1004,7 +1021,7 @@ impl ProgressStyle for TorusWireframe {
 
         for i in 0..n_lit.min(n_lat) {
             let v = 2.0 * PI * i as f32 / n_lat as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, u_steps, ax, ay, cx, cy, scale, |u| {
+            plot_curve(grid, 0.0, 2.0 * PI, u_steps, &view, |u| {
                 let x = (r_big + r_small * v.cos()) * u.cos();
                 let y = (r_big + r_small * v.cos()) * u.sin();
                 let z = r_small * v.sin();
@@ -1015,7 +1032,7 @@ impl ProgressStyle for TorusWireframe {
         let n_lon_lit = n_lit.saturating_sub(n_lat).min(n_lon);
         for i in 0..n_lon_lit {
             let u = 2.0 * PI * i as f32 / n_lon as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, u_steps, ax, ay, cx, cy, scale, |v| {
+            plot_curve(grid, 0.0, 2.0 * PI, u_steps, &view, |v| {
                 let x = (r_big + r_small * v.cos()) * u.cos();
                 let y = (r_big + r_small * v.cos()) * u.sin();
                 let z = r_small * v.sin();
@@ -1046,6 +1063,13 @@ impl ProgressStyle for TorusKnot {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.29;
         let ay = ctx.time * 0.47;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         let p = 2_i32;
         let q = 3_i32;
         let r_big = 1.0_f32;
@@ -1053,7 +1077,7 @@ impl ProgressStyle for TorusKnot {
         // Parametric: t ∈ [0, 2π·lcm(p,q)] but one pass = 2π suffices for (2,3).
         let t_max = ctx.eased * 2.0 * PI;
         let steps = 200usize;
-        plot_curve(grid, 0.0, t_max, steps, ax, ay, cx, cy, scale, |t| {
+        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
             let u = p as f32 * t;
             let v = q as f32 * t;
             let x = (r_big + r_small * v.cos()) * u.cos();
@@ -1089,7 +1113,14 @@ impl ProgressStyle for TrefoilKnot {
         let steps = 200usize;
         // Normalise scale: trefoil radius ≈ 3, so shrink by 1/3.
         let s = scale / 3.0;
-        plot_curve(grid, 0.0, t_max, steps, ax, ay, cx, cy, s, |t| {
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale: s,
+        };
+        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
             let x = t.sin() + 2.0 * (2.0 * t).sin();
             let y = t.cos() - 2.0 * (2.0 * t).cos();
             let z = -(3.0 * t).sin();
@@ -1125,9 +1156,16 @@ impl ProgressStyle for KleinBottle {
         let u_lines = 20usize;
         let v_steps = 60usize;
         let s = scale / 2.5;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale: s,
+        };
         for ui in 0..u_lines {
             let u = u_max * ui as f32 / u_lines.max(1) as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, v_steps, ax, ay, cx, cy, s, |v| {
+            plot_curve(grid, 0.0, 2.0 * PI, v_steps, &view, |v| {
                 // Standard figure-8 Klein bottle parametrisation.
                 let cu = u.cos();
                 let su = u.sin();
@@ -1176,6 +1214,13 @@ impl ProgressStyle for HopfFibers {
         let t_max = ctx.eased * 2.0 * PI;
         let steps = 100usize;
         let s = scale * 0.55;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale: s,
+        };
         for &(theta, phi) in &bases {
             // Hopf fiber: quaternion (cos α, sin α · p) where p ∈ S²,
             // stereographically projected from S³ \ {north pole} to ℝ³.
@@ -1188,7 +1233,7 @@ impl ProgressStyle for HopfFibers {
             //           sin t · cos(θ/2),  sin t · sin(θ/2)·e^{iφ})  [simplified]
             let hth = theta / 2.0;
             let (shth, chth) = hth.sin_cos();
-            plot_curve(grid, 0.0, t_max, steps, ax, ay, cx, cy, s, |t| {
+            plot_curve(grid, 0.0, t_max, steps, &view, |t| {
                 // q = (q0,q1,q2,q3) ∈ S³.
                 let q0 = t.cos() * chth;
                 let q1 = t.cos() * shth * cp;
@@ -1232,6 +1277,13 @@ impl ProgressStyle for SphereInflate {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.35;
         let ay = ctx.time * 0.62;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         let r = ctx.eased; // radius grows with eased, 0 → 1
         let n_lat = 7usize;
         let n_lon = 8usize;
@@ -1241,7 +1293,7 @@ impl ProgressStyle for SphereInflate {
             let theta = PI * (i + 1) as f32 / (n_lat + 1) as f32;
             let ring_r = r * theta.sin();
             let z0 = r * theta.cos();
-            plot_curve(grid, 0.0, 2.0 * PI, steps, ax, ay, cx, cy, scale, |phi| {
+            plot_curve(grid, 0.0, 2.0 * PI, steps, &view, |phi| {
                 (ring_r * phi.cos(), ring_r * phi.sin(), z0)
             });
         }
@@ -1249,7 +1301,7 @@ impl ProgressStyle for SphereInflate {
         for i in 0..n_lon {
             let phi = 2.0 * PI * i as f32 / n_lon as f32;
             let (sp, cp) = phi.sin_cos();
-            plot_curve(grid, 0.0, PI, steps, ax, ay, cx, cy, scale, |theta| {
+            plot_curve(grid, 0.0, PI, steps, &view, |theta| {
                 (r * theta.sin() * cp, r * theta.sin() * sp, r * theta.cos())
             });
         }
@@ -1277,18 +1329,25 @@ impl ProgressStyle for HelixClimb {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.25 + 0.3;
         let ay = ctx.time * 0.58;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         let turns = 4.0_f32;
         let t_max = ctx.eased * turns * 2.0 * PI;
         let steps = 200usize;
         let r = 0.6_f32;
         let height = 2.0_f32; // total height -1 to +1
                               // Strand A.
-        plot_curve(grid, 0.0, t_max, steps, ax, ay, cx, cy, scale, |t| {
+        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
             let z = -1.0 + height * t / (turns * 2.0 * PI);
             (r * t.cos(), r * t.sin(), z)
         });
         // Strand B (π offset in phase).
-        plot_curve(grid, 0.0, t_max, steps, ax, ay, cx, cy, scale, |t| {
+        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
             let z = -1.0 + height * t / (turns * 2.0 * PI);
             (r * (t + PI).cos(), r * (t + PI).sin(), z)
         });
@@ -1297,7 +1356,7 @@ impl ProgressStyle for HelixClimb {
         for i in 0..n_links {
             let t_link = i as f32 * PI;
             let z = -1.0 + height * t_link / (turns * 2.0 * PI);
-            plot_curve(grid, 0.0, 1.0, 4, ax, ay, cx, cy, scale, |s| {
+            plot_curve(grid, 0.0, 1.0, 4, &view, |s| {
                 let angle_a = t_link;
                 let angle_b = t_link + PI;
                 let xa = r * angle_a.cos();
@@ -1331,23 +1390,26 @@ impl ProgressStyle for SaddleSurface {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.22 + 0.5;
         let ay = ctx.time * 0.48;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         let n_lines = 12usize;
         let revealed = (ctx.eased * n_lines as f32 * 2.0).round() as usize;
         let steps = 60usize;
         // x-parallel iso-lines (vary y, constant x).
         for i in 0..revealed.min(n_lines) {
             let x = -1.0 + 2.0 * i as f32 / (n_lines - 1).max(1) as f32;
-            plot_curve(grid, -1.0, 1.0, steps, ax, ay, cx, cy, scale, |y| {
-                (x, y, x * x - y * y)
-            });
+            plot_curve(grid, -1.0, 1.0, steps, &view, |y| (x, y, x * x - y * y));
         }
         // y-parallel iso-lines (vary x, constant y).
         let extra = revealed.saturating_sub(n_lines);
         for i in 0..extra.min(n_lines) {
             let y = -1.0 + 2.0 * i as f32 / (n_lines - 1).max(1) as f32;
-            plot_curve(grid, -1.0, 1.0, steps, ax, ay, cx, cy, scale, |x| {
-                (x, y, x * x - y * y)
-            });
+            plot_curve(grid, -1.0, 1.0, steps, &view, |x| (x, y, x * x - y * y));
         }
         Ok(())
     }
@@ -1378,11 +1440,11 @@ impl ProgressStyle for TesseractSpin {
         // The 16 vertices of a unit tesseract in (x,y,z,w) ∈ {-1,+1}^4.
         let verts: [[f32; 4]; 16] = {
             let mut v = [[0.0f32; 4]; 16];
-            for i in 0..16usize {
-                v[i][0] = if i & 1 != 0 { 1.0 } else { -1.0 };
-                v[i][1] = if i & 2 != 0 { 1.0 } else { -1.0 };
-                v[i][2] = if i & 4 != 0 { 1.0 } else { -1.0 };
-                v[i][3] = if i & 8 != 0 { 1.0 } else { -1.0 };
+            for (i, vert) in v.iter_mut().enumerate() {
+                vert[0] = if i & 1 != 0 { 1.0 } else { -1.0 };
+                vert[1] = if i & 2 != 0 { 1.0 } else { -1.0 };
+                vert[2] = if i & 4 != 0 { 1.0 } else { -1.0 };
+                vert[3] = if i & 8 != 0 { 1.0 } else { -1.0 };
             }
             v
         };
@@ -1390,7 +1452,7 @@ impl ProgressStyle for TesseractSpin {
         let mut edges: Vec<(usize, usize)> = Vec::with_capacity(32);
         for i in 0..16usize {
             for j in (i + 1)..16usize {
-                if (i ^ j).count_ones() == 1 {
+                if (i ^ j).is_power_of_two() {
                     edges.push((i, j));
                 }
             }
@@ -1495,11 +1557,18 @@ impl ProgressStyle for RomanSurface {
         let u_lines = 18usize;
         let v_steps = 60usize;
         let s = scale * 0.6;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale: s,
+        };
         for ui in 0..u_lines {
             let u = u_max * ui as f32 / u_lines.max(1) as f32;
             let (su, cu) = u.sin_cos();
             let s2u = (2.0 * u).sin();
-            plot_curve(grid, 0.0, PI, v_steps, ax, ay, cx, cy, s, |v| {
+            plot_curve(grid, 0.0, PI, v_steps, &view, |v| {
                 let (sv, _cv) = v.sin_cos();
                 let s2v = (2.0 * v).sin();
                 // Roman surface: x=sin²u·sin 2v, y=sin 2u·sin²v, z=sin 2u·sin 2v / 2.
@@ -1534,6 +1603,13 @@ impl ProgressStyle for SeifertRamp {
         let (cx, cy, scale) = grid_cxys(grid);
         let ax = ctx.time * 0.30 + 0.5;
         let ay = ctx.time * 0.50;
+        let view = View {
+            ax,
+            ay,
+            cx,
+            cy,
+            scale,
+        };
         // Seifert surface for trefoil: parametrised by (r, theta) in a disk,
         // lifted to 3-D via the trefoil fibration.
         // Approximation: r ∈ [0,1], theta ∈ [0, 2π].
@@ -1545,29 +1621,18 @@ impl ProgressStyle for SeifertRamp {
         // Concentric rings.
         for ri in 1..=n_radii {
             let r = ri as f32 / n_radii as f32;
-            plot_curve(
-                grid,
-                0.0,
-                theta_max,
-                steps,
-                ax,
-                ay,
-                cx,
-                cy,
-                scale,
-                |theta| {
-                    let x = r * theta.cos();
-                    let y = r * theta.sin();
-                    let z = r * (theta / 3.0).sin() * (1.0 - r * 0.5);
-                    (x, y, z)
-                },
-            );
+            plot_curve(grid, 0.0, theta_max, steps, &view, |theta| {
+                let x = r * theta.cos();
+                let y = r * theta.sin();
+                let z = r * (theta / 3.0).sin() * (1.0 - r * 0.5);
+                (x, y, z)
+            });
         }
         // Radial spokes.
         let n_spokes = 12usize;
         for si in 0..n_spokes {
             let theta = theta_max * si as f32 / n_spokes.max(1) as f32;
-            plot_curve(grid, 0.0, 1.0, 20, ax, ay, cx, cy, scale, |r| {
+            plot_curve(grid, 0.0, 1.0, 20, &view, |r| {
                 let x = r * theta.cos();
                 let y = r * theta.sin();
                 let z = r * (theta / 3.0).sin() * (1.0 - r * 0.5);

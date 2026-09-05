@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -1465,11 +1467,7 @@ impl ProgressStyle for PineappleLattice {
                     let ny = (row * cell_y + next_y_off + drift_y) % (h + cell_y);
                     if ny < h {
                         let mid_x = (cx2 + nx) / 2;
-                        let mid_y = if ry < ny {
-                            (ry + ny) / 2
-                        } else {
-                            (ny + ry) / 2
-                        };
+                        let mid_y = (ry + ny) / 2;
                         draw::dot(grid, mid_x.min(w - 1), mid_y.min(h - 1));
                     }
                 }
@@ -1752,7 +1750,7 @@ impl ProgressStyle for BerryPop {
             (0.92, 0.5),
         ];
         let n_berries = positions.len();
-        let berry_r = (w.min(h * 2) / (n_berries + 2)).max(1).min(3) as i32;
+        let berry_r = (w.min(h * 2) / (n_berries + 2)).clamp(1, 3) as i32;
         let visible = (ctx.eased * n_berries as f32).ceil() as usize;
         // Each berry's progress fraction threshold.
         for (i, &(xf, yf)) in positions.iter().enumerate() {

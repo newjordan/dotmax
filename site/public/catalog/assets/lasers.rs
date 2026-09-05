@@ -757,9 +757,11 @@ pub mod draw {
     }
 
     /// Draw a single smooth horizontal bar in row `cell_y` filled to `frac`
-    /// (`0.0..=1.0`) using eighth-width block glyphs — the classic crisp,
-    /// sub-character-precise progress bar. Mixes full `█` cells with one partial
-    /// edge glyph for smoothness no braille dot run can match.
+    /// (`0.0..=1.0`) using eighth-width block glyphs.
+    ///
+    /// This is the classic crisp, sub-character-precise progress bar. It mixes
+    /// full `█` cells with one partial edge glyph for smoothness no braille dot
+    /// run can match.
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -974,7 +976,7 @@ impl ProgressStyle for ChargeAndFire {
             }
         } else {
             // Charging core: concentric rings growing outward from core_x.
-            let rings = ((charge * 6.0) as usize).max(1).min(6);
+            let rings = ((charge * 6.0) as usize).clamp(1, 6);
             for r in 0..rings {
                 let radius = r + 1;
                 // Horizontal arms.
@@ -1126,8 +1128,8 @@ impl ProgressStyle for SecurityGrid {
         let (cells_w, cells_h) = grid.dimensions();
 
         // Grid spacing: number of beams scales with eased.
-        let h_beams = ((ctx.eased * 5.0 + 1.0) as usize).min(8).max(1);
-        let v_beams = ((ctx.eased * 3.0 + 1.0) as usize).min(6).max(1);
+        let h_beams = ((ctx.eased * 5.0 + 1.0) as usize).clamp(1, 8);
+        let v_beams = ((ctx.eased * 3.0 + 1.0) as usize).clamp(1, 6);
 
         // Horizontal beams.
         for i in 0..h_beams {
@@ -1228,7 +1230,7 @@ impl ProgressStyle for PrismDispersion {
         );
 
         // Fanned output beams: spread angle increases with eased.
-        let n_beams = ((ctx.eased * 7.0 + 1.0) as usize).max(1).min(8);
+        let n_beams = ((ctx.eased * 7.0 + 1.0) as usize).clamp(1, 8);
         let fan_origin_x = prism_x + tri_h;
         let fan_origin_y = mid;
         let spread = (ctx.eased * PI * 0.7).max(0.05);
@@ -1532,7 +1534,7 @@ impl ProgressStyle for FiberPulse {
         }
         let (cells_w, cells_h) = grid.dimensions();
 
-        let n_fibers = ((ctx.eased * 6.0 + 1.0) as usize).max(1).min(7);
+        let n_fibers = ((ctx.eased * 6.0 + 1.0) as usize).clamp(1, 7);
         let pulse_speed = 0.3 + ctx.eased * 2.5;
 
         for f in 0..n_fibers {
@@ -1569,13 +1571,11 @@ impl ProgressStyle for FiberPulse {
                 let py = v_off + fiber_amp * (x_frac * freq * 2.0 * PI + phase_off).sin();
                 // Intensity falls off from centre of pulse.
                 let dist = (dp as i32 - pulse_half as i32).abs();
+                // Core dot.
+                draw::dot_i(grid, ppx as i32, py as i32);
                 if dist <= 2 {
-                    // Core dot.
-                    draw::dot_i(grid, ppx as i32, py as i32);
                     draw::dot_i(grid, ppx as i32, py as i32 - 1);
                     draw::dot_i(grid, ppx as i32, py as i32 + 1);
-                } else {
-                    draw::dot_i(grid, ppx as i32, py as i32);
                 }
             }
 
@@ -1702,7 +1702,7 @@ impl ProgressStyle for ParticleAccelerator {
 
         // Particles: n_particles travel left→right at speed = eased.
         let speed = 0.4 + ctx.eased * 4.0;
-        let n_particles = ((ctx.eased * 8.0 + 1.0) as usize).max(1).min(10);
+        let n_particles = ((ctx.eased * 8.0 + 1.0) as usize).clamp(1, 10);
         let particle_gap = w / n_particles.max(1);
 
         for p in 0..n_particles {
@@ -1723,7 +1723,7 @@ impl ProgressStyle for ParticleAccelerator {
             for w_step in 1..wake_len {
                 // Probability falls off with distance.
                 if w_step * 3 < wake_len * 2 {
-                    let wx = if pos >= w_step { pos - w_step } else { 0 };
+                    let wx = pos.saturating_sub(w_step);
                     draw::dot_i(grid, wx as i32, mid as i32);
                 }
             }
@@ -1768,7 +1768,7 @@ impl ProgressStyle for DiscoFan {
         let oy = h as i32 - 1;
 
         // Number of beams.
-        let n_beams = ((ctx.eased * 9.0 + 1.0) as usize).max(1).min(10);
+        let n_beams = ((ctx.eased * 9.0 + 1.0) as usize).clamp(1, 10);
 
         // The fan sweeps continuously via time, occupying an arc that grows with eased.
         let arc = ctx.eased * PI * 0.9 + 0.1; // arc in radians, 0.1..~π·0.9
