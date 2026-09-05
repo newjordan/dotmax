@@ -44,8 +44,11 @@ const HERO_STYLES: &[(&str, &str)] = &[
     ("demoscene", "copper-bars"),
     ("synthwave", "neon-wave"),
     ("fireworks", "grand-finale"),
+    ("fable", "phosphor-tide"),
     ("space", "black-hole"),
+    ("fable", "murmuration"),
     ("cellular", "ca-brians-brain"),
+    ("fable", "lantern-procession"),
     ("classic", "rocket"),
 ];
 

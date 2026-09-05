@@ -8,10 +8,10 @@ Render anything in terminal braille. Images, GIFs, videos, webcam - one line of 
 
 **Browse the live style catalog: [dotmax-sable.vercel.app](https://dotmax-sable.vercel.app)**
 
-## 664 loading animations, built in
+## 676 loading animations, built in
 
-`dotmax::progress` ships 664 loading bars, spinners, borders, wipes and meters
-across 59 themes (matrix rain, synthwave, demoscene, aurora, fire, glitch, fireworks, fractals,
+`dotmax::progress` ships 676 loading bars, spinners, borders, wipes and meters
+across 60 themes (fable, matrix rain, synthwave, demoscene, aurora, fire, glitch, fireworks, fractals,
 cellular automata, sacred geometry, retro consoles, ...). Every style is a
 stateless pure function of `(progress, time)` — preview them all running live
 on [the site](https://dotmax-sable.vercel.app), then take any of them home as a

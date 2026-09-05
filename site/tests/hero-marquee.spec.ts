@@ -22,7 +22,7 @@ test("hero pack is curated, colored, and every pick exists in the catalog", () =
   expect(heroPack.height).toBe(4);
   expect(heroPack.fps).toBe(12);
   expect(heroPack.styles.length).toBeGreaterThanOrEqual(8);
-  expect(heroPack.styles.length).toBeLessThanOrEqual(12);
+  expect(heroPack.styles.length).toBeLessThanOrEqual(16);
   const ids = new Set(catalogIndex.styles.map((s) => s.id));
   for (const style of heroPack.styles) {
     expect(ids.has(style.id), `hero pick ${style.id} missing from index`).toBe(true);

@@ -40,7 +40,7 @@ Core API:
 - dotmax::grid::BrailleGrid               // the cell canvas
 - dotmax::prelude::*                       // draw_line / draw_circle / draw_rectangle
 - dotmax::animation::AnimationLoop         // .fps(n).on_frame(..).run()
-- dotmax::progress::all_styles()           // 664 progress/loading-bar styles
+- dotmax::progress::all_styles()           // 676 progress/loading-bar styles
 
 Full machine-readable reference: ${llmsUrl}
 Write idiomatic, compiling Rust. Ask before enabling the "video" feature (it needs FFmpeg).`;

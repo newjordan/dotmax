@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-09-05
+
+### Added
+
+- `fable` theme: 12 new progress styles — phosphor-tide, ink-bloom,
+  lantern-procession, moth-to-flame, constellation-weave, fireflies,
+  quill-stroke, paper-fold, clockwork, murmuration, hourglass and
+  river-of-light. 676 styles across 60 themes.
+- Site: ambient braille hero backdrop, hero prev/shuffle/next + swipe, mobile
+  navigation, scroll reveal, style collections, sort/shuffle, "Surprise me",
+  dialog arrow-key navigation with palette swatches.
+
+### Fixed
+
+- Site: horizontal overflow on phones; style dialogs opening on a blank frame.
+
+## [0.1.9] - 2026-07-13
+
+### Added
+
+- Waves 8–9: matrix, aurora, inferno, glitch, fireworks, synthwave and
+  demoscene themes (664 styles across 59 themes).
+- `TerminalRenderer` glyph fix for `get_char` overrides.
+
 ## [0.1.8] - 2026-05-30
 
 ### Added
