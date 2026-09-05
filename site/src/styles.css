@@ -1671,6 +1671,26 @@ code {
   @apply grid gap-0 overflow-hidden rounded-2xl border border-line bg-panel2 p-0 lg:grid-cols-[minmax(320px,0.85fr)_1fr_auto] lg:items-center;
 }
 
+.built-on {
+  @apply flex flex-wrap items-center gap-2 border-t border-line lg:col-span-3;
+}
+
+.built-on-label {
+  @apply mr-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-subtle;
+}
+
+.built-on-chip {
+  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-ink px-2.5 py-1 font-mono text-xs text-muted transition hover:border-terminal/50 hover:text-paper;
+}
+
+.built-on-chip span {
+  @apply text-[0.62rem] text-subtle;
+}
+
+.built-on-more {
+  @apply ml-auto font-mono text-xs text-terminal hover:text-paper;
+}
+
 .open-source-band > div:not(.open-source-visual) {
   @apply p-6 sm:p-8;
 }

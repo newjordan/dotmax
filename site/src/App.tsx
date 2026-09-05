@@ -699,6 +699,23 @@ function Hero() {
   );
 }
 
+const builtOn = [
+  ["ratatui", "https://github.com/ratatui/ratatui", "MIT"],
+  ["crossterm", "https://github.com/crossterm-rs/crossterm", "MIT"],
+  ["serde", "https://github.com/serde-rs/serde", "MIT / Apache-2.0"],
+  ["image", "https://github.com/image-rs/image", "MIT / Apache-2.0"],
+  ["resvg", "https://github.com/RazrFalcon/resvg", "MPL-2.0"],
+  ["FFmpeg", "https://ffmpeg.org", "LGPL / GPL"],
+  ["gltf", "https://github.com/gltf-rs/gltf", "MIT / Apache-2.0"],
+  ["shakmaty", "https://github.com/niklasf/shakmaty", "GPL-3.0"],
+  ["React", "https://react.dev", "MIT"],
+  ["Vite", "https://vitejs.dev", "MIT"],
+  ["Tailwind CSS", "https://tailwindcss.com", "MIT"],
+  ["Lucide", "https://lucide.dev", "ISC"],
+  ["Inter", "https://rsms.me/inter/", "OFL-1.1"],
+  ["JetBrains Mono", "https://www.jetbrains.com/lp/mono/", "OFL-1.1"],
+] as const;
+
 const featureRows = [
   ["core", "default", "Grid, primitives, color, animation, progress — no flags."],
   ["image", "+ image", "PNG, JPG, GIF, APNG, BMP, WebP, TIFF."],
@@ -1031,6 +1048,18 @@ function OpenSourceSection() {
             Crate
           </a>
         </div>
+        <div className="built-on" aria-label="Built on">
+          <span className="built-on-label">Built on</span>
+          {builtOn.map(([name, href, license]) => (
+            <a className="built-on-chip" href={href} key={name} target="_blank" rel="noreferrer" title={license}>
+              {name}
+              <span>{license}</span>
+            </a>
+          ))}
+          <a className="built-on-more" href={`${links.github}#built-on`} target="_blank" rel="noreferrer">
+            full list &amp; licenses
+          </a>
+        </div>
       </div>
     </section>
   );
@@ -1057,6 +1086,9 @@ function Footer() {
           </a>
           <a href={links.repoDocs} target="_blank" rel="noreferrer">
             Docs
+          </a>
+          <a href={`${links.github}#built-on`} target="_blank" rel="noreferrer">
+            Credits
           </a>
         </div>
       </div>

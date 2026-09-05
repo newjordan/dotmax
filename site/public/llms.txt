@@ -95,3 +95,13 @@ AnimationLoop::new(80, 24)
 
 - Author and maintainer: Frosty.
 - `fable` theme (12 styles) and the site redesign: Claude Fable 5.1 (Anthropic), built in Claude Code.
+
+## Built on
+
+- Core: ratatui (MIT), crossterm (MIT), serde + serde_json (MIT OR Apache-2.0), thiserror (MIT OR Apache-2.0), tracing (MIT).
+- `image` feature: image, png, gif (MIT OR Apache-2.0), imageproc (MIT).
+- `svg` feature: resvg + usvg (MPL-2.0).
+- `video` feature: ffmpeg-next (WTFPL) binding to FFmpeg (LGPL-2.1+/GPL-2.0+ per system build).
+- `raytracer` feature: gltf, anyhow (MIT OR Apache-2.0).
+- `chess` feature: shakmaty + pgn-reader (GPL-3.0+; binaries using this feature inherit GPL-3.0).
+- Site: React, Vite, Tailwind CSS, TypeScript, Lucide, Playwright; Inter and JetBrains Mono fonts (OFL-1.1); hosted on Vercel.

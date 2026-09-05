@@ -273,6 +273,34 @@ cargo run --example render_tuner --features image -- your_image.png
 | Image load + render | ~10ms |
 | 60fps animation budget | 16.6ms (we use 1.6μs) |
 
+## Built on
+
+dotmax stands on other people's work. Direct dependencies, with licenses:
+
+**Core (always on)**
+- [ratatui](https://github.com/ratatui/ratatui) — terminal UI framework (MIT)
+- [crossterm](https://github.com/crossterm-rs/crossterm) — cross-platform terminal I/O (MIT)
+- [serde](https://github.com/serde-rs/serde) + [serde_json](https://github.com/serde-rs/json) — frame-pack export (MIT OR Apache-2.0)
+- [thiserror](https://github.com/dtolnay/thiserror) — error derives (MIT OR Apache-2.0)
+- [tracing](https://github.com/tokio-rs/tracing) — structured logging (MIT)
+
+**Feature-gated**
+- `image`: [image](https://github.com/image-rs/image), [png](https://github.com/image-rs/image-png), [gif](https://github.com/image-rs/image-gif) (MIT OR Apache-2.0); [imageproc](https://github.com/image-rs/imageproc) (MIT)
+- `svg`: [resvg](https://github.com/RazrFalcon/resvg) + [usvg](https://github.com/RazrFalcon/resvg) (MPL-2.0)
+- `video`: [ffmpeg-next](https://github.com/zmwangx/rust-ffmpeg) (WTFPL) binding to [FFmpeg](https://ffmpeg.org), which is **LGPL-2.1+ / GPL-2.0+** depending on how your system build was configured
+- `raytracer`: [gltf](https://github.com/gltf-rs/gltf), [anyhow](https://github.com/dtolnay/anyhow) (MIT OR Apache-2.0)
+- `chess`: [shakmaty](https://github.com/niklasf/shakmaty) + [pgn-reader](https://github.com/niklasf/rust-pgn-reader) — **GPL-3.0+**. dotmax itself is MIT OR Apache-2.0, but a binary built with the `chess` feature inherits GPL-3.0 obligations.
+
+**Development**
+- [criterion](https://github.com/bheisler/criterion.rs), [proptest](https://github.com/proptest-rs/proptest), [tempfile](https://github.com/Stebalien/tempfile), [static_assertions](https://github.com/nvzqz/static-assertions-rs), [tracing-subscriber](https://github.com/tokio-rs/tracing)
+
+**Website** (`site/`)
+- [React](https://react.dev) (MIT), [Vite](https://vitejs.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT), [TypeScript](https://www.typescriptlang.org) (Apache-2.0), [Lucide](https://lucide.dev) icons (ISC), [Playwright](https://playwright.dev) (Apache-2.0)
+- Fonts: [Inter](https://rsms.me/inter/) by Rasmus Andersson and [JetBrains Mono](https://www.jetbrains.com/lp/mono/) by JetBrains, both under the SIL Open Font License 1.1, self-hosted via [Fontsource](https://fontsource.org)
+- Hosted on [Vercel](https://vercel.com)
+
+Thank you to every maintainer above.
+
 ## Credits
 
 - **Frosty** — author and maintainer.
