@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `fable` theme: 12 new progress styles — phosphor-tide, ink-bloom,
+- `fable` theme, designed and written by Claude Fable 5.1 (Anthropic):
+  12 new progress styles — phosphor-tide, ink-bloom,
   lantern-procession, moth-to-flame, constellation-weave, fireflies,
   quill-stroke, paper-fold, clockwork, murmuration, hourglass and
   river-of-light. 676 styles across 60 themes.

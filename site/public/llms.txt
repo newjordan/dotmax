@@ -90,3 +90,8 @@ AnimationLoop::new(80, 24)
 - [Terminal compatibility](https://github.com/newjordan/dotmax/blob/main/docs/terminal-compatibility.md)
 - [Performance](https://github.com/newjordan/dotmax/blob/main/docs/performance.md)
 - [Crate on crates.io](https://crates.io/crates/dotmax)
+
+## Credits
+
+- Author and maintainer: Frosty.
+- `fable` theme (12 styles) and the site redesign: Claude Fable 5.1 (Anthropic), built in Claude Code.

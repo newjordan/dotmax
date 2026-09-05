@@ -39,6 +39,11 @@ const tabNotes: Record<TabId, string> = {
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/;
 
+/** Themes with a named designer, shown as a credit in the dialog. */
+const themeCredits: Record<string, { name: string; href: string }> = {
+  fable: { name: "Claude Fable 5.1", href: "https://www.anthropic.com/claude/fable" },
+};
+
 type Props = {
   meta: StyleMeta;
   onClose: () => void;
@@ -180,7 +185,20 @@ export function StyleDetailDialog({ meta, onClose, siblings, onNavigate }: Props
             </button>
           </div>
         </div>
-        <p className="style-dialog-description">{meta.description}</p>
+        <p className="style-dialog-description">
+          {meta.description}
+          {themeCredits[meta.theme] && (
+            <>
+              {" "}
+              <span className="style-dialog-credit">
+                designed by{" "}
+                <a href={themeCredits[meta.theme].href} target="_blank" rel="noreferrer">
+                  {themeCredits[meta.theme].name}
+                </a>
+              </span>
+            </>
+          )}
+        </p>
 
         <div className="style-dialog-preview" data-style-id={meta.id}>
           {!prefersReducedMotion && style && (

@@ -32,8 +32,8 @@ const sortOptions: Array<{ id: SortKey; label: string; icon: typeof Shuffle; tit
  * Curated theme groupings — a fast way to narrow 600+ styles to a mood.
  * Themes missing from the index are ignored, so the list survives catalog churn.
  */
-const collections: Array<{ id: string; label: string; themes: string[] }> = [
-  { id: "fable", label: "Fable 5.1", themes: ["fable"] },
+const collections: Array<{ id: string; label: string; themes: string[]; title?: string }> = [
+  { id: "fable", label: "Fable 5.1", themes: ["fable"], title: "12 styles designed by Claude Fable 5.1 (Anthropic)" },
   {
     id: "scifi",
     label: "Sci-fi & code",
@@ -363,6 +363,7 @@ export function StyleBrowserSection() {
                   key={collection.id}
                   type="button"
                   aria-pressed={activeCollection === collection.id}
+                  title={collection.title}
                   className={
                     activeCollection === collection.id
                       ? "loading-collection-chip loading-collection-chip-active"

@@ -273,6 +273,16 @@ cargo run --example render_tuner --features image -- your_image.png
 | Image load + render | ~10ms |
 | 60fps animation budget | 16.6ms (we use 1.6μs) |
 
+## Credits
+
+- **Frosty** — author and maintainer.
+- **Claude Fable 5.1 (Anthropic)** — designed and wrote the `fable` theme
+  (12 styles, 0.1.10), the animation-first site redesign and its wave-10
+  polish (hero backdrop, mobile nav, collections, dialog navigation), and the
+  catalog export pipeline. Built in [Claude Code](https://claude.com/claude-code).
+- Earlier style waves and site widgets were built with Claude and Codex
+  assistance; see the git history for per-commit attribution.
+
 ## License
 
 MIT OR Apache-2.0

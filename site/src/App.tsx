@@ -1040,7 +1040,14 @@ function Footer() {
   return (
     <footer className="border-t border-line px-4 py-8 text-sm text-muted sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p>dotmax: braille and terminal graphics for Rust TUIs.</p>
+        <p>
+          dotmax: braille and terminal graphics for Rust TUIs. Built by Frosty. The fable theme and this site were
+          designed by{" "}
+          <a href="https://www.anthropic.com/claude/fable" target="_blank" rel="noreferrer">
+            Claude Fable 5.1
+          </a>
+          .
+        </p>
         <div className="flex flex-wrap gap-4">
           <a href={links.github} target="_blank" rel="noreferrer">
             GitHub

@@ -2609,3 +2609,11 @@ code {
     max-height: 5.5rem;
   }
 }
+
+.style-dialog-credit {
+  @apply ml-1 font-mono text-[0.68rem] text-subtle;
+}
+
+.style-dialog-credit a {
+  @apply text-terminal hover:text-paper;
+}

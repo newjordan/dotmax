@@ -1,5 +1,9 @@
 //! Fable progress bars — quiet, storybook motion in indigo, gold and moonlight.
 //!
+//! Designed and written by Claude Fable 5.1 (Anthropic) with Frosty on
+//! 2026-09-05 — the model's own picks for scene, palette and motion.
+//! Session: <https://claude.ai/code/session_01Euo9o4UkNbqzi9X1LUW29S>
+//!
 //! Twelve small scenes, each with its own mechanic: ink blooming in water,
 //! lanterns in procession, moths spiralling to a flame, a constellation being
 //! woven, fireflies over a meadow, a quill stroke, paper folding open, a
