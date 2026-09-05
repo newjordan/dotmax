@@ -26,7 +26,11 @@ fn render_image_to_file(
     width: usize,
     height: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Rendering {} -> {}", image_path.display(), output_path.display());
+    println!(
+        "Rendering {} -> {}",
+        image_path.display(),
+        output_path.display()
+    );
 
     let grid = ImageRenderer::new()
         .load_from_path(image_path)?
@@ -52,7 +56,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let height = 30;
 
     // List of images to process
-    let images = ["coastal.jpg", "ant.jpg", "portrait.jpg", "landscape.jpg", "abstract.jpg"];
+    let images = [
+        "coastal.jpg",
+        "ant.jpg",
+        "portrait.jpg",
+        "landscape.jpg",
+        "abstract.jpg",
+    ];
 
     println!("Generating braille art examples for README...\n");
 
