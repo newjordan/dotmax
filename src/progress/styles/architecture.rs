@@ -1,100 +1,49 @@
 //! Architecture / construction progress bars.
 //!
-//! Twelve structurally distinct styles, each animating a different building
+//! Thirteen structurally distinct styles, each animating a different building
 //! form or construction activity:
 //!
-//! - `skyscraper`       — floors stack floor-by-floor, crane swings with time
-//! - `suspension-bridge`— towers rise, catenary cable spans, suspenders drop
-//! - `gothic-arch`      — pointed arches spring upward, rose window blooms
+//! - `skyscraper`       — glass towers top out one by one, lit windows twinkle
+//! - `suspension-bridge`— red pylons + main cable; deck launched span by span
+//! - `gothic-arch`      — pointed lancet arches rise, fill with stained glass
 //! - `brick-wall`       — running-bond masonry laid course by course, trowel sweeps
-//! - `pyramid`          — stepped stone courses narrow toward the apex
-//! - `scaffolding`      — horizontal planks + vertical poles erect around a form
-//! - `geodesic-dome`    — triangulated hemisphere wireframe assembles by arc
-//! - `spiral-staircase` — perspective helix climbs with progress
-//! - `roman-aqueduct`   — round arches march across from left to right
-//! - `classical-column` — fluted shaft grows, capital blooms at the top
+//! - `pyramid`          — three stepped pyramids rise course by course under a sun
+//! - `scaffolding`      — standards, ledgers, boards and braces go up bay by bay
+//! - `geodesic-dome`    — triangulated hemisphere assembles band by band
+//! - `spiral-staircase` — looking down the well: treads laid along a spiral rail
+//! - `roman-aqueduct`   — two arch tiers advance over a river; water flows on top
+//! - `classical-column` — Ionic colonnade rises drum by drum under an entablature
 //! - `blueprint`        — a drafting pen sweeps lines onto graph paper
-//! - `tower-crane`      — mast rises, jib extends, load swings on a cable
+//! - `tower-crane`      — lattice crane hoists beams as a frame rises beside it
+//! - `colosseum`        — three arcade tiers + attic, ruined far end, built left to right
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
-use std::f32::consts::PI;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Theme tint — sandstone into slate. Applied to styles that draw monochrome.
-// ---------------------------------------------------------------------------
-
-/// Gradient endpoints for this theme's signature tint.
-const TINT_START: Color = Color::rgb(214, 184, 142);
-const TINT_END: Color = Color::rgb(122, 144, 176);
-
-/// Sample the theme gradient at `t` in `0.0..=1.0`.
-fn sample_tint(t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    let lerp = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t) as u8;
-    Color::rgb(
-        lerp(TINT_START.r, TINT_END.r),
-        lerp(TINT_START.g, TINT_END.g),
-        lerp(TINT_START.b, TINT_END.b),
-    )
-}
-
-/// Applies the theme's signature gradient to every cell the inner style drew,
-/// drifting slowly with `time`. Styles stay monochrome-safe underneath: drop
-/// the wrapper in [`styles`] for uncolored output.
-struct Tinted<S>(S);
-
-impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
-    fn name(&self) -> &str {
-        self.0.name()
-    }
-    fn theme(&self) -> &str {
-        self.0.theme()
-    }
-    fn describe(&self) -> &str {
-        self.0.describe()
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        self.0.render(grid, ctx)?;
-        grid.enable_color_support();
-        let (w, h) = grid.dimensions();
-        for y in 0..h {
-            for x in 0..w {
-                let ch = grid.get_char(x, y);
-                if ch != '\u{2800}' && ch != ' ' {
-                    let t = (x as f32 / w.max(1) as f32 + ctx.time * 0.05).fract();
-                    let tri = 1.0 - (2.0 * t - 1.0).abs();
-                    let _ = grid.set_cell_color(x, y, sample_tint(tri));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
 /// All styles in the `architecture` theme.
 ///
-/// Returns twelve `Box<dyn ProgressStyle>` values, each implementing a
+/// Returns thirteen `Box<dyn ProgressStyle>` values, each implementing a
 /// structurally distinct architecture/construction scene in braille dot space.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
         Box::new(Skyscraper),
-        Box::new(Tinted(SuspensionBridge)),
-        Box::new(Tinted(GothicArch)),
+        Box::new(SuspensionBridge),
+        Box::new(GothicArch),
         Box::new(BrickWall),
         Box::new(Pyramid),
-        Box::new(Tinted(Scaffolding)),
-        Box::new(Tinted(GeodesicDome)),
-        Box::new(Tinted(SpiralStaircase)),
-        Box::new(Tinted(RomanAqueduct)),
-        Box::new(Tinted(ClassicalColumn)),
+        Box::new(Scaffolding),
+        Box::new(GeodesicDome),
+        Box::new(SpiralStaircase),
+        Box::new(RomanAqueduct),
+        Box::new(ClassicalColumn),
         Box::new(Blueprint),
         Box::new(TowerCrane),
+        Box::new(Colosseum),
     ]
 }
 
@@ -102,17 +51,38 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 // Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Bresenham-style line between two dot-space points using `draw::dot_i`.
-fn line_dots(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
-    let dx = (x1 - x0).abs();
-    let dy = (y1 - y0).abs();
-    let sx: i32 = if x0 < x1 { 1 } else { -1 };
-    let sy: i32 = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx - dy;
-    let mut x = x0;
-    let mut y = y0;
+/// Set a dot from signed coordinates and tint its cell — the one primitive the
+/// hand-coloured scenes build on. Out-of-bounds writes are ignored.
+fn paint(grid: &mut BrailleGrid, x: i32, y: i32, c: Color) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if x < 0 || y < 0 || x as usize >= dw || y as usize >= dh {
+        return;
+    }
+    draw::dot(grid, x as usize, y as usize);
+    let _ = grid.set_cell_color(x as usize / 2, y as usize / 4, c);
+}
+
+/// Coloured horizontal run `x0..=x1` at row `y`.
+fn paint_h(grid: &mut BrailleGrid, x0: i32, x1: i32, y: i32, c: Color) {
+    for x in x0.min(x1)..=x0.max(x1) {
+        paint(grid, x, y, c);
+    }
+}
+
+/// Coloured vertical run `y0..=y1` at column `x`.
+fn paint_v(grid: &mut BrailleGrid, x: i32, y0: i32, y1: i32, c: Color) {
+    for y in y0.min(y1)..=y0.max(y1) {
+        paint(grid, x, y, c);
+    }
+}
+
+/// Coloured Bresenham line between two dot-space points.
+fn paint_line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, c: Color) {
+    let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
+    let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
+    let (mut x, mut y, mut err) = (x0, y0, dx - dy);
     loop {
-        draw::dot_i(grid, x, y);
+        paint(grid, x, y, c);
         if x == x1 && y == y1 {
             break;
         }
@@ -128,31 +98,26 @@ fn line_dots(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
     }
 }
 
-/// Draw a quarter-circle arc (quadrant qx,qy in {-1,+1}) centred at (cx,cy),
-/// radius r in dot units, stepped every `step` degrees.
-fn arc_quarter(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32, angle_start: f32, angle_end: f32) {
-    if r < 1.0 {
-        return;
-    }
-    let steps = ((r * 2.0) as usize).max(8);
-    let mut prev: Option<(i32, i32)> = None;
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let angle = angle_start + (angle_end - angle_start) * t;
-        let x = (cx + r * angle.cos()).round() as i32;
-        let y = (cy - r * angle.sin()).round() as i32; // screen y flipped
-        if let Some((px, py)) = prev {
-            line_dots(grid, px, py, x, y);
-        }
-        prev = Some((x, y));
-    }
+/// Cheap deterministic hash of three integers into `0.0..=1.0` — used for
+/// window lights and stained-glass colours that flicker without state.
+fn hash3(a: i32, b: i32, c: i32) -> f32 {
+    let mut h = (a as u32).wrapping_mul(0x9E37_79B1)
+        ^ (b as u32).wrapping_mul(0x85EB_CA77)
+        ^ (c as u32).wrapping_mul(0xC2B2_AE3D);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    (h & 0xFFFF) as f32 / 65535.0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Skyscraper
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Floors stack from the ground up as progress rises; a crane jib swings with time.
+/// A skyline of narrow glass towers tops out one by one, left to right. Each
+/// finished tower gets a setback crown, an antenna with a blinking beacon and
+/// twinkling lit windows; the tower going up is a bare steel frame with a
+/// crane swinging on top.
 struct Skyscraper;
 impl ProgressStyle for Skyscraper {
     fn name(&self) -> &str {
@@ -162,75 +127,95 @@ impl ProgressStyle for Skyscraper {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Skyscraper rises floor by floor; rooftop crane jib swings with time"
+        "Glass towers top out one by one across a skyline; lit windows twinkle, beacons blink, a crane swings on the tower going up"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
-        if dw == 0 || dh == 0 {
+        if dw < 4 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let ground = hi - 1;
+        let steel = Color::rgb(120, 140, 172);
+        let lit = Color::rgb(255, 214, 120);
+        let frame = Color::rgb(150, 120, 90);
+        let crane = Color::rgb(250, 190, 40);
+        let beacon = Color::rgb(255, 60, 50);
 
-        // Building occupies center third of the width.
-        let bld_w = (dw / 3).max(2);
-        let bld_x0 = (dw / 2).saturating_sub(bld_w / 2);
-        let bld_x1 = (bld_x0 + bld_w).min(dw - 1);
+        // Tower plan: (width in dots, height as a fraction of the sky).
+        const PLAN: [(i32, f32); 6] = [
+            (6, 0.72),
+            (7, 1.0),
+            (5, 0.6),
+            (6, 0.88),
+            (5, 0.68),
+            (7, 0.95),
+        ];
+        let mut towers = Vec::new();
+        let mut x = 2;
+        while x < wi - 3 {
+            let (tw, hf) = PLAN[towers.len() % PLAN.len()];
+            let tw = tw.min(wi - 1 - x);
+            if tw < 4 {
+                break;
+            }
+            towers.push((x, tw, hf));
+            x += tw + 3;
+        }
+        let built = ctx.eased * towers.len().max(1) as f32;
+        let tick = (ctx.time * 1.5) as i32;
 
-        // Number of floors to draw.
-        let max_floors = dh.saturating_sub(2).max(1);
-        let floors = (ctx.eased * max_floors as f32).round() as usize;
-
-        // Draw floors from bottom up.
-        for f in 0..floors {
-            let y = dh.saturating_sub(1 + f);
-            draw::hline(grid, bld_x0, bld_x1, y);
-            // Side walls every other floor line.
-            if f % 2 == 0 {
-                draw::dot(grid, bld_x0, y);
-                draw::dot(grid, bld_x1, y);
+        for (k, &(x0, tw, hf)) in towers.iter().enumerate() {
+            let frac = (built - k as f32).clamp(0.0, 1.0);
+            if frac <= 0.0 {
+                continue;
+            }
+            let full_h = (((hi - 3) as f32 * hf).round() as i32).max(3);
+            let h = ((full_h as f32 * frac).ceil() as i32).max(1);
+            let top = ground - h;
+            let done = frac >= 1.0;
+            let crown = ground - full_h + full_h / 4; // setback starts above here
+            for y in top..ground {
+                let inset = i32::from(tw >= 7 && y < crown);
+                let (l, r) = (x0 + inset, x0 + tw - 1 - inset);
+                // The top three floors of a rising tower are bare frame.
+                let skeleton = !done && y < top + 3;
+                let c = if skeleton { frame } else { steel };
+                paint(grid, l, y, c);
+                paint(grid, r, y, c);
+                if skeleton {
+                    if (ground - y) % 2 == 0 {
+                        paint_h(grid, l, r, y, frame);
+                    }
+                } else if (ground - y) % 2 == 1 {
+                    for wx in l + 1..r {
+                        if hash3(wx, y, tick + k as i32 * 7) < 0.66 {
+                            paint(grid, wx, y, lit);
+                        }
+                    }
+                }
+            }
+            let inset = i32::from(tw >= 7 && top < crown);
+            paint_h(grid, x0 + inset, x0 + tw - 1 - inset, top, steel);
+            let mid = x0 + tw / 2;
+            if done {
+                // Antenna + blinking aviation beacon.
+                paint_v(grid, mid, top - 2, top - 1, steel);
+                if (ctx.time * 2.0 + k as f32).sin() > 0.0 {
+                    paint(grid, mid, top - 3, beacon);
+                }
+            } else {
+                // Tower crane on the rising frame: mast + swinging jib.
+                let mast = x0 + 1;
+                paint_v(grid, mast, top - 4, top - 1, crane);
+                let reach = ((ctx.time * 1.3).cos() * (tw + 6) as f32) as i32;
+                paint_h(grid, mast - 3, mast + reach, top - 4, crane);
+                let hook = mast + reach * 3 / 4;
+                paint_v(grid, hook, top - 3, top - 2, crane);
             }
         }
-
-        // Foundation baseline.
-        draw::hline(grid, 0, dw.saturating_sub(1), dh.saturating_sub(1));
-
-        // Crane: vertical mast above the building top.
-        if floors >= max_floors.saturating_sub(1) || floors > 0 {
-            let mast_top_y = dh.saturating_sub(floors + 2) as i32;
-            let mast_x = (bld_x1 as i32).min(dw as i32 - 1);
-            let building_top_y = dh.saturating_sub(floors + 1) as i32;
-            // Mast (vertical post).
-            for y in mast_top_y..=building_top_y {
-                draw::dot_i(grid, mast_x, y);
-            }
-            // Jib swings: angle oscillates with time.
-            let jib_len = ((dw as i32 - mast_x).max(2)).min(dw as i32 / 3);
-            let swing = (ctx.time * 0.7).sin() * 0.3; // radians, small arc
-            let jib_angle = PI * 0.5 + swing; // mostly horizontal left
-            let jib_x1 = mast_x - (jib_len as f32 * jib_angle.cos()).round() as i32;
-            let jib_y1 = mast_top_y + (jib_len as f32 * jib_angle.sin() * 0.25).round() as i32;
-            line_dots(grid, mast_x, mast_top_y, jib_x1, jib_y1);
-            // Counter-jib goes right.
-            let cj_x = mast_x + (jib_len as i32 / 3);
-            line_dots(grid, mast_x, mast_top_y, cj_x, mast_top_y);
-            // Hook cable hangs from jib tip.
-            let cable_len = (dh as i32 / 4).max(1);
-            let load_y = (jib_y1 + cable_len).min(dh as i32 - 1);
-            line_dots(grid, jib_x1, jib_y1, jib_x1, load_y);
-            // Load block at cable bottom.
-            draw::dot_i(grid, jib_x1 - 1, load_y);
-            draw::dot_i(grid, jib_x1 + 1, load_y);
-        }
-
-        // Tint floors.
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx2 in 0..filled_cells.min(cw) {
-            let t = if cw <= 1 { 0.5 } else { cx2 as f32 / cw as f32 };
-            let color = ctx.palette.sample(t);
-            for cy2 in 0..ch {
-                draw::tint_row(grid, cy2, cx2, cx2, color);
-            }
-        }
+        paint_h(grid, 0, wi - 1, ground, Color::rgb(90, 90, 104));
         Ok(())
     }
 }
@@ -239,7 +224,9 @@ impl ProgressStyle for Skyscraper {
 // 2. Suspension Bridge
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Two towers rise, a catenary main cable spans between them, suspender cables drop.
+/// Two tall pylons carry a sagging main cable; the road deck is launched left
+/// to right under it, suspenders dropping onto each new span, while a car
+/// shuttles along the finished deck above rippling water.
 struct SuspensionBridge;
 impl ProgressStyle for SuspensionBridge {
     fn name(&self) -> &str {
@@ -249,88 +236,93 @@ impl ProgressStyle for SuspensionBridge {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Twin towers rise, catenary cable spans, vertical suspenders hang down"
+        "Red pylons and a sagging main cable; the deck is launched span by span with suspenders, a car crosses, water ripples below"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 2 {
+        if dw < 8 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let red = Color::rgb(222, 78, 44);
+        let deck_c = Color::rgb(190, 190, 200);
+        let water = Color::rgb(50, 120, 210);
+        let car = Color::rgb(255, 220, 90);
 
-        let road_y = dh.saturating_sub(2);
-        let tower_h = ((dh as f32 * 0.75) as usize).max(2);
-        let tower_top_y = road_y.saturating_sub(tower_h);
+        let deck_y = (hi * 5 / 8).max(2);
+        let water_y = deck_y + 3;
+        let t1 = wi * 27 / 100;
+        let t2 = wi - 1 - t1;
+        let mid = (t1 + t2) as f32 / 2.0;
+        let half = ((t2 - t1) as f32 / 2.0).max(1.0);
+        let top = 1;
+        let sag = (deck_y - 1 - top) as f32;
 
-        // Towers appear when progress passes 0.15 and 0.85.
-        let left_tower_x = dw / 5;
-        let right_tower_x = dw - dw / 5;
-
-        // Roadway deck.
-        draw::hline(grid, 0, dw.saturating_sub(1), road_y);
-
-        // Left tower.
-        if ctx.eased > 0.05 {
-            let p = ((ctx.eased - 0.05) / 0.3).min(1.0);
-            let h = (p * tower_h as f32).round() as usize;
-            let ty0 = road_y.saturating_sub(h);
-            draw::vline(grid, left_tower_x, ty0, road_y);
-            draw::vline(grid, left_tower_x + 1, ty0, road_y);
-            // Tower top crossbar.
-            if h >= tower_h {
-                draw::hline(
-                    grid,
-                    left_tower_x.saturating_sub(1),
-                    left_tower_x + 2,
-                    tower_top_y,
-                );
-            }
-        }
-
-        // Right tower.
-        if ctx.eased > 0.5 {
-            let p = ((ctx.eased - 0.5) / 0.3).min(1.0);
-            let h = (p * tower_h as f32).round() as usize;
-            let ty0 = road_y.saturating_sub(h);
-            draw::vline(grid, right_tower_x, ty0, road_y);
-            draw::vline(grid, right_tower_x + 1, ty0, road_y);
-            if h >= tower_h {
-                draw::hline(
-                    grid,
-                    right_tower_x.saturating_sub(1),
-                    right_tower_x + 2,
-                    tower_top_y,
-                );
-            }
-        }
-
-        // Main catenary cable: drawn when both towers are substantially up.
-        if ctx.eased > 0.7 {
-            let p = ((ctx.eased - 0.7) / 0.2).min(1.0);
-            let sag = (tower_h as f32 * 0.4).max(1.0); // catenary dip at midspan
-            let x0 = left_tower_x as f32;
-            let x1 = right_tower_x as f32;
-            let span_dots = ((x1 - x0) * p).max(1.0) as usize;
-            for i in 0..=span_dots {
-                let t = i as f32 / span_dots.max(1) as f32;
-                let cx = x0 + t * (x1 - x0) * p;
-                // Catenary shape: y = sag * cosh(k*(t-0.5)) / cosh(0.5k)
-                // Approximated with parabola for simplicity.
-                let cy_offset = sag * (4.0 * t * (1.0 - t));
-                let cy = tower_top_y as f32 + cy_offset;
-                draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-
-                // Suspender every ~6 dots.
-                if i % 6 == 0 {
-                    let sx = cx.round() as i32;
-                    let sy_top = cy.round() as i32;
-                    let sy_bot = road_y as i32;
-                    for sy in sy_top..=sy_bot {
-                        draw::dot_i(grid, sx, sy);
-                    }
+        // Water first so the structure paints over it.
+        for y in water_y..hi {
+            for x in 0..wi {
+                let v = (x as f32 * 0.45 + ctx.time * 3.0 + y as f32 * 2.1).sin();
+                if v > 0.55 {
+                    paint(grid, x, y, water);
                 }
             }
         }
 
+        // Main cable: parabola between tower tops, side spans to anchors.
+        let cable_y = |x: i32| -> i32 {
+            let xf = x as f32;
+            if x >= t1 && x <= t2 {
+                let u = (xf - mid) / half;
+                (deck_y as f32 - 1.0 - sag * u * u).round() as i32
+            } else {
+                let (from, len) = if x < t1 {
+                    (t1 as f32 - xf, t1 as f32)
+                } else {
+                    (xf - t2 as f32, (wi - 1 - t2) as f32)
+                };
+                let s = (from / len.max(1.0)).clamp(0.0, 1.0);
+                (top as f32 + sag * s + 1.5 * s * (1.0 - s)).round() as i32
+            }
+        };
+        let mut prev = cable_y(0);
+        for x in 0..wi {
+            let y = cable_y(x);
+            paint_v(grid, x, prev, y, red);
+            prev = y;
+        }
+
+        // Deck launched left to right; suspenders drop onto finished deck.
+        let built = (ctx.eased * wi as f32).round() as i32;
+        for x in 0..built.min(wi) {
+            if x % 3 == 0 && x > 0 && x < wi - 1 {
+                let cy = cable_y(x);
+                if cy < deck_y - 1 {
+                    paint_v(grid, x, cy + 1, deck_y - 1, red);
+                }
+            }
+            paint(grid, x, deck_y, deck_c);
+            if x % 2 == 0 {
+                paint(grid, x, deck_y + 1, deck_c);
+            }
+        }
+
+        // Pylons: twin legs with portal beams, standing in the water.
+        for &tx in &[t1, t2] {
+            paint_v(grid, tx - 1, 0, hi - 1, red);
+            paint_v(grid, tx + 1, 0, hi - 1, red);
+            paint_h(grid, tx - 1, tx + 1, 0, red);
+            paint_h(grid, tx - 1, tx + 1, deck_y / 2, red);
+        }
+
+        // A car shuttles along whatever deck exists.
+        if built > 6 {
+            let span = (built - 4).max(1) as f32;
+            let tri = 1.0 - ((ctx.time * 0.35).fract() * 2.0 - 1.0).abs();
+            let cx = (tri * span) as i32;
+            paint_h(grid, cx, cx + 3, deck_y - 1, car);
+            paint_h(grid, cx + 1, cx + 2, deck_y - 2, car);
+        }
         Ok(())
     }
 }
@@ -339,7 +331,9 @@ impl ProgressStyle for SuspensionBridge {
 // 3. Gothic Arch / Cathedral
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pointed Gothic arches spring upward; a rose window blooms at the top.
+/// An arcade of pointed lancet arches is raised bay by bay: piers rise, the
+/// two arcs spring and meet at the point, then stained glass fills the window
+/// and shimmers with time. Pinnacles crown every pier.
 struct GothicArch;
 impl ProgressStyle for GothicArch {
     fn name(&self) -> &str {
@@ -349,85 +343,93 @@ impl ProgressStyle for GothicArch {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Pointed Gothic arches spring upward; rose window blooms at the apex"
+        "Pointed lancet arches rise bay by bay on pinnacled piers, then fill with shimmering stained glass"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 2 || dh < 2 {
+        if dw < 14 || dh < 6 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let stone = Color::rgb(214, 196, 160);
+        let glass = [
+            Color::rgb(60, 100, 230),
+            Color::rgb(210, 40, 70),
+            Color::rgb(245, 190, 60),
+            Color::rgb(60, 180, 110),
+            Color::rgb(150, 80, 220),
+        ];
+        let ground = hi - 1;
+        let bay = 12;
+        let span = bay - 2;
+        let n = ((wi - 2) / bay).max(1);
+        let off = ((wi - n * bay - 2) / 2) & !1; // keep piers cell-aligned
+        let spring = hi * 9 / 16;
+        let r = span as f32 * 0.85;
+        let tick = (ctx.time * 2.0) as i32;
+        let built = ctx.eased * n as f32;
+        paint_h(grid, 0, wi - 1, ground, stone);
 
-        let base_y = dh.saturating_sub(1) as i32;
-        // How many arches to draw based on width.
-        let arch_count = (dw / 10).clamp(1, 5);
-        let arch_slot_w = dw / arch_count;
+        // Height of the arch intrados above `spring` at dot column `dx` of a bay.
+        let arc = |dx: i32| -> f32 {
+            let d = dx.min(span - 1 - dx) as f32;
+            let c = r - d; // distance to the opposite arc centre
+            (r * r - c * c).max(0.0).sqrt()
+        };
 
-        for a in 0..arch_count {
-            let ax_center = (a * arch_slot_w + arch_slot_w / 2) as f32;
-            let arch_w_half = (arch_slot_w / 2).saturating_sub(1) as f32;
-            let arch_top_y = (dh as f32 * (1.0 - ctx.eased) + 1.0) as i32;
-
-            // Gothic pointed arch: two circular arcs meeting at a point.
-            // Left arc: center offset right, arc from base-left to apex.
-            // Right arc: center offset left, arc from base-right to apex.
-            let foot_l = ax_center - arch_w_half;
-            let foot_r = ax_center + arch_w_half;
-            let apex_y = arch_top_y.max(0);
-
-            // Arc radius roughly equals the arch width.
-            let r = arch_w_half.max(1.0);
-
-            // Left half-arch: sweep from foot_l up-right to apex.
-            let steps = (r * 4.0) as usize + 4;
+        for k in 0..n {
+            let px = off + k * bay; // left pier
+            let x0 = px + 2; // first window column
+            let f = (built - k as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                continue;
+            }
+            // Stained glass once the arch is closed, in diamond leaded panes.
+            if f >= 0.85 {
+                for dx in 0..span {
+                    let ay = spring - arc(dx).round() as i32;
+                    for y in ay + 1..=ground {
+                        if (dx + y) % 4 == 0 || (dx - y).rem_euclid(4) == 0 {
+                            continue; // lead came
+                        }
+                        let cell = (x0 + dx) / 2 * 31 + y / 4;
+                        let g = glass[(hash3(cell, k, tick) * 4.99) as usize];
+                        paint(grid, x0 + dx, y, g);
+                    }
+                }
+            }
+            // Piers rise first (both sides of the bay).
+            let pier_f = (f / 0.4).min(1.0);
+            let pier_top = ground - ((ground - 1) as f32 * pier_f).round() as i32;
+            for &p in &[px, px + bay] {
+                paint_v(grid, p, pier_top, ground, stone);
+                paint_v(grid, p + 1, pier_top.max(spring), ground, stone);
+            }
+            if pier_f >= 1.0 {
+                // Pinnacle finials.
+                paint(grid, px, 0, stone);
+                paint(grid, px + bay, 0, stone);
+            }
+            // The two arcs spring together and meet at the point.
+            let arch_f = ((f - 0.4) / 0.45).clamp(0.0, 1.0);
+            let reach = (arch_f * (span / 2) as f32).round() as i32;
             let mut prev: Option<(i32, i32)> = None;
-            for i in 0..=steps {
-                let t = i as f32 / steps.max(1) as f32;
-                // Interpolate from foot left to apex.
-                let px = foot_l + t * (ax_center - foot_l);
-                // Pointed arch Y: use sine for the springy curve.
-                let raw_y = base_y as f32 - (t.sin() * (base_y - apex_y).abs() as f32 * t.sqrt());
-                let py = raw_y.round() as i32;
-                if let Some((ppx, ppy)) = prev {
-                    line_dots(grid, ppx, ppy, px.round() as i32, py);
+            for dx in 0..span {
+                let side = dx.min(span - 1 - dx);
+                if side >= reach {
+                    prev = None;
+                    continue;
                 }
-                prev = Some((px.round() as i32, py));
-            }
-            // Right half-arch.
-            prev = None;
-            for i in 0..=steps {
-                let t = i as f32 / steps.max(1) as f32;
-                let px = foot_r - t * (foot_r - ax_center);
-                let raw_y = base_y as f32 - (t.sin() * (base_y - apex_y).abs() as f32 * t.sqrt());
-                let py = raw_y.round() as i32;
-                if let Some((ppx, ppy)) = prev {
-                    line_dots(grid, ppx, ppy, px.round() as i32, py);
+                let y = spring - arc(dx).round() as i32;
+                let x = x0 + dx;
+                match prev {
+                    Some((pxx, py)) => paint_line(grid, pxx, py, x, y, stone),
+                    None => paint(grid, x, y, stone),
                 }
-                prev = Some((px.round() as i32, py));
-            }
-
-            // Column shafts on left and right feet.
-            draw::dot_i(grid, foot_l as i32, base_y);
-            draw::dot_i(grid, foot_r as i32, base_y);
-        }
-
-        // Rose window: a small circle at the top center when near complete.
-        if ctx.eased > 0.7 && dw >= 6 {
-            let rose_p = ((ctx.eased - 0.7) / 0.3).min(1.0);
-            let cx = (dw / 2) as f32;
-            let cy = (dh as f32 * 0.15).max(2.0);
-            let r = (dw as f32 * 0.07 * rose_p).max(1.0);
-            // Outer ring.
-            let spokes = 8usize;
-            for i in 0..spokes {
-                let angle = 2.0 * PI * i as f32 / spokes as f32 + ctx.time * 0.3;
-                let x = (cx + r * angle.cos()).round() as i32;
-                let y = (cy + r * angle.sin()).round() as i32;
-                draw::dot_i(grid, x, y);
-                // Spoke.
-                line_dots(grid, cx.round() as i32, cy.round() as i32, x, y);
+                prev = Some((x, y));
             }
         }
-
         Ok(())
     }
 }
@@ -436,7 +438,9 @@ impl ProgressStyle for GothicArch {
 // 4. Brick Wall
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Running-bond masonry laid course by course; trowel sweeps along each course.
+/// Red bricks in running bond, one course per cell row, laid brick by brick
+/// left to right and course by course bottom to top. Mortar joints are the
+/// gaps; the brick being bedded is still an outline while a trowel taps it.
 struct BrickWall;
 impl ProgressStyle for BrickWall {
     fn name(&self) -> &str {
@@ -446,94 +450,69 @@ impl ProgressStyle for BrickWall {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Running-bond brick courses laid row by row; trowel sweeps each course"
+        "Red bricks in running bond are laid one by one, course by course, while a trowel taps the newest brick into its mortar bed"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw < 8 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let reds = [
+            Color::rgb(178, 62, 44),
+            Color::rgb(198, 82, 54),
+            Color::rgb(158, 54, 40),
+            Color::rgb(210, 104, 66),
+        ];
+        let steel = Color::rgb(200, 200, 212);
+        let handle = Color::rgb(150, 100, 60);
 
-        // Each cell row is one brick course. Courses fill bottom-up.
-        let total_courses = ch;
-        let courses_done_f = ctx.eased * total_courses as f32;
-        let courses_done = courses_done_f.floor() as usize;
-        // Fractional course in progress.
-        let partial_frac = courses_done_f.fract();
+        let brick = 8; // 7 dots of brick + 1 dot head joint
+        let courses = (hi / 4).max(1);
+        let per = (wi + brick / 2) / brick + 1;
+        let total = (courses * per) as f32;
+        let laid = ctx.eased * total;
+        let whole = laid as i32;
+        let mut current: Option<(i32, i32)> = None;
 
-        // Brick width in cells: ~4 wide, 1 tall (one row = one brick height).
-        let brick_w = (cw / 4).max(1);
-
-        for course in 0..courses_done.min(total_courses) {
-            let cell_y = total_courses.saturating_sub(1 + course);
-            // Running bond: odd courses offset by half brick.
-            let offset = if course % 2 == 1 { brick_w / 2 } else { 0 };
-
-            let mut x = 0usize;
-            while x < cw {
-                // Mortar gap is just the cell boundary — use block glyphs.
-                let bx = x;
-                let inner = brick_w.saturating_sub(1);
-                for bxi in 0..inner {
-                    if bx + bxi < cw {
-                        draw::glyph(grid, (bx + bxi + offset) % cw, cell_y, '█');
+        for c in 0..courses {
+            let y0 = hi - 4 * (c + 1); // top row of this course
+            let off = (c % 2) * (brick / 2);
+            for b in 0..per {
+                let idx = c * per + b;
+                if idx > whole {
+                    break;
+                }
+                let x0 = b * brick - off;
+                let x1 = (x0 + brick - 2).min(wi - 1);
+                if x1 < 0 {
+                    continue;
+                }
+                let colour = reds[(hash3(b, c, 3) * 3.99) as usize];
+                if idx == whole {
+                    // Being bedded: outline only.
+                    paint_h(grid, x0.max(0), x1, y0, colour);
+                    paint_h(grid, x0.max(0), x1, y0 + 2, colour);
+                    paint_v(grid, x0.max(0), y0, y0 + 2, colour);
+                    paint_v(grid, x1, y0, y0 + 2, colour);
+                    current = Some((x1, y0));
+                } else {
+                    for y in y0..y0 + 3 {
+                        paint_h(grid, x0.max(0), x1, y, colour);
                     }
                 }
-                x += brick_w;
-            }
-
-            // Mortar line (top of each course): thin hline at top dot of cell.
-            // The glyph rows cover it; mark with shade for mortar texture.
-            if course > 0 {
-                let mortar_y = total_courses.saturating_sub(1 + course);
-                // Place ░ for mortar joints between bricks (at the vertical seam dots).
-                let mut mx = offset;
-                while mx < cw {
-                    if mx > 0 {
-                        draw::glyph(grid, mx % cw, mortar_y, '▏');
-                    }
-                    mx += brick_w;
-                }
             }
         }
 
-        // Partial course: trowel sweeps.
-        if courses_done < total_courses {
-            let cell_y = total_courses.saturating_sub(1 + courses_done);
-            let trowel_x = (partial_frac * cw as f32) as usize;
-            for bxi in 0..trowel_x.min(cw) {
-                draw::shade(grid, bxi, cell_y, 2); // ▒ for freshly-laid course
-            }
-            // Trowel leading edge marker.
-            if trowel_x < cw {
-                draw::glyph(grid, trowel_x, cell_y, '▌');
-            }
+        // Trowel taps the newest brick: blade + handle, bobbing with time.
+        if let Some((x, y)) = current {
+            let tap = ((ctx.time * 6.0).sin() * 0.5 + 0.5).round() as i32;
+            let (tx, ty) = (x + 2, y - 3 + tap);
+            paint_h(grid, tx, tx + 3, ty + 1, steel);
+            paint_h(grid, tx + 1, tx + 2, ty + 2, steel);
+            paint_line(grid, tx + 3, ty, tx + 5, ty - 2, handle);
         }
-
-        // Tint: warm brick orange-red gradient.
-        let brick_start = crate::Color::rgb(200, 80, 40);
-        let brick_end = crate::Color::rgb(230, 140, 80);
-        for cx2 in 0..cw {
-            let t = if cw <= 1 {
-                0.5
-            } else {
-                cx2 as f32 / (cw - 1) as f32
-            };
-            let color = {
-                let r =
-                    (brick_start.r as f32 + (brick_end.r as f32 - brick_start.r as f32) * t) as u8;
-                let g =
-                    (brick_start.g as f32 + (brick_end.g as f32 - brick_start.g as f32) * t) as u8;
-                let b =
-                    (brick_start.b as f32 + (brick_end.b as f32 - brick_start.b as f32) * t) as u8;
-                crate::Color::rgb(r, g, b)
-            };
-            let max_course_y = total_courses.saturating_sub(courses_done.min(total_courses));
-            for cy2 in max_course_y..ch {
-                draw::tint_row(grid, cy2, cx2, cx2, color);
-            }
-        }
-
         Ok(())
     }
 }
@@ -542,7 +521,9 @@ impl ProgressStyle for BrickWall {
 // 5. Pyramid
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Stepped stone courses narrow upward; the pyramid grows from base to apex.
+/// Three stepped pyramids rise on the desert under a low sun, built course by
+/// course, each course laid left to right. Faces are lit on the left and in
+/// shadow on the right; the great pyramid wears a gold capstone when done.
 struct Pyramid;
 impl ProgressStyle for Pyramid {
     fn name(&self) -> &str {
@@ -552,42 +533,70 @@ impl ProgressStyle for Pyramid {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Pyramid rises course by course; each step narrower than the last"
+        "Three stepped sandstone pyramids rise course by course under a desert sun; sunlit and shadowed faces, gold capstone"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 2 || dh < 1 {
+        if dw < 8 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let lit = Color::rgb(232, 198, 132);
+        let shade = Color::rgb(168, 124, 78);
+        let gold = Color::rgb(255, 214, 90);
+        let sun = Color::rgb(255, 160, 60);
+        let sand = Color::rgb(200, 170, 110);
 
-        let max_courses = dh;
-        let courses = (ctx.eased * max_courses as f32).ceil() as usize;
-        let cx = dw / 2;
+        let ground = hi - 1;
+        let max_c = ((ground - 1) / 2).max(1);
+        // (centre as a fraction of width, courses) — great, middle, small.
+        let plan = [
+            (0.23, max_c),
+            (0.59, (max_c * 6 / 7).max(1)),
+            (0.86, (max_c * 4 / 7).max(1)),
+        ];
+        let total: i32 = plan.iter().map(|p| p.1).sum();
+        let laid = ctx.eased * total as f32;
 
-        for c in 0..courses.min(max_courses) {
-            let y = dh.saturating_sub(1 + c);
-            // Width tapers linearly: full at base, 1 dot at apex.
-            let half_w = ((max_courses - c) * (dw / 2)) / max_courses.max(1);
-            let x0 = cx.saturating_sub(half_w);
-            let x1 = (cx + half_w).min(dw.saturating_sub(1));
-
-            // Course line (step tread).
-            draw::hline(grid, x0, x1, y);
-            // Side walls (step risers).
-            if c > 0 {
-                draw::dot(grid, x0, y);
-                draw::dot(grid, x1, y);
+        // Sun low in the sky, and drifting sand along the ground.
+        let (sx, sy) = (wi - 22, 3);
+        for dy in -2i32..=2 {
+            let half = 2 - dy.abs() / 2;
+            paint_h(grid, sx - half, sx + half, sy + dy, sun);
+        }
+        for x in 0..wi {
+            if (x as f32 + ctx.time * 6.0).rem_euclid(7.0) < 5.0 {
+                paint(grid, x, ground, sand);
             }
         }
 
-        // Tint from base (dark) to apex (bright).
-        let (cw, ch) = grid.dimensions();
-        for cy2 in 0..ch {
-            let t = cy2 as f32 / ch.max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t);
-            for cx2 in 0..cw {
-                draw::tint_row(grid, cy2, cx2, cx2, color);
+        let mut before = 0;
+        for (pi, &(fx, courses)) in plan.iter().enumerate() {
+            let cx = (wi as f32 * fx) as i32;
+            for c in 0..courses {
+                let f = (laid - (before + c) as f32).clamp(0.0, 1.0);
+                if f <= 0.0 {
+                    break;
+                }
+                let hw = (courses - c) * 2;
+                let (x0, x1) = (cx - hw, cx + hw);
+                let reach = x0 + ((x1 - x0 + 1) as f32 * f) as i32;
+                let capstone = pi == 0 && c == courses - 1 && f >= 1.0;
+                for y in [ground - 1 - 2 * c, ground - 2 - 2 * c] {
+                    for x in x0..reach.min(x1 + 1) {
+                        let col = if capstone {
+                            gold
+                        } else if x < cx {
+                            lit
+                        } else {
+                            shade
+                        };
+                        paint(grid, x, y, col);
+                    }
+                }
             }
+            before += courses;
         }
         Ok(())
     }
@@ -597,7 +606,9 @@ impl ProgressStyle for Pyramid {
 // 6. Scaffolding
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Vertical poles and horizontal planks erect around a central building form.
+/// Tube-and-coupler scaffolding is erected bay by bay, lift by lift: steel
+/// standards, ledgers at every lift, timber boards on top and yellow cross
+/// braces. A bucket is hoisted up and down on the newest bay.
 struct Scaffolding;
 impl ProgressStyle for Scaffolding {
     fn name(&self) -> &str {
@@ -607,60 +618,68 @@ impl ProgressStyle for Scaffolding {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Scaffold poles and planks erect around a building; cross-braces appear last"
+        "Steel standards, ledgers, timber boards and cross braces go up bay by bay, lift by lift; a bucket is hoisted on the newest bay"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 2 {
+        if dw < 12 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let steel = Color::rgb(176, 186, 202);
+        let brace = Color::rgb(124, 134, 150);
+        let bucket = Color::rgb(240, 180, 40);
+        let board = Color::rgb(178, 116, 62);
+        let rope = Color::rgb(140, 140, 150);
 
-        // Central building outline (always present, faint — just the rect).
-        let bld_x0 = dw / 4;
-        let bld_x1 = dw - dw / 4;
-        let bld_y0 = dh / 4;
-        let bld_y1 = dh.saturating_sub(1);
-        draw::rect_outline(
-            grid,
-            bld_x0,
-            bld_y0,
-            bld_x1.saturating_sub(bld_x0),
-            bld_y1.saturating_sub(bld_y0),
-        );
+        let ground = hi - 1;
+        let bay = 10;
+        let nb = ((wi - 2) / bay).max(1);
+        let lifts = ((hi - 1) / 5).max(1);
+        let lift_h = (hi - 1) / lifts;
+        let total = (nb * lifts) as f32;
+        let placed = ctx.eased * total;
 
-        // Scaffold poles: progress reveals them left-to-right, inside-out.
-        // Two poles at left and right of scaffold.
-        let pole_left = bld_x0.saturating_sub(2);
-        let pole_right = (bld_x1 + 2).min(dw.saturating_sub(1));
-
-        // Pole heights grow with progress (bottom up).
-        let pole_top_y = (dh as f32 * (1.0 - ctx.eased)).round() as usize;
-
-        if ctx.eased > 0.0 {
-            draw::vline(grid, pole_left, pole_top_y, dh.saturating_sub(1));
-            draw::vline(grid, pole_right, pole_top_y, dh.saturating_sub(1));
+        paint_h(grid, 0, wi - 1, ground, Color::rgb(100, 96, 90));
+        for b in 0..nb {
+            let x0 = 1 + b * bay;
+            let x1 = x0 + bay;
+            for l in 0..lifts {
+                let f = (placed - (b * lifts + l) as f32).clamp(0.0, 1.0);
+                if f <= 0.0 {
+                    continue;
+                }
+                let yb = ground - l * lift_h; // bottom of this lift
+                let yt = yb - lift_h; // ledger level on top
+                                      // Standards climb first, then the ledger, brace and boards.
+                let rise = (f * 2.0).min(1.0);
+                let ytop = yb - (lift_h as f32 * rise).round() as i32;
+                if f >= 0.5 {
+                    let (bx0, bx1) = if (b + l) % 2 == 0 { (x0, x1) } else { (x1, x0) };
+                    paint_line(grid, bx0, yb, bx1, yt, brace);
+                }
+                paint_v(grid, x0, ytop, yb, steel);
+                paint_v(grid, x1, ytop, yb, steel);
+                if f >= 0.5 {
+                    paint_h(grid, x0, x1, yt, steel);
+                }
+                if f >= 0.75 {
+                    paint_h(grid, x0 + 1, x1 - 1, yt + 1, board);
+                }
+            }
         }
 
-        // Horizontal planks: appear at intervals as progress advances.
-        let plank_spacing = (dh / 4).max(2);
-        let plank_count = dh / plank_spacing;
-        let planks_shown = (ctx.eased * plank_count as f32).round() as usize;
-        for p in 0..planks_shown.min(plank_count) {
-            let py = dh.saturating_sub(1 + p * plank_spacing);
-            draw::hline(grid, pole_left, pole_right, py);
+        // Hoist on the newest bay: a rope and a bucket bobbing on it.
+        let cur = (placed as i32 / lifts).min(nb - 1);
+        let hx = 1 + cur * bay + bay / 2;
+        let bob = ((ctx.time * 1.2).sin() * 0.5 + 0.5) * (hi - 5) as f32;
+        let by = 1 + bob as i32;
+        if ctx.eased < 1.0 {
+            paint_v(grid, hx, 0, by, rope);
+            paint_h(grid, hx - 1, hx + 1, by + 1, bucket);
+            paint_h(grid, hx - 1, hx + 1, by + 2, bucket);
         }
-
-        // Cross-braces appear in the last 30% of progress.
-        if ctx.eased > 0.7 {
-            let brace_p = (ctx.eased - 0.7) / 0.3;
-            let brace_top = (dh as f32 * (1.0 - brace_p)).round() as i32;
-            // Left brace: ╲ from pole top-left to mid-right.
-            let mid_x = ((pole_left + pole_right) / 2) as i32;
-            let bot_y = dh as i32 - 1;
-            line_dots(grid, pole_left as i32, brace_top, mid_x, bot_y);
-            line_dots(grid, pole_right as i32, brace_top, mid_x, bot_y);
-        }
-
         Ok(())
     }
 }
@@ -669,7 +688,10 @@ impl ProgressStyle for Scaffolding {
 // 7. Geodesic Dome
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Triangulated hemisphere wireframe assembles arc by arc as progress rises.
+/// A geodesic dome assembled ring by ring from the base up: each band is a
+/// row of triangles struck between staggered hub points, so the finished
+/// hemisphere reads as a lattice of triangles. Hubs glint as light moves
+/// across the dome.
 struct GeodesicDome;
 impl ProgressStyle for GeodesicDome {
     fn name(&self) -> &str {
@@ -679,48 +701,73 @@ impl ProgressStyle for GeodesicDome {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Geodesic dome hemisphere assembles; triangulated arcs appear with progress"
+        "A triangulated geodesic hemisphere assembles band by band from the base up; light glints across its hubs"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 2 {
+        if dw < 8 || dh < 6 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let strut = Color::rgb(150, 180, 220);
+        let hub = Color::rgb(240, 248, 255);
+        let base = Color::rgb(214, 184, 142);
 
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 - 1.0; // dome sits on the baseline
-        let r = ((dw as f32 / 2.0) - 1.0).min((dh as f32) - 1.0).max(1.0);
+        let ground = hi - 1;
+        let ry = (ground - 1) as f32;
+        let rx = (ry * 1.6).min(wi as f32 / 2.0 - 1.0);
+        let cx = wi as f32 / 2.0;
+        let rings = 4;
+        let seg = 8; // hubs across the visible front half of a ring
+        let built = ctx.eased * rings as f32;
+        let glint = (ctx.time * 0.5).fract() * seg as f32;
 
-        // Baseline.
-        draw::hline(grid, 0, dw.saturating_sub(1), dh.saturating_sub(1));
+        // Hub `j` on ring `k` (k = rings is the apex), staggered every ring.
+        let hub_at = |k: i32, j: f32| -> (i32, i32) {
+            let phi = k as f32 / rings as f32 * std::f32::consts::FRAC_PI_2;
+            let theta = (j + 0.5 * (k % 2) as f32) / seg as f32 * std::f32::consts::PI;
+            (
+                (cx - rx * phi.cos() * theta.cos()).round() as i32,
+                (ground as f32 - ry * phi.sin()).round() as i32,
+            )
+        };
 
-        // Main hemisphere arc (always drawn first).
-        arc_quarter(grid, cx, cy, r, 0.0, PI);
-
-        // Latitude rings: horizontal arcs at fractional heights.
-        let lat_count = 4usize;
-        let lats_shown = (ctx.eased * lat_count as f32).round() as usize;
-        for li in 0..lats_shown.min(lat_count) {
-            let frac = (li + 1) as f32 / (lat_count + 1) as f32;
-            let lat_y_offset = r * frac; // screen offset from baseline upward
-            let lat_r = (r * r - lat_y_offset * lat_y_offset).sqrt().max(0.5);
-            let lat_cy = cy - lat_y_offset;
-            // Draw the full horizontal arc at this latitude.
-            arc_quarter(grid, cx, lat_cy, lat_r, 0.0, PI);
+        paint_h(grid, 0, wi - 1, ground, base);
+        for k in 0..rings {
+            let f = (built - k as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
+            }
+            let odd = k % 2 == 1;
+            // Staggered rings have one hub fewer inside the silhouette.
+            let upto = ((f * seg as f32).ceil() as i32).min(seg + 1 - i32::from(odd));
+            for j in 0..upto {
+                let a = hub_at(k, j as f32);
+                // Ring strut to the next hub on the same ring.
+                if j < seg {
+                    let b = hub_at(k, (j + 1) as f32);
+                    if !(odd && j == seg - 1) {
+                        paint_line(grid, a.0, a.1, b.0, b.1, strut);
+                    }
+                }
+                // Diagonal struts up to the staggered hubs on the next ring.
+                for dj in [-1, 0] {
+                    let jj = j + dj + i32::from(odd);
+                    if (0..=seg).contains(&jj) {
+                        let b = hub_at(k + 1, jj as f32);
+                        paint_line(grid, a.0, a.1, b.0, b.1, strut);
+                    }
+                }
+            }
+            // Hubs glint as light sweeps across.
+            for j in 0..upto {
+                if (j as f32 - glint).abs() < 1.0 {
+                    let a = hub_at(k, j as f32);
+                    paint(grid, a.0, a.1, hub);
+                }
+            }
         }
-
-        // Longitude meridian lines: spokes from base to apex.
-        let meridian_count = 8usize;
-        let meridians_shown = (ctx.eased * meridian_count as f32).round() as usize;
-        for mi in 0..meridians_shown.min(meridian_count) {
-            let angle = PI * mi as f32 / meridian_count as f32;
-            let x0 = (cx + r * angle.cos()).round() as i32;
-            let y0 = cy.round() as i32;
-            let apex_x = cx.round() as i32;
-            let apex_y = (cy - r).round() as i32;
-            line_dots(grid, x0, y0, apex_x, apex_y);
-        }
-
         Ok(())
     }
 }
@@ -729,7 +776,10 @@ impl ProgressStyle for GeodesicDome {
 // 8. Spiral Staircase
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A perspective helix climbs with progress; treads project at diminishing depth.
+/// Looking down a stairwell: a brass handrail spirals from the outer wall in
+/// to the newel post, and wedge-shaped stone treads are laid along it, from
+/// the top landing down into the well as progress rises. The view slowly
+/// turns with time, as if descending.
 struct SpiralStaircase;
 impl ProgressStyle for SpiralStaircase {
     fn name(&self) -> &str {
@@ -739,50 +789,82 @@ impl ProgressStyle for SpiralStaircase {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Perspective spiral staircase climbs; treads shrink with height"
+        "Looking down a stairwell: treads are laid along a spiralling brass handrail down to the newel post; the view slowly turns"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 4 {
+        if dw < 8 || dh < 6 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let post = Color::rgb(196, 146, 76);
+        let tread = Color::rgb(232, 222, 200);
+        let rail = Color::rgb(214, 150, 70);
+        let riser = Color::rgb(178, 166, 146);
 
-        let cx = dw as f32 / 2.0;
-        // Number of turns in the helix.
-        let turns = 2.0f32;
-        let total_steps = (turns * 12.0) as usize;
-        let steps_shown = (ctx.eased * total_steps as f32).round() as usize;
+        let (cx, cy) = (wi as f32 / 2.0, (hi - 1) as f32 / 2.0);
+        let ry = cy;
+        let rx = (ry * 3.2).min(cx - 1.0); // a perspective stretch
+        let turns = 1.5;
+        let sweep = turns * std::f32::consts::TAU;
+        let shrink = 0.8; // radius lost from outer wall to newel
+        let gap = shrink / turns; // radial spacing between spiral arms
+        let spin = ctx.time * 0.4;
+        let at = |u: f32, r: f32| -> (i32, i32) {
+            let a = u * sweep + spin;
+            (
+                (cx + rx * r * a.cos()).round() as i32,
+                (cy + ry * r * a.sin()).round() as i32,
+            )
+        };
 
-        // Animate rotation with time.
-        let rot = ctx.time * 0.4;
+        // The handrail spiral, drawn first so laid treads own their cells.
+        let samples = 360;
+        let mut prev = at(0.0, 1.0);
+        for s in 1..=samples {
+            let u = s as f32 / samples as f32;
+            let p = at(u, 1.0 - shrink * u);
+            paint_line(grid, prev.0, prev.1, p.0, p.1, rail);
+            prev = p;
+        }
 
-        for s in 0..steps_shown.min(total_steps) {
-            let t = s as f32 / total_steps as f32;
-            let angle = 2.0 * PI * turns * t + rot;
-            // Vertical position: top at t=1, bottom at t=0.
-            let y_dot = (dh as f32 * (1.0 - t * 0.9)) as i32;
-            // Horizontal radius shrinks slightly with height (perspective).
-            let radius = (dw as f32 * 0.35) * (1.0 - t * 0.3);
-            let x_dot = (cx + radius * angle.cos()).round() as i32;
-
-            // Tread: short horizontal line at this step's position.
-            let tread_len = (radius * 0.6).round() as i32;
-            for tx in -tread_len..=tread_len {
-                draw::dot_i(grid, x_dot + tx, y_dot);
+        // Treads: solid wedges filling the band between one turn of the rail
+        // and the next, split by thin risers and laid from the top landing
+        // (outside) down into the well.
+        let tau = std::f32::consts::TAU;
+        let n = 22.0;
+        let laid = ctx.eased * n;
+        for y in 0..hi {
+            for x in 0..wi {
+                let (ex, ey) = ((x as f32 - cx) / rx, (y as f32 - cy) / ry);
+                let rho = (ex * ex + ey * ey).sqrt();
+                let a = (ey.atan2(ex) - spin).rem_euclid(tau);
+                // Walk the arms passing this angle to find the one just outside.
+                let mut m = 0.0;
+                loop {
+                    let u = (a + m * tau) / sweep;
+                    if u > 1.0 {
+                        break;
+                    }
+                    let r = 1.0 - shrink * u;
+                    if rho < r - 0.04 && rho > r - gap + 0.04 {
+                        let k = u * n;
+                        if k < laid && k.fract() > 0.2 {
+                            let c = if (k as i32) % 2 == 0 { tread } else { riser };
+                            paint(grid, x, y, c);
+                        }
+                        break;
+                    }
+                    m += 1.0;
+                }
             }
-            // Riser dot.
-            draw::dot_i(grid, x_dot, y_dot);
-            draw::dot_i(grid, x_dot, y_dot + 1);
-
-            // Central newel post.
-            draw::dot_i(grid, cx.round() as i32, y_dot);
         }
 
-        // Central post full height.
-        for y in 0..dh {
-            draw::dot(grid, dw / 2, y);
-        }
-
+        // Newel post at the bottom of the well.
+        let (nx, ny) = (cx.round() as i32, cy.round() as i32);
+        paint_h(grid, nx - 1, nx, ny, post);
+        paint_h(grid, nx - 1, nx, ny + 1, post);
         Ok(())
     }
 }
@@ -791,7 +873,10 @@ impl ProgressStyle for SpiralStaircase {
 // 9. Roman Aqueduct
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Round arches march left to right; the water channel deck appears last.
+/// A two-tier Roman aqueduct in the Pont du Gard manner: big round arches
+/// over a river, a row of small arches above, and the water channel on top.
+/// Masonry advances left to right — lower tier first, upper tier and channel
+/// close behind — and water flows along the finished channel.
 struct RomanAqueduct;
 impl ProgressStyle for RomanAqueduct {
     fn name(&self) -> &str {
@@ -801,64 +886,63 @@ impl ProgressStyle for RomanAqueduct {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Roman aqueduct arches march across; water channel appears at completion"
+        "Two tiers of round stone arches advance across a river, with the water channel on top flowing as each span is finished"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 3 {
+        if dw < 4 || dh < 4 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let stone = Color::rgb(214, 184, 142);
+        let water = Color::rgb(70, 150, 230);
 
-        let base_y = dh.saturating_sub(1);
-        let arch_h = (dh as f32 * 0.6).round() as usize;
-        let arch_w = (dw / 5).max(4); // width of each arch opening in dots
-        let pier_w = (arch_w / 4).max(1);
-        let arch_count = dw / (arch_w + pier_w);
+        // Rows scale with height: channel on top, small tier, big tier.
+        let floor = (hi / 8).max(1); // channel floor row
+        let impost = hi / 2; // between the tiers
+        let ground = hi - 1;
+        let lower = (ctx.eased * (wi + 24) as f32) as i32;
+        let (upper, channel) = (lower - 12, lower - 24);
 
-        // How many arches revealed.
-        let arches_shown = (ctx.eased * arch_count as f32).ceil() as usize;
+        // Is (x, y) inside an arch opening of span `span` on `pitch`, springing
+        // at row `spring` with its crown at row `crown`?
+        let opening = |x: i32, y: i32, pitch: i32, span: i32, crown: i32, spring: i32| {
+            let ux = (x + pitch / 2).rem_euclid(pitch) - (pitch - span) / 2;
+            if ux < 0 || ux >= span || y < crown {
+                return false;
+            }
+            let r = (spring - crown).max(1) as f32;
+            let dx = ux as f32 + 0.5 - span as f32 / 2.0;
+            let dy = (spring - y).max(0) as f32;
+            dx * dx * (r * r) / ((span as f32 / 2.0).powi(2)) + dy * dy <= r * r
+        };
 
-        let mut x = 0usize;
-        for a in 0..arches_shown.min(arch_count) {
-            let _ = a;
-            // Pier on left.
-            for py in (base_y.saturating_sub(arch_h))..=base_y {
-                draw::dot(grid, x, py);
-                if pier_w > 1 {
-                    draw::dot(grid, x + pier_w.saturating_sub(1), py);
+        for x in 0..wi {
+            for y in 0..hi {
+                let lit = if y < floor {
+                    x < channel && y == 0
+                } else if y == floor {
+                    x < channel
+                } else if y < impost {
+                    x < upper && !opening(x, y, 6, 4, floor + 2, impost - 2)
+                } else {
+                    x < lower && (y == impost || !opening(x, y, 12, 9, impost + 2, ground - 2))
+                };
+                if lit {
+                    paint(grid, x, y, stone);
                 }
             }
-            x += pier_w;
-
-            // Semicircular arch.
-            let arch_cx = (x + arch_w / 2) as f32;
-            let arch_cy = base_y.saturating_sub(arch_h / 2) as f32;
-            let arch_r = (arch_h / 2).max(1) as f32;
-            arc_quarter(grid, arch_cx, arch_cy, arch_r, 0.0, PI);
-
-            x += arch_w;
-        }
-
-        // Rightmost pier.
-        if arches_shown > 0 && x < dw {
-            for py in (base_y.saturating_sub(arch_h))..=base_y {
-                draw::dot(grid, x.min(dw.saturating_sub(1)), py);
+            // Water runs along the finished channel...
+            if x < channel && ((x as f32 - ctx.time * 10.0).rem_euclid(8.0)) < 3.0 {
+                paint(grid, x, (floor - 1).max(1), water);
+            }
+            // ...and the river ripples under the big arches.
+            let open = |x| opening(x, ground, 12, 9, impost + 2, ground - 2);
+            if (x as f32 * 0.7 + ctx.time * 3.0).sin() > 0.2 && open(x & !1) && open(x | 1) {
+                paint(grid, x, ground, water);
             }
         }
-
-        // Water channel deck on top when complete.
-        if ctx.eased > 0.9 {
-            let deck_y = base_y.saturating_sub(arch_h);
-            draw::hline(grid, 0, dw.saturating_sub(1), deck_y);
-            // Water shimmer (animated dots).
-            let shimmer_x = ((ctx.time * 3.0).sin() * dw as f32 * 0.5 + dw as f32 * 0.5) as usize;
-            draw::dot(
-                grid,
-                shimmer_x.min(dw.saturating_sub(1)),
-                deck_y.saturating_sub(1),
-            );
-        }
-
         Ok(())
     }
 }
@@ -867,7 +951,10 @@ impl ProgressStyle for RomanAqueduct {
 // 10. Classical Column
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A fluted Doric column shaft grows upward; the capital blooms at the top.
+/// A colonnade of Ionic columns on a stepped stylobate. Columns go up left to
+/// right: base, then fluted drums lowered one at a time on a crane rope, then
+/// the scrolled capital; the entablature runs across each finished column and
+/// a band of sunlight sweeps the marble.
 struct ClassicalColumn;
 impl ProgressStyle for ClassicalColumn {
     fn name(&self) -> &str {
@@ -877,76 +964,85 @@ impl ProgressStyle for ClassicalColumn {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Classical column shaft rises with flutes; capital and entablature bloom last"
+        "Ionic columns rise drum by drum on a stepped base, gain scrolled capitals, then carry the entablature; sunlight sweeps the marble"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 2 {
+        if dw < 12 || dh < 8 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let marble = Color::rgb(206, 200, 186);
+        let glint = Color::rgb(255, 252, 240);
+        let entab = Color::rgb(214, 184, 142);
+        let step_c = Color::rgb(150, 140, 126);
+        let rope = Color::rgb(140, 140, 150);
 
-        let cx = dw / 2;
-        let shaft_half = (dw / 6).max(1);
-        let x0 = cx.saturating_sub(shaft_half);
-        let x1 = (cx + shaft_half).min(dw.saturating_sub(1));
-        let base_y = dh.saturating_sub(1);
-        let shaft_h = ((dh as f32 * 0.75) as usize).max(2);
-        let shaft_top_y = base_y.saturating_sub(shaft_h);
+        let ground = hi - 1;
+        let base_y = ground - 2;
+        let cap_y = hi * 3 / 16; // abacus row
+        let shaft_top = cap_y + 3;
+        let shaft_h = (base_y - shaft_top).max(1);
+        let pitch = 14;
+        let n = ((wi - 4) / pitch).max(1);
+        let off = (wi - n * pitch) / 2;
+        let built = ctx.eased * n as f32;
+        let sun = (ctx.time * 0.25).fract() * (wi + 20) as f32 - 10.0;
 
-        // Base / stylobate (always present).
-        draw::hline(grid, 0, dw.saturating_sub(1), base_y);
-        draw::hline(
-            grid,
-            x0.saturating_sub(1),
-            (x1 + 1).min(dw.saturating_sub(1)),
-            base_y.saturating_sub(1),
-        );
+        // Stepped stylobate.
+        paint_h(grid, 0, wi - 1, ground, step_c);
+        paint_h(grid, 2, wi - 3, ground - 1, step_c);
 
-        // Shaft grows upward.
-        let shaft_drawn = (ctx.eased * shaft_h as f32).round() as usize;
-        let shaft_drawn_y0 = base_y.saturating_sub(shaft_drawn);
-
-        // Shaft outline: two vertical sides.
-        draw::vline(grid, x0, shaft_drawn_y0, base_y.saturating_sub(1));
-        draw::vline(grid, x1, shaft_drawn_y0, base_y.saturating_sub(1));
-
-        // Flutes: vertical lines inside the shaft.
-        let flute_count = ((x1 - x0) / 2).max(1);
-        for f in 0..flute_count {
-            let fx = x0 + 1 + f * 2;
-            if fx < x1 {
-                // Flute is dotted every 2 to suggest engraving.
-                let mut fy = shaft_drawn_y0;
-                while fy <= base_y.saturating_sub(1) {
-                    draw::dot(grid, fx, fy);
-                    fy += 2;
+        for k in 0..n {
+            let cx = off + k * pitch + pitch / 2;
+            let f = (built - k as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                continue;
+            }
+            let c = if (cx as f32 - sun).abs() < 5.0 {
+                glint
+            } else {
+                marble
+            };
+            // Attic base.
+            paint_h(grid, cx - 3, cx + 3, base_y, c);
+            // Fluted shaft: three ridges, stacked drum by drum.
+            let shaft_f = (f / 0.8).min(1.0);
+            let rows = (shaft_h as f32 * shaft_f).round() as i32;
+            let top = base_y - rows;
+            for &dx in &[-2, 0, 2] {
+                paint_v(grid, cx + dx, top, base_y - 1, c);
+            }
+            if shaft_f < 1.0 {
+                // Next drum hangs on the crane rope, settling with time.
+                let bob = ((ctx.time * 2.0).sin() * 0.5 + 0.5) * 3.0;
+                let dy = top - 3 - bob.round() as i32;
+                paint_v(grid, cx, 0, dy - 1, rope);
+                paint_h(grid, cx - 2, cx + 2, dy, c);
+                paint_h(grid, cx - 2, cx + 2, dy + 1, c);
+            } else {
+                // Ionic capital: echinus, curled volutes, flat abacus.
+                paint_h(grid, cx - 4, cx + 4, cap_y, c);
+                paint_h(grid, cx - 3, cx + 3, cap_y + 1, c);
+                for &s in &[-1, 1] {
+                    paint(grid, cx + s * 4, cap_y + 1, c);
+                    paint(grid, cx + s * 4, cap_y + 2, c);
+                    paint(grid, cx + s * 3, cap_y + 2, c);
                 }
             }
-        }
-
-        // Capital: only appears in the top 25% of progress.
-        if ctx.eased > 0.75 {
-            let cap_p = (ctx.eased - 0.75) / 0.25;
-            let capital_top = shaft_top_y.saturating_sub((dh as f32 * 0.15 * cap_p) as usize);
-            // Echinus (curved moulding).
-            let spread = (shaft_half as f32 * cap_p * 0.5) as usize;
-            let cap_x0 = x0.saturating_sub(spread);
-            let cap_x1 = (x1 + spread).min(dw.saturating_sub(1));
-            draw::hline(grid, cap_x0, cap_x1, shaft_top_y);
-            // Abacus (flat slab).
-            draw::hline(
-                grid,
-                cap_x0.saturating_sub(1),
-                (cap_x1 + 1).min(dw.saturating_sub(1)),
-                capital_top,
-            );
-            // Entablature (beam).
-            if cap_p > 0.8 {
-                draw::hline(grid, 0, dw.saturating_sub(1), capital_top.saturating_sub(1));
-                draw::hline(grid, 0, dw.saturating_sub(1), capital_top.saturating_sub(2));
+            // Entablature across each finished column.
+            if f >= 1.0 {
+                let (l, r) = (cx - pitch / 2, cx + pitch / 2);
+                paint_h(grid, l, r, cap_y - 1, entab);
+                for x in l..=r {
+                    if (x - off) % 3 == 0 {
+                        paint(grid, x, cap_y - 2, entab);
+                    }
+                }
+                paint_h(grid, l - 1, r + 1, cap_y - 3, entab);
             }
         }
-
         Ok(())
     }
 }
@@ -1088,7 +1184,10 @@ impl ProgressStyle for Blueprint {
 // 12. Tower Crane
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Mast rises, horizontal jib extends, a load hangs from the trolley and swings.
+/// A yellow tower crane — lattice mast, Warren-truss jib, counter-jib with its
+/// concrete counterweight, cab and pendant ties — builds a concrete frame
+/// beside it: floors go up with progress while the trolley runs out along
+/// the jib and the hook lifts a steel beam.
 struct TowerCrane;
 impl ProgressStyle for TowerCrane {
     fn name(&self) -> &str {
@@ -1098,124 +1197,175 @@ impl ProgressStyle for TowerCrane {
         "architecture"
     }
     fn describe(&self) -> &str {
-        "Tower crane mast rises, jib extends, trolley rolls, load swings on a cable"
+        "A lattice tower crane with counterweight and trolley hoists steel beams while the building beside it rises floor by floor"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw < 4 || dh < 4 {
+        if dw < 24 || dh < 10 {
             return Ok(());
         }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let yellow = Color::rgb(250, 190, 40);
+        let weight = Color::rgb(150, 150, 162);
+        let cab = Color::rgb(90, 160, 230);
+        let cable = Color::rgb(130, 130, 140);
+        let beam = Color::rgb(214, 90, 50);
+        let concrete = Color::rgb(176, 176, 186);
 
-        let base_y = dh.saturating_sub(1);
-        // Mast anchored at 1/4 width.
-        let mast_x = dw / 4;
+        let ground = hi - 1;
+        let mx = (wi / 6).max(12);
+        let (apex, top_chord, jib_y) = (0, 2, 4);
+        let jib_end = wi - 2;
+        let tail = mx - 10;
 
-        // Mast grows to full height at progress 0.4.
-        let mast_p = (ctx.eased / 0.4).min(1.0);
-        let full_mast_h = dh.saturating_sub(2);
-        let mast_h = (mast_p * full_mast_h as f32).round() as usize;
-        let mast_top = base_y.saturating_sub(mast_h);
-
-        draw::vline(grid, mast_x, mast_top, base_y);
-        // Mast cross-bracing pattern (diagonal dots).
-        let brace_spacing = (dh / 4).max(2);
-        let mut by = mast_top;
-        while by + brace_spacing <= base_y {
-            line_dots(
-                grid,
-                mast_x as i32 - 1,
-                by as i32,
-                mast_x as i32 + 1,
-                (by + brace_spacing) as i32,
-            );
-            line_dots(
-                grid,
-                mast_x as i32 + 1,
-                by as i32,
-                mast_x as i32 - 1,
-                (by + brace_spacing) as i32,
-            );
-            by += brace_spacing;
-        }
-
-        // Jib extends right from mast top at progress 0.3–0.7.
-        if ctx.eased > 0.3 {
-            let jib_p = ((ctx.eased - 0.3) / 0.4).min(1.0);
-            let max_jib = dw.saturating_sub(mast_x + 2);
-            let jib_len = (jib_p * max_jib as f32).round() as usize;
-            let jib_tip = (mast_x + jib_len).min(dw.saturating_sub(1));
-            draw::hline(grid, mast_x, jib_tip, mast_top);
-
-            // Counter-jib extends left.
-            let cj_len = (jib_len / 3).max(1);
-            let cj_start = mast_x.saturating_sub(cj_len);
-            draw::hline(grid, cj_start, mast_x, mast_top);
-
-            // Stays: angled cables from mast top to jib tip and counter-jib end.
-            if jib_len > 2 {
-                let stay_y = (mast_top + 1).min(base_y);
-                line_dots(
-                    grid,
-                    mast_x as i32,
-                    stay_y as i32,
-                    jib_tip as i32,
-                    mast_top as i32,
-                );
-                line_dots(
-                    grid,
-                    mast_x as i32,
-                    stay_y as i32,
-                    cj_start as i32,
-                    mast_top as i32,
-                );
-            }
-
-            // Trolley rolls along jib with time.
-            if ctx.eased > 0.6 && jib_len > 1 {
-                let trolley_norm = ((ctx.time * 0.5).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
-                let trolley_x = mast_x + (trolley_norm * jib_len as f32) as usize;
-                let trolley_x = trolley_x.min(jib_tip);
-                // Trolley body.
-                draw::dot(grid, trolley_x, mast_top);
-                draw::dot(grid, trolley_x, mast_top.saturating_add(1));
-
-                // Load cable hangs from trolley.
-                let cable_len = ((dh / 3) as f32 * ctx.eased) as usize;
-                let load_y = (mast_top + 2 + cable_len).min(base_y);
-                draw::vline(grid, trolley_x, mast_top + 2, load_y);
-
-                // Load block.
-                let lx = trolley_x as i32;
-                let ly = load_y as i32;
-                draw::dot_i(grid, lx - 1, ly);
-                draw::dot_i(grid, lx, ly);
-                draw::dot_i(grid, lx + 1, ly);
-                draw::dot_i(grid, lx - 1, ly + 1);
-                draw::dot_i(grid, lx, ly + 1);
-                draw::dot_i(grid, lx + 1, ly + 1);
-            }
-        }
-
-        // Ground baseline.
-        draw::hline(grid, 0, dw.saturating_sub(1), base_y);
-
-        // Tint: steel-grey to orange for the crane.
-        let (cw, ch) = grid.dimensions();
-        let steel = crate::Color::rgb(120, 130, 145);
-        let orange = crate::Color::rgb(255, 140, 0);
-        for cy2 in 0..ch {
-            let t = cy2 as f32 / ch.max(1) as f32;
-            let color = {
-                let r = (orange.r as f32 + (steel.r as f32 - orange.r as f32) * t) as u8;
-                let g = (orange.g as f32 + (steel.g as f32 - orange.g as f32) * t) as u8;
-                let b = (orange.b as f32 + (steel.b as f32 - orange.b as f32) * t) as u8;
-                crate::Color::rgb(r, g, b)
+        // The building: concrete frame rising floor by floor beside the mast.
+        let (bx0, bx1) = (mx + 12, wi - 4);
+        let floors = ((ground - jib_y - 4) / 2).max(1);
+        let level = ctx.eased * floors as f32;
+        let whole = level as i32;
+        for f in 0..=whole.min(floors - 1) {
+            let y = ground - 2 * (f + 1);
+            let len = if f < whole {
+                bx1 - bx0
+            } else {
+                ((level - whole as f32) * (bx1 - bx0) as f32) as i32
             };
-            for cx2 in 0..cw {
-                draw::tint_row(grid, cy2, cx2, cx2, color);
+            if len <= 0 {
+                continue;
+            }
+            paint_h(grid, bx0, bx0 + len, y, concrete);
+            let mut x = bx0;
+            while x <= bx0 + len {
+                paint(grid, x, y + 1, concrete);
+                x += 6;
             }
         }
+        let roof = ground - 2 * whole;
 
+        // Pendant ties first, so the steelwork owns the cells they cross.
+        paint_line(grid, mx, apex, tail, jib_y, cable);
+        paint_line(grid, mx, apex, (mx + jib_end) / 2, top_chord, cable);
+        paint_line(grid, mx - 1, jib_y, mx, apex, yellow);
+        paint_line(grid, mx + 1, jib_y, mx, apex, yellow);
+
+        // Mast: two chords with alternating diagonal lacing.
+        paint_v(grid, mx - 1, jib_y, ground, yellow);
+        paint_v(grid, mx + 1, jib_y, ground, yellow);
+        let mut y = jib_y;
+        while y < ground {
+            let (a, b) = if (y / 3) % 2 == 0 { (-1, 1) } else { (1, -1) };
+            paint_line(grid, mx + a, y, mx + b, y + 3, yellow);
+            y += 3;
+        }
+        // Jib (Warren truss) and counter-jib with its counterweight.
+        paint_h(grid, mx, jib_end, jib_y, yellow);
+        paint_h(grid, mx, jib_end - 6, top_chord, yellow);
+        let mut x = mx;
+        while x + 2 < jib_end - 6 {
+            paint_line(grid, x, jib_y, x + 2, top_chord, yellow);
+            paint_line(grid, x + 2, top_chord, x + 4, jib_y, yellow);
+            x += 4;
+        }
+        paint_h(grid, tail, mx, jib_y, yellow);
+        for wy in jib_y..jib_y + 3 {
+            paint_h(grid, tail, tail + 3, wy, weight);
+        }
+        // Operator's cab under the jib.
+        paint_h(grid, mx + 2, mx + 3, jib_y + 1, cab);
+        paint_h(grid, mx + 2, mx + 3, jib_y + 2, cab);
+
+        // Trolley shuttles out along the jib; the hook lifts and lowers a beam.
+        let reach = (jib_end - 6 - (mx + 6)).max(1) as f32;
+        let tri = 1.0 - ((ctx.time * 0.18).fract() * 2.0 - 1.0).abs();
+        let tx = mx + 6 + (tri * reach) as i32;
+        paint_h(grid, tx - 1, tx + 1, jib_y + 1, yellow);
+        let floor_y = if tx >= bx0 - 3 && tx <= bx1 + 3 {
+            roof - 2
+        } else {
+            ground - 1
+        };
+        let bob = (ctx.time * 1.1).sin() * 0.5 + 0.5;
+        let hook = jib_y + 3 + ((floor_y - jib_y - 3).max(0) as f32 * bob) as i32;
+        paint_v(grid, tx, jib_y + 2, hook - 1, cable);
+        paint_h(grid, tx - 3, tx + 3, hook, beam);
+
+        paint_h(grid, 0, wi - 1, ground, Color::rgb(140, 110, 80));
+        Ok(())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. Colosseum
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The Colosseum's outer wall: three tiers of round arches under a windowed
+/// attic, its far end broken down in a ruined, stepped profile. Travertine is
+/// raised left to right with progress while evening light sweeps the stone.
+struct Colosseum;
+impl ProgressStyle for Colosseum {
+    fn name(&self) -> &str {
+        "colosseum"
+    }
+    fn theme(&self) -> &str {
+        "architecture"
+    }
+    fn describe(&self) -> &str {
+        "Three tiers of travertine arches under a windowed attic rise left to right, the far end broken in a ruined profile"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw < 8 || dh < 8 {
+            return Ok(());
+        }
+        grid.enable_color_support();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let stone = Color::rgb(214, 190, 146);
+        let light = Color::rgb(250, 226, 178);
+
+        let tier = (hi / 4).max(2);
+        let built = (ctx.eased * wi as f32).round() as i32;
+        let sweep = (ctx.time * 0.3).fract() * (wi + 16) as f32 - 8.0;
+        // Ruined profile: full height, then stepping down to two tiers.
+        let ruin_from = wi * 6 / 10;
+        let ruin_to = wi * 85 / 100;
+        let top_at = |x: i32| -> i32 {
+            if x < ruin_from {
+                0
+            } else if x >= ruin_to {
+                2 * tier
+            } else {
+                let t = (x - ruin_from) * 2 * tier / (ruin_to - ruin_from).max(1);
+                t - t % 2 + (x % 3 == 0) as i32
+            }
+        };
+
+        for x in 0..built.min(wi) {
+            let c = if (x as f32 - sweep).abs() < 6.0 {
+                light
+            } else {
+                stone
+            };
+            for y in top_at(x)..hi {
+                let band = y / tier; // 0 = attic, 1..=3 = arcades
+                let row = y % tier;
+                let ux = (x + 3).rem_euclid(6);
+                let solid = if band == 0 {
+                    // Attic: solid with small square windows every other bay.
+                    !((1..=2).contains(&row) && (x / 6) % 2 == 0 && (2..4).contains(&ux))
+                } else if row == 0 {
+                    true // cornice between tiers
+                } else {
+                    // Round-headed arch opening, 4 dots wide on a 6-dot bay.
+                    let inside = (1..5).contains(&ux);
+                    let crown = row == 1 && (ux == 1 || ux == 4);
+                    !inside || crown
+                };
+                if solid {
+                    paint(grid, x, y, c);
+                }
+            }
+        }
         Ok(())
     }
 }

@@ -378,17 +378,26 @@ impl ProgressStyle for Lissajous {
         "waves"
     }
     fn describe(&self) -> &str {
-        "Lissajous figure 3:2 — phase delta sweeps with progress, time rotates the knot in place"
+        "Lissajous figure 3:2 — the knot rides to the progress point on a dotted track; phase delta sweeps with progress, time rotates it in place"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let cx = (w as f32 - 1.0) / 2.0;
+        // Draw the knot in a near-square box (braille dots are roughly
+        // square) so its lobes and crossings read; stretched across the whole
+        // bar it would flatten into horizontal lines. The box rides along the
+        // bar to the progress point, trailing a dotted track.
         let cy = (h as f32 - 1.0) / 2.0;
-        let rx = cx * 0.92;
         let ry = cy * 0.92;
+        let rx = (ry * 1.5).min((w as f32 - 1.0) / 2.0);
+        let span = (w as f32 - 1.0 - 2.0 * rx).max(0.0);
+        let cx = rx + ctx.eased * span;
+        let track_end = (cx - rx).max(0.0) as usize;
+        for x in (0..track_end).step_by(2) {
+            draw::dot(grid, x, h / 2);
+        }
 
         let a = 3.0_f32;
         let b = 2.0_f32;
@@ -456,16 +465,24 @@ impl ProgressStyle for StandingWave {
         let mode = 1 + (ctx.eased * 6.0).floor() as usize; // 1..=7
         let k = mode as f32 * PI / w as f32; // wavenumber
         let omega = 2.5 * PI; // angular freq (vis only)
-        let amp = h as f32 * 0.40;
         let mid = (h / 2) as i32;
+        let amp = (mid as f32 - 0.5).max(0.0);
 
         // Draw baseline
         draw::hline(grid, 0, w.saturating_sub(1), mid as usize);
 
+        // Dotted envelope ±A·|sin kx|: the textbook "loops" outline, so the
+        // nodes and antinodes read even when the string passes through flat.
+        for xi in (0..w).step_by(3) {
+            let e = (amp * (k * xi as f32).sin().abs()) as i32;
+            draw::dot_i(grid, xi as i32, mid - e);
+            draw::dot_i(grid, xi as i32, mid + e);
+        }
+
         let mut prev_y: Option<i32> = None;
         for xi in 0..w {
             let xf = xi as f32;
-            let val = 2.0 * amp * (k * xf).sin() * (omega * ctx.time).cos();
+            let val = amp * (k * xf).sin() * (omega * ctx.time).cos();
             let dy = (mid - val as i32).clamp(0, h as i32 - 1);
             draw::dot_i(grid, xi as i32, dy);
             if let Some(py) = prev_y {
@@ -535,10 +552,13 @@ impl ProgressStyle for Interference {
         let src2_x = (wf / 2.0 + sep / 2.0).min(wf - 1.0);
         let src_y = hf / 2.0;
 
-        let lambda = wf / 4.0; // wavelength in dots
-        let k = 2.0 * PI / lambda.max(1.0);
+        // A short wavelength so many crest rings fit; only crests (one sign)
+        // are lit, so rings stay distinct and the destructive nodal lines
+        // show as dark hyperbolic gaps cutting through them.
+        let lambda = 7.0_f32; // wavelength in dots
+        let k = 2.0 * PI / lambda;
         let omega = 2.0 * PI * 1.2;
-        let threshold = 0.5_f32;
+        let threshold = 0.55_f32;
 
         for yi in 0..h {
             let yf = yi as f32;
@@ -549,7 +569,7 @@ impl ProgressStyle for Interference {
                 let s1 = (k * r1 - omega * ctx.time).sin();
                 let s2 = (k * r2 - omega * ctx.time).sin();
                 let intensity = (s1 + s2) * 0.5; // ∈ [-1, 1]
-                if intensity.abs() > threshold {
+                if intensity > threshold {
                     draw::dot(grid, xi, yi);
                 }
             }

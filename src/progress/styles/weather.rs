@@ -10,7 +10,7 @@
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 // ── registry ──────────────────────────────────────────────────────────────────
@@ -48,9 +48,36 @@ fn hash(n: u32) -> u32 {
     x.wrapping_mul(2_246_822_519)
 }
 
+// ── picture helpers ───────────────────────────────────────────────────────────
+
+/// Colour every cell overlapping the dot box `[x0, x1] × [y0, y1]`.
+fn paint(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+    if x1 < 0 || y1 < 0 || x1 < x0 || y1 < y0 {
+        return;
+    }
+    let (cx0, cx1) = ((x0.max(0) / 2) as usize, (x1 / 2) as usize);
+    let (cy0, cy1) = ((y0.max(0) / 4) as usize, (y1 / 4) as usize);
+    for cy in cy0..=cy1 {
+        draw::tint_row(grid, cy, cx0, cx1, color);
+    }
+}
+
+/// Elliptical ring of dots centred on `(cx, cy)`.
+fn ring(grid: &mut BrailleGrid, cx: f32, cy: f32, rx: f32, ry: f32) {
+    let n = ((rx + ry) * 3.0).max(8.0) as usize;
+    for i in 0..n {
+        let a = i as f32 / n as f32 * 2.0 * PI;
+        draw::dot_i(
+            grid,
+            (cx + a.cos() * rx).round() as i32,
+            (cy + a.sin() * ry).round() as i32,
+        );
+    }
+}
+
 // ── 1. Hurricane ─────────────────────────────────────────────────────────────
 
-/// Rotating spiral arms with a calm eye, intensity scales with `eased`.
+/// Satellite-view cyclone: two spiral cloud arms around a clear eye.
 struct Hurricane;
 impl ProgressStyle for Hurricane {
     fn name(&self) -> &str {
@@ -60,70 +87,79 @@ impl ProgressStyle for Hurricane {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Spiral arms rotate around a calm eye; intensity and radius grow with progress"
+        "A spinning cyclone with spiral cloud arms and a red eye tracks along its forecast path"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let cy = (h as f32 - 1.0) / 2.0;
+        let rmax = cy.min(w as f32 / 4.0);
+        let cx = rmax + 1.0 + ctx.eased * (w as f32 - 2.0 * rmax - 2.0).max(0.0);
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        // Max radius shrinks slightly from the edge.
-        let max_rx = (w / 2).saturating_sub(1) as f32;
-        let max_ry = (h / 2).saturating_sub(1) as f32;
-        let intensity = ctx.eased;
+        // Forecast track: solid behind the storm, dashed cone ahead.
+        let yi = cy.round() as i32;
+        for x in 0..w as i32 {
+            let behind = (x as f32) < cx - rmax;
+            let ahead = (x as f32) > cx + rmax && x % 4 == 0;
+            if behind && x % 2 == 0 || ahead {
+                draw::dot_i(grid, x, yi);
+            }
+        }
+        paint(grid, 0, yi, w as i32 - 1, yi, Color::rgb(255, 170, 60));
 
-        // Eye: a small empty circle, radius grows slightly with progress.
-        let eye_r = (1.0 + intensity * 2.0) as i32;
-
-        // Four spiral arms, each offset by PI/2.
-        let arms = 4usize;
-        let arm_turns = 1.5_f32;
-        let steps = 80usize;
-        for arm in 0..arms {
-            let arm_offset = arm as f32 * 2.0 * PI / arms as f32;
+        // Two spiral arms wind out of the eye wall and rotate with time.
+        let spin = -ctx.time * 2.5;
+        for arm in 0..2 {
+            let off = arm as f32 * PI + spin;
+            let steps = 70;
             for s in 0..steps {
-                let t = s as f32 / steps as f32;
-                let r_frac = t * intensity; // arm length scales with eased
-                let angle = arm_offset + t * arm_turns * 2.0 * PI + ctx.time * 1.8;
-                let rx = max_rx * r_frac;
-                let ry = max_ry * r_frac;
-                let px = cx + (angle.cos() * rx) as i32;
-                let py = cy + (angle.sin() * ry) as i32;
-                // Skip eye region.
-                let dist2 = (px - cx) * (px - cx) + (py - cy) * (py - cy);
-                if dist2 > eye_r * eye_r {
-                    draw::dot_i(grid, px, py);
+                let th = s as f32 / steps as f32 * 1.6 * PI;
+                let r = 2.2 + th / (1.6 * PI) * (rmax - 1.5);
+                for dr in [0.0_f32, 0.9] {
+                    let a = off + th;
+                    let rr = (r - dr * (1.0 - th / (1.6 * PI))).max(2.0);
+                    draw::dot_i(
+                        grid,
+                        (cx + a.cos() * rr).round() as i32,
+                        (cy + a.sin() * rr).round() as i32,
+                    );
                 }
             }
         }
-
-        // Eye wall: ring at eye radius.
-        let eye_steps = 32usize;
-        for s in 0..eye_steps {
-            let a = s as f32 / eye_steps as f32 * 2.0 * PI;
-            let ex = cx + (a.cos() * eye_r as f32) as i32;
-            let ey = cy + (a.sin() * eye_r as f32) as i32;
-            draw::dot_i(grid, ex, ey);
-        }
-
-        // Color: palette across rows.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * intensity);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
+        // Dense eye wall.
+        ring(grid, cx, cy, 1.6, 1.6);
+        let ri = rmax as i32;
+        paint(
+            grid,
+            cx as i32 - ri,
+            cy as i32 - ri,
+            cx as i32 + ri,
+            cy as i32 + ri,
+            Color::rgb(225, 240, 255),
+        );
+        paint(
+            grid,
+            cx as i32 - 1,
+            cy as i32 - 1,
+            cx as i32 + 1,
+            cy as i32 + 1,
+            Color::rgb(255, 70, 70),
+        );
         Ok(())
     }
 }
 
 // ── 2. Tornado ───────────────────────────────────────────────────────────────
 
-/// Tapering funnel that widens toward the ground; debris vortices swirl.
+/// A twisting funnel hanging from a storm cloud, tearing a path along the ground.
 struct Tornado;
 impl ProgressStyle for Tornado {
     fn name(&self) -> &str {
@@ -133,76 +169,90 @@ impl ProgressStyle for Tornado {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Tapering funnel widens toward the ground; debris particles orbit the vortex"
+        "A twisting funnel drops from a storm cloud and tears across the ground, scattering debris"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let t = ctx.time;
 
-        // Funnel centre x drifts a little with time — the wobble.
-        let base_cx = (w / 2) as f32;
-        let wobble = (ctx.time * 1.3).sin() * (w as f32 * 0.06).max(1.0);
-        let cx = (base_cx + wobble) as i32;
+        // Storm cloud: a lumpy dark ceiling across the whole bar.
+        for x in 0..wi {
+            let lump = ((x as f32 * 0.35 + t * 0.8).sin() * 1.2 + 1.6) as i32;
+            draw::vline(grid, x as usize, 0, lump.max(0) as usize);
+        }
+        paint(grid, 0, 0, wi - 1, 2, Color::rgb(120, 120, 150));
 
-        // Funnel occupies `eased` fraction of height from the top.
-        let funnel_bottom = (ctx.eased * h as f32) as usize;
-
-        // At each row y, funnel half-width grows linearly: 1 at top, max at bottom.
-        let max_hw = (w as f32 * 0.35).max(2.0);
-
-        for y in 0..funnel_bottom.min(h) {
-            let frac = if funnel_bottom <= 1 {
-                1.0f32
-            } else {
-                y as f32 / (funnel_bottom - 1) as f32
-            };
-            let hw = (frac * max_hw) as i32;
-            // Left and right edges of the funnel.
-            draw::dot_i(grid, cx - hw, y as i32);
-            draw::dot_i(grid, cx + hw, y as i32);
-            // Ground touchdown: fill the bottom ring solid.
-            if y + 1 >= funnel_bottom {
-                for dx in -hw..=hw {
-                    draw::dot_i(grid, cx + dx, y as i32);
+        // Funnel position follows progress.
+        let span = (wi - 20).max(1) as f32;
+        let fx = 10.0 + ctx.eased * span;
+        let top_y = 2;
+        let fh = (base - top_y).max(1) as f32;
+        for y in top_y..=base {
+            let u = (y - top_y) as f32 / fh;
+            // The column snakes more towards its tip.
+            let sway = (t * 3.0 + u * 4.0).sin() * 3.0 * u;
+            let cx = fx + sway - u * 2.0;
+            let hw = 10.0 * (1.0 - u).powf(1.4) + 0.8;
+            // Edges plus rotating bands across the column.
+            draw::dot_i(grid, (cx - hw).round() as i32, y);
+            draw::dot_i(grid, (cx + hw).round() as i32, y);
+            let n = (hw * 2.0) as i32;
+            for k in 0..=n {
+                let x = cx - hw + k as f32;
+                let phase = (x - cx) / hw.max(0.5) * 2.0 + t * 9.0 + y as f32 * 0.9;
+                if phase.sin() > 0.0 {
+                    draw::dot_i(grid, x.round() as i32, y);
                 }
             }
         }
+        paint(
+            grid,
+            fx as i32 - 14,
+            3,
+            fx as i32 + 12,
+            base,
+            Color::rgb(170, 190, 175),
+        );
 
-        // Debris: 8 particles orbiting at different radii and speeds.
-        let debris_count = 8usize;
-        for d in 0..debris_count {
-            let h_val = hash(d as u32);
-            let orbit_r_frac = 0.3 + (h_val & 0xFF) as f32 / 255.0 * 0.5; // 0.3..0.8
-            let orbit_rx = max_hw * orbit_r_frac * 1.4;
-            let orbit_ry = (h as f32 * 0.18).max(1.0) * orbit_r_frac;
-            let h2 = hash(h_val);
-            let orbit_y_frac = (h2 & 0xFF) as f32 / 255.0;
-            let orbit_cy = (orbit_y_frac * funnel_bottom.max(1) as f32) as i32;
-            let speed = 2.0 + (h_val >> 8 & 0xFF) as f32 / 255.0 * 4.0;
-            let phase = d as f32 / debris_count as f32 * 2.0 * PI;
-            let angle = ctx.time * speed + phase;
-            let dx = (angle.cos() * orbit_rx) as i32 + cx;
-            let dy = orbit_cy + (angle.sin() * orbit_ry) as i32;
-            draw::dot_i(grid, dx, dy);
+        // Ground ahead is intact; behind the funnel it is torn into debris.
+        let tail = fx as i32 - 4;
+        if tail + 2 < wi {
+            draw::hline(grid, (tail + 2).max(0) as usize, w - 1, base as usize);
         }
-
-        // Tint: palette from top (pale) to ground (dark).
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
+        for i in 0..24u32 {
+            let seed = hash(i * 7 + 3);
+            let x = (seed % (tail.max(1) as u32)) as i32;
+            let hop = ((t * 4.0 + i as f32).sin().abs() * 3.0) as i32;
+            draw::dot_i(grid, x, base - hop);
         }
-
+        // Debris whirling around the funnel base.
+        for i in 0..6 {
+            let a = t * 6.0 + i as f32 * 1.05;
+            draw::dot_i(
+                grid,
+                (fx - 4.0 + a.cos() * 6.0) as i32,
+                base - 2 - (a.sin().abs() * 3.0) as i32,
+            );
+        }
+        paint(grid, 0, base - 3, tail - 4, base, Color::rgb(170, 120, 70));
         Ok(())
     }
 }
 
 // ── 3. Snow accumulation ─────────────────────────────────────────────────────
 
-/// Flakes drift down; a drift pile rises from the bottom with `eased`.
+/// Snowflakes drift down onto a rising, dune-topped drift that buries a fence.
 struct SnowAccumulation;
 impl ProgressStyle for SnowAccumulation {
     fn name(&self) -> &str {
@@ -212,67 +262,72 @@ impl ProgressStyle for SnowAccumulation {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Snowflakes drift downward while a snowdrift pile rises from the bottom with progress"
+        "Star-shaped snowflakes drift down onto a white drift that rises with progress, burying a wooden fence"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let t = ctx.time;
 
-        // Drift pile: solid fill rising from the bottom.
-        let drift_h = (ctx.eased * h as f32).round() as usize;
-        let drift_top = h.saturating_sub(drift_h);
-        if drift_h > 0 {
-            // Curved top surface: sine bump.
-            for x in 0..w {
-                let bump =
-                    ((x as f32 / w.max(1) as f32 * PI * 2.0).sin() * (h as f32 * 0.06)) as i32;
-                let top = (drift_top as i32 - bump).max(0) as usize;
-                draw::vline(grid, x, top, h.saturating_sub(1));
+        // Wooden fence: posts with two rails, drawn first so snow covers it.
+        for x in (4..wi).step_by(12) {
+            draw::vline(grid, x as usize, (base - 9) as usize, base as usize);
+            draw::dot_i(grid, x, base - 10);
+        }
+        draw::hline(grid, 4, (wi - 1) as usize, (base - 7) as usize);
+        draw::hline(grid, 4, (wi - 1) as usize, (base - 3) as usize);
+        paint(grid, 0, base - 10, wi - 1, base, Color::rgb(170, 110, 60));
+
+        // The drift: solid snow up to a dune-shaped surface set by progress.
+        let depth = 1.0 + ctx.eased * (hi as f32 - 4.0);
+        for x in 0..wi {
+            let dune = (x as f32 * 0.15).sin() * 1.2 + (x as f32 * 0.05 + 1.0).sin() * 0.8;
+            let top = (base as f32 - depth + dune).round() as i32;
+            draw::vline(grid, x as usize, top.clamp(0, base) as usize, base as usize);
+        }
+        let surface = (base as f32 - depth - 1.0) as i32;
+        paint(
+            grid,
+            0,
+            surface + 3,
+            wi - 1,
+            base,
+            Color::rgb(235, 245, 255),
+        );
+
+        // Falling flakes: little five-dot stars swaying as they fall.
+        for i in 0..14u32 {
+            let x0 = (hash(i * 5 + 2) % w as u32) as f32;
+            let speed = 4.0 + (hash(i + 21) % 5) as f32;
+            let fall = (t * speed + (hash(i + 40) % 64) as f32) % (hi as f32 + 3.0) - 2.0;
+            let x = (x0 + (t * 1.5 + i as f32).sin() * 2.0) as i32;
+            let y = fall as i32;
+            if y < surface {
+                draw::dot_i(grid, x, y);
+                draw::dot_i(grid, x - 1, y);
+                draw::dot_i(grid, x + 1, y);
+                draw::dot_i(grid, x, y - 1);
+                draw::dot_i(grid, x, y + 1);
+                paint(grid, x, y, x, y, Color::rgb(255, 255, 255));
             }
         }
-
-        // Falling flakes: 12 flakes, each with own horizontal lane & phase.
-        let flake_count = 12usize;
-        for f in 0..flake_count {
-            let h_val = hash(f as u32);
-            let lane_x = (h_val & 0xFFFF) as f32 / 65535.0 * (w.saturating_sub(1)) as f32;
-            let speed = 0.6 + (h_val >> 16 & 0xFF) as f32 / 255.0 * 0.8;
-            let phase = f as f32 / flake_count as f32;
-            // Drift stops above the pile.
-            let fall_space = drift_top.saturating_sub(1);
-            if fall_space == 0 {
-                continue;
-            }
-            let cycle = (ctx.time * speed + phase).fract();
-            let fy = (cycle * fall_space as f32) as usize;
-            // Horizontal sway.
-            let sway = ((ctx.time * 1.2 + phase * 7.3).sin() * (w as f32 * 0.04)).round() as i32;
-            let fx = (lane_x as i32 + sway).clamp(0, w.saturating_sub(1) as i32);
-            draw::dot_i(grid, fx, fy as i32);
-        }
-
-        // Tint: cool blue for drift, lighter above.
-        let (cw, ch) = grid.dimensions();
-        let drift_top_cell = drift_top / 4;
-        for cy_c in 0..ch {
-            let t = if cy_c >= drift_top_cell {
-                (cy_c - drift_top_cell) as f32 / ch.saturating_sub(1).max(1) as f32
-            } else {
-                0.0
-            };
-            let color = ctx.palette.sample(t * 0.6 + 0.4 * ctx.eased);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ── 4. Hailstorm ─────────────────────────────────────────────────────────────
 
-/// Fast vertical streaks that hit the ground and bounce.
+/// Round ice pellets pelting down from a dark cloud and piling up white.
 struct Hailstorm;
 impl ProgressStyle for Hailstorm {
     fn name(&self) -> &str {
@@ -282,67 +337,64 @@ impl ProgressStyle for Hailstorm {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Dense hailstones streak straight down and bounce on impact; density ramps with progress"
+        "Round ice pellets pelt down from a dark cloud, bounce on impact and pile up white as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let t = ctx.time;
 
-        // Number of active stones grows with progress.
-        let stone_count = (2.0 + ctx.eased * 20.0).round() as usize;
+        // Storm cloud ceiling.
+        for x in 0..wi {
+            let lump = ((x as f32 * 0.4 + t * 0.6).sin() * 1.0 + 1.5) as i32;
+            draw::vline(grid, x as usize, 0, lump.max(0) as usize);
+        }
+        paint(grid, 0, 0, wi - 1, 2, Color::rgb(100, 100, 125));
 
-        for s in 0..stone_count {
-            let h_val = hash(s as u32);
-            // Horizontal position: fixed per stone.
-            let sx = (h_val & 0xFFFF) as f32 / 65535.0 * (w.saturating_sub(1)) as f32;
-            let speed = 1.8 + (h_val >> 16 & 0xFF) as f32 / 255.0 * 2.5;
-            let phase = s as f32 / stone_count.max(1) as f32;
+        // White pile along the ground, filling left to right with progress.
+        let filled = (ctx.eased * w as f32) as i32;
+        for x in 0..filled.min(wi) {
+            let mound = 2 + (hash(x as u32 / 3) % 2) as i32;
+            draw::vline(grid, x as usize, (base - mound + 1) as usize, base as usize);
+        }
+        draw::hline(grid, 0, w - 1, base as usize);
 
-            // Vertical: linear fall + bounce near bottom.
-            let cycle = (ctx.time * speed + phase).fract();
-            // Bounce: reflect off the bottom — fold the cycle around 0.5.
-            let bounce_t = if cycle < 0.85 {
-                cycle / 0.85
+        // Falling 2x2 pellets; more of them as the storm intensifies.
+        let n = 10 + (ctx.eased * 26.0) as u32;
+        let fall_h = (base - 3).max(1) as f32;
+        for i in 0..n {
+            let x = (hash(i * 3 + 1) % w as u32) as f32;
+            let speed = 22.0 + (hash(i + 5) % 10) as f32;
+            let phase = (t * speed / fall_h + (hash(i + 11) % 100) as f32 / 100.0).fract();
+            let y = 3.0 + phase * fall_h;
+            let x = x + phase * 3.0;
+            if phase > 0.93 {
+                // Bounce: pellet pops back up beside its impact point.
+                let b = (phase - 0.93) / 0.07;
+                let by = base as f32 - 2.0 - (b * PI).sin() * 3.0;
+                draw::fill_rect(grid, (x + b * 3.0) as usize, by.max(0.0) as usize, 2, 2);
             } else {
-                // Short bounce-up.
-                1.0 - (cycle - 0.85) / 0.15 * 0.25
-            };
-            let sy = (bounce_t * (h.saturating_sub(1)) as f32) as i32;
-            let sx_i = sx as i32;
-
-            // Stone: a short vertical streak (2-3 dots).
-            draw::dot_i(grid, sx_i, sy);
-            draw::dot_i(grid, sx_i, sy - 1);
-
-            // Impact flash at the very bottom when stone lands.
-            if bounce_t > 0.95 {
-                let flash_w = 3i32;
-                for dx in -flash_w..=flash_w {
-                    draw::dot_i(grid, sx_i + dx, (h.saturating_sub(1)) as i32);
-                }
+                draw::fill_rect(grid, x as usize, y as usize, 2, 2);
             }
         }
-
-        // Ground line.
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
-
-        // Cold-grey tint.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t * 0.5);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
+        paint(grid, 0, 3, wi - 1, base, Color::rgb(210, 235, 255));
         Ok(())
     }
 }
 
 // ── 5. Rainbow arc ───────────────────────────────────────────────────────────
 
-/// Concentric colour arcs drawn band by band as progress increases.
+/// Rainbow bands, red outside to violet inside, sweeping over the sky.
 struct RainbowArc;
 impl ProgressStyle for RainbowArc {
     fn name(&self) -> &str {
@@ -352,75 +404,69 @@ impl ProgressStyle for RainbowArc {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Concentric rainbow arcs appear band by band from the horizon as progress grows"
+        "A red-to-violet rainbow arcs from the horizon and sweeps across the sky as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let cx = (w as f32 - 1.0) / 2.0;
+        let cy = h as f32 - 0.5;
+        let (rx, ry) = (cx - 1.0, h as f32 - 0.5);
+        let sweep = ctx.eased * PI;
 
-        // Arc centred at the bottom-centre.
-        let cx = (w / 2) as i32;
-        let base_y = h as i32;
+        // Six concentric half-ellipse bands, drawn from the left foot onward.
+        for band in 0..6 {
+            let k = 0.97 - band as f32 * 0.1;
+            let n = (rx * 4.0) as usize;
+            for i in 0..=n {
+                let a = i as f32 / n as f32 * PI;
+                if a > sweep {
+                    break;
+                }
+                // Angle measured from the left horizon, over the top.
+                let x = cx - a.cos() * rx * k;
+                let y = cy - a.sin() * ry * k;
+                draw::dot_i(grid, x.round() as i32, y.round() as i32);
+            }
+        }
 
-        // Seven bands of the rainbow; each appears when progress passes its threshold.
-        let bands = 7usize;
-        let max_ry = (h.saturating_sub(1)).max(1) as f32;
-        let max_rx = (w / 2).saturating_sub(0) as f32;
+        // Twinkles drift along the outer band.
+        for i in 0..3 {
+            let a = ((ctx.time * 0.3 + i as f32 / 3.0).fract()) * sweep;
+            draw::dot_i(
+                grid,
+                (cx - a.cos() * (rx + 1.0)).round() as i32,
+                (cy - a.sin() * (ry + 1.0)).round() as i32,
+            );
+        }
 
-        use crate::Color;
-        let band_colors: [Color; 7] = [
-            Color::rgb(148, 0, 211), // violet
-            Color::rgb(75, 0, 130),  // indigo
-            Color::rgb(0, 0, 255),   // blue
-            Color::rgb(0, 128, 0),   // green
-            Color::rgb(255, 255, 0), // yellow
-            Color::rgb(255, 127, 0), // orange
-            Color::rgb(255, 0, 0),   // red (outermost)
+        // Colour each cell by its radial position: red outside, violet inside.
+        let bands = [
+            Color::rgb(255, 60, 60),
+            Color::rgb(255, 150, 40),
+            Color::rgb(255, 230, 60),
+            Color::rgb(70, 220, 90),
+            Color::rgb(60, 140, 255),
+            Color::rgb(170, 90, 255),
         ];
-
-        for (band, &color) in band_colors.iter().enumerate() {
-            // Band `band` becomes visible when progress crosses its threshold.
-            let threshold = band as f32 / bands as f32;
-            if ctx.eased < threshold {
-                continue;
-            }
-
-            // Partial reveal on the current outermost visible band.
-            let band_frac = ((ctx.eased - threshold) * bands as f32).clamp(0.0, 1.0);
-
-            // Radius fraction for this band: innermost (band 0) is smallest.
-            let r_frac = (band + 1) as f32 / bands as f32;
-            let rx = (max_rx * r_frac) as i32;
-            let ry = (max_ry * r_frac) as i32;
-
-            // Draw a semicircle arc (angles PI to 0, i.e. left horizon to right).
-            let steps = (rx.max(ry) * 4).max(32) as usize;
-            let arc_steps = (steps as f32 * band_frac).round() as usize;
-            for s in 0..arc_steps {
-                // Angle from PI (left) to 0 (right) so it draws left→right.
-                let a = PI - s as f32 / steps.max(1) as f32 * PI;
-                let px = cx + (a.cos() * rx as f32) as i32;
-                let py = base_y - (a.sin() * ry as f32) as i32;
-                draw::dot_i(grid, px, py);
-            }
-
-            // Apply band color.
-            let (cw, ch) = grid.dimensions();
-            for cy_c in 0..ch {
-                draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-            }
-        }
-
-        // Re-tint with palette sampled at eased to blend the per-band colors.
         let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
+        for cyc in 0..ch {
+            for cxc in 0..cw {
+                let dx = ((cxc * 2) as f32 + 0.5 - cx) / rx;
+                let dy = ((cyc * 4) as f32 + 1.5 - cy) / ry;
+                let r = (dx * dx + dy * dy).sqrt();
+                let idx = ((1.02 - r) / 0.1).floor().clamp(0.0, 5.0) as usize;
+                draw::tint_row(grid, cyc, cxc, cxc, bands[idx]);
+            }
         }
-
         Ok(())
     }
 }
@@ -482,6 +528,38 @@ impl ProgressStyle for FogRollIn {
 
 // ── 7. Barometer ─────────────────────────────────────────────────────────────
 
+/// Storm cloud icon (9 wide × 7 tall) for the low end of the dial.
+const ICON_STORM: [&str; 7] = [
+    "..###....",
+    ".#####.#.",
+    "#########",
+    "#########",
+    "....#....",
+    "...#.....",
+    "....#....",
+];
+/// Sun icon (9 wide × 7 tall) for the high end of the dial.
+const ICON_SUN: [&str; 7] = [
+    "#...#...#",
+    ".#..#..#.",
+    "...###...",
+    "#.#####.#",
+    "...###...",
+    ".#..#..#.",
+    "#...#...#",
+];
+
+/// Stamp an ASCII sprite: every `#` becomes a dot at `(x0 + col, y0 + row)`.
+fn sprite(grid: &mut BrailleGrid, x0: i32, y0: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x0 + c as i32, y0 + r as i32);
+            }
+        }
+    }
+}
+
 /// An analog pressure dial with a rotating needle driven by `eased`.
 struct Barometer;
 impl ProgressStyle for Barometer {
@@ -492,73 +570,86 @@ impl ProgressStyle for Barometer {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Analog pressure gauge: a needle sweeps from STORMY to FAIR as progress rises"
+        "Brass-rimmed pressure dial: a red needle sweeps from the storm cloud to the sun as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let cx = (w as f32 - 1.0) / 2.0;
+        let cy = h as f32 - 1.0;
+        let ry = h as f32 - 1.0;
+        let rx = (ry * 2.2).min(cx - 12.0).max(ry);
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let max_r = (w.min(h * 2) / 2).saturating_sub(2) as i32;
-
-        // Arc: semicircle from left (STORMY) to right (FAIR), opening downward.
-        // Angles: PI (left) down to 0 (right) sweeping through 0..PI (top half).
-        let arc_steps = 60usize;
-        for s in 0..=arc_steps {
-            let a = PI - s as f32 / arc_steps as f32 * PI;
-            let px = cx + (a.cos() * max_r as f32) as i32;
-            let py = cy - (a.sin() * max_r as f32) as i32; // minus: up
-            draw::dot_i(grid, px, py);
+        // Brass bezel: double half-ring along the top of the dial.
+        let n = (rx * 4.0) as usize;
+        for i in 0..=n {
+            let a = i as f32 / n as f32 * PI;
+            for k in [1.0_f32, 0.93] {
+                draw::dot_i(
+                    grid,
+                    (cx - a.cos() * rx * k).round() as i32,
+                    (cy - a.sin() * ry * k).round() as i32,
+                );
+            }
         }
+        draw::hline(
+            grid,
+            (cx - rx).max(0.0) as usize,
+            (cx + rx) as usize,
+            (hi - 1) as usize,
+        );
+        paint(grid, 0, 0, wi - 1, hi - 1, Color::rgb(210, 170, 80));
 
-        // Tick marks at 0%, 25%, 50%, 75%, 100% of the arc.
-        for tick in 0..=4 {
-            let a = PI - tick as f32 / 4.0 * PI;
-            let inner = (max_r - 3).max(1);
-            let outer = max_r;
-            for r in inner..=outer {
-                let px = cx + (a.cos() * r as f32) as i32;
-                let py = cy - (a.sin() * r as f32) as i32;
-                draw::dot_i(grid, px, py);
+        // Scale ticks inside the bezel: long every fourth.
+        for i in 0..=12 {
+            let a = i as f32 / 12.0 * PI;
+            let k0 = if i % 4 == 0 { 0.62 } else { 0.72 };
+            for k in [k0, 0.8] {
+                draw::dot_i(
+                    grid,
+                    (cx - a.cos() * rx * k).round() as i32,
+                    (cy - a.sin() * ry * k).round() as i32,
+                );
             }
         }
 
-        // Needle: points from centre toward the arc, angle driven by eased.
-        // eased=0 → left (PI), eased=1 → right (0).
-        let needle_angle = PI - ctx.eased * PI;
-        // Slow pressure tremor.
-        let tremor = (ctx.time * 6.0).sin() * 0.03;
-        let needle_angle = needle_angle + tremor;
-        let needle_len = (max_r - 2).max(1) as f32;
-        let steps = needle_len.round() as usize;
+        // Weather icons at either end of the scale.
+        let ix = (cx - rx) as i32 - 11;
+        sprite(grid, ix, hi - 8, &ICON_STORM);
+        paint(grid, ix, hi - 8, ix + 8, hi - 1, Color::rgb(120, 150, 210));
+        let sx = (cx + rx) as i32 + 3;
+        sprite(grid, sx, hi - 8, &ICON_SUN);
+        paint(grid, sx, hi - 8, sx + 8, hi - 1, Color::rgb(255, 210, 60));
+
+        // Needle: pivots at the hub, quivering slightly with time.
+        let a = ctx.eased * PI + (ctx.time * 7.0).sin() * 0.03;
+        let steps = (rx * 0.85) as i32;
         for s in 0..=steps {
-            let r = s as f32;
-            let px = cx + (needle_angle.cos() * r) as i32;
-            let py = cy - (needle_angle.sin() * r) as i32;
-            draw::dot_i(grid, px, py);
+            let k = s as f32 / rx;
+            let x = (cx - a.cos() * rx * k).round() as i32;
+            let y = (cy - a.sin() * ry * k).round() as i32;
+            draw::dot_i(grid, x, y);
+            if s > 2 {
+                paint(grid, x, y, x, y, Color::rgb(255, 60, 60));
+            }
         }
-
-        // Centre pivot.
-        draw::dot_i(grid, cx, cy);
-        draw::dot_i(grid, cx + 1, cy);
-
-        // Tint: warm high-pressure orange at right, stormy blue at left.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let color = ctx.palette.sample(ctx.eased);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
+        draw::hline(grid, cx as usize - 1, cx as usize + 1, (hi - 2) as usize);
         Ok(())
     }
 }
 
 // ── 8. Wind sock ─────────────────────────────────────────────────────────────
 
-/// A conical sock extends right; gust streak lines sweep across behind it.
+/// A striped windsock on a pole that lifts and stretches with wind speed.
 struct WindSock;
 impl ProgressStyle for WindSock {
     fn name(&self) -> &str {
@@ -568,76 +659,90 @@ impl ProgressStyle for WindSock {
         "weather"
     }
     fn describe(&self) -> &str {
-        "A windsock cone extends as gusts blow; streak lines visualise airspeed"
+        "Red-and-white striped windsock on a pole: it droops in calm air and streams out level as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased;
 
-        let mid = (h / 2) as i32;
-        // Sock extends from left pole to eased * width.
-        let sock_len = (ctx.eased * (w.saturating_sub(2)) as f32).round() as usize;
-        let pole_x = 0i32;
+        // Pole with a cap.
+        let px = 3;
+        draw::vline(grid, px as usize, 1, (hi - 1) as usize);
+        draw::hline(grid, (px - 1) as usize, (px + 1) as usize, 1);
+        draw::hline(grid, 0, (px + 3) as usize, (hi - 1) as usize);
+        paint(grid, 0, 0, px + 1, hi - 1, Color::rgb(180, 180, 190));
 
-        // Pole: vertical line at x=0.
-        draw::vline(grid, 0, 0, h.saturating_sub(1));
-
-        // Horizontal attachment rod (top half of pole).
-        let attach_y = (h / 4) as i32;
-        draw::dot_i(grid, pole_x, attach_y);
-
-        // Sock: tapered cone — wide at pole (opening_hw), narrow at tip (1).
-        let opening_hw = (h as f32 * 0.38).max(1.0) as i32;
-        for x in 0..sock_len.min(w.saturating_sub(1)) {
-            let frac = if sock_len <= 1 {
-                0.0
+        // The sock: droop angle falls and length grows as the wind rises.
+        let mouth_y = 4.5_f32;
+        let half0 = (hi as f32 * 0.22).max(1.0);
+        let droop = (1.0 - p) * 0.85;
+        let len = (12.0 + p * (w as f32 * 0.45)).min(wi as f32 - 8.0).max(4.0);
+        let stripe = (len / 5.0).max(2.0);
+        let (dx, dy) = (droop.cos(), droop.sin());
+        let steps = len as i32;
+        for s in 0..=steps {
+            let u = s as f32 / len;
+            let flutter =
+                (ctx.time * (4.0 + p * 10.0) - s as f32 * 0.5).sin() * u * (0.3 + p * 0.6);
+            let mx = px as f32 + 1.0 + dx * s as f32 - dy * flutter;
+            let my = mouth_y + dy * s as f32 + dx * flutter;
+            let half = half0 * (1.0 - 0.6 * u);
+            // A solid cross-section slice; stripes alternate every `stripe` dots.
+            let (nx, ny) = (-dy, dx);
+            let solid = ((s as f32 / stripe) as i32) % 2 == 0;
+            let n = (half * 2.0) as i32;
+            for k in 0..=n {
+                let o = -half + k as f32;
+                draw::dot_i(
+                    grid,
+                    (mx + nx * o).round() as i32,
+                    (my + ny * o).round() as i32,
+                );
+            }
+            let color = if solid {
+                Color::rgb(255, 80, 50)
             } else {
-                x as f32 / (sock_len - 1) as f32
+                Color::rgb(245, 245, 245)
             };
-            // Wind flutter: opening oscillates slightly with time.
-            let flutter = (ctx.time * 4.0 + x as f32 * 0.2).sin() * (opening_hw as f32 * 0.12);
-            let hw = ((opening_hw as f32 * (1.0 - frac) + 1.0 + flutter) as i32).max(1);
-            draw::dot_i(grid, pole_x + x as i32 + 1, mid - hw);
-            draw::dot_i(grid, pole_x + x as i32 + 1, mid + hw);
-        }
-        // Tip dot.
-        if sock_len > 0 {
-            draw::dot_i(grid, pole_x + sock_len as i32, mid);
+            paint(grid, mx as i32, my as i32, mx as i32, my as i32, color);
         }
 
-        // Gust streaks: horizontal lines scrolling left-to-right.
-        let gust_count = 5usize;
-        for g in 0..gust_count {
-            let h_val = hash(g as u32);
-            let gust_y = (h_val & 0xFF) as f32 / 255.0 * h as f32;
-            let speed = 1.2 + (h_val >> 8 & 0xFF) as f32 / 255.0 * 2.0;
-            let phase = g as f32 / gust_count as f32;
-            // Streaks scroll from left, wrap around.
-            let gust_x_frac = (ctx.time * speed + phase).fract();
-            let gust_x = (gust_x_frac * w as f32) as usize;
-            let gust_len = (w / 6).max(2);
-            let x0 = gust_x;
-            let x1 = (gust_x + gust_len).min(w.saturating_sub(1));
-            draw::hline(grid, x0, x1, gust_y as usize);
+        // Wind streaks blow past faster as the wind picks up.
+        let speed = 10.0 + p * 50.0;
+        for i in 0..5u32 {
+            let lane = 2 + (hash(i) % (hi.max(4) as u32 - 3)) as i32;
+            let x = ((ctx.time * speed + (hash(i + 9) % 200) as f32) % (wi as f32 + 20.0)) as i32;
+            let len = 3 + (p * 6.0) as i32;
+            draw::hline(
+                grid,
+                (x - len).clamp(0, wi - 1) as usize,
+                x.clamp(0, wi - 1) as usize,
+                lane as usize,
+            );
         }
-
-        // Tint.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased + ctx.eased * 0.3);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ── 9. Blizzard whiteout ─────────────────────────────────────────────────────
 
-/// Shade density ramps toward full whiteout as progress approaches 1.
+/// Pine tree silhouette (7 wide × 9 tall) for the blizzard horizon.
+const PINE: [&str; 9] = [
+    "...#...", "..###..", "...#...", ".#####.", "..###..", "#######", ".#####.", "...#...",
+    "...#...",
+];
+
+/// Wind-driven snow thickens until a cabin and pines vanish into whiteout.
 struct BlizzardWhiteout;
 impl ProgressStyle for BlizzardWhiteout {
     fn name(&self) -> &str {
@@ -647,56 +752,118 @@ impl ProgressStyle for BlizzardWhiteout {
         "weather"
     }
     fn describe(&self) -> &str {
-        "Visibility collapses into whiteout: shade density ramps to full as progress reaches 1"
+        "Wind-driven snow streaks thicken until a cabin and pine trees vanish into whiteout at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let p = ctx.eased;
+        let t = ctx.time;
 
-        // Base whiteout shade level driven by eased.
-        let base_density = ctx.eased;
-
-        for cx in 0..cw {
-            for cy_c in 0..ch {
-                // Add spatial noise and time flicker to break the uniformity.
-                let h_val = hash((cx as u32).wrapping_mul(31).wrapping_add(cy_c as u32 * 97));
-                let spatial_noise = (h_val & 0xFF) as f32 / 255.0 * 0.3;
-                let flicker = (ctx.time * 8.0 + cx as f32 * 0.7 + cy_c as f32 * 1.3).sin() * 0.08;
-                let density =
-                    (base_density + spatial_noise * base_density + flicker).clamp(0.0, 1.0);
-                let level = (density * 4.0).round() as usize;
-                draw::shade(grid, cx, cy_c, level.min(4));
+        // Horizon scene: snowy ground, pines and a cabin with a lit window,
+        // hidden column by column as the whiteout front advances.
+        let hidden = (p * w as f32) as i32;
+        draw::hline(grid, hidden.clamp(0, wi - 1) as usize, w - 1, base as usize);
+        for k in 0..6 {
+            let px = 6 + k * (wi / 6);
+            if px > hidden {
+                sprite(grid, px, base - 9, &PINE);
+                paint(
+                    grid,
+                    px,
+                    base - 8,
+                    px + 6,
+                    base - 1,
+                    Color::rgb(60, 150, 90),
+                );
             }
         }
-
-        // Particles: bright dots that blow horizontally through the whiteout.
-        let (w, h) = draw::dot_dims(grid);
-        let particle_count = (4.0 + ctx.eased * 16.0).round() as usize;
-        for p in 0..particle_count {
-            let h_val = hash(p as u32 + 500);
-            let row_frac = (h_val & 0xFFFF) as f32 / 65535.0;
-            let py = (row_frac * h.saturating_sub(1) as f32) as usize;
-            let speed = 1.0 + (h_val >> 16 & 0xFF) as f32 / 255.0 * 3.0;
-            let phase = p as f32 / particle_count.max(1) as f32;
-            let px = ((ctx.time * speed + phase).fract() * w as f32) as usize;
-            draw::dot(grid, px.min(w.saturating_sub(1)), py);
+        let cab = wi / 2 - 6;
+        if cab > hidden {
+            sprite(
+                grid,
+                cab,
+                base - 9,
+                &[
+                    ".....#.....",
+                    "....###....",
+                    "...#####...",
+                    "..#######..",
+                    ".#########.",
+                    "..#.....#..",
+                    "..#.##..#..",
+                    "..#.##..#..",
+                    "..#######..",
+                ],
+            );
+            paint(
+                grid,
+                cab,
+                base - 9,
+                cab + 10,
+                base - 1,
+                Color::rgb(190, 120, 70),
+            );
+            paint(
+                grid,
+                cab + 4,
+                base - 4,
+                cab + 5,
+                base - 3,
+                Color::rgb(255, 210, 80),
+            );
         }
 
-        // Tint: cold white-blue.
-        for cy_c in 0..ch {
-            let color = ctx.palette.sample(ctx.eased * 0.3);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
+        // Snow streaks raking sideways; more and longer as the storm grows.
+        let n = 12 + (p * 60.0) as u32;
+        for i in 0..n {
+            let lane = (hash(i * 13 + 1) % hi as u32) as i32;
+            let speed = 40.0 + (hash(i + 3) % 30) as f32;
+            let x = wi - ((t * speed + (hash(i + 7) % 400) as f32) % (wi as f32 + 10.0)) as i32;
+            let len = 2 + (p * 5.0) as i32;
+            for k in 0..len {
+                draw::dot_i(grid, x + k, lane + k / 3);
+            }
         }
-
+        // The whiteout wall itself: dense drifting flecks behind the front.
+        for y in 0..hi {
+            for x in 0..hidden.min(wi) {
+                if hash((x * 31 + y * 7) as u32 + (t * 8.0) as u32) % 3 != 0 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        paint(grid, 0, 0, hidden - 1, hi - 1, Color::rgb(235, 240, 250));
         Ok(())
     }
 }
 
 // ── 10. Cumulonimbus ─────────────────────────────────────────────────────────
 
-/// Cloud builds vertically into a thunderhead, then rain falls beneath.
+/// Filled disc of dots centred on `(cx, cy)`.
+fn disc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
+    let r2 = r * r + 0.35;
+    for y in (cy - r).floor() as i32..=(cy + r).ceil() as i32 {
+        for x in (cx - r).floor() as i32..=(cx + r).ceil() as i32 {
+            let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+            if dx * dx + dy * dy <= r2 {
+                draw::dot_i(grid, x, y);
+            }
+        }
+    }
+}
+
+/// Cloud builds vertically into an anvil-topped thunderhead with rain and lightning.
 struct Cumulonimbus;
 impl ProgressStyle for Cumulonimbus {
     fn name(&self) -> &str {
@@ -706,95 +873,109 @@ impl ProgressStyle for Cumulonimbus {
         "weather"
     }
     fn describe(&self) -> &str {
-        "A cloud tower builds upward into a thunderhead, then rain streaks fall below"
+        "A puffy cumulus towers up into an anvil-topped thunderhead, then rain and lightning fall from its base"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased;
+        let t = ctx.time;
+        let s = hi as f32 / 16.0;
+        let cx = wi as f32 / 2.0;
+        let base_y = 9.0 * s;
 
-        // The bar is divided: top 60% = cloud building, bottom 40% = rain.
-        let cloud_zone = (h as f32 * 0.6) as usize;
-        let rain_zone_top = cloud_zone;
-
-        // Cloud anvil: top half fills with irregular lobes as progress grows.
-        // Each lobe is an ellipse centred along the width at a fixed height.
-        let lobe_count = 5usize;
-        let cloud_height = (ctx.eased * cloud_zone as f32).round() as usize;
-
-        for lobe in 0..lobe_count {
-            let lobe_cx = (lobe as f32 + 0.5) / lobe_count as f32 * w as f32;
-            // Lobes vary in width.
-            let h_val = hash(lobe as u32 + 200);
-            let lobe_rx = (w as f32 / lobe_count as f32 * 0.6
-                + (h_val & 0xFF) as f32 / 255.0 * w as f32 * 0.08)
-                .max(2.0);
-            let lobe_ry = cloud_height as f32 * (0.5 + (h_val >> 8 & 0xFF) as f32 / 255.0 * 0.5);
-            let lobe_cy = (cloud_zone.saturating_sub(1)) as f32;
-
-            // Animate lobe tops with a slow boil.
-            let boil = (ctx.time * 0.8 + lobe as f32 * 1.4).sin() * cloud_height as f32 * 0.04;
-
-            let steps = 40usize;
-            for s in 0..=steps {
-                let a = s as f32 / steps as f32 * 2.0 * PI;
-                let ex = (lobe_cx + a.cos() * lobe_rx + boil).round() as i32;
-                let ey = (lobe_cy - (a.sin().abs() * lobe_ry)).round() as i32;
-                // Only the top hemisphere (a.sin() >= 0 draws the fluffy top).
-                if a.sin() >= 0.0 {
-                    draw::dot_i(grid, ex, ey);
-                }
-                // Fill interior.
-                if ey >= 0 && ey < cloud_zone as i32 {
-                    let ey_fill = ey;
-                    draw::dot_i(grid, ex, ey_fill);
-                    draw::dot_i(grid, ex, lobe_cy as i32);
-                    // Vertical fill from ey to base.
-                    if ey < lobe_cy as i32 {
-                        draw::vline(
-                            grid,
-                            ex.max(0) as usize,
-                            ey.max(0) as usize,
-                            lobe_cy as usize,
-                        );
-                    }
-                }
+        // Billowing base: a row of puffs that widens as the cell matures.
+        let half = 6.0 + p * 12.0;
+        for i in 0..=(half * 2.0 / 3.0) as i32 {
+            let x = cx - half + i as f32 * 3.0;
+            let bob = (t * 1.5 + x * 0.3).sin() * 0.4;
+            disc(grid, x, base_y - 1.0 + bob, (2.2 + p) * s);
+        }
+        // Tower: puffs stacked upward to a height set by progress.
+        let top = base_y - p * 7.5 * s;
+        for i in 1..=((base_y - top) / 2.0).floor() as i32 {
+            let y = base_y - 2.0 * i as f32;
+            let wobble = (t * 2.0 + y).sin() * 0.8;
+            disc(grid, cx - 4.0 + wobble, y, 3.5 * s);
+            disc(grid, cx + 4.0 - wobble, y - 0.5, 3.5 * s);
+        }
+        // Anvil: a flat, wind-sheared shelf once the tower hits the ceiling.
+        if p > 0.6 {
+            let spread = (p - 0.6) / 0.4 * 26.0;
+            let (a0, a1) = ((cx - 8.0 - spread * 0.6) as i32, (cx + 8.0 + spread) as i32);
+            for row in 0..(3.0 * s).max(1.0) as i32 {
+                draw::hline(
+                    grid,
+                    a0.max(0) as usize,
+                    a1.clamp(0, wi - 1) as usize,
+                    row as usize,
+                );
             }
         }
+        paint(
+            grid,
+            0,
+            0,
+            wi - 1,
+            (base_y - 4.0) as i32,
+            Color::rgb(245, 245, 255),
+        );
+        paint(
+            grid,
+            0,
+            (base_y - 3.0) as i32,
+            wi - 1,
+            (base_y + 2.0) as i32,
+            Color::rgb(150, 160, 185),
+        );
 
-        // Rain streaks below cloud zone — appear only after cloud is 50% built.
-        if ctx.eased > 0.5 {
-            let rain_intensity = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
-            let rain_count = (2.0 + rain_intensity * 14.0).round() as usize;
-            let rain_h = h.saturating_sub(rain_zone_top);
-            if rain_h > 0 {
-                for r in 0..rain_count {
-                    let h_val = hash(r as u32 + 400);
-                    let rx = (h_val & 0xFFFF) as f32 / 65535.0 * (w.saturating_sub(1)) as f32;
-                    let speed = 1.5 + (h_val >> 16 & 0xFF) as f32 / 255.0 * 2.0;
-                    let phase = r as f32 / rain_count.max(1) as f32;
-                    let cycle = (ctx.time * speed + phase).fract();
-                    let ry = rain_zone_top + (cycle * rain_h as f32) as usize;
-                    draw::dot(grid, rx as usize, ry.min(h.saturating_sub(1)));
-                    draw::dot(grid, rx as usize, (ry + 1).min(h.saturating_sub(1)));
-                }
+        // Rain shafts below the base once the cloud is deep enough.
+        if p > 0.35 {
+            let n = ((p - 0.35) * 30.0) as u32;
+            for i in 0..n {
+                let rx = cx - half + (hash(i) % ((half * 2.0) as u32 + 1)) as f32;
+                let fall = (t * 14.0 + (hash(i + 77) % 16) as f32) % (hi as f32 - base_y);
+                let ry = (base_y + 2.0 + fall) as i32;
+                draw::dot_i(grid, rx as i32 - (fall * 0.2) as i32, ry);
+                draw::dot_i(grid, rx as i32 - (fall * 0.2) as i32, ry + 1);
             }
+            paint(
+                grid,
+                0,
+                (base_y + 3.0) as i32,
+                wi - 1,
+                hi - 1,
+                Color::rgb(90, 150, 255),
+            );
         }
-
-        // Tint: dark grey cloud, light blue rain.
-        let (cw, ch) = grid.dimensions();
-        let cloud_top_cell = 0;
-        let rain_cell = (rain_zone_top / 4).min(ch.saturating_sub(1));
-        for cy_c in cloud_top_cell..rain_cell.min(ch) {
-            let color = ctx.palette.sample(0.3 * ctx.eased);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
+        // Lightning: a jagged bolt flickers out of the mature cell.
+        if p > 0.75 && (t * 0.9).fract() < 0.2 {
+            let bx = (cx + 6.0 + (hash((t * 0.9) as u32) % 10) as f32) as i32;
+            let mut y = (base_y + 1.0) as i32;
+            let mut x = bx;
+            while y < hi {
+                draw::dot_i(grid, x, y);
+                y += 1;
+                x += if y % 4 < 2 { 1 } else { -1 };
+            }
+            paint(
+                grid,
+                bx - 2,
+                (base_y + 2.0) as i32,
+                bx + 2,
+                hi - 1,
+                Color::rgb(255, 240, 80),
+            );
         }
-        for cy_c in rain_cell..ch {
-            let color = ctx.palette.sample(ctx.eased * 0.7 + 0.3);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }

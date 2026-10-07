@@ -265,7 +265,7 @@ impl ProgressStyle for ArcSweep {
 
 // ─── 4. DualArc ──────────────────────────────────────────────────────────────
 
-/// Two counter-rotating half-arcs on the same circle.
+/// Two counter-rotating arcs on concentric dotted tracks around a hub.
 struct DualArc;
 
 impl ProgressStyle for DualArc {
@@ -276,13 +276,23 @@ impl ProgressStyle for DualArc {
         "spinner"
     }
     fn describe(&self) -> &str {
-        "Two half-arcs spinning in opposite directions on the same ring"
+        "Two thick arcs counter-rotating on concentric dotted tracks around a \
+         hub — outer clockwise, inner anticlockwise"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cx, cy) = dot_center(grid);
         let (rx, ry) = spinner_radii(grid);
         let arc_span = PI * 0.55;
         let t = ctx.time * 2.0 * PI * 0.7;
+        // Sparse guide tracks so the two arcs read as concentric rings.
+        for k in 0..16 {
+            let a = k as f32 * PI / 8.0;
+            dot_ellipse(grid, cx, cy, rx, ry, a);
+            if k % 2 == 0 {
+                dot_ellipse(grid, cx, cy, rx * 0.62, ry * 0.62, a + PI / 16.0);
+            }
+        }
+        draw::dot_i(grid, cx as i32, cy as i32);
         // Outer forward arc and inner counter-rotating arc, both doubled.
         draw_arc_ellipse(grid, cx, cy, rx, ry, t, t + arc_span);
         draw_arc_ellipse(grid, cx, cy, rx - 1.0, ry - 0.6, t, t + arc_span);
@@ -560,7 +570,7 @@ impl ProgressStyle for Radar {
 
 // ─── 10. Ellipsis ────────────────────────────────────────────────────────────
 
-/// Three dots that light in sequence (· ·· ···) — the "Loading..." cycle.
+/// Three round dots that pop in sequence (· ·· ···) — the "Loading..." cycle.
 struct Ellipsis;
 
 impl ProgressStyle for Ellipsis {
@@ -571,43 +581,73 @@ impl ProgressStyle for Ellipsis {
         "spinner"
     }
     fn describe(&self) -> &str {
-        "Three-dot ellipsis cycling · ·· ··· — the classic Loading... indicator"
+        "Three round dots on a baseline cycling · ·· ··· — each new dot pops \
+         in with a hop while unfilled slots wait as faint ghosts"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cw, ch) = grid.dimensions();
         if cw == 0 || ch == 0 {
             return Ok(());
         }
-        // Five bouncing dots: a sine wave of delay travels down the row.
         let (dw, dh) = draw::dot_dims(grid);
-        let dot_count = 5usize;
-        let spacing = (dw / (dot_count + 1)).max(4);
-        let mid_y = ch / 2;
-        for i in 0..dot_count {
-            let x0 = (spacing * (i + 1)) as f32;
-            let phase = ctx.time * PI - i as f32 * 0.7;
-            // abs() keeps every dot mid-flight — a juggle, not a slump.
-            let bounce = phase.sin().abs();
-            let y0 = dh as f32 - 4.0 - bounce * (dh as f32 - 6.0);
-            // Each dot is a small filled knot.
-            for dy in 0..2i32 {
-                for dx in -1..=1i32 {
-                    draw::dot_i(grid, x0 as i32 + dx, y0 as i32 + dy);
+        // Dot size and pitch scale with the grid height (4×4 at 16 dots tall).
+        let size = (dh / 3).clamp(1, 5) as i32;
+        let pitch = (size * 2 + 1).max(2);
+        let total = pitch * 2 + size;
+        let x_start = (dw as i32 - total) / 2;
+        let base_y = (dh as i32 * 3 / 4).min(dh as i32 - 1);
+
+        // Cycle: 0 → 1 → 2 → 3 dots, holding briefly on "···".
+        let cycle = (ctx.time * 1.6).rem_euclid(4.0);
+        let shown = cycle.floor() as i32;
+        let frac = cycle.fract();
+
+        for i in 0..3i32 {
+            let x0 = x_start + i * pitch;
+            let visible = i < shown;
+            // The newest dot hops up as it appears, settling over the beat.
+            let hop = if visible && i == shown - 1 {
+                ((1.0 - frac) * PI * 0.5).sin() * (dh as f32 * 0.25)
+            } else {
+                0.0
+            };
+            let y0 = base_y - size + 1 - hop.round() as i32;
+            if visible {
+                for dy in 0..size {
+                    for dx in 0..size {
+                        // Knock the corners off for a round dot.
+                        let corner =
+                            size >= 3 && (dx == 0 || dx == size - 1) && (dy == 0 || dy == size - 1);
+                        if !corner {
+                            draw::dot_i(grid, x0 + dx, y0 + dy);
+                        }
+                    }
                 }
+            } else {
+                // Ghost slot: a short dash on the baseline.
+                draw::dot_i(grid, x0 + size / 2, base_y);
+                draw::dot_i(grid, x0 + (size - 1) / 2, base_y);
             }
-            let color = ctx.palette.sample(i as f32 / dot_count as f32);
-            let cell_x = (x0 as usize / 2).min(cw.saturating_sub(1));
-            let cell_y = ((y0 as usize) / 4).min(ch.saturating_sub(1));
-            draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+            let tr = ctx.palette.track;
+            let color = if visible {
+                ctx.palette.sample(i as f32 / 2.0)
+            } else {
+                Color::rgb(
+                    tr.r.saturating_add(60),
+                    tr.g.saturating_add(60),
+                    tr.b.saturating_add(70),
+                )
+            };
+            let cx0 = (x0.max(0) as usize / 2).min(cw - 1);
+            let cx1 = ((x0 + size - 1).max(0) as usize / 2).min(cw - 1);
+            for cy in 0..ch {
+                draw::tint_row(grid, cy, cx0, cx1, color);
+            }
         }
-        let _ = mid_y;
         Ok(())
     }
 }
 
-// ─── 11. GrowingArc ──────────────────────────────────────────────────────────
-
-/// An arc that grows then shrinks as it rotates (Material / Android spinner).
 struct GrowingArc;
 
 impl ProgressStyle for GrowingArc {

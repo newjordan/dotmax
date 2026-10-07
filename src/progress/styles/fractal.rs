@@ -61,73 +61,94 @@ impl ProgressStyle for MandelbrotEscape {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Mandelbrot set rendered as braille: escape-time threshold rises with progress, \
-         viewport pans and zooms with time."
+        "The Mandelbrot set's cardioid-and-bulb silhouette at the bar's centre, with its \
+         escape-time equipotential lines spreading outward to fill the bar as progress rises \
+         and rippling with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // Max iterations scales with eased progress (2..=48).
-        let max_iter = (2.0 + ctx.eased * 46.0) as u32;
-
-        // Animate: gentle zoom and pan into the Seahorse Valley area.
-        let zoom = 2.5 / (1.0 + ctx.time * 0.05);
-        let cx_center = -0.7269 - ctx.time * 0.002;
-        let cy_center = 0.1889;
-
-        let aspect = dw as f32 / dh as f32;
+        // Uniform scale: the set's body (|Im| ≤ 1.05) fits the bar height.
+        let s = (dh as f32 / 2.1).max(1.0);
+        let (ox, oy) = (dw as f32 * 0.5, dh as f32 * 0.5);
+        let (cw, ch) = grid.dimensions();
+        let mut inside = vec![0u8; cw * ch];
+        // Smooth escape count μ per dot; NaN marks the set's interior.
+        let mut field = vec![f32::NAN; dw * dh];
 
         for py in 0..dh {
             for px in 0..dw {
-                // Map dot to complex plane.
-                let cr = cx_center + (px as f32 / dw as f32 - 0.5) * zoom * aspect;
-                let ci = cy_center + (py as f32 / dh as f32 - 0.5) * zoom;
-
-                let mut zr = 0.0f32;
-                let mut zi = 0.0f32;
-                let mut escaped = false;
-                for _ in 0..max_iter {
-                    let zr2 = zr * zr;
-                    let zi2 = zi * zi;
-                    if zr2 + zi2 > 4.0 {
-                        escaped = true;
-                        break;
-                    }
-                    let new_zr = zr2 - zi2 + cr;
+                let cr = -0.55 + (px as f32 + 0.5 - ox) / s;
+                let ci = (py as f32 + 0.5 - oy) / s;
+                let (mut zr, mut zi) = (0.0f32, 0.0f32);
+                let mut n = 0u32;
+                while n < 40 && zr * zr + zi * zi <= 256.0 {
+                    let t = zr * zr - zi * zi + cr;
                     zi = 2.0 * zr * zi + ci;
-                    zr = new_zr;
+                    zr = t;
+                    n += 1;
                 }
-
-                // Points that escape → lit; interior stays dark (classic look).
-                if escaped {
-                    draw::dot_i(grid, px as i32, py as i32);
+                if n >= 40 {
+                    draw::dot(grid, px, py);
+                    inside[(py / 4) * cw + px / 2] += 1;
+                    continue;
                 }
+                let lz = (zr * zr + zi * zi).max(1.0001).ln() * 0.5;
+                let mu = n as f32 + 1.0 - lz.max(1e-4).ln() / std::f32::consts::LN_2;
+                field[py * dw + px] = mu;
             }
         }
 
-        // Tint the filled portion by progress.
-        let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..filled_cells.min(cw) {
-                let t = if cw <= 1 {
-                    0.5
+        // Equipotential lines = where the banded μ steps between neighbours.
+        // They spread from the set (high μ) outward (low μ) as progress rises.
+        let mu_min = 7.0 * (1.0 - ctx.eased) - 0.5;
+        let band = |mu: f32| ((mu + 1.0).ln() * 4.5 - ctx.time * 0.8).floor() as i32;
+        for py in 0..dh {
+            for px in 0..dw {
+                let mu = field[py * dw + px];
+                if mu.is_nan() || mu < mu_min {
+                    continue;
+                }
+                let b = band(mu);
+                let right = if px + 1 < dw {
+                    field[py * dw + px + 1]
                 } else {
-                    cx as f32 / (cw - 1) as f32
+                    mu
                 };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+                let down = if py + 1 < dh {
+                    field[(py + 1) * dw + px]
+                } else {
+                    mu
+                };
+                let edge = |m: f32| !m.is_nan() && band(m) != b;
+                if edge(right) || edge(down) {
+                    draw::dot(grid, px, py);
+                }
             }
         }
 
+        // One colour per cell: the set itself glows, equipotentials fade outward.
+        grid.enable_color_support();
+        let half = cw as f32 * 0.5;
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let c = if inside[cy * cw + cx] >= 3 {
+                    ctx.palette.start
+                } else {
+                    let d = ((cx as f32 + 0.5 - half).abs() / half.max(1.0)).min(1.0);
+                    ctx.palette.sample(0.25 + d * 0.75)
+                };
+                let _ = grid.set_cell_color(cx, cy, c);
+            }
+        }
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. Julia set  z → z² + c,  c = 0.7885·e^(i·θ)
+// 2. Julia sets  z → z² + c — basilica, rabbit, Siegel disk
 // ---------------------------------------------------------------------------
 
 struct JuliaSet;
@@ -139,56 +160,72 @@ impl ProgressStyle for JuliaSet {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Julia set with c=0.7885·e^(i·θ), θ animated by time; resolution and iteration \
-         depth grow with progress."
+        "Three filled Julia sets side by side — the basilica (c=−1), Douady's rabbit and the \
+         spiralling Siegel disk — each sharpening from a round blob into its true shape as \
+         progress raises its iteration depth; c trembles gently with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh < 2 {
             return Ok(());
         }
-
-        let theta = ctx.time * 0.4;
-        let cr = 0.7885 * theta.cos();
-        let ci = 0.7885 * theta.sin();
-
-        let max_iter = (4.0 + ctx.eased * 44.0) as u32;
-        let scale = 1.5;
-
-        for py in 0..dh {
-            for px in 0..dw {
-                let mut zr = (px as f32 / dw as f32 - 0.5) * scale * 2.0;
-                let mut zi = (py as f32 / dh as f32 - 0.5) * scale * 2.0;
-
-                let mut iters = 0u32;
-                while iters < max_iter && zr * zr + zi * zi <= 4.0 {
-                    let new_zr = zr * zr - zi * zi + cr;
-                    zi = 2.0 * zr * zi + ci;
-                    zr = new_zr;
-                    iters += 1;
-                }
-
-                if iters < max_iter {
-                    draw::dot_i(grid, px as i32, py as i32);
-                }
-            }
-        }
-
-        // Palette tint: columns cycle through hue based on progress.
+        // (c, half-width, half-height) of each set's bounding box.
+        const SETS: [(f32, f32, f32, f32); 3] = [
+            (-1.0, 0.0, 1.62, 0.78),
+            (-0.123, 0.745, 1.25, 1.2),
+            (-0.391, -0.587, 1.25, 1.2),
+        ];
+        let n = if dw >= dh * 4 { 3 } else { 1 };
+        let pw = dw as f32 / n as f32;
+        let wob = 0.008 * (ctx.time * 1.3).sin();
         let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            for cx in 0..cw {
-                let t = (cx as f32 / cw as f32 + ctx.time * 0.1).fract();
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        for (k, &(cr, ci, hw, hh)) in SETS.iter().take(n).enumerate() {
+            let local = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+            let s = ((pw - 2.0) / (2.0 * hw)).min(dh as f32 / (2.0 * hh));
+            let ox = pw * (k as f32 + 0.5);
+            let oy = dh as f32 * 0.5;
+            if local <= 0.0 {
+                // Waiting panel: just its centre point, c's critical orbit start.
+                draw::dot_i(grid, ox as i32, oy as i32);
+                continue;
+            }
+            // Shallow depths give a blob; by ~30 iterations the set has its true outline.
+            let max_iter = (2.0 + local * 30.0) as u32;
+            let (cr, ci) = (cr + wob, ci + wob * 0.5);
+            let x_lo = (ox - hw * s).max(0.0) as usize;
+            let x_hi = ((ox + hw * s) as usize).min(dw);
+            for py in 0..dh {
+                for px in x_lo..x_hi {
+                    let mut zr = (px as f32 + 0.5 - ox) / s;
+                    let mut zi = (py as f32 + 0.5 - oy) / s;
+                    let mut it = 0u32;
+                    while it < max_iter && zr * zr + zi * zi <= 4.0 {
+                        let t = zr * zr - zi * zi + cr;
+                        zi = 2.0 * zr * zi + ci;
+                        zr = t;
+                        it += 1;
+                    }
+                    if it >= max_iter {
+                        draw::dot(grid, px, py);
+                    }
+                }
+            }
+            // Panel colour: finished sets take the palette's end, growing ones its start.
+            let c = ctx.palette.sample(0.2 + local * 0.8);
+            let c0 = (pw * k as f32 / 2.0) as usize;
+            let c1 = ((pw * (k + 1) as f32 / 2.0) as usize).min(cw);
+            for cy in 0..ch {
+                for cx in c0..c1 {
+                    draw::tint_row(grid, cy, cx, cx, c);
+                }
             }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3. Sierpinski triangle — chaos-game IFS
+// 3. Sierpinski triangle — Pascal's triangle mod 2
 // ---------------------------------------------------------------------------
 
 struct SierpinskiTriangle;
@@ -200,61 +237,120 @@ impl ProgressStyle for SierpinskiTriangle {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Sierpinski triangle via the chaos game (random midpoint IFS); point count \
-         grows with progress, triangle rotates with time."
+        "A row of Sierpinski triangles built from Pascal's triangle mod 2: each starts as a \
+         solid triangle and subdivides level by level, left to right, as progress rises; a \
+         chaos-game walker hops between vertices with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let rows = dh as i32;
+        // Levels available at this height: 16 rows → 4 halvings.
+        let dmax = 32 - (dh.max(2) as u32 - 1).leading_zeros();
+        let base = 2 * rows - 1;
+        let n = ((dw as i32 + base / 2) / base.max(1)).max(1);
+        let pitch = dw as f32 / n as f32;
+        let q = ctx.eased * n as f32;
 
-        let n_points = (10.0 + ctx.eased * 2990.0) as u32;
-
-        // Three vertices of the triangle, rotated by time.
-        let rot = ctx.time * 0.3;
-        let vertices: [(f32, f32); 3] = [
-            (0.5 + 0.45 * (rot).cos(), 0.5 + 0.45 * (rot).sin()),
-            (
-                0.5 + 0.45 * (rot + 2.094).cos(),
-                0.5 + 0.45 * (rot + 2.094).sin(),
-            ),
-            (
-                0.5 + 0.45 * (rot + 4.189).cos(),
-                0.5 + 0.45 * (rot + 4.189).sin(),
-            ),
-        ];
-
-        // Seed — iterate once without drawing to warm up.
-        let mut px = 0.5f32;
-        let mut py = 0.5f32;
-        for i in 0..n_points + 20 {
-            let v = (hash(i.wrapping_mul(1_000_003)) % 3) as usize;
-            px = (px + vertices[v].0) * 0.5;
-            py = (py + vertices[v].1) * 0.5;
-            if i >= 20 {
-                let dx = (px * dw as f32) as i32;
-                let dy = (py * dh as f32) as i32;
-                draw::dot_i(grid, dx, dy);
+        for i in 0..n {
+            let apex = ((i as f32 + 0.5) * pitch) as i32;
+            let local = (q - i as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                // Not started yet: just the outline of the triangle to come.
+                for r in 0..rows {
+                    draw::dot_i(grid, apex - r, r);
+                    draw::dot_i(grid, apex + r, r);
+                }
+                for k in 0..rows {
+                    draw::dot_i(grid, apex - rows + 1 + 2 * k, rows - 1);
+                }
+                continue;
+            }
+            // Depth 0 = solid triangle, dmax = full Pascal-mod-2 detail.
+            let depth = ((local * (dmax as f32 + 0.999)) as u32).min(dmax);
+            let sh = dmax - depth;
+            for r in 0..rows {
+                for k in 0..=r {
+                    let (kb, rb) = ((k as u32) >> sh, (r as u32) >> sh);
+                    if kb & (rb - kb) == 0 {
+                        draw::dot_i(grid, apex - r + 2 * k, r);
+                    }
+                }
             }
         }
 
-        // Tint by row.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = cy as f32 / ch.max(1) as f32;
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), ctx.palette.sample(t));
+        // Chaos-game walker: midpoint hops toward random vertices of the active triangle.
+        let active = (q.floor() as i32).clamp(0, n - 1);
+        let apex = (active as f32 + 0.5) * pitch;
+        let verts = [
+            (apex, 0.0),
+            (apex - (rows - 1) as f32, (rows - 1) as f32),
+            (apex + (rows - 1) as f32, (rows - 1) as f32),
+        ];
+        let seed = (ctx.time * 10.0).max(0.0) as u32;
+        let (mut wx, mut wy) = (apex, rows as f32 * 0.6);
+        for j in 0..12u32 {
+            let v = verts[(hash(seed.wrapping_add(j)) % 3) as usize];
+            wx = (wx + v.0) * 0.5;
+            wy = (wy + v.1) * 0.5;
         }
 
+        grid.enable_color_support();
+        let (cw, ch) = grid.dimensions();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let x = cx as f32 * 2.0 + 1.0;
+                let tri = ((x / pitch).floor() as i32).clamp(0, n - 1);
+                let done = q - tri as f32;
+                let c = if done <= 0.0 {
+                    ctx.palette.track
+                } else {
+                    ctx.palette
+                        .sample((cy as f32 / ch.max(1) as f32 + tri as f32 * 0.3).fract())
+                };
+                let _ = grid.set_cell_color(cx, cy, c);
+            }
+        }
+        draw::dot_i(grid, wx as i32, wy as i32);
+        draw::dot_i(grid, wx as i32 + 1, wy as i32);
+        let _ = grid.set_cell_color(
+            (wx.max(0.0) as usize) / 2,
+            (wy.max(0.0) as usize) / 4,
+            crate::Color::rgb(255, 255, 255),
+        );
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 4. Koch snowflake curve — L-system recursion
+// 4. Koch curve — recursive middle-third bumps along the bar
 // ---------------------------------------------------------------------------
 
 struct KochCurve;
+
+/// Koch curve vertices from `a` to `b` at recursion `depth`, bump on the
+/// screen-up side. Appends every vertex after `a`.
+fn koch_points(a: (f32, f32), b: (f32, f32), depth: u32, pts: &mut Vec<(f32, f32)>) {
+    if depth == 0 {
+        pts.push(b);
+        return;
+    }
+    let (dx, dy) = ((b.0 - a.0) / 3.0, (b.1 - a.1) / 3.0);
+    let p1 = (a.0 + dx, a.1 + dy);
+    let p3 = (a.0 + 2.0 * dx, a.1 + 2.0 * dy);
+    // Rotate the middle third by −60° (screen y grows downward → bump goes up).
+    let p2 = (
+        p1.0 + dx * 0.5 + dy * 0.866_025,
+        p1.1 + dy * 0.5 - dx * 0.866_025,
+    );
+    koch_points(a, p1, depth - 1, pts);
+    koch_points(p1, p2, depth - 1, pts);
+    koch_points(p2, p3, depth - 1, pts);
+    koch_points(p3, b, depth - 1, pts);
+}
+
 impl ProgressStyle for KochCurve {
     fn name(&self) -> &str {
         "koch-curve"
@@ -263,76 +359,61 @@ impl ProgressStyle for KochCurve {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Koch snowflake drawn as a dot polyline; L-system recursion depth grows \
-         with progress (0..=4), rotated and scaled by time."
+        "Koch curve laid along the bar: each middle third grows a triangular bump, again and \
+         again — progress rewrites the line left to right at each finer level (straight line → \
+         one bump → 4 → 16 → 64), and a spark runs along the finished curve with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh == 0 {
             return Ok(());
         }
+        // Each Koch span is √3/6 ≈ 0.29 as tall as it is long; use as many
+        // side-by-side spans as needed to fit the bar's height.
+        let max_len = ((dh as f32 - 1.0) / 0.289).max(2.0);
+        let spans = ((dw as f32 / max_len).ceil() as usize).clamp(1, 16);
+        let span = (dw as f32 - 1.0) / spans as f32;
+        let base = dh as f32 - 1.0;
 
-        let depth = (ctx.eased * 4.0).floor() as u32;
+        let levels = 5.0f32;
+        let stage = (ctx.eased.clamp(0.0, 1.0) * levels).min(levels - 1e-3);
+        let depth = stage as u32;
+        let split = stage.fract() * (dw as f32);
 
-        // Collect Koch curve segment endpoints via recursive subdivision.
-        fn koch_points(ax: f32, ay: f32, bx: f32, by: f32, depth: u32, pts: &mut Vec<(f32, f32)>) {
-            if depth == 0 {
-                pts.push((bx, by));
-                return;
-            }
-            let dx = bx - ax;
-            let dy = by - ay;
-            // p1 = 1/3 of the way
-            let p1x = ax + dx / 3.0;
-            let p1y = ay + dy / 3.0;
-            // p3 = 2/3 of the way
-            let p3x = ax + 2.0 * dx / 3.0;
-            let p3y = ay + 2.0 * dy / 3.0;
-            // p2 = peak of the outward triangle (60° rotation of the 1/3 segment)
-            let p2x = p1x + (dx / 3.0) * 0.5 - (dy / 3.0) * 0.866;
-            let p2y = p1y + (dy / 3.0) * 0.5 + (dx / 3.0) * 0.866;
-            koch_points(ax, ay, p1x, p1y, depth - 1, pts);
-            koch_points(p1x, p1y, p2x, p2y, depth - 1, pts);
-            koch_points(p2x, p2y, p3x, p3y, depth - 1, pts);
-            koch_points(p3x, p3y, bx, by, depth - 1, pts);
+        let mut old = Vec::new();
+        let mut new = Vec::new();
+        for s in 0..spans {
+            let a = (s as f32 * span, base);
+            let b = ((s + 1) as f32 * span, base);
+            old.push(a);
+            koch_points(a, b, depth, &mut old);
+            new.push(a);
+            koch_points(a, b, (depth + 1).min(5), &mut new);
         }
-
-        // Three sides of a snowflake, centred in the dot grid.
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (dw.min(dh * 2) as f32 * 0.42).max(1.0);
-        let rot = ctx.time * 0.2;
-
-        let tri: Vec<(f32, f32)> = (0..3)
-            .map(|i| {
-                let a = rot + i as f32 * 2.0 * PI / 3.0 - PI / 2.0;
-                (cx + r * a.cos(), cy + r * a.sin())
-            })
-            .collect();
-
-        for side in 0..3 {
-            let (ax, ay) = tri[side];
-            let (bx, by) = tri[(side + 1) % 3];
-            let mut pts = vec![(ax, ay)];
-            koch_points(ax, ay, bx, by, depth, &mut pts);
-
-            // Draw line segments between consecutive points.
-            for w in pts.windows(2) {
-                let (x0, y0) = w[0];
-                let (x1, y1) = w[1];
-                // Bresenham-style plot via parametric steps.
-                let steps = ((x1 - x0).abs() + (y1 - y0).abs()).ceil() as u32 + 1;
-                let steps = steps.max(1);
-                for s in 0..=steps {
-                    let t = s as f32 / steps as f32;
-                    let px = x0 + t * (x1 - x0);
-                    let py = y0 + t * (y1 - y0);
-                    draw::dot_i(grid, px as i32, py as i32);
+        // Spark: a short gap that travels along the curve with time.
+        let spark = ((ctx.time.max(0.0) * 0.25).fract() * dw as f32) as i32;
+        let mut seg = |p: (f32, f32), q: (f32, f32)| {
+            let steps = ((q.0 - p.0).abs().max((q.1 - p.1).abs()).ceil() as i32).clamp(1, 256);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = (p.0 + (q.0 - p.0) * t).round() as i32;
+                let y = (p.1 + (q.1 - p.1) * t).round() as i32;
+                if (x - spark).abs() > 1 {
+                    draw::dot_i(grid, x, y);
                 }
             }
+        };
+        for w in new.windows(2) {
+            if w[0].0.max(w[1].0) <= split {
+                seg(w[0], w[1]);
+            }
+        }
+        for w in old.windows(2) {
+            if w[0].0.min(w[1].0) >= split {
+                seg(w[0], w[1]);
+            }
         }
 
-        // Tint.
         let (cw, ch) = grid.dimensions();
         for cy_cell in 0..ch {
             let t = cy_cell as f32 / ch.max(1) as f32;
@@ -344,7 +425,6 @@ impl ProgressStyle for KochCurve {
                 ctx.palette.sample(t),
             );
         }
-
         Ok(())
     }
 }
@@ -362,77 +442,60 @@ impl ProgressStyle for BarnsleyFern {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Barnsley fern IFS (4 affine maps, exact original coefficients); point count \
-         and detail scale with progress; sways gently with time."
+        "Barnsley's four-map IFS fern laid along the bar: the frond unfurls from its stem \
+         toward the tip as progress rises, with alternating leaflets, and sways with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh < 2 {
             return Ok(());
         }
-
-        let n_pts = (20.0 + ctx.eased * 2980.0) as u32;
-
-        // Classic Barnsley fern IFS coefficients:
-        //  f1: stem        probability 0.01
-        //  f2: large leaf  probability 0.85
-        //  f3: left leaflet  probability 0.07
-        //  f4: right leaflet probability 0.07
-        // Each: [a, b, c, d, e, f] for x' = ax+by+e, y' = cx+dy+f
-        let maps: [[f32; 6]; 4] = [
-            [0.0, 0.0, 0.0, 0.16, 0.0, 0.0],      // stem
-            [0.85, 0.04, -0.04, 0.85, 0.0, 1.6],  // large leaf
-            [0.20, -0.26, 0.23, 0.22, 0.0, 1.6],  // left leaflet
-            [-0.15, 0.28, 0.26, 0.24, 0.0, 0.44], // right leaflet
-        ];
-        // Cumulative probability thresholds (×1000 for integer hash).
-        let thresholds = [10u32, 860, 930, 1000];
-
-        // Gentle sway: perturb e coefficient of map 2 and 3.
-        let sway = (ctx.time * 0.5).sin() * 0.04;
-
-        let mut x = 0.0f32;
-        let mut y = 0.0f32;
-
-        for i in 0..n_pts + 20 {
-            let r = hash(i.wrapping_mul(999_983)) % 1000;
-            let map_idx = if r < thresholds[0] {
-                0
-            } else if r < thresholds[1] {
-                1
-            } else if r < thresholds[2] {
-                2
-            } else {
-                3
+        // Fern spans x ∈ [-2.2, 2.7], y ∈ [0, 10]; lay its axis (y) along the bar.
+        let reach = 0.08 + ctx.eased * 0.92;
+        let sway = (ctx.time * 0.9).sin() * 0.35;
+        let mut hits = vec![0u8; dw * dh];
+        let (mut x, mut y) = (0.0f32, 0.0f32);
+        let count = 8_000u32;
+        for i in 0..count {
+            let r = hash(i.wrapping_mul(2_654_435_761) ^ 0x5bd1) % 100;
+            (x, y) = match r {
+                0 => (0.0, 0.16 * y),
+                1..=85 => (0.85 * x + 0.04 * y, -0.04 * x + 0.85 * y + 1.6),
+                86..=92 => (0.2 * x - 0.26 * y, 0.23 * x + 0.22 * y + 1.6),
+                _ => (-0.15 * x + 0.28 * y, 0.26 * x + 0.24 * y + 0.44),
             };
-
-            let m = maps[map_idx];
-            let new_x = m[0] * x + m[1] * y + m[4] + if map_idx >= 2 { sway } else { 0.0 };
-            let new_y = m[2] * x + m[3] * y + m[5];
-            x = new_x;
-            y = new_y;
-
-            if i >= 20 {
-                // Fern lives in x ∈ [-2.182, 2.6558], y ∈ [0, 9.9983].
-                let px = ((x + 2.182) / 4.8378 * dw as f32) as i32;
-                let py = ((1.0 - y / 9.9983) * dh as f32) as i32;
-                draw::dot_i(grid, px, py);
+            let along = y / 10.0;
+            if i < 20 || along > reach {
+                continue;
+            }
+            // Bend grows toward the tip so the frond sways, not slides.
+            let bend = x + sway * along * along * 4.0;
+            let px = (along * (dw - 1) as f32) as usize;
+            let py = ((bend + 2.4) / 5.4 * (dh - 1) as f32).round();
+            if py >= 0.0 && (py as usize) < dh && px < dw {
+                let h = &mut hits[py as usize * dw + px];
+                *h = h.saturating_add(1);
             }
         }
-
-        // Green-ish tint via palette.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = cy as f32 / ch.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                cw.saturating_sub(1),
-                ctx.palette.sample(1.0 - t),
-            );
+        // Threshold per column against that column's peak: the tip collects far
+        // more points than the base, and this keeps leaflets distinct along the frond.
+        for px in 0..dw {
+            let peak = (0..dh).map(|py| hits[py * dw + px]).max().unwrap_or(0);
+            let thr = (u16::from(peak) * 3 / 10).max(1);
+            for py in 0..dh {
+                if u16::from(hits[py * dw + px]) >= thr {
+                    draw::dot(grid, px, py);
+                }
+            }
         }
-
+        // Stem-to-tip green-ish gradient from the palette.
+        let (cw, ch) = grid.dimensions();
+        for cx in 0..cw {
+            let t = cx as f32 / cw.max(1) as f32;
+            for cy in 0..ch {
+                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+            }
+        }
         Ok(())
     }
 }
@@ -442,6 +505,15 @@ impl ProgressStyle for BarnsleyFern {
 // ---------------------------------------------------------------------------
 
 struct DragonCurve;
+
+/// Straight dot line between two signed dot coordinates (bounds-safe).
+fn line_i(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
+    let n = (x1 - x0).abs().max((y1 - y0).abs()).clamp(1, 512);
+    for i in 0..=n {
+        draw::dot_i(grid, x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n);
+    }
+}
+
 impl ProgressStyle for DragonCurve {
     fn name(&self) -> &str {
         "dragon-curve"
@@ -450,82 +522,76 @@ impl ProgressStyle for DragonCurve {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Dragon curve drawn by paper-folding construction; reveal length grows with \
-         progress (up to 12 folds), rotates with time."
+        "Heighway dragon by paper folding: four panels show the strip folded 2, 4, 6 and 8 times, \
+         each drawing itself in turn as progress rises; a walker retraces finished dragons with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh < 2 {
             return Ok(());
         }
+        const ORDERS: [u32; 4] = [2, 4, 6, 8];
+        let n = if dw >= dh * 4 { 4 } else { 1 };
+        let pw = dw as f32 / n as f32;
 
-        // Number of folds determines curve length = 2^n segments.
-        let max_folds: u32 = 12;
-        let folds = (ctx.eased * max_folds as f32).floor() as u32;
-        let folds = folds.min(max_folds);
-        let n_segs = 1u32 << folds; // 2^folds
-
-        // Generate turn sequence: for segment k, turn = fold_direction(k).
-        // The k-th turn of the dragon curve (0-indexed):
-        // T(k) = bit at position (highest power of 2 dividing k+1) shifted odd/even.
-        // Equivalently: let k' = (k+1). Turn right if ((k' >> trailing_zeros(k')) >> 1) & 1 == 0.
-        fn dragon_turn(k: u32) -> bool {
-            // k is 1-indexed segment.
-            let tz = k.trailing_zeros();
-            ((k >> tz) >> 1) & 1 == 0
-        }
-
-        // Walk the curve.
-        // Direction: 0=right, 1=up, 2=left, 3=down.
-        let rot_offset = (ctx.time * 0.25) as i32; // integer quarter-turns
-        let start_dir: i32 = rot_offset.rem_euclid(4);
-
-        // Collect all segment start points to find bounding box for centering.
-        let step = 1i32;
-        let dx = [step, 0, -step, 0];
-        let dy = [0, -step, 0, step];
-
-        let mut cx_i: i32 = 0;
-        let mut cy_i: i32 = 0;
-        let mut dir: i32 = start_dir;
-        let mut pts: Vec<(i32, i32)> = Vec::with_capacity((n_segs + 1) as usize);
-        pts.push((cx_i, cy_i));
-
-        for k in 1..=n_segs {
-            cx_i += dx[dir as usize];
-            cy_i += dy[dir as usize];
-            pts.push((cx_i, cy_i));
-            if k < n_segs {
-                let turn = dragon_turn(k);
-                dir = if turn {
-                    (dir + 1).rem_euclid(4)
-                } else {
-                    (dir + 3).rem_euclid(4)
-                };
+        for k in 0..n {
+            let order = ORDERS[(k + 4 - n) % 4];
+            let local = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+            let segs = 1u32 << order;
+            // Walk the fold sequence: turn left/right by the bit above the
+            // lowest set bit of the 1-based segment index.
+            let mut pts: Vec<(f32, f32)> = Vec::with_capacity(segs as usize + 1);
+            let (mut x, mut y, mut dir) = (0i32, 0i32, 0i32);
+            pts.push((0.0, 0.0));
+            for i in 1..=segs {
+                let (dx, dy) = [(1, 0), (0, -1), (-1, 0), (0, 1)][dir as usize];
+                x += dx;
+                y += dy;
+                pts.push((x as f32, y as f32));
+                let right = ((i >> i.trailing_zeros()) >> 1) & 1 == 0;
+                dir = (dir + if right { 1 } else { 3 }) & 3;
+            }
+            // Centre on the bounding box and fit its radius to the panel.
+            let (mut lx, mut hx, mut ly, mut hy) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+            for &(px, py) in &pts {
+                lx = lx.min(px);
+                hx = hx.max(px);
+                ly = ly.min(py);
+                hy = hy.max(py);
+            }
+            let (mx, my) = ((lx + hx) * 0.5, (ly + hy) * 0.5);
+            // Axis-aligned, uniform scale: right angles stay crisp in dots.
+            let s = ((pw - 3.0) / (hx - lx).max(1.0)).min((dh as f32 - 1.0) / (hy - ly).max(1.0));
+            let (ox, oy) = (pw * (k as f32 + 0.5), (dh as f32 - 1.0) * 0.5);
+            let to_dot = |(px, py): (f32, f32)| {
+                (
+                    (ox + (px - mx) * s).round() as i32,
+                    (oy + (py - my) * s).round() as i32,
+                )
+            };
+            let shown = (local * segs as f32).ceil() as usize;
+            if shown == 0 {
+                // Waiting panel: the unfolded strip — a single short segment.
+                let (a, b) = (to_dot((mx - 1.0, my)), to_dot((mx + 1.0, my)));
+                line_i(grid, a.0, a.1, b.0, b.1);
+                continue;
+            }
+            for w in pts.windows(2).take(shown) {
+                let (a, b) = (to_dot(w[0]), to_dot(w[1]));
+                line_i(grid, a.0, a.1, b.0, b.1);
+            }
+            // A walker retraces each finished dragon with time.
+            if shown >= segs as usize {
+                let at = to_dot(pts[(ctx.time.max(0.0) * 9.0) as usize % pts.len()]);
+                draw::fill_rect(grid, at.0.max(0) as usize, at.1.max(0) as usize, 2, 2);
             }
         }
 
-        // Bounding box for centering.
-        let min_x = pts.iter().map(|p| p.0).min().unwrap_or(0);
-        let max_x = pts.iter().map(|p| p.0).max().unwrap_or(0);
-        let min_y = pts.iter().map(|p| p.1).min().unwrap_or(0);
-        let max_y = pts.iter().map(|p| p.1).max().unwrap_or(0);
-        let span_x = (max_x - min_x).max(1);
-        let span_y = (max_y - min_y).max(1);
-
-        for p in &pts {
-            let px = (p.0 - min_x) as f32 / span_x as f32 * (dw as f32 - 1.0);
-            let py = (p.1 - min_y) as f32 / span_y as f32 * (dh as f32 - 1.0);
-            draw::dot_i(grid, px as i32, py as i32);
-        }
-
-        // Tint horizontally.
         let (cw, ch) = grid.dimensions();
         for cy in 0..ch {
             let t = cy as f32 / ch.max(1) as f32;
             draw::tint_row(grid, cy, 0, cw.saturating_sub(1), ctx.palette.sample(t));
         }
-
         Ok(())
     }
 }
@@ -543,68 +609,70 @@ impl ProgressStyle for SierpinskiCarpet {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Sierpinski carpet: each dot is tested via the 9-ary digit rule (x&y in base 3 \
-         for any digit == 1 → hole); depth driven by progress."
+        "A row of square Sierpinski carpets: each starts solid, has its centre ninth punched \
+         out, then the centre of every remaining ninth, filling in turn as progress rises while \
+         a glint sweeps across them with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // Depth controls which power-of-3 we map to.
-        // At depth d we check d digits in base 3.
-        let max_depth = (ctx.eased * 5.0).ceil() as u32;
-        let max_depth = max_depth.max(1);
-
-        // Scale: use a 3^max_depth × 3^max_depth logical grid.
-        let pow3 = 3u32.pow(max_depth);
-
-        // Animate: slow drift in mapping origin.
-        let off_x = (ctx.time * 0.4).sin() * 0.08;
-        let off_y = (ctx.time * 0.3).cos() * 0.08;
-
-        for py in 0..dh {
-            for px in 0..dw {
-                // Map dot to carpet coordinates in [0, pow3).
-                let fx = ((px as f32 / dw as f32 + off_x).rem_euclid(1.0) * pow3 as f32) as u32;
-                let fy = ((py as f32 / dh as f32 + off_y).rem_euclid(1.0) * pow3 as f32) as u32;
-
-                // Sierpinski carpet rule: if any base-3 digit of x AND y both == 1 → hole.
-                let mut in_hole = false;
-                let mut rx = fx;
-                let mut ry = fy;
-                for _ in 0..max_depth {
-                    if rx % 3 == 1 && ry % 3 == 1 {
-                        in_hole = true;
-                        break;
+        // Square tiles as tall as the bar, separated by a two-dot gap.
+        let side = dh;
+        let n = ((dw + 2) / (side + 2)).max(1);
+        let x_left = dw.saturating_sub(n * (side + 2) - 2) / 2;
+        for k in 0..n {
+            let local = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+            let x0 = x_left + k * (side + 2);
+            if local <= 0.0 {
+                // Waiting tile: only its outline.
+                draw::rect_outline(grid, x0, 0, side.min(dw), side);
+                continue;
+            }
+            // Depth 0 = solid, 1 = centre removed, 2 = full level-2 carpet.
+            let depth = ((local * 2.999) as u32).min(2);
+            for py in 0..side {
+                for px in 0..side {
+                    // Map dots onto the 9×9 level-2 grid.
+                    let (mut u, mut v) = (px * 9 / side, py * 9 / side);
+                    let (mut hole, mut level) = (false, 0);
+                    // Most significant base-3 digit first.
+                    let mut scale = 3;
+                    while level < depth {
+                        if (u / scale) % 3 == 1 && (v / scale) % 3 == 1 {
+                            hole = true;
+                            break;
+                        }
+                        u %= scale;
+                        v %= scale;
+                        scale /= 3;
+                        level += 1;
+                        if scale == 0 {
+                            break;
+                        }
                     }
-                    rx /= 3;
-                    ry /= 3;
-                }
-
-                if !in_hole {
-                    draw::dot_i(grid, px as i32, py as i32);
+                    if !hole {
+                        draw::dot(grid, x0 + px, py);
+                    }
                 }
             }
         }
-
-        // Tint.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..filled_cells.min(cw) {
-                let t = cx as f32 / cw.max(1) as f32;
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        let glint = (ctx.time * 0.25).fract();
+        for cx in 0..cw {
+            let t = cx as f32 / cw.max(1) as f32;
+            let near = 1.0 - ((t - glint).abs() * 8.0).min(1.0);
+            for cy in 0..ch {
+                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t * 0.6 + near * 0.4));
             }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 8. Burning Ship fractal  — |Re(z)|, |Im(z)| before squaring
+// 8. Burning Ship fractal  — |Re(z)|, |Im(z)| before squaring, zoomed on the ship
 // ---------------------------------------------------------------------------
 
 struct BurningShip;
@@ -616,48 +684,61 @@ impl ProgressStyle for BurningShip {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Burning Ship fractal (z → (|Re z|+i|Im z|)² + c); its jagged, ship-like \
-         silhouette burns across the bar as progress rises."
+        "Burning Ship fractal (z → (|Re z|+i|Im z|)² + c), zoomed onto the little ship near \
+         c ≈ −1.76 that gives the set its name: hull on the waterline, masts and rigging \
+         rising above — a convoy of them sails in as progress rises, flames flickering with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        // The ship window, masts pointing up (−Im at the top).
+        let (re0, re1) = (-1.802f32, -1.698f32);
+        let (im0, im1) = (-0.088f32, 0.012f32);
+        // Tile width keeps the ship roughly in proportion (stretched ≈1.4×).
+        let tile = ((dh as f32 * 1.45).round() as usize).clamp(4, dw.max(4));
+        let tiles = (dw / tile).max(1);
+        let left = (dw - (tiles * tile).min(dw)) / 2;
+        let shown = ctx.eased.clamp(0.0, 1.0) * tiles as f32;
+        let max_iter = 60u32;
+        // Flicker: the "hot" threshold breathes with time.
+        let thresh = 20 + ((ctx.time * 5.0).sin() * 2.0).round() as i32;
 
-        let max_iter = (3.0 + ctx.eased * 45.0) as u32;
-
-        // Classic Burning Ship viewport: Re ∈ [-2.5, 1.5], Im ∈ [-2, 0.5].
-        // Animate by slowly drifting.
-        let drift = ctx.time * 0.015;
-        let re_min = -2.5 + drift.sin() * 0.2;
-        let re_max = 1.5 + drift.cos() * 0.1;
-        let im_min = -2.0 + (drift * 0.7).sin() * 0.15;
-        let im_max = 0.5 + (drift * 0.5).cos() * 0.1;
-
-        for py in 0..dh {
-            for px in 0..dw {
-                let cr = re_min + (px as f32 / dw as f32) * (re_max - re_min);
-                let ci = im_min + (py as f32 / dh as f32) * (im_max - im_min);
-
-                let mut zr = 0.0f32;
-                let mut zi = 0.0f32;
-                let mut escaped = false;
-                for _ in 0..max_iter {
-                    let zr2 = zr * zr;
-                    let zi2 = zi * zi;
-                    if zr2 + zi2 > 4.0 {
-                        escaped = true;
-                        break;
-                    }
-                    // Key difference: absolute values before squaring.
-                    let new_zr = zr2 - zi2 + cr;
-                    zi = 2.0 * zr.abs() * zi.abs() + ci;
-                    zr = new_zr;
+        for k in 0..tiles {
+            let local = (shown - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                // Waiting slot: a dotted waterline.
+                let y = (dh as f32 * (0.0 - im0) / (im1 - im0)).round() as usize;
+                for x in (left + k * tile..left + (k + 1) * tile).step_by(3) {
+                    draw::dot(grid, x, y.min(dh - 1));
                 }
-
-                if escaped {
-                    draw::dot_i(grid, px as i32, py as i32);
+                continue;
+            }
+            // The ship rises out of the water from the waterline up.
+            let rise = (1.0 - local) * dh as f32;
+            for py in 0..dh {
+                if (py as f32) < rise {
+                    continue;
+                }
+                let ci = im0 + (py as f32 + 0.5) / dh as f32 * (im1 - im0);
+                for px in 0..tile {
+                    let cr = re0 + (px as f32 + 0.5) / tile as f32 * (re1 - re0);
+                    let (mut zr, mut zi) = (0.0f32, 0.0f32);
+                    let mut n = 0u32;
+                    while n < max_iter {
+                        let (zr2, zi2) = (zr * zr, zi * zi);
+                        if zr2 + zi2 > 4.0 {
+                            break;
+                        }
+                        let nzr = zr2 - zi2 + cr;
+                        zi = 2.0 * zr.abs() * zi.abs() + ci;
+                        zr = nzr;
+                        n += 1;
+                    }
+                    if n as i32 >= thresh {
+                        draw::dot(grid, left + k * tile + px, py);
+                    }
                 }
             }
         }
@@ -667,16 +748,69 @@ impl ProgressStyle for BurningShip {
             let t = cy as f32 / ch.max(1) as f32;
             draw::tint_row(grid, cy, 0, cw.saturating_sub(1), ctx.palette.sample(t));
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 9. Pythagoras tree — recursive binary squares
+// 9. Pythagoras trees — recursive squares on right triangles, a row of them
 // ---------------------------------------------------------------------------
 
 struct PythagorasTree;
+
+/// One Pythagoras-tree square on base edge `a→b` (growing to screen-up),
+/// then its two children on the top edge split at angle `alpha`.
+fn pyth_tree(
+    grid: &mut BrailleGrid,
+    a: (f32, f32),
+    b: (f32, f32),
+    alpha: f32,
+    depth: u32,
+    budget: &mut u32,
+) {
+    if depth == 0 || *budget == 0 {
+        return;
+    }
+    *budget -= 1;
+    let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+    let side = (ex * ex + ey * ey).sqrt();
+    // Top corners: perpendicular (ey, −ex) points up on screen.
+    let c = (b.0 + ey, b.1 - ex);
+    let d = (a.0 + ey, a.1 - ex);
+    if side < 2.2 {
+        // Too small to outline: fill it so the canopy reads as foliage.
+        let (lo_x, hi_x) = (
+            a.0.min(b.0).min(c.0).min(d.0),
+            a.0.max(b.0).max(c.0).max(d.0),
+        );
+        let (lo_y, hi_y) = (
+            a.1.min(b.1).min(c.1).min(d.1),
+            a.1.max(b.1).max(c.1).max(d.1),
+        );
+        let (cx, cy) = ((lo_x + hi_x) * 0.5, (lo_y + hi_y) * 0.5);
+        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
+    } else {
+        for (p, q) in [(a, b), (b, c), (c, d), (d, a)] {
+            let n = ((q.0 - p.0).abs().max((q.1 - p.1).abs()).ceil() as i32).clamp(1, 128);
+            for i in 0..=n {
+                let t = i as f32 / n as f32;
+                draw::dot_i(
+                    grid,
+                    (p.0 + (q.0 - p.0) * t).round() as i32,
+                    (p.1 + (q.1 - p.1) * t).round() as i32,
+                );
+            }
+        }
+    }
+    // Apex of the right triangle sitting on the top edge d→c.
+    let (ux, uy) = ((c.0 - d.0) / side.max(1e-6), (c.1 - d.1) / side.max(1e-6));
+    let l = side * alpha.cos();
+    let (ca, sa) = (alpha.cos(), alpha.sin());
+    let apex = (d.0 + (ux * ca + uy * sa) * l, d.1 + (uy * ca - ux * sa) * l);
+    pyth_tree(grid, d, apex, alpha, depth - 1, budget);
+    pyth_tree(grid, apex, c, alpha, depth - 1, budget);
+}
+
 impl ProgressStyle for PythagorasTree {
     fn name(&self) -> &str {
         "pythagoras-tree"
@@ -685,112 +819,50 @@ impl ProgressStyle for PythagorasTree {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Pythagoras tree: a square sprouts two smaller squares at a time-animated \
-         split angle; branch count grows with progress (depth 0..=7)."
+        "Pythagoras trees: a trunk square carries a right triangle whose two legs carry two \
+         smaller squares, and so on — a row of trees each branching level by level as progress \
+         reaches it, their crowns swaying gently with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        let max_depth = (ctx.eased * 7.0).floor() as u32;
-        // Animate split angle α between 20° and 70°.
-        let alpha = 0.349 + (ctx.time * 0.2).sin().abs() * 0.524; // 20°..50° in radians
-
-        // Draw a square given its bottom-left corner vector and direction.
-        // We represent the square by two corners of its base edge: (x1,y1)-(x2,y2),
-        // growing upward (away from the viewer, i.e. toward smaller y in screen coords).
-        fn draw_square(grid: &mut BrailleGrid, x1: f32, y1: f32, x2: f32, y2: f32) {
-            // Edge vector.
-            let ex = x2 - x1;
-            let ey = y2 - y1;
-            // Perpendicular pointing up on screen (y grows downward): (ey, -ex).
-            let x3 = x2 + ey;
-            let y3 = y2 - ex;
-            let x4 = x1 + ey;
-            let y4 = y1 - ex;
-
-            // Draw 4 edges via parametric steps.
-            let corners = [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x1, y1)];
-            for w in corners.windows(2) {
-                let (ax, ay) = w[0];
-                let (bx, by) = w[1];
-                let steps = ((bx - ax).abs() + (by - ay).abs()).ceil() as i32 + 1;
-                let steps = steps.max(1);
-                for s in 0..=steps {
-                    let t = s as f32 / steps as f32;
-                    let px = ax + t * (bx - ax);
-                    let py = ay + t * (by - ay);
-                    draw::dot_i(grid, px as i32, py as i32);
-                }
-            }
-        }
-
-        // Recursively build the tree.
-        fn tree(
-            grid: &mut BrailleGrid,
-            x1: f32,
-            y1: f32,
-            x2: f32,
-            y2: f32,
-            alpha: f32,
-            depth: u32,
-        ) {
+        // A 45° tree fits a 6s × 4s box; size the trunk from the height.
+        let side = ((dh as f32 - 1.0) / 4.0).max(1.0);
+        let slot = (side * 6.4).max(2.0);
+        let trees = ((dw as f32 / slot) as usize).clamp(1, 12);
+        let pitch = dw as f32 / trees as f32;
+        let total = ctx.eased.clamp(0.0, 1.0) * trees as f32;
+        let max_depth = 7.0f32;
+        for k in 0..trees {
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            let depth = (local * max_depth).ceil() as u32;
+            let cx = pitch * (k as f32 + 0.5);
+            let base = dh as f32 - 1.0;
             if depth == 0 {
-                return;
+                // Seed: a dot where the trunk will stand.
+                draw::dot_i(grid, cx.round() as i32, base as i32);
+                continue;
             }
-            draw_square(grid, x1, y1, x2, y2);
-
-            // Top edge of the square (same screen-up perpendicular as above).
-            let ex = x2 - x1;
-            let ey = y2 - y1;
-            let tx1 = x1 + ey;
-            let ty1 = y1 - ex;
-            let tx2 = x2 + ey;
-            let ty2 = y2 - ex;
-
-            // Split point on the top edge at angle alpha.
-            let ca = alpha.cos();
-            let sa = alpha.sin();
-            let ex2 = tx2 - tx1;
-            let ey2 = ty2 - ty1;
-            let len = (ex2 * ex2 + ey2 * ey2).sqrt().max(1e-6);
-            let ux = ex2 / len;
-            let uy = ey2 / len;
-            // Left branch base: tx1 to apex, rotated by -alpha so the apex
-            // bulges above the top edge (screen-up) instead of folding down.
-            let left_size = len * ca;
-            let apex_x = tx1 + ux * left_size * ca + uy * left_size * sa;
-            let apex_y = ty1 + uy * left_size * ca - ux * left_size * sa;
-
-            // Left child square.
-            tree(grid, tx1, ty1, apex_x, apex_y, alpha, depth - 1);
-            // Right child square.
-            tree(grid, apex_x, apex_y, tx2, ty2, alpha, depth - 1);
+            let sway = 0.12 * (ctx.time * 1.1 + k as f32 * 1.7).sin();
+            let alpha = PI / 4.0 + sway;
+            let mut budget = 400u32;
+            pyth_tree(
+                grid,
+                (cx - side * 0.5, base),
+                (cx + side * 0.5, base),
+                alpha,
+                depth,
+                &mut budget,
+            );
         }
-
-        // Root square: centred at the bottom, capped by grid height so the
-        // crown (roughly 3x the root side) still fits short bar grids.
-        let sq_w = (dw as f32 * 0.28).min(dh as f32 * 0.34).max(2.0);
-        let base_y = dh as f32 - 1.0;
-        let base_x = dw as f32 / 2.0 - sq_w / 2.0;
-        tree(
-            grid,
-            base_x,
-            base_y,
-            base_x + sq_w,
-            base_y,
-            alpha,
-            max_depth + 1,
-        );
 
         let (cw, ch) = grid.dimensions();
         for cy in 0..ch {
             let t = 1.0 - cy as f32 / ch.max(1) as f32; // brighter at top (crown)
             draw::tint_row(grid, cy, 0, cw.saturating_sub(1), ctx.palette.sample(t));
         }
-
         Ok(())
     }
 }
@@ -808,86 +880,76 @@ impl ProgressStyle for NewtonFractal {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Newton fractal for z³−1=0: three root basins painted with palette colors; \
-         iteration count threshold rises with progress, domain rotates with time."
+        "Newton's method on z³−1: each cell is coloured by the cube root it converges to and \
+         dotted in convergence-speed bands, so the three basins meet in chains of beads; more \
+         of the plane resolves as progress raises the step budget, and the plane turns with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        let max_iter = (2.0 + ctx.eased * 30.0) as u32;
-        let tol2 = 1e-4f32;
-
-        // Three cube roots of unity.
-        let roots = [(1.0f32, 0.0f32), (-0.5, 0.866_025_4), (-0.5, -0.866_025_4)];
-
-        let scale = 2.0f32 / (1.0 + ctx.time * 0.04);
-        let theta = ctx.time * 0.15;
-        let cos_t = theta.cos();
-        let sin_t = theta.sin();
+        const ROOTS: [(f32, f32); 3] = [(1.0, 0.0), (-0.5, 0.866_025_4), (-0.5, -0.866_025_4)];
+        let max_iter = (2.0 + ctx.eased * 18.0) as u32;
+        let s = (dh as f32 / 2.6).max(0.5);
+        let (ox, oy) = (dw as f32 * 0.5, dh as f32 * 0.5);
+        let rot = ctx.time * 0.15;
+        let (cr, sr) = (rot.cos(), rot.sin());
+        let (cw, ch) = grid.dimensions();
+        // Per-cell vote of which root its dots reach.
+        let mut votes = vec![[0u8; 3]; cw * ch];
 
         for py in 0..dh {
             for px in 0..dw {
-                // Map to complex plane, then rotate.
-                let raw_r = (px as f32 / dw as f32 - 0.5) * scale * 2.0;
-                let raw_i = (py as f32 / dh as f32 - 0.5) * scale * 2.0;
-                let mut zr = raw_r * cos_t - raw_i * sin_t;
-                let mut zi = raw_r * sin_t + raw_i * cos_t;
-
-                // Newton iteration: z ← z - f(z)/f'(z) = z - (z³-1)/(3z²)
-                let mut root_id = 0usize;
-                let mut converged = false;
-                for _ in 0..max_iter {
-                    let zr2 = zr * zr;
-                    let zi2 = zi * zi;
-                    // z³ = z² * z
-                    let z3r = (zr2 - zi2) * zr - 2.0 * zr * zi * zi;
-                    let z3i = (zr2 - zi2) * zi + 2.0 * zr * zi * zr;
-                    // 3z²
-                    let d3r = 3.0 * (zr2 - zi2);
-                    let d3i = 6.0 * zr * zi;
-                    let d_mag2 = d3r * d3r + d3i * d3i;
-                    if d_mag2 < 1e-10 {
-                        break;
-                    }
-                    // (z³-1) / (3z²): numerator real and imag.
-                    let nr = z3r - 1.0;
-                    let ni = z3i;
-                    // Complex division (nr + i·ni) / (d3r + i·d3i).
-                    let qr = (nr * d3r + ni * d3i) / d_mag2;
-                    let qi = (ni * d3r - nr * d3i) / d_mag2;
-                    zr -= qr;
-                    zi -= qi;
-
-                    // Check convergence to each root.
-                    for (rid, &(rr, ri)) in roots.iter().enumerate() {
-                        let dr = zr - rr;
-                        let di = zi - ri;
-                        if dr * dr + di * di < tol2 {
-                            root_id = rid;
-                            converged = true;
-                            break;
-                        }
-                    }
-                    if converged {
+                let (u, v) = ((px as f32 + 0.5 - ox) / s, (py as f32 + 0.5 - oy) / s);
+                let (mut zr, mut zi) = (u * cr - v * sr, u * sr + v * cr);
+                let mut hit = None;
+                for it in 0..max_iter {
+                    // z ← z − (z³ − 1) / (3z²)
+                    let (z2r, z2i) = (zr * zr - zi * zi, 2.0 * zr * zi);
+                    let (z3r, z3i) = (z2r * zr - z2i * zi, z2r * zi + z2i * zr);
+                    let (nr, ni) = (z3r - 1.0, z3i);
+                    let (dr, di) = (3.0 * z2r, 3.0 * z2i);
+                    let den = (dr * dr + di * di).max(1e-9);
+                    zr -= (nr * dr + ni * di) / den;
+                    zi -= (ni * dr - nr * di) / den;
+                    if let Some(r) = ROOTS
+                        .iter()
+                        .position(|&(rr, ri)| (zr - rr).powi(2) + (zi - ri).powi(2) < 0.01)
+                    {
+                        hit = Some((r, it));
                         break;
                     }
                 }
-
-                if converged {
-                    // Color by which root basin we landed in.
-                    let t = root_id as f32 / 2.0;
-                    let (cw, ch) = grid.dimensions();
-                    let cell_x = (px / 2).min(cw.saturating_sub(1));
-                    let cell_y = (py / 4).min(ch.saturating_sub(1));
-                    draw::dot_i(grid, px as i32, py as i32);
-                    draw::tint_row(grid, cell_y, cell_x, cell_x, ctx.palette.sample(t));
+                if let Some((r, it)) = hit {
+                    let cell = &mut votes[(py / 4) * cw + px / 2];
+                    cell[r] = cell[r].saturating_add(1);
+                    // Banded by step count: the fast-converging basin cores stay solid.
+                    if it < 2 || it % 2 == 0 {
+                        draw::dot(grid, px, py);
+                    }
                 }
             }
         }
 
+        grid.enable_color_support();
+        let shades = [
+            ctx.palette.start,
+            crate::Color::rgb(235, 235, 245),
+            ctx.palette.end,
+        ];
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let v = votes[cy * cw + cx];
+                let best = (0..3).max_by_key(|&i| v[i]).unwrap_or(0);
+                let c = if v[best] == 0 {
+                    ctx.palette.track
+                } else {
+                    shades[best]
+                };
+                let _ = grid.set_cell_color(cx, cy, c);
+            }
+        }
         Ok(())
     }
 }
@@ -905,58 +967,67 @@ impl ProgressStyle for CantorDust {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Cantor dust: 2-D middle-third removal across rows; each row is a deeper \
-         level of the Cantor set, revealing from top to bottom with progress."
+        "The Cantor set as its textbook ladder: a full bar, then thirds, ninths, 27ths and 81sts \
+         stacked beneath it, each level drawing in as progress rises while a highlight sweeps \
+         the surviving dust with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // How many rows to reveal.
-        let revealed_rows = ((ctx.eased * dh as f32).ceil() as usize).min(dh);
-
-        for py in 0..revealed_rows {
-            // Row depth: maps row to a Cantor iteration level (0..=7).
-            let level = (py as f32 / dh as f32 * 7.0).floor() as u32;
-            let pow3 = 3u32.pow(level.min(7));
-
-            // Animate: slow horizontal drift.
-            let drift = (ctx.time * 0.3 + py as f32 * 0.05).sin() * 0.1;
-
-            for px in 0..dw {
-                // Map x to [0, pow3) with drift.
-                let fx = ((px as f32 / dw as f32 + drift).rem_euclid(1.0) * pow3 as f32) as u32;
-                // Cantor: point is IN the set iff no base-3 digit == 1.
-                let mut in_cantor = true;
-                let mut rx = fx;
-                for _ in 0..level {
-                    if rx % 3 == 1 {
-                        in_cantor = false;
+        // Widest power of three that fits, so every removed third is whole dots.
+        let mut width = 1usize;
+        let mut depth = 0u32;
+        while width * 3 <= dw && depth < 4 {
+            width *= 3;
+            depth += 1;
+        }
+        let levels = depth as usize + 1;
+        let rows = (dh / levels).max(1);
+        let bar = rows.saturating_sub(1).max(1);
+        let x0 = (dw - width) / 2;
+        let shown = ctx.eased * levels as f32;
+        for lvl in 0..levels {
+            let reveal = (shown - lvl as f32).clamp(0.0, 1.0);
+            if reveal <= 0.0 {
+                break;
+            }
+            let unit = width / 3usize.pow(lvl as u32);
+            let cols = (reveal * width as f32) as usize;
+            for x in 0..cols {
+                // Keep x only if none of its first `lvl` base-3 digits is 1.
+                let mut u = x / unit.max(1);
+                let mut keep = true;
+                for _ in 0..lvl {
+                    if u % 3 == 1 {
+                        keep = false;
                         break;
                     }
-                    rx /= 3;
+                    u /= 3;
                 }
-                if in_cantor {
-                    draw::dot_i(grid, px as i32, py as i32);
+                if keep {
+                    for r in 0..bar {
+                        draw::dot(grid, x0 + x, lvl * rows + r);
+                    }
                 }
             }
         }
-
-        // Tint rows.
         let (cw, ch) = grid.dimensions();
+        let sweep = (ctx.time * 0.3).fract();
         for cy in 0..ch {
-            let t = cy as f32 / ch.max(1) as f32;
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), ctx.palette.sample(t));
+            for cx in 0..cw {
+                let t = cx as f32 / cw.max(1) as f32;
+                let near = 1.0 - ((t - sweep).abs() * 6.0).min(1.0);
+                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t * 0.7 + near * 0.3));
+            }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 12. Lyapunov bar — stability exponent rendered as fill intensity
+// 12. Lyapunov bar — Markus–Lyapunov fractal for the sequence AB
 // ---------------------------------------------------------------------------
 
 struct LyapunovBar;
@@ -968,72 +1039,45 @@ impl ProgressStyle for LyapunovBar {
         "fractal"
     }
     fn describe(&self) -> &str {
-        "Lyapunov exponent landscape for the logistic map sequence AABB…; each column \
-         is a parameter r swept across [2.5, 4.0], lit where the exponent is negative \
-         (stable). Progress raises the iteration count; time scrolls the AB sequence phase."
+        "Markus–Lyapunov fractal for the logistic map driven by the sequence AB (a across, b up, \
+         both in [3, 4]): stable regions with negative exponent are lit, forming the classic \
+         swallow-tail shapes, swept in left to right by progress as the window drifts with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        let n_iter = (8.0 + ctx.eased * 92.0) as u32;
-        let warmup = 20u32;
-
-        // Sequence AABB (phase scrolled by time).
-        // We use a 4-symbol repeating sequence; time shifts which symbol we start on.
-        let phase = (ctx.time * 0.5) as u32;
-
-        for px in 0..dw {
-            // Map column to parameter a ∈ [2.5, 4.0] and b ∈ [2.5, 4.0] (diagonal sweep).
-            let t_col = px as f32 / dw as f32;
-            let ra = 2.5 + t_col * 1.5;
-            let rb = 2.5 + (1.0 - t_col) * 1.5;
-
-            // Compute Lyapunov exponent.
-            let mut x = 0.5f32;
-            let mut lam = 0.0f32;
-            let seq_len = 4u32;
-
-            // Warmup.
-            for i in 0..warmup {
-                let r = if (i + phase) % seq_len < 2 { ra } else { rb };
-                x = r * x * (1.0 - x);
-            }
-            // Measure.
-            for i in 0..n_iter {
-                let r = if (i + phase) % seq_len < 2 { ra } else { rb };
-                x = r * x * (1.0 - x);
-                let deriv = (r * (1.0 - 2.0 * x)).abs().max(1e-10);
-                lam += deriv.ln();
-            }
-            lam /= n_iter as f32;
-
-            // Negative exponent → stable (chaos-free) → draw column.
-            // Positive exponent → chaotic → height proportional to |λ|.
-            let col_fill_frac = if lam < 0.0 {
-                1.0f32 // fully lit: stable region
-            } else {
-                (1.0 - (lam / 2.0).min(1.0)).max(0.0) // partial: chaotic
-            };
-
-            let col_h = (col_fill_frac * dh as f32).round() as usize;
-            let y0 = dh.saturating_sub(col_h);
-            for py in y0..dh {
-                draw::dot_i(grid, px as i32, py as i32);
+        let cols = (ctx.eased * dw as f32).ceil() as usize;
+        let drift = 0.08 * (ctx.time * 0.4).sin();
+        let (cw, ch) = grid.dimensions();
+        let mut stable = vec![0u8; cw * ch];
+        for px in 0..cols.min(dw) {
+            let a = 3.0 + (px as f32 + 0.5) / dw as f32;
+            for py in 0..dh {
+                let b = 4.0 - (py as f32 + 0.5) / dh as f32 + drift;
+                let mut x = 0.5f32;
+                let mut lam = 0.0f32;
+                for n in 0..60u32 {
+                    let r = if n % 2 == 0 { a } else { b };
+                    x = r * x * (1.0 - x);
+                    if n >= 20 {
+                        lam += (r * (1.0 - 2.0 * x)).abs().max(1e-6).ln();
+                    }
+                }
+                if lam < 0.0 {
+                    draw::dot(grid, px, py);
+                    stable[(py / 4) * cw + px / 2] += 1;
+                }
             }
         }
-
-        // Tint: palette maps column to hue.
-        let (cw, ch) = grid.dimensions();
+        // Stable cells glow; the chaotic sea between them stays dark.
         for cy in 0..ch {
             for cx in 0..cw {
-                let t = cx as f32 / cw.max(1) as f32;
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+                let t = (stable[cy * cw + cx] as f32 / 8.0).min(1.0);
+                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(1.0 - t));
             }
         }
-
         Ok(())
     }
 }

@@ -8,22 +8,22 @@
 //!
 //! | name | mechanic |
 //! |---|---|
-//! | `drag-tree`       | Christmas-tree pre-stage → amber cascade → GREEN go |
-//! | `tachometer`      | Needle sweeps arc + shift light flashes at redline |
-//! | `fuel-gauge`      | Needle pivots E→F over a horizontal arc dial |
+//! | `drag-tree`       | Lamp tree: amber cascade → GREEN, dragster launches |
+//! | `tachometer`      | Round ticked dial, redline arc, RPM digit, SHIFT lamp |
+//! | `fuel-gauge`      | Round E→F dial needle + fuel-pump icon, low-fuel blink |
 //! | `lap-circuit`     | Dot car circuits an oval track; lap fraction = eased |
-//! | `pit-stop`        | 4 tyre corners fill one by one as eased grows |
+//! | `pit-stop`        | Car on jacks, crew swaps tyres; pit board ticks off 4 tyres |
 //! | `gear-shifter`    | H-pattern stick moves through gears 1→6 |
-//! | `odometer`        | Rolling digit columns increment via block-glyph ramps |
+//! | `odometer`        | Framed number drums roll 00000→99999 |
 //! | `tunnel-headlights` | Perspective converging road + headlight beams advance |
-//! | `burnout`         | Tyre-tread rubber marks accumulate from the rear |
-//! | `pistons`         | 4 engine pistons cycle up/down driven by time |
-//! | `nitro-boost`     | Charge bar surges with a trailing flame spike |
-//! | `checkered-flag`  | Sine-ripple checkered flag unfurls at 100% |
+//! | `burnout`         | Car on the line spins its rear wheel; smoke billows back |
+//! | `pistons`         | Engine cutaway: pistons on a crankshaft, spark flashes |
+//! | `nitro-boost`     | Car rides a nitro flame jet past speed lines |
+//! | `checkered-flag`  | Chequered flag on a pole unfurls and ripples |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +39,76 @@ fn line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
         let py = y0 + (y1 - y0) * i / steps;
         draw::dot_i(grid, px, py);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dot-art helpers shared by the gauge / odometer / flag styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, l) in rows.iter().enumerate() {
+        for (c, b) in l.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// 3×5 digit font for odometer drums.
+const DIGITS: [[&str; 5]; 10] = [
+    ["###", "#.#", "#.#", "#.#", "###"],
+    [".#.", "##.", ".#.", ".#.", "###"],
+    ["###", "..#", "###", "#..", "###"],
+    ["###", "..#", "###", "..#", "###"],
+    ["#.#", "#.#", "###", "..#", "..#"],
+    ["###", "#..", "###", "..#", "###"],
+    ["###", "#..", "###", "#.#", "###"],
+    ["###", "..#", "..#", "..#", "..#"],
+    ["###", "#.#", "###", "#.#", "###"],
+    ["###", "#.#", "###", "..#", "###"],
+];
+
+/// A round gauge dial: semicircle face with ticks, pivot at `(cx, cy)` on the
+/// bottom edge, and a needle at `frac` (0 = far left, 1 = far right).
+fn dial(grid: &mut BrailleGrid, cx: i32, cy: i32, r: i32, frac: f32) {
+    let rf = r as f32;
+    let steps = (r * 8).max(8);
+    for s in 0..=steps {
+        let a = PI * s as f32 / steps as f32;
+        draw::dot_i(
+            grid,
+            cx + (a.cos() * rf).round() as i32,
+            cy - (a.sin() * rf).round() as i32,
+        );
+    }
+    for t in 0..=8 {
+        let a = PI * t as f32 / 8.0;
+        let len = if t % 2 == 0 { 3.0 } else { 2.0 };
+        line(
+            grid,
+            cx + (a.cos() * (rf - len)).round() as i32,
+            cy - (a.sin() * (rf - len)).round() as i32,
+            cx + (a.cos() * (rf - 1.0)).round() as i32,
+            cy - (a.sin() * (rf - 1.0)).round() as i32,
+        );
+    }
+    let a = PI * (1.0 - frac.clamp(0.0, 1.0));
+    line(
+        grid,
+        cx,
+        cy,
+        cx + (a.cos() * (rf - 3.0)).round() as i32,
+        cy - (a.sin() * (rf - 3.0)).round() as i32,
+    );
+    draw::fill_rect(
+        grid,
+        (cx - 1).max(0) as usize,
+        (cy - 1).max(0) as usize,
+        3,
+        2,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,17 +139,16 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Drag-race Christmas tree
-//    Pre-stage → two amber lights cascade top-to-bottom → GREEN go.
-//    progress < 0.15: pre-stage (top amber dims in/out)
-//    0.15..0.45: amber 1 lights (top pair)
-//    0.45..0.70: amber 2 lights (middle pair)
-//    0.70..0.85: amber 3 lights (bottom pair)
-//    0.85..1.00: GREEN — all amber off, large green glow fills bottom
-//    The amber light "flash" at each threshold is driven by (progress - thresh).
-//    time drives a fast flicker on the green light at the finish.
+//    The starting-line light tree: a centre pole carrying two columns of
+//    round lamps — three ambers then the green. Lamps light top-to-bottom:
+//    progress < 0.15: pre-stage (top amber pair blinks with time)
+//    0.15..0.45 / 0.45..0.70 / 0.70..0.85: amber 1 / 2 / 3 light up
+//    0.85..1.00: GREEN — the green pair flickers and the staged dragster
+//    (big rear slick, long body, wing) launches down the strip.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct DragTree;
+
 impl ProgressStyle for DragTree {
     fn name(&self) -> &str {
         "drag-tree"
@@ -88,124 +157,90 @@ impl ProgressStyle for DragTree {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Drag-race Christmas tree: amber lights cascade top-to-bottom, then GREEN GO fires"
+        "Drag-race Christmas tree: amber lamp pairs light top-to-bottom, then GREEN fires and the staged dragster launches down the strip"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-
+        let (wi, hi) = (w as i32, h as i32);
         let p = ctx.progress;
-        // Thresholds for each light level
-        let thresh = [0.15_f32, 0.45, 0.70, 0.85];
-        // Center column x for lights
-        let cx = (dw / 2) as i32;
 
-        // Each amber "light" is a small disk; green fills the bottom half.
-        // Sizes scale with available height.
-        let segment_h = (dh / 5).max(1) as i32;
-
-        // PRE-STAGE blinking top indicator
-        let pre_stage_y = 1_i32;
-        if p < thresh[0] {
-            // blink at 4 Hz
-            if (ctx.time * 4.0).fract() < 0.5 {
-                for dy in 0..segment_h.min(2) {
-                    draw::dot_i(grid, cx - 1, pre_stage_y + dy);
-                    draw::dot_i(grid, cx, pre_stage_y + dy);
-                    draw::dot_i(grid, cx + 1, pre_stage_y + dy);
-                }
-            }
-        }
-
-        // AMBER 1 — lights at row 1
-        let a1_y = (segment_h + 2) as i32;
-        if p >= thresh[0] && p < thresh[2] {
-            let r = ((segment_h / 2).max(1)) as i32;
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx * dx + dy * dy <= r * r + r {
-                        draw::dot_i(grid, cx + dx, a1_y + dy);
-                    }
-                }
-            }
-        }
-
-        // AMBER 2 — lights at row 2
-        let a2_y = (segment_h * 2 + 3) as i32;
-        if p >= thresh[1] && p < thresh[2] {
-            let r = ((segment_h / 2).max(1)) as i32;
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx * dx + dy * dy <= r * r + r {
-                        draw::dot_i(grid, cx + dx, a2_y + dy);
-                    }
-                }
-            }
-        }
-
-        // AMBER 3 — lights at row 3
-        let a3_y = (segment_h * 3 + 4) as i32;
-        if p >= thresh[2] && p < thresh[3] {
-            let r = ((segment_h / 2).max(1)) as i32;
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx * dx + dy * dy <= r * r + r {
-                        draw::dot_i(grid, cx + dx, a3_y + dy);
-                    }
-                }
-            }
-        }
-
-        // GREEN — fills the bottom region
-        if p >= thresh[3] {
-            // pulsing green block
-            let pulse = (ctx.time * 8.0).sin() * 0.5 + 1.0; // 0.5..1.5
-            let green_y0 = (dh / 2) as i32;
-            let green_h = ((dh as f32 * 0.45 * pulse) as i32)
-                .max(2)
-                .min(dh as i32 - green_y0);
-            let green_w = ((dw as f32 * 0.6) as i32).max(2);
-            let gx0 = (cx - green_w / 2).max(0);
-            for dy in 0..green_h {
-                for dx in 0..green_w {
-                    draw::dot_i(grid, gx0 + dx, green_y0 + dy);
-                }
-            }
-        }
-
-        // Structural outline: two vertical pillars (the tree posts)
-        let post_x_l = (cx - dw as i32 / 4).max(0);
-        let post_x_r = (cx + dw as i32 / 4).min(dw as i32 - 1);
-        draw::vline(grid, post_x_l as usize, 0, dh - 1);
-        draw::vline(grid, post_x_r as usize, 0, dh - 1);
-
-        // Color: amber during amber, green during green
-        let (cw, ch) = grid.dimensions();
-        let color = if p >= thresh[3] {
-            ctx.palette.sample(1.0) // end = green-ish
+        // The tree: pole plus four rows of lamp pairs (3 amber, 1 green).
+        draw::vline(grid, 10, 0, h - 1);
+        let lit_rows = if p >= 0.85 {
+            4
+        } else if p >= 0.70 {
+            3
+        } else if p >= 0.45 {
+            2
         } else {
-            ctx.palette.sample(p / thresh[3]) // ramp amber
+            i32::from(p >= 0.15)
         };
-        for cy in 0..ch {
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        let blink = (ctx.time * 4.0).fract() < 0.5;
+        for row in 0..4 {
+            let y = row * 4;
+            let lit = if lit_rows == 4 {
+                row == 3 && (blink || p >= 1.0)
+            } else {
+                row < lit_rows || (row == 0 && p < 0.15 && blink)
+            };
+            let lamp: [&str; 3] = if lit {
+                ["###", "###", "###"]
+            } else {
+                [".#.", "#.#", ".#."]
+            };
+            sprite(grid, 5, y, &lamp);
+            sprite(grid, 13, y, &lamp);
+            draw::hline(grid, 8, 12, (y + 1) as usize);
         }
 
+        // Track: a dashed lane line along the bottom.
+        for x in (20..wi).filter(|x| x % 4 < 2) {
+            draw::dot_i(grid, x, hi - 1);
+        }
+
+        // Dragster: wing over a huge rear slick, long body, small front wheel.
+        let launch = ((p - 0.85) / 0.15).clamp(0.0, 1.0);
+        let cx = 20 + (launch * launch * (wi - 43).max(0) as f32) as i32;
+        sprite(
+            grid,
+            cx,
+            hi - 9,
+            &[
+                "#####.................",
+                "..#...................",
+                "..#####...............",
+                "######################",
+                "#....#............##..",
+                "#....#...........#..#.",
+                "#....#...........#..#.",
+                "######............##..",
+            ],
+        );
+        // Tyre smoke while launching.
+        if launch > 0.0 && launch < 1.0 {
+            for k in 0..4 {
+                let sx = cx - 2 - k * 2;
+                let sy = hi - 4 - (((ctx.time * 9.0 + k as f32).sin() + 1.0) as i32);
+                draw::dot_i(grid, sx, sy);
+            }
+        }
         Ok(())
     }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. Tachometer
-//    A semicircular arc from ~200° to ~340° (bottom-left to bottom-right).
-//    Needle sweeps from the left (idle) to redline (right) as eased grows.
-//    A redline zone occupies the rightmost 15% of the arc.
-//    When progress ≥ 0.85, the SHIFT light (top center) flashes with time.
-//    The arc is drawn in dot-space with polar parametric stepping.
+//    A round semicircular dial with tick marks; the needle sweeps from idle
+//    (left) to redline (right) as eased grows. The redline zone is drawn as a
+//    thick arc over the last fifth of the face, and a round SHIFT lamp beside
+//    the dial flashes with time once progress reaches 85%. A digital readout
+//    of RPM ×1000 sits to the right.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Tachometer;
+
 impl ProgressStyle for Tachometer {
     fn name(&self) -> &str {
         "tachometer"
@@ -214,128 +249,66 @@ impl ProgressStyle for Tachometer {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Semicircular tach dial: needle sweeps idle→redline; shift light flashes at redline"
+        "Tachometer: a round ticked dial whose needle sweeps idle→redline, a thick redline arc, a flashing SHIFT lamp and an RPM digit readout"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let hi = h as i32;
+        let r = (hi - 1).clamp(1, 15);
+        let cx = r + 1;
+        // Needle jitters slightly with time, like a revving engine.
+        let rev = ctx.eased + 0.015 * (ctx.time * 23.0).sin();
+        dial(grid, cx, hi - 1, r, rev);
 
-        let cx = (dw / 2) as f32;
-        let cy = (dh as f32 * 0.65).max(1.0); // center slightly below mid
-        let rx = (cx * 0.85).max(1.0);
-        let ry = (cy * 0.80).max(1.0);
-
-        // Arc spans from 200° to 340° (bottom-left to bottom-right, going clockwise)
-        let arc_start = 200.0_f32 * PI / 180.0;
-        let arc_end = 340.0_f32 * PI / 180.0;
-        let arc_span = arc_end - arc_start;
-
-        // Draw the arc (tick marks every 10°)
-        let steps = ((rx + ry) * 3.0).max(24.0) as usize;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=steps {
-            let t = s as f32 / steps as f32;
-            let angle = arc_start + t * arc_span;
-            let px = (cx + rx * angle.cos()) as i32;
-            let py = (cy + ry * angle.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((ppx, ppy)) = prev {
-                if (px - ppx).abs() + (py - ppy).abs() > 2 {
-                    line(grid, ppx, ppy, px, py);
-                }
+        // Redline: a thickened arc over the last fifth of the face.
+        for s in 0..=12 {
+            let a = PI * 0.2 * s as f32 / 12.0;
+            for rr in [r - 1, r - 2] {
+                draw::dot_i(
+                    grid,
+                    cx + (a.cos() * rr as f32).round() as i32,
+                    hi - 1 - (a.sin() * rr as f32).round() as i32,
+                );
             }
-            prev = Some((px, py));
         }
 
-        // Tick marks along the arc
-        let tick_count = 10usize;
-        for t_idx in 0..=tick_count {
-            let t = t_idx as f32 / tick_count as f32;
-            let angle = arc_start + t * arc_span;
-            let inner_scale = if t_idx % 5 == 0 { 0.75_f32 } else { 0.85 };
-            let px0 = (cx + rx * angle.cos()) as i32;
-            let py0 = (cy + ry * angle.sin()) as i32;
-            let px1 = (cx + rx * inner_scale * angle.cos()) as i32;
-            let py1 = (cy + ry * inner_scale * angle.sin()) as i32;
-            line(grid, px0, py0, px1, py1);
-        }
-
-        // Redline zone: thick arc from 85%..100% of arc (darker, denser)
-        let redline_start_t = 0.85_f32;
-        let rl_steps = 12usize;
-        let mut rl_prev: Option<(i32, i32)> = None;
-        for s in 0..=rl_steps {
-            let t = redline_start_t + (1.0 - redline_start_t) * s as f32 / rl_steps as f32;
-            let angle = arc_start + t * arc_span;
-            let px = (cx + rx * 0.95 * angle.cos()) as i32;
-            let py = (cy + ry * 0.95 * angle.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            // second ring slightly smaller = thick zone
-            let px2 = (cx + rx * 0.88 * angle.cos()) as i32;
-            let py2 = (cy + ry * 0.88 * angle.sin()) as i32;
-            draw::dot_i(grid, px2, py2);
-            if let Some((ppx, ppy)) = rl_prev {
-                line(grid, ppx, ppy, px, py);
-            }
-            rl_prev = Some((px, py));
-        }
-
-        // Needle: from center to arc edge at eased fraction
-        let needle_angle = arc_start + ctx.eased * arc_span;
-        let nx = (cx + rx * 0.82 * needle_angle.cos()) as i32;
-        let ny = (cy + ry * 0.82 * needle_angle.sin()) as i32;
-        line(grid, cx as i32, cy as i32, nx, ny);
-        // Needle hub dot
-        draw::dot_i(grid, cx as i32, cy as i32);
-        draw::dot_i(grid, cx as i32 - 1, cy as i32);
-        draw::dot_i(grid, cx as i32 + 1, cy as i32);
-        draw::dot_i(grid, cx as i32, cy as i32 - 1);
-        draw::dot_i(grid, cx as i32, cy as i32 + 1);
-
-        // SHIFT LIGHT: top center, flashes when in redline
-        if ctx.eased >= 0.85 {
-            let flash = (ctx.time * 10.0).sin() > 0.0;
-            if flash {
-                let sl_cx = cx as i32;
-                let sl_cy = 1_i32;
-                let sl_r = (dh as i32 / 8).max(1);
-                for dy in -sl_r..=sl_r {
-                    for dx in -sl_r..=sl_r {
-                        if dx * dx + dy * dy <= sl_r * sl_r + sl_r {
-                            draw::dot_i(grid, sl_cx + dx, sl_cy + dy);
-                        }
+        // RPM ×1000 readout (0–8) and the SHIFT lamp.
+        let rpm = ((ctx.eased * 8.0).round() as usize).min(8);
+        let dx = cx * 2 + 4;
+        for (row, bits) in DIGITS[rpm].iter().enumerate() {
+            for (col, b) in bits.bytes().enumerate() {
+                if b == b'#' {
+                    let (px, py) = (dx + col as i32 * 2, hi / 2 - 5 + row as i32 * 2);
+                    for (ox, oy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        draw::dot_i(grid, px + ox, py + oy);
                     }
                 }
             }
         }
-
-        // Color gradient on filled arc cells
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
-        }
-
+        let lamp_x = dx + 10;
+        let lit = ctx.progress >= 0.85 && (ctx.time * 6.0).fract() < 0.5;
+        let lamp: [&str; 5] = if lit {
+            [".###.", "#####", "#####", "#####", ".###."]
+        } else {
+            [".###.", "#...#", "#...#", "#...#", ".###."]
+        };
+        sprite(grid, lamp_x, hi / 2 - 3, &lamp);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Fuel gauge
-//    A horizontal arc with a pivoting needle.
-//    The dial face is an upward-opening semicircle (bottom straight edge = baseline).
-//    Left = E (empty), right = F (full).
-//    Needle rotates from left (0%) to right (100%) as eased grows.
-//    Low-fuel warning: leftmost zone + blink when eased < 0.15.
+//    A round dashboard fuel dial: E on the left, F on the right, the needle
+//    pivoting from E to F as eased grows. Beside it a fuel-pump icon (body,
+//    window, nozzle hose); below 15% the pump blinks as the low-fuel warning.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct FuelGauge;
+
 impl ProgressStyle for FuelGauge {
     fn name(&self) -> &str {
         "fuel-gauge"
@@ -344,93 +317,72 @@ impl ProgressStyle for FuelGauge {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Fuel gauge: needle pivots E→F on a semicircular dial; low-fuel blink below 15%"
+        "Fuel gauge: a round E→F dial whose needle rises with progress, beside a fuel-pump icon that blinks as the low-fuel light below 15%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let hi = h as i32;
+        let r = (hi - 1).clamp(1, 15);
+        let cx = r + 5;
+        dial(grid, cx, hi - 1, r, ctx.eased);
+        // E and F at the dial's feet.
+        sprite(grid, 0, hi - 5, &["###", "#..", "##.", "#..", "###"]);
+        sprite(
+            grid,
+            cx + r + 2,
+            hi - 5,
+            &["###", "#..", "##.", "#..", "#.."],
+        );
 
-        let cx = (dw / 2) as f32;
-        let cy = (dh as f32 * 0.80).min(dh as f32 - 1.0).max(1.0);
-        let rx = (cx * 0.85).max(1.0);
-        let ry = (cy * 0.85).max(1.0);
-
-        // Semicircle arc: from 180° (left = E) to 0° (right = F), via the top
-        // We go from π to 0 i.e. left-to-right through the upper half
-        let arc_steps = ((rx + ry) * 2.5).max(20.0) as usize;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=arc_steps {
-            let t = s as f32 / arc_steps as f32;
-            let angle = PI - t * PI; // π → 0
-            let px = (cx + rx * angle.cos()) as i32;
-            let py = (cy + ry * angle.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((ppx, ppy)) = prev {
-                if (px - ppx).abs() + (py - ppy).abs() > 2 {
-                    line(grid, ppx, ppy, px, py);
-                }
-            }
-            prev = Some((px, py));
+        // Fuel pump: body with a window, nozzle hose hooked on the side.
+        let low = ctx.progress < 0.15 && (ctx.time * 3.0).fract() < 0.5;
+        if !low {
+            sprite(
+                grid,
+                cx + r + 8,
+                hi / 2 - 6,
+                &[
+                    "#######..",
+                    "#.....#..",
+                    "#.....##.",
+                    "#.....#.#",
+                    "#######.#",
+                    "#######.#",
+                    "#######.#",
+                    "#######.#",
+                    "#######..",
+                    "#######..",
+                    "#########",
+                ],
+            );
         }
 
-        // Baseline (flat bottom of the D-shape)
-        let base_y = cy as i32;
-        let left_x = (cx - rx) as i32;
-        let right_x = (cx + rx) as i32;
-        line(grid, left_x, base_y, right_x, base_y);
-
-        // Tick marks along the arc (5 ticks: E, 1/4, 1/2, 3/4, F)
-        for i in 0..=4 {
-            let t = i as f32 / 4.0;
-            let angle = PI - t * PI;
-            let px0 = (cx + rx * angle.cos()) as i32;
-            let py0 = (cy + ry * angle.sin()) as i32;
-            let px1 = (cx + rx * 0.80 * angle.cos()) as i32;
-            let py1 = (cy + ry * 0.80 * angle.sin()) as i32;
-            line(grid, px0, py0, px1, py1);
+        // A fuel bar to the right that mirrors the tank level.
+        let x0 = cx + r + 20;
+        let bar = (w as i32 - x0 - 1).max(0);
+        draw::rect_outline(
+            grid,
+            x0.max(0) as usize,
+            (h / 2).saturating_sub(3),
+            bar as usize,
+            6,
+        );
+        let fill = (ctx.eased * (bar - 4).max(0) as f32) as usize;
+        if fill > 0 {
+            draw::fill_rect(
+                grid,
+                (x0 + 2).max(0) as usize,
+                (h / 2).saturating_sub(1),
+                fill,
+                2,
+            );
         }
-
-        // Needle: pivots from E (angle=π) to F (angle=0)
-        let needle_angle = PI - ctx.eased * PI;
-        let needle_len = (rx * 0.75).max(2.0);
-        let nx = (cx + needle_len * needle_angle.cos()) as i32;
-        let ny = (cy + needle_len * needle_angle.sin()) as i32;
-        line(grid, cx as i32, cy as i32, nx, ny);
-
-        // Hub dot
-        draw::dot_i(grid, cx as i32, cy as i32);
-
-        // Low-fuel blink: left-zone fill when eased < 0.15
-        if ctx.eased < 0.15 {
-            let blink = (ctx.time * 3.0).fract() < 0.5;
-            if blink {
-                // Small area near the E end
-                let warn_r = (rx * 0.2) as i32;
-                for dy in -(warn_r)..=warn_r {
-                    for dx in -(warn_r)..=0 {
-                        draw::dot_i(grid, left_x + (rx as i32 / 4) + dx, base_y + dy);
-                    }
-                }
-            }
-        }
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
-        }
-
         Ok(())
     }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. Lap circuit
 //    A dot-space oval: two straight sections + two semicircular ends.
@@ -541,11 +493,86 @@ impl ProgressStyle for LapCircuit {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Side-view race car shared by pit-stop, burnout and nitro-boost
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Race-car body facing right: rear wing, cockpit canopy with driver, long
+/// nose. 30 dots wide; wheel arches are cut out by [`race_car`].
+const CAR_BODY: [&str; 5] = [
+    "##...........######...........",
+    "##.........##..##..##.........",
+    "#############..##....#######..",
+    "##############################",
+    "#############################.",
+];
+
+/// Triangle wave `0 → 1 → 0` with period 1.
+fn tri(t: f32) -> f32 {
+    1.0 - (2.0 * t.rem_euclid(1.0) - 1.0).abs()
+}
+
+/// Solid block of dots from signed coordinates (clipped to the grid).
+fn block(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            draw::dot_i(grid, xx, yy);
+        }
+    }
+}
+
+/// Rear/front wheel centres relative to the car's top-left.
+const WHEEL_DX: [i32; 2] = [6, 23];
+
+/// A spoked wheel of radius 3 centred at `(cx, cy)`; `spin` turns the spokes.
+fn wheel(grid: &mut BrailleGrid, cx: i32, cy: i32, spin: f32) {
+    for dy in -3i32..=3 {
+        for dx in -3i32..=3 {
+            let d = dx * dx + dy * dy;
+            if (7..=12).contains(&d) {
+                draw::dot_i(grid, cx + dx, cy + dy);
+            }
+        }
+    }
+    draw::dot_i(grid, cx, cy);
+    for k in 0..2 {
+        let a = spin + k as f32 * PI;
+        draw::dot_i(
+            grid,
+            cx + (a.cos() * 1.6).round() as i32,
+            cy + (a.sin() * 1.6).round() as i32,
+        );
+    }
+}
+
+/// Side-view race car, top-left at `(x, y)`, 9 dots tall (wheel bottoms on
+/// row `y + 8`). `wheels[i]` false leaves that wheel off (rear, front).
+fn race_car(grid: &mut BrailleGrid, x: i32, y: i32, spin: f32, wheels: [bool; 2]) {
+    for (r, row) in CAR_BODY.iter().enumerate() {
+        for (c, b) in row.bytes().enumerate() {
+            if b != b'#' {
+                continue;
+            }
+            let (px, py) = (c as i32, r as i32);
+            let arch = WHEEL_DX
+                .iter()
+                .any(|&wx| (px - wx) * (px - wx) + (py - 5) * (py - 5) <= 16);
+            if !arch {
+                draw::dot_i(grid, x + px, y + py);
+            }
+        }
+    }
+    for (i, &wx) in WHEEL_DX.iter().enumerate() {
+        if wheels[i] {
+            wheel(grid, x + wx, y + 5, spin);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 5. Pit stop
-//    The car is shown as a centered rectangle.  4 corners each represent one
-//    wheel.  As eased grows through 4 equal bands, the corners light up one
-//    by one (tyre changed).  When all 4 are done, the car frame flashes (go!).
-//    time drives a subtle wrench-turning shimmer on the active corner.
+//    The race car sits up on jacks, wheels off the ground; a crew member at
+//    each end pulls a tyre and bolts a fresh one on with a sparking wheel gun.
+//    The pit board on the right ticks off the four tyres (eased → 0..4).
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct PitStop;
@@ -557,107 +584,127 @@ impl ProgressStyle for PitStop {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Pit stop: 4 tyre corners fill one by one; all done = car flashes and GO fires"
+        "Race car up on jacks while the pit crew pulls and bolts on fresh tyres; the pit board ticks off four tyres as progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
+        let (w, h) = draw::dot_dims(grid);
+        let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
+        let done = ((ctx.eased * 4.0) as i32).min(4);
+
+        let board_w = 20;
+        let x = ((wi - board_w) / 2 - 15).max(8);
+        let y = hi - 12; // lifted two dots: wheels hang off the ground
+        let ground = hi - 1;
+        for gx in 0..wi - board_w - 1 {
+            if gx % 3 != 0 {
+                draw::dot_i(grid, gx, ground);
+            }
         }
 
-        let cx = (dw / 2) as i32;
-        let cy = (dh / 2) as i32;
-
-        // Car body dimensions (rectangle in dot space)
-        let car_w = ((dw as i32 * 2) / 3).max(4);
-        let car_h = ((dh as i32 * 2) / 3).max(2);
-        let car_x0 = cx - car_w / 2;
-        let car_y0 = cy - car_h / 2;
-        let car_x1 = car_x0 + car_w;
-        let car_y1 = car_y0 + car_h;
-
-        // Draw car body outline
-        line(grid, car_x0, car_y0, car_x1, car_y0);
-        line(grid, car_x0, car_y1, car_x1, car_y1);
-        line(grid, car_x0, car_y0, car_x0, car_y1);
-        line(grid, car_x1, car_y0, car_x1, car_y1);
-
-        // Centre cross (cockpit)
-        draw::dot_i(grid, cx, cy);
-        draw::dot_i(grid, cx - 1, cy);
-        draw::dot_i(grid, cx + 1, cy);
-
-        // Wheels done: each corner finishes at progress 0.25, 0.50, 0.75, 1.0
-        // Order: FL (front-left), FR, RL, RR
-        let corners: [(i32, i32); 4] = [
-            (car_x0, car_y0), // FL
-            (car_x1, car_y0), // FR
-            (car_x0, car_y1), // RL
-            (car_x1, car_y1), // RR
-        ];
-        let done_count = (ctx.eased * 4.0).floor() as usize;
-
-        for (i, &(wx, wy)) in corners.iter().enumerate() {
-            let wheel_r = (car_h / 4).max(1) as i32;
-            let is_done = i < done_count;
-            let is_active = i == done_count && done_count < 4;
-
-            // Tyre wrench shimmer on active corner
-            if is_active {
-                let shimmer = ((ctx.time * 12.0).sin() * wheel_r as f32) as i32;
-                for dy in -wheel_r..=wheel_r {
-                    for dx in -wheel_r..=wheel_r {
-                        if dx * dx + dy * dy <= wheel_r * wheel_r + wheel_r {
-                            draw::dot_i(grid, wx + dx + shimmer / 4, wy + dy);
-                        }
-                    }
+        // Tyre being swapped: rear for tyres 0-1, front for 2-3.
+        let u = (t * 0.9).fract();
+        let pull = (tri(u) * 7.0) as i32;
+        let side = i32::from(done >= 2);
+        let working = done < 4;
+        race_car(
+            grid,
+            x,
+            y,
+            0.0,
+            [!(working && side == 0), !(working && side == 1)],
+        );
+        let mut wheel_pos = (0, 0);
+        if working {
+            let dir = if side == 0 { -1 } else { 1 };
+            let cx = x + WHEEL_DX[side as usize] + dir * pull;
+            wheel(grid, cx, y + 5, t * 3.0);
+            wheel_pos = (cx, y + 5);
+            if pull <= 1 && (t * 12.0).fract() < 0.5 {
+                // Wheel-gun sparks.
+                for (dx, dy) in [(-1, -4), (1, -4), (2, 4), (-2, 4)] {
+                    draw::dot_i(grid, cx + dx, y + 5 + dy);
                 }
-            } else if is_done {
-                // Filled solid tyre = done
-                for dy in -wheel_r..=wheel_r {
-                    for dx in -wheel_r..=wheel_r {
-                        if dx * dx + dy * dy <= wheel_r * wheel_r + wheel_r {
-                            draw::dot_i(grid, wx + dx, wy + dy);
-                        }
-                    }
+            }
+        }
+
+        // Jacks under the rear wing and the nose.
+        for jx in [x + 1, x + 28] {
+            for jy in y + 5..ground {
+                draw::dot_i(grid, jx, jy);
+            }
+            sprite(grid, jx - 2, ground - 1, &[".###.", "#####"]);
+        }
+
+        // Crew: one crouched behind the rear wheel, one ahead of the nose.
+        for (k, base) in [(0, x - 9), (1, x + 31)] {
+            let reach = if working && side == k {
+                if k == 0 {
+                    -pull
+                } else {
+                    pull
                 }
             } else {
-                // Unfilled tyre circle = waiting
-                let steps = (wheel_r * 6).max(8) as usize;
-                for s in 0..steps {
-                    let angle = s as f32 / steps as f32 * 2.0 * PI;
-                    let px = (wx as f32 + wheel_r as f32 * angle.cos()) as i32;
-                    let py = (wy as f32 + wheel_r as f32 * angle.sin()) as i32;
-                    draw::dot_i(grid, px, py);
-                }
+                0
+            };
+            let cx = base + reach;
+            let face_right = k == 0;
+            sprite(grid, cx + 2, ground - 9, &["##", "##"]);
+            for yy in ground - 7..ground - 3 {
+                draw::dot_i(grid, cx + 2, yy);
             }
+            // Arms toward the wheel, legs crouched.
+            let (a0, a1) = if face_right { (3, 6) } else { (-3, 1) };
+            for ax in a0..a1 {
+                draw::dot_i(grid, cx + ax, ground - 5);
+            }
+            sprite(grid, cx, ground - 3, &["#.#..", "#..#.", "#...#"]);
         }
 
-        // All done: car body flashes
-        if done_count >= 4 {
-            let flash = (ctx.time * 8.0).fract() < 0.5;
-            if flash {
-                draw::fill_rect(
-                    grid,
-                    car_x0.max(0) as usize,
-                    car_y0.max(0) as usize,
-                    (car_w as usize).min(dw.saturating_sub(car_x0.max(0) as usize)),
-                    (car_h as usize).min(dh.saturating_sub(car_y0.max(0) as usize)),
-                );
+        // Pit board: four tyre boxes, filled as each is changed.
+        let bx = wi - board_w;
+        let bh = (hi - 5).max(6);
+        draw::rect_outline(
+            grid,
+            bx.max(0) as usize,
+            0,
+            (board_w - 1).max(0) as usize,
+            bh as usize,
+        );
+        for k in 0..4 {
+            let tx = bx + 2 + k * 4;
+            if k < done {
+                block(grid, tx, 2, 3, 3);
+            } else {
+                sprite(grid, tx, 2, &["###", "#.#", "###"]);
             }
         }
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
+        sprite(grid, bx + 8, 6, &DIGITS[done as usize]);
+        for py in bh..hi {
+            draw::dot_i(grid, bx + board_w / 2, py);
         }
 
+        // Colour: red car, orange crew, yellow board, steel jacks, tyres.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if px >= bx - 1 {
+                    Color::rgb(250, 220, 60)
+                } else if working && (px - wheel_pos.0).abs() <= 3 && (py - wheel_pos.1).abs() <= 3
+                {
+                    Color::rgb(200, 200, 210) // tyre on the move
+                } else if px < x - 1 || px > x + 30 {
+                    Color::rgb(255, 150, 40) // crew
+                } else if py >= ground - 1 {
+                    Color::rgb(160, 170, 190) // jacks
+                } else {
+                    Color::rgb(232, 44, 44)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
@@ -768,14 +815,14 @@ impl ProgressStyle for GearShifter {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Odometer
-//    Uses the glyph API to show rolling digit columns.
-//    Progress maps to a large integer (0–99999).
-//    Each digit column shows its value via V_BLOCKS — a vertical ramp from the
-//    digit below to the digit above, with the current digit centered.
-//    time drives a smooth fractional-digit roll animation.
+//    A dashboard odometer: a row of framed number drums reading 00000→99999
+//    as eased grows. The right-most drum turns continuously with time (its
+//    digit slides up as the next rolls in), and a drum above a run of 9s
+//    turns with it, exactly like a mechanical counter's carry.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Odometer;
+
 impl ProgressStyle for Odometer {
     fn name(&self) -> &str {
         "odometer"
@@ -784,101 +831,50 @@ impl ProgressStyle for Odometer {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Odometer: digit columns roll from 00000 to 99999 as progress grows; smooth block ramp"
+        "Odometer: framed number drums count 00000→99999 with progress; the last drum rolls smoothly, each digit sliding up as the next rolls in"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let drums = 5;
+        let pitch = 11;
+        let x0 = ((wi - drums * pitch) / 2).max(0);
+        let value = (ctx.eased.clamp(0.0, 1.0) * 99_999.0).round();
+        // The units drum turns continuously while the car moves.
+        let turn = (ctx.time * 1.5).fract();
 
-        // Total odometer value: 0..99999 scaled by eased
-        let max_val = 99999_u32;
-        // Fractional value (with time-driven smooth roll)
-        let frac_val = ctx.eased * max_val as f32;
-
-        // How many digit columns fit?  Each digit needs 1 cell wide.
-        // We center them horizontally.
-        let num_digits = 5usize;
-        let digit_cols = num_digits.min(cw);
-        let start_col = (cw.saturating_sub(digit_cols)) / 2;
-
-        // For each digit position compute the digit value + fractional part
-        for d in 0..digit_cols {
-            // The digit's place: d=0 is the 10^4 column, d=4 is the units column
-            let place = 10_u32.pow((digit_cols - 1 - d) as u32);
-            let digit_frac = (frac_val / place as f32) % 10.0;
-            let digit_int = digit_frac.floor() as usize;
-            let digit_rem = digit_frac.fract(); // 0..1 = how far into rolling to next digit
-
-            let cell_x = start_col + d;
-
-            // Draw each row of this cell column
-            // In a 1-cell-tall grid: just draw the current digit.
-            // In taller grids: top rows show the previous digit rolling out,
-            // bottom rows show the next digit rolling in.
-            for row in 0..ch {
-                // Map row to sub-digit position
-                // Row 0 = top (previous digit leaving), row ch-1 = bottom (next arriving)
-                let row_frac = if ch <= 1 {
-                    0.5
-                } else {
-                    row as f32 / (ch - 1) as f32
-                };
-                // Position within the rolling reel: 0=top of current, 1=bottom
-                // We show: at the transition, the reel has moved digit_rem * ch rows up
-                let reel_pos = row_frac + digit_rem;
-                let which_digit = if reel_pos < 1.0 {
-                    digit_int
-                } else {
-                    (digit_int + 1) % 10
-                };
-                let frac_in_cell = reel_pos.fract();
-                // Use vblock to render the fractional height
-                let level = (frac_in_cell * 8.0) as usize;
-                let _ = level; // used below
-
-                // Choose the glyph: full block for solid digit, partial block for rolling
-                let glyph = if (reel_pos - reel_pos.floor()).abs() < 0.12 {
-                    // Near top of this digit's cell: show a lighter shade
-                    draw::SHADES[1]
-                } else {
-                    // Map digit 0-9 to a block density (using shades + blocks)
-                    // Since we don't have actual numeral glyphs, use a density proxy:
-                    // digits 0-9 map to shade levels 0..4 cycling, with full block for rounded digits
-                    match which_digit {
-                        0 | 8 => '█',     // full (round digits)
-                        1 | 7 => '▏',     // thin (vertical stroke)
-                        2 | 3 | 5 => '▓', // heavy fill
-                        4 | 6 | 9 => '▒', // medium fill
-                        _ => '░',
+        for d in 0..drums {
+            let x = x0 + d * pitch;
+            draw::rect_outline(grid, x.max(0) as usize, 0, 10, h);
+            // Place value of this drum; the units drum rolls with the fraction,
+            // higher drums only roll while everything below them reads 9.
+            let place = 10_f32.powi(drums - 1 - d);
+            let digit = (value / place).floor() as i32 % 10;
+            let below = value % place;
+            let roll = if ctx.eased < 1.0 && (d == drums - 1 || below >= place - 1.0) {
+                turn
+            } else {
+                0.0
+            };
+            let shift = (roll * 12.0) as i32;
+            // Current digit slides up; the next one follows from below.
+            for (k, dv) in [(0, digit), (1, (digit + 1) % 10)] {
+                let top = hi / 2 - 5 - shift + k * 12;
+                for (r, bits) in DIGITS[dv as usize].iter().enumerate() {
+                    for (c, b) in bits.bytes().enumerate() {
+                        let y = top + r as i32 * 2;
+                        if b == b'#' && y > 0 && y + 1 < hi - 1 {
+                            for (ox, oy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                                draw::dot_i(grid, x + 2 + c as i32 * 2 + ox, y + oy);
+                            }
+                        }
                     }
-                };
-                draw::glyph(grid, cell_x, row, glyph);
+                }
             }
         }
-
-        // Border box around the odometer digits
-        let (dw, dh) = draw::dot_dims(grid);
-        let box_x0 = start_col * 2;
-        let box_x1 = (start_col + digit_cols) * 2;
-        if box_x1 <= dw && dh > 0 {
-            draw::hline(grid, box_x0, box_x1, 0);
-            draw::hline(grid, box_x0, box_x1, dh - 1);
-            draw::vline(grid, box_x0, 0, dh - 1);
-            draw::vline(grid, box_x1.min(dw - 1), 0, dh - 1);
-        }
-
-        // Color
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
-        }
-
         Ok(())
     }
 }
@@ -1005,12 +1001,10 @@ impl ProgressStyle for TunnelHeadlights {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Burnout / tyre marks
-//    A horizontal baseline representing the road.  As eased grows, rubber
-//    marks (dense zigzag/wavy lines) are laid down from right to left across
-//    the baseline — the track-out marks of a burnout.
-//    time drives a slight lateral oscillation (the car fishtails).
-//    The marks get denser (double lines) nearer to the car's current position.
+// 9. Burnout
+//    The race car sits on the start line, rocking, its rear wheel spinning
+//    flat out; billowing tyre-smoke puffs roll back and up from the rear tyre
+//    and black rubber marks stretch behind it. The smoke cloud's reach = eased.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Burnout;
@@ -1022,95 +1016,76 @@ impl ProgressStyle for Burnout {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Burnout: rubber tyre marks accumulate right-to-left as progress grows; fishtail via time"
+        "Race car on the start line spinning its rear wheel; billowing tyre smoke and rubber marks reach back further as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        // Road: bottom two rows
-        let road_y = dh.saturating_sub(1);
-        let road_y2 = dh.saturating_sub(2);
-        draw::hline(grid, 0, dw - 1, road_y);
-
-        // Tread zone: vertical span above the road
-        let tread_h = ((dh as f32 * 0.45).max(2.0) as usize).min(dh.saturating_sub(1));
-
-        // Marks are laid from the right, eased controls how far left they reach.
-        let mark_right = dw.saturating_sub(1);
-        let mark_left = (dw as f32 * (1.0 - ctx.eased)) as usize;
-
-        // Left tyre track and right tyre track (two lines)
-        let track_y_top = road_y2.saturating_sub(tread_h);
-        let track_left_y = road_y2.saturating_sub(tread_h / 2);
-        let track_right_y = road_y2;
-
-        // Draw tyre marks: wavy lines using sine lateral offset driven by time
-        for x in mark_left..=mark_right.min(dw - 1) {
-            let phase = x as f32 * 0.8;
-            let fishtail = (ctx.time * 6.0 + phase).sin() * 1.5;
-            let y_off = fishtail as i32;
-
-            // Left tyre mark
-            let left_y = (track_left_y as i32 + y_off).clamp(0, dh as i32 - 1) as usize;
-            draw::dot(grid, x, left_y);
-            if left_y + 1 < dh {
-                draw::dot(grid, x, left_y + 1);
-            }
-
-            // Right tyre mark
-            let right_y = (track_right_y as i32 - y_off).clamp(0, dh as i32 - 1) as usize;
-            draw::dot(grid, x, right_y);
-        }
-
-        // Car at the leading edge (left side of the marks = car current position)
-        let car_x = mark_left as i32;
-        let car_y = (track_left_y as i32 + track_right_y as i32) / 2;
-        // Simple car silhouette: a filled rect
-        let car_w = (dw as i32 / 8).max(2);
-        let car_h_size = (dh as i32 / 4).max(2);
-        for dy in -car_h_size / 2..=car_h_size / 2 {
-            for dx in -car_w..=0 {
-                draw::dot_i(grid, car_x + dx, car_y + dy);
-            }
-        }
-
-        // Smoke: sparse dots above the car
-        let smoke_density = (ctx.eased * 8.0) as usize;
-        for s in 0..smoke_density {
-            let sx_off = (s * 3) as i32;
-            let sy_off = ((s * 7 + 3) % (tread_h.max(1))) as i32;
-            draw::dot_i(
-                grid,
-                car_x - car_w / 2 - sx_off,
-                road_y as i32 - car_h_size - sy_off,
-            );
-        }
-
-        // Color
+        let (w, h) = draw::dot_dims(grid);
         let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
+
+        let jitter = i32::from((t * 14.0).fract() < 0.5);
+        let x = (wi - 38).max(10) + jitter;
+        let y = hi - 10;
+        race_car(grid, x, y, t * 40.0, [true, true]);
+        let rear = x + WHEEL_DX[0];
+
+        // Start line ahead of the nose.
+        let line_x = x + 33;
+        for ly in 0..hi {
+            if ly % 2 == 0 {
+                draw::dot_i(grid, line_x, ly);
+                draw::dot_i(grid, line_x + 1, ly);
             }
         }
 
-        let _ = track_y_top;
+        // Rubber marks and smoke reach back with progress.
+        let reach = 8.0 + ctx.eased * (rear as f32 - 4.0).max(0.0);
+        let mark0 = rear - reach as i32;
+        for mx in mark0.max(0)..rear {
+            draw::dot_i(grid, mx, hi - 1);
+        }
+        for i in 0..9 {
+            let s = (t * 0.6 + i as f32 / 9.0).fract();
+            let cx = rear - 2 - (s * reach) as i32;
+            let cy = hi - 3 - (s * 7.0) as i32;
+            let r = 1.5 + s * 3.5;
+            let steps = (r * 5.0) as i32 + 4;
+            for k in 0..steps {
+                let a = k as f32 / steps as f32 * 2.0 * PI + i as f32;
+                draw::dot_i(
+                    grid,
+                    cx + (a.cos() * r).round() as i32,
+                    cy + (a.sin() * r * 0.8).round() as i32,
+                );
+            }
+        }
+
+        // Colour: red car, white start line, grey smoke.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let px = cx as i32 * 2 + 1;
+                let color = if px >= line_x - 1 {
+                    Color::rgb(240, 240, 240)
+                } else if px > x {
+                    Color::rgb(232, 44, 44)
+                } else {
+                    Color::rgb(176, 180, 190)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Engine pistons
-//    4 pistons in a row, each cycling up/down driven by time.
-//    The crank offsets each piston by 90° so they fire in sequence.
-//    eased controls RPM (cycle speed) so the pistons spin faster as progress grows.
-//    Each piston is a rectangle; the connecting rod is a line to the crank.
+// 10. Pistons
+//    Engine cutaway: a row of cylinders (walls, head, spark plug) with
+//    pistons on connecting rods driven by a rotating crankshaft; each
+//    cylinder flashes its spark at top dead centre. Cylinders fire up left
+//    to right as eased grows; the rest sit cold at the bottom of the stroke.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Pistons;
@@ -1122,114 +1097,90 @@ impl ProgressStyle for Pistons {
         "cars"
     }
     fn describe(&self) -> &str {
-        "4 engine pistons fire in sequence driven by time; RPM grows with eased"
+        "Engine cutaway: pistons pump on connecting rods from a spinning crankshaft with spark flashes; more cylinders fire as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
+        let (w, h) = draw::dot_dims(grid);
+        let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
 
-        let n_pistons = 4usize;
-        let piston_w = (dw / (n_pistons * 2)).max(2);
-        let gap = (dw.saturating_sub(n_pistons * piston_w)) / (n_pistons + 1);
+        let n = (wi / 11).max(1);
+        let pitch = (wi / n).max(1);
+        let running = (1 + (ctx.eased * (n - 1) as f32).round() as i32).min(n);
+        let yc = hi - 3; // crankshaft
+        let speed = 7.0 + ctx.eased * 7.0;
+        let wall_bot = yc - 4;
+        draw::hline(grid, 0, w.saturating_sub(1), (yc.max(0)) as usize);
+        let mut flash = [false; 16];
 
-        // RPM: low at 0% progress, high at 100%
-        let rpm_min = 0.5_f32;
-        let rpm_max = 8.0_f32;
-        let rpm = rpm_min + ctx.eased * (rpm_max - rpm_min);
+        for i in 0..n {
+            let x0 = i * pitch + (pitch - 10) / 2;
+            let cx = x0 + 5;
+            // Cylinder walls, head and spark plug.
+            for yy in 1..=wall_bot {
+                draw::dot_i(grid, x0, yy);
+                draw::dot_i(grid, x0 + 9, yy);
+            }
+            for xx in x0..=x0 + 9 {
+                draw::dot_i(grid, xx, 1);
+            }
+            draw::dot_i(grid, cx - 1, 0);
+            draw::dot_i(grid, cx, 0);
 
-        // Crank center y (bottom third)
-        let crank_y = (dh as f32 * 0.75).min(dh as f32 - 2.0) as i32;
-        // Stroke amplitude: pistons travel this many dots up and down
-        let stroke = ((dh as f32 * 0.30).max(2.0)) as i32;
-        let piston_h = ((dh as f32 * 0.15).max(2.0)) as i32;
-
-        // Cylinder walls top (fixed)
-        let cylinder_top = 1_i32;
-
-        for i in 0..n_pistons {
-            // Phase offset: 90° between each piston
-            let phase_offset = i as f32 * PI / 2.0;
-            let crank_angle = ctx.time * rpm * 2.0 * PI + phase_offset;
-
-            // Piston y = crank_y + stroke * cos(angle)  (0 = top of stroke)
-            let piston_mid_y = (crank_y as f32 + stroke as f32 * crank_angle.cos()) as i32;
-            let piston_y_top = (piston_mid_y - piston_h / 2).max(cylinder_top);
-            let piston_y_bot = (piston_mid_y + piston_h / 2).min(crank_y - 1);
-
-            // X center of this piston
-            let piston_cx = (gap + i * (piston_w + gap) + piston_w / 2) as i32;
-            let pw2 = (piston_w / 2) as i32;
-
-            // Cylinder walls (vertical lines)
-            draw::vline(
-                grid,
-                (piston_cx - pw2 - 1).max(0) as usize,
-                cylinder_top as usize,
-                crank_y as usize,
+            let on = i < running;
+            let a = if on {
+                t * speed + i as f32 * PI * 0.5
+            } else {
+                PI * 0.5
+            };
+            let (pin_x, pin_y) = (
+                cx + (a.cos() * 2.0).round() as i32,
+                yc + (a.sin() * 2.0).round() as i32,
             );
-            draw::vline(
-                grid,
-                (piston_cx + pw2 + 1)
-                    .min(dw.saturating_sub(1) as i32)
-                    .max(0) as usize,
-                cylinder_top as usize,
-                crank_y as usize,
-            );
-
-            // Piston body (filled rectangle)
-            for dy in piston_y_top..=piston_y_bot.max(piston_y_top) {
-                for dx in -pw2..=pw2 {
-                    draw::dot_i(grid, piston_cx + dx, dy);
+            let wrist = pin_y - 6;
+            // Piston crown + skirt, connecting rod, crank pin.
+            block(grid, x0 + 1, wrist - 2, 8, 2);
+            draw::dot_i(grid, x0 + 1, wrist);
+            draw::dot_i(grid, x0 + 8, wrist);
+            line(grid, cx, wrist, pin_x, pin_y);
+            block(grid, pin_x - 1, pin_y - 1, 2, 2);
+            // Spark flash at top dead centre.
+            if on && a.sin() < -0.8 {
+                sprite(grid, cx - 3, 2, &["#.#.#.", ".####.", "#.##.#"]);
+                if let Some(f) = flash.get_mut(i as usize) {
+                    *f = true;
                 }
             }
-
-            // Connecting rod: from piston bottom to crank center
-            line(
-                grid,
-                piston_cx,
-                piston_y_bot.max(piston_y_top),
-                piston_cx,
-                crank_y,
-            );
-
-            // Crank pin dot
-            draw::dot_i(grid, piston_cx, crank_y);
         }
 
-        // Crank shaft: horizontal bar at crank_y
-        let shaft_x0 = gap as i32;
-        let shaft_x1 = (gap + n_pistons * (piston_w + gap)) as i32;
-        draw::hline(
-            grid,
-            shaft_x0.max(0) as usize,
-            shaft_x1.min(dw as i32 - 1) as usize,
-            crank_y as usize,
-        );
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
+        // Colour: hot running cylinders, cold idle ones, yellow sparks.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let i = (px / pitch).min(n - 1);
+                let color = if i >= running {
+                    Color::rgb(100, 110, 130)
+                } else if py < 5 && flash.get(i as usize).copied().unwrap_or(false) {
+                    Color::rgb(255, 232, 80)
+                } else if py >= yc - 1 {
+                    Color::rgb(200, 204, 214)
+                } else {
+                    Color::rgb(255, 128, 56)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
-
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. Nitro / turbo boost
-//    A horizontal charge bar (the boost tank).
-//    As eased fills the tank, a trailing SURGE spike extends past the fill head:
-//    the spike decays exponentially with distance from the head.
-//    time drives an oscillating "charge wobble" on the spike.
-//    At full charge (eased ≈ 1) the entire bar erupts in a wide flare.
+// 11. Nitro boost
+//    The race car blasts left to right (position = eased) on a jet of nitro
+//    flame from its exhaust — blue core, orange tips, flickering — while
+//    speed lines and road dashes stream past.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct NitroBoost;
@@ -1241,81 +1192,86 @@ impl ProgressStyle for NitroBoost {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Nitro boost charge: fills left-to-right; a spike surges past the head; full charge erupts"
+        "Race car rockets along on a flickering nitro flame jet from its exhaust, speed lines streaming past; its position is the progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        let mid = dh / 2;
-        // Main fill: a thick band centered vertically
-        let fill_h = ((dh as f32 * 0.55).max(2.0) as usize).min(dh);
-        let fill_y0 = mid.saturating_sub(fill_h / 2);
-        let fill_x1 = (ctx.eased * dw as f32).round() as usize;
-
-        // Fill body
-        draw::fill_rect(grid, 0, fill_y0, fill_x1.min(dw), fill_h);
-
-        // Outline track
-        draw::hline(grid, 0, dw - 1, fill_y0.saturating_sub(1));
-        draw::hline(grid, 0, dw - 1, (fill_y0 + fill_h).min(dh - 1));
-
-        // Surge spike: beyond the fill head, decaying exponential amplitude
-        let spike_wobble = (ctx.time * 15.0).sin() * 0.5 + 0.5; // 0..1
-        let spike_len = ((dw as f32 * 0.20).max(3.0)) as usize;
-
-        for dx in 0..spike_len {
-            let x = fill_x1 + dx;
-            if x >= dw {
-                break;
-            }
-            let decay = (-(dx as f32) / (spike_len as f32 * 0.4)).exp();
-            let wobble_amp = decay * spike_wobble;
-            let spike_h = ((fill_h as f32 * decay * 0.8).round() as usize).max(1);
-            let wobble_y = (wobble_amp * 2.0) as usize;
-            let sy0 = fill_y0.saturating_sub(wobble_y);
-            let sy1 = (fill_y0 + spike_h + wobble_y).min(dh - 1);
-            draw::vline(grid, x, sy0, sy1);
-        }
-
-        // FULL CHARGE eruption: wide flare
-        if ctx.eased >= 0.95 {
-            let flare_phase = (ctx.time * 12.0).fract();
-            let flare_h = ((dh as f32 * flare_phase) as usize).min(dh);
-            let flare_x0 = fill_x1.saturating_sub(4);
-            for x in flare_x0..dw.min(flare_x0 + 8) {
-                let fy0 = mid.saturating_sub(flare_h / 2);
-                let fy1 = (mid + flare_h / 2).min(dh - 1);
-                draw::vline(grid, x, fy0, fy1);
-            }
-        }
-
-        // Color
+        let (w, h) = draw::dot_dims(grid);
         let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cell_x in 0..filled.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
+
+        let x = 16 + (ctx.eased * (wi - 46).max(0) as f32) as i32;
+        let y = hi - 10;
+        race_car(grid, x, y, t * 30.0, [true, true]);
+
+        // Flame jet from the exhaust behind the rear wing.
+        let ey = y + 3;
+        let len = 11.0 + (t * 23.0).sin() * 2.0 + (t * 37.0).sin() * 1.5;
+        let len_i = len as i32;
+        for k in 0..len_i {
+            let f = k as f32 / len;
+            let hh = ((1.0 - f) * 2.6).round() as i32;
+            for dy in -hh..=hh {
+                let seed = (k * 7 + dy * 13 + (t * 20.0) as i32 * 3).rem_euclid(5);
+                if f < 0.4 || seed != 0 {
+                    draw::dot_i(grid, x - 1 - k, ey + dy);
+                }
             }
         }
 
+        // Speed lines above the car, road dashes below, streaming left.
+        for i in 0..5 {
+            let sp = 60.0 + i as f32 * 9.0;
+            let period = (wi + 20) as f32;
+            let sx = wi - ((t * sp + i as f32 * 31.0) % period) as i32;
+            let sy = 1 + i * 2;
+            if sy >= y && sx + 8 >= x - len_i {
+                continue;
+            }
+            for k in 0..(6 + i % 3 * 2) {
+                draw::dot_i(grid, sx + k, sy);
+            }
+        }
+        let off = (t * 50.0) as i32;
+        for gx in 0..wi {
+            if (gx + off).rem_euclid(8) < 4 {
+                draw::dot_i(grid, gx, hi - 1);
+            }
+        }
+
+        // Colour: blue core / orange flame, red car, white streaks.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if (x..=x + 30).contains(&px) && py >= y - 1 {
+                    Color::rgb(232, 44, 44)
+                } else if px < x && px >= x - 1 - len_i && (py - ey).abs() <= 3 {
+                    if px >= x - 5 {
+                        Color::rgb(90, 170, 255)
+                    } else {
+                        Color::rgb(255, 150, 40)
+                    }
+                } else {
+                    Color::rgb(210, 226, 255)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. Checkered flag
-//    At < 100% progress: a partial flag unfurls from the left.
-//    At 100% progress: the full flag waves with a sine-ripple driven by time.
-//    The flag is a checkerboard pattern (alternating filled/empty cells).
-//    The ripple displaces each column vertically by A·sin(2π·x/λ + ωt).
+//    A pole on the left with a checkered flag of 4×4-dot squares. The flag
+//    unfurls rightward as eased grows and ripples in the wind with time: each
+//    column is displaced by a travelling sine wave that grows toward the free
+//    edge, so the hoist stays pinned to the pole.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct CheckeredFlag;
+
 impl ProgressStyle for CheckeredFlag {
     fn name(&self) -> &str {
         "checkered-flag"
@@ -1324,69 +1280,36 @@ impl ProgressStyle for CheckeredFlag {
         "cars"
     }
     fn describe(&self) -> &str {
-        "Checkered finish flag: unfurls as progress grows; at 100% the flag ripples via sine wave"
+        "Checkered flag: a black-and-white chequered flag on a pole unfurls with progress and ripples in the wind"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // How many columns of the flag are unfurled
-        let unfurled_cols = (ctx.eased * cw as f32).ceil() as usize;
+        // Pole with a ball finial.
+        draw::vline(grid, 1, 1, h - 1);
+        draw::dot_i(grid, 0, 0);
+        draw::dot_i(grid, 1, 0);
+        draw::dot_i(grid, 2, 0);
 
-        // Wave parameters
-        let wave_amp = if ch > 1 {
-            (ch as f32 * 0.35).max(0.5)
-        } else {
-            0.0
-        };
-        let wave_len = (cw as f32 * 0.6).max(1.0);
-        let wave_speed = 3.0_f32;
-
-        for col in 0..unfurled_cols.min(cw) {
-            // Sine displacement for this column (in cells)
-            let wave_disp = if ctx.eased >= 1.0 {
-                (wave_amp * (2.0 * PI * col as f32 / wave_len - wave_speed * ctx.time).sin()) as i32
-            } else {
-                0_i32
-            };
-
-            for row in 0..ch {
-                // Checkerboard: filled if (col + row) is even
-                let filled_cell = (col + row) % 2 == 0;
-
-                // Apply wave displacement
-                let target_row = (row as i32 + wave_disp).clamp(0, ch as i32 - 1) as usize;
-
-                if filled_cell {
-                    draw::glyph(grid, col, target_row, '█');
-                } else {
-                    // Empty square outline (just corners as a shade)
-                    draw::glyph(grid, col, target_row, ' ');
+        // Flag: 3 rows of squares (12 dots) hanging from the top of the pole.
+        let fh = (hi - 3).clamp(1, 12);
+        let fw = (4.0 + ctx.eased * (wi - 7).max(0) as f32) as i32;
+        for fx in 0..fw {
+            let reach = fx as f32 / fw.max(1) as f32;
+            let dy = ((fx as f32 * 0.3 - ctx.time * 7.0).sin() * 1.6 * reach).round() as i32;
+            for fy in 0..fh {
+                if (fx / 4 + fy / 4) % 2 == 0 {
+                    draw::dot_i(grid, 3 + fx, 1 + fy + dy);
                 }
             }
+            // Outline the top and bottom edges so white squares still read.
+            draw::dot_i(grid, 3 + fx, 1 + dy);
+            draw::dot_i(grid, 3 + fx, fh + dy);
         }
-
-        // Flag pole: vertical line on the left edge in dot space
-        let (dw, dh) = draw::dot_dims(grid);
-        draw::vline(grid, 0, 0, dh - 1);
-        // Pole tip
-        draw::dot(grid, 1, 0);
-        draw::dot(grid, 2, 0);
-
-        // Color: no tint — the checkered pattern IS the visual; color would occlude it.
-        // Instead tint only the empty (white) squares as a subtle background wash.
-        for col in 0..unfurled_cols.min(cw) {
-            for row in 0..ch {
-                if (col + row) % 2 != 0 {
-                    let t = col as f32 / cw as f32;
-                    draw::tint_row(grid, row, col, col, ctx.palette.sample(t));
-                }
-            }
-        }
-
-        let _ = dw;
         Ok(())
     }
 }

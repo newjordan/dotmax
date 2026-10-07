@@ -88,12 +88,13 @@ impl ProgressStyle for Sunrise {
         "synthwave"
     }
     fn describe(&self) -> &str {
-        "Striped sun rising over a scrolling neon grid"
+        "Sliced sun rising over a perspective neon grid rolling toward you"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
-        let horizon = h as i32 - 5;
+        // Horizon a little over half way down leaves room for a real floor.
+        let horizon = (h as i32 * 9 / 16).max(1);
         let cx = w as i32 / 2;
         let r = 7i32;
         // Sun center climbs from just-peeking to fully risen; a linear blend
@@ -106,8 +107,10 @@ impl ProgressStyle for Sunrise {
             if y < 0 || y >= horizon {
                 continue;
             }
-            // Lower half of the disc carries the classic scan-gap stripes.
-            if dy > 0 && (y + stripe_shift).rem_euclid(3) == 0 {
+            // Lower part of the disc carries the classic slices, the gaps
+            // widening toward the horizon and scrolling down on time.
+            let band = (y + stripe_shift).rem_euclid(4);
+            if dy > -2 && (band == 0 || (dy > r / 2 && band == 1)) {
                 continue;
             }
             let half = ((r * r - dy * dy) as f32).sqrt() as i32;
@@ -130,8 +133,8 @@ impl ProgressStyle for Sunrise {
         }
         // Perspective floor: converging verticals plus rolling horizontals.
         let floor_cell = (horizon as usize / 4 + 1).min(ctx.height - 1);
-        for k in -6..=6i32 {
-            let bx = cx + k * 9;
+        for k in -8..=8i32 {
+            let bx = cx + k * 16;
             let steps = h as i32 - 1 - horizon;
             for s in 1..=steps {
                 let x = cx + (bx - cx) * s / steps.max(1);
@@ -687,34 +690,49 @@ impl ProgressStyle for Outrun {
             }
             x += 8;
         }
-        // The coupe: an 8×3 wedge with a spoiler, riding at eased.
-        let car_x = (ctx.eased * (w as f32 - 12.0)) as i32 + 1;
-        let car_y = road - 3;
-        for k in 2..8 {
-            draw::dot_i(grid, car_x + k, car_y);
+        // The coupe: a 20×7 side-on wedge (long bonnet facing the sun, glass
+        // cabin, wheel arches), riding at eased; the wheels' spokes turn.
+        const COUPE: [&[u8; 20]; 6] = [
+            b"        ######      ",
+            b"      ##  #   ##    ",
+            b" ################## ",
+            b"####################",
+            b"####################",
+            b"###   ########   ###",
+        ];
+        let car_x = (ctx.eased * (w as f32 - 22.0).max(0.0)) as i32 + 1;
+        let car_y = road - 7;
+        for (dy, row) in COUPE.iter().enumerate() {
+            for (dx, &c) in row.iter().enumerate() {
+                if c == b'#' {
+                    draw::dot_i(grid, car_x + dx as i32, car_y + dy as i32);
+                }
+            }
         }
-        for k in 0..9 {
-            draw::dot_i(grid, car_x + k, car_y + 1);
-            draw::dot_i(grid, car_x + k, car_y + 2);
+        let spoke = (ctx.time * 10.0) as i32 % 2;
+        for wx in [4, 15] {
+            draw::dot_i(grid, car_x + wx - 1 + spoke, car_y + 6);
+            draw::dot_i(grid, car_x + wx + 1 - spoke, car_y + 5);
+            draw::dot_i(grid, car_x + wx, car_y + 6 - spoke);
         }
-        // Wheel bumps.
-        draw::dot_i(grid, car_x + 2, car_y + 3);
-        draw::dot_i(grid, car_x + 6, car_y + 3);
         // Exhaust puffs trailing off behind.
         let slot = (ctx.time * 4.0) as i32;
         for p in 1..5i32 {
             let px = car_x - p * 3 - ((ctx.time * 8.0) as i32 % 3);
             if px >= 0 && hash3(p, 2, slot) > 0.35 {
-                draw::dot_i(grid, px, car_y + 1 + (hash3(p, 5, slot) * 2.0) as i32);
+                draw::dot_i(grid, px, car_y + 4 + (hash3(p, 5, slot) * 2.0) as i32);
             }
         }
         // Tints: pink car, cyan road, violet dashes.
         for cxl in 0..ctx.width {
             draw::tint_row(grid, (road / 4) as usize, cxl, cxl, SW_CYAN);
         }
-        let car_cell_y = (car_y / 4).max(0) as usize;
-        for cxl in (car_x / 2).max(0)..=((car_x + 9) / 2).min(ctx.width as i32 - 1) {
-            let _ = grid.set_cell_color(cxl as usize, car_cell_y, SW_PINK);
+        for car_cell_y in [car_y / 4, (car_y + 5) / 4] {
+            for cxl in (car_x / 2).max(0)..=((car_x + 19) / 2).min(ctx.width as i32 - 1) {
+                if car_cell_y >= 0 {
+                    let _ = grid.set_cell_color(cxl as usize, car_cell_y as usize, SW_PINK);
+                }
+            }
         }
         Ok(())
     }

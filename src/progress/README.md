@@ -1,6 +1,6 @@
 # `dotmax::progress` — modular terminal progress styles
 
-664 loading bars, spinners, gauges, borders, screen-wipes and animated
+692 loading bars, spinners, gauges, borders, screen-wipes and animated
 visualizations for braille/block terminals, built to be **lifted out and dropped
 into other programs**. Every style is a stateless pure function of
 `(progress, time)`; everything a style needs arrives through one immutable
@@ -47,9 +47,10 @@ impl ProgressStyle for MyBar {
 - `all_styles()` / `styles_for_theme(name)` / `themes()` — the registry.
 - `render_lines` / `render_string` — headless one-shot rendering.
 
-## Themes (52)
+## Themes (60)
 
-`classic` `animals` `tech` `nature` `space` `retro` `ocean` `food` ·
+`classic` `fable` `matrix` `aurora` `inferno` `glitch` `fireworks` `synthwave` `demoscene` ·
+`animals` `tech` `nature` `space` `retro` `ocean` `food` ·
 `fractal` `chaos` `waves` `cellular` `geometry` `noise` `numbertheory` `topology` ·
 `atari` `nintendo` `gameboy` `physics` `chemistry` `biology` `electronics` ·
 `perspective` `sinewave` `blocks` · `border` `wipe` `spinner` `meter` ·

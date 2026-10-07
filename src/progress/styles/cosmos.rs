@@ -143,15 +143,15 @@ impl ProgressStyle for Supernova {
         Ok(())
     }
 }
-
 // ---------------------------------------------------------------------------
 // 2 — Pulsar
 // ---------------------------------------------------------------------------
-// Structural idea: two opposed lighthouse beams sweeping around a central dot
-// at angular speed driven by time; beam count (blips) accumulates via eased.
-// No other style here uses sweeping angular beams as the fill mechanism.
+// Structural idea: a spinning neutron star throws two opposed cone beams that
+// sweep round like a lighthouse (angle driven by time). Below it a radio
+// telescope trace records the sharp periodic pulses; the trace is drawn out
+// to eased, so the pulse train *is* the progress bar.
 
-/// Pulsar: two lighthouse beams sweep around a magnetar; blip count = eased * max.
+/// Pulsar: twin lighthouse cones sweep round a neutron star; pulse trace = eased.
 struct Pulsar;
 impl ProgressStyle for Pulsar {
     fn name(&self) -> &str {
@@ -161,82 +161,127 @@ impl ProgressStyle for Pulsar {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Pulsar lighthouse beams sweep via time; blip tally counts up to eased"
+        "Pulsar: neutron star spins twin lighthouse beam cones; a radio pulse trace below records ticks out to eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wi = w as i32;
+        let hi = h as i32;
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let max_r = cx.min(cy * 2).max(2) as f32;
+        // Reserve the bottom rows for the pulse trace when there is room.
+        let trace_h = if hi >= 12 { 4 } else { 0 };
+        let cx = wi / 2;
+        let cy = ((hi - trace_h - 1) / 2).max(0);
+        let max_r = (w as f32) / 2.0;
 
-        // Spin rate accelerates with eased (faster pulsar = more progress).
-        let spin_rate = 2.0 + ctx.eased * 6.0;
-        let beam_angle = ctx.time * spin_rate;
-
-        // Two opposed beams (180° apart).
-        for beam in 0u32..2 {
-            let base_a = beam_angle + beam as f32 * PI;
-            // Each beam has angular half-width that narrows as progress grows
-            // (pulsar emission cone sharpens at higher spin).
-            let half_width = 0.18 - ctx.eased * 0.08;
-            let half_width = half_width.max(0.04);
-
-            let beam_steps = (max_r * 1.5) as usize;
-            let beam_steps = beam_steps.max(4);
-            for s in 0..beam_steps {
-                let r = s as f32;
-                if r > max_r {
-                    break;
-                }
-                // Fan: sweep a few angles within half_width
-                let fan_n = 5usize;
-                for f in 0..fan_n {
-                    let da =
-                        (f as f32 / fan_n.saturating_sub(1).max(1) as f32 - 0.5) * half_width * 2.0;
-                    let a = base_a + da;
-                    let px = cx + (r * a.cos()) as i32;
-                    let py = cy + (r * a.sin() * 0.5) as i32;
-                    // Beam fades with distance
-                    let fade_thresh = (1.0 - r / max_r) * 3.0;
-                    if hash(
-                        (s as u32)
-                            .wrapping_mul(7)
-                            .wrapping_add(f as u32 * 13)
-                            .wrapping_add(beam * 997),
-                    ) % 4
-                        < (fade_thresh * 3.5) as u32 + 1
-                    {
-                        draw::dot_i(grid, px, py);
+        // Twin cones, one each side, spinning about the vertical axis: seen
+        // side-on their projected length is R·|cos φ| and the magnetic tilt
+        // rocks them up/down, so they stretch, shrink and flash past us.
+        let spin = ctx.time * 2.4;
+        let reach = max_r * spin.cos().abs();
+        let tilt = spin.sin() * 0.18;
+        let floor = hi - trace_h;
+        for dir in [-1i32, 1] {
+            let reach_i = reach as i32;
+            let mut r = 3i32;
+            while r < reach_i {
+                let rf = r as f32;
+                let ymid = cy as f32 + rf * tilt * dir as f32;
+                let half = (0.6 + rf * 0.11).round() as i32;
+                for k in -half..=half {
+                    let edge = k.abs() == half;
+                    // Edges solid, interior a sparse moving shimmer.
+                    if !edge && (r + k - (ctx.time * 12.0) as i32).rem_euclid(3) != 0 {
+                        continue;
+                    }
+                    let py = ymid.round() as i32 + k;
+                    if py < floor {
+                        draw::dot_i(grid, cx + dir * r, py);
                     }
                 }
+                r += 1;
             }
         }
 
-        // Neutron-star core: dense 3×3 cluster
-        for dy in -1i32..=1 {
-            for dx in -1i32..=1 {
-                draw::dot_i(grid, cx + dx, cy + dy);
+        // Neutron star: solid core; it flares when a beam points at us.
+        let flash = spin.cos().abs() < 0.3;
+        let star_r = if hi >= 12 { 2 } else { 1 } + i32::from(flash);
+        if flash {
+            for &(dx, dy) in &[
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1, 1),
+                (-1, -1),
+                (1, -1),
+                (-1, 1),
+            ] {
+                draw::dot_i(grid, cx + dx * (star_r + 2), cy + dy * (star_r + 1));
+            }
+        }
+        for dy in -star_r..=star_r {
+            for dx in -star_r..=star_r {
+                if dx * dx + dy * dy <= star_r * star_r + star_r {
+                    draw::dot_i(grid, cx + dx, cy + dy);
+                }
             }
         }
 
-        // Blip tally bar: small accumulator along the bottom row of dots.
-        // Each blip = one lit dot; max blips = width.
-        let max_blips = w.saturating_sub(2);
-        let blips = (ctx.eased * max_blips as f32) as usize;
-        for b in 0..blips.min(max_blips) {
-            draw::dot(grid, b + 1, h.saturating_sub(1));
+        // Radio pulse trace: flat baseline with a sharp spike every period.
+        let mut trace_cols = 0usize;
+        if trace_h > 0 {
+            let base = hi - 1;
+            let period = 7;
+            let filled = (ctx.eased * wi as f32) as i32;
+            trace_cols = filled.max(0) as usize;
+            for x in 0..filled {
+                let ph = x % period;
+                let y = match ph {
+                    3 => base - 3,
+                    2 | 4 => base - 1,
+                    _ => base,
+                };
+                draw::dot_i(grid, x, y);
+                if ph == 3 {
+                    draw::vline(grid, x as usize, (base - 2) as usize, base as usize);
+                }
+            }
+            // Unrecorded remainder: faint dotted baseline.
+            let mut x = filled + 1;
+            while x < wi {
+                draw::dot_i(grid, x, base);
+                x += 3;
+            }
         }
 
-        // Tint beams with palette
+        // Tint: beams in the start colour, star in the end colour, trace graded.
         let (cells_w, cells_h) = grid.dimensions();
-        for cy_c in 0..cells_h {
-            let t = cy_c as f32 / cells_h.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy_c, 0, cells_w.saturating_sub(1), color);
+        let trace_cell = if trace_h > 0 { cells_h - 1 } else { cells_h };
+        for cy_c in 0..trace_cell {
+            draw::tint_row(grid, cy_c, 0, cells_w.saturating_sub(1), ctx.palette.start);
+        }
+        let star_cell_y = (cy.max(0) as usize) / 4;
+        let star_cell_x = (cx.max(0) as usize) / 2;
+        draw::tint_row(
+            grid,
+            star_cell_y,
+            star_cell_x.saturating_sub(1),
+            star_cell_x + 1,
+            ctx.palette.end,
+        );
+        if trace_h > 0 {
+            for cx_c in 0..cells_w {
+                let col = if cx_c * 2 < trace_cols {
+                    ctx.palette.sample(cx_c as f32 / cells_w.max(1) as f32)
+                } else {
+                    ctx.palette.track
+                };
+                draw::tint_row(grid, cells_h - 1, cx_c, cx_c, col);
+            }
         }
 
         Ok(())
@@ -246,11 +291,13 @@ impl ProgressStyle for Pulsar {
 // ---------------------------------------------------------------------------
 // 3 — Nebula cloud condensing
 // ---------------------------------------------------------------------------
-// Structural idea: the entire canvas is subdivided into shaded cells; cell
-// shade level grows with eased (gas condenses into denser material).
-// Pure shade-glyph approach — no dot-drawing at all in this style.
+// Structural idea: a billowing gas cloud built from overlapping soft blobs,
+// rendered with an ordered (Bayer) dither so the core reads dense and the
+// edges wispy. A sinuous dark dust lane cuts through it. The cloud lights up
+// left → right as eased grows; newborn stars ignite inside the lit gas and
+// twinkle, and the gas billows slowly with time.
 
-/// Nebula: gas cloud condenses across the canvas; cell shade = eased density.
+/// Nebula: dithered gas cloud with a dust lane and newborn stars; lit extent = eased.
 struct NebulaClouds;
 impl ProgressStyle for NebulaClouds {
     fn name(&self) -> &str {
@@ -260,42 +307,91 @@ impl ProgressStyle for NebulaClouds {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Nebula gas cloud condenses via shade glyphs; density = eased; ripples with time"
+        "Nebula: billowing dithered gas cloud with a dark dust lane and twinkling newborn stars; lit extent = eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cells_w, cells_h) = grid.dimensions();
-        if cells_w == 0 || cells_h == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let wf = w as f32;
+        let hf = h as f32;
 
-        // Each cell gets a noise-like density offset from hash + time ripple.
-        for cy in 0..cells_h {
-            for cx in 0..cells_w {
-                let idx = (cy * cells_w + cx) as u32;
+        // 4×4 Bayer thresholds for ordered dithering.
+        const BAYER: [[f32; 4]; 4] = [
+            [0.0, 8.0, 2.0, 10.0],
+            [12.0, 4.0, 14.0, 6.0],
+            [3.0, 11.0, 1.0, 9.0],
+            [15.0, 7.0, 13.0, 5.0],
+        ];
 
-                // Static spatial noise [0,1).
-                let spatial = hash_f(idx);
+        // Cloud lobes spaced along the bar with hashed vertical jitter.
+        let lobes = 6u32;
+        let rx = wf / lobes as f32 * 0.9;
+        let ry = (hf * 0.3).max(1.0);
+        let lit_edge = 8.0 + ctx.eased * wf * 1.1;
+        let drift = ctx.time * 0.6;
 
-                // Time ripple: slow outward pulse from centre.
-                let dcx = cx as f32 - cells_w as f32 / 2.0;
-                let dcy = (cy as f32 - cells_h as f32 / 2.0) * 2.0;
-                let dist = (dcx * dcx + dcy * dcy).sqrt();
-                let ripple = (dist * 0.4 - ctx.time * 0.7).sin() * 0.15;
+        let stars: Vec<(i32, i32)> = (0u32..5)
+            .map(|i| {
+                let sx = ((i as f32 + 0.3 + hash_f(i + 200) * 0.4) / 5.0 * wf) as i32;
+                let sy = (hf * (0.25 + 0.5 * hash_f(i + 300))) as i32;
+                (sx, sy)
+            })
+            .filter(|&(sx, _)| (sx as f32) < lit_edge - 6.0)
+            .collect();
 
-                // Combined density: eased base + spatial variation + ripple.
-                let density = (ctx.eased + spatial * 0.35 - 0.175 + ripple).clamp(0.0, 1.0);
-
-                // Map density → shade level 0..4.
-                let level = (density * 4.0) as usize;
-                draw::shade(grid, cx, cy, level);
+        for y in 0..h {
+            for x in 0..w {
+                if stars
+                    .iter()
+                    .any(|&(sx, sy)| (x as i32 - sx).abs() <= 3 && (y as i32 - sy).abs() <= 3)
+                {
+                    continue;
+                }
+                let xf = x as f32;
+                let yf = y as f32;
+                let mut d = 0.0_f32;
+                for i in 0..lobes {
+                    let lx = (i as f32 + 0.5) / lobes as f32 * wf + (drift + i as f32).sin() * 2.0;
+                    let ly = hf / 2.0 + (hash_f(i + 40) - 0.5) * hf * 0.5;
+                    let dx = (xf - lx) / rx;
+                    let dy = (yf - ly) / ry;
+                    d += (-(dx * dx + dy * dy)).exp() * (0.45 + 0.55 * hash_f(i + 80));
+                }
+                // Billowing texture.
+                d += 0.18 * ((xf * 0.31 + drift * 2.0).sin() * (yf * 0.7 - drift).cos());
+                // Dark dust lane.
+                let lane = hf / 2.0 + (xf * 0.09 + 1.0).sin() * hf * 0.22;
+                if (yf - lane).abs() < 1.2 {
+                    d *= 0.25;
+                }
+                // Reveal left → right with a soft leading edge.
+                let reveal = ((lit_edge - xf) / 10.0).clamp(0.0, 1.0);
+                let thresh = (BAYER[y % 4][x % 4] + 0.5) / 16.0;
+                if d * reveal > thresh {
+                    draw::dot(grid, x, y);
+                }
             }
         }
 
-        // Tint with palette
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cells_w.saturating_sub(1), color);
+        // Newborn stars: bright crosses inside the lit gas, twinkling, each
+        // carved out of the gas so it reads against the cloud.
+        for &(sx, sy) in &stars {
+            let arm = 1 + i32::from((ctx.time * 3.0 + sx as f32).sin() > 0.3);
+            for k in -arm..=arm {
+                draw::dot_i(grid, sx + k, sy);
+                draw::dot_i(grid, sx, sy + k);
+            }
+        }
+
+        // Tint: gradient across the cloud.
+        let (cells_w, cells_h) = grid.dimensions();
+        for cx in 0..cells_w {
+            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
+            for cy in 0..cells_h {
+                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+            }
         }
 
         Ok(())
@@ -379,12 +475,13 @@ impl ProgressStyle for BigBang {
 // ---------------------------------------------------------------------------
 // 5 — Solar flare arc
 // ---------------------------------------------------------------------------
-// Structural idea: a parabolic arc of dots loops OFF a stellar limb.
-// The arc rises and falls (parametric in angle 0→π), its peak height driven
-// by eased; time animates a slow rotation of the arc base on the stellar disc.
-// No other style draws a single parametric arc off a limb.
+// Structural idea: the curved limb of the Sun fills the bottom of the bar
+// (solid edge over a granulated surface). A coronal loop arches off it as a
+// thick plasma arc whose height and footpoint spread grow with eased; bright
+// knots of plasma run along the loop with time, and spicules flicker on the
+// limb.
 
-/// Solar flare: a looping arc erupts off the stellar limb; height = eased.
+/// Solar flare: a plasma loop arches off the Sun's limb; height = eased.
 struct SolarFlare;
 impl ProgressStyle for SolarFlare {
     fn name(&self) -> &str {
@@ -394,73 +491,96 @@ impl ProgressStyle for SolarFlare {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Solar flare arc loops off a stellar limb; peak height = eased; base rotates with time"
+        "Solar flare: a plasma loop with racing knots arches off the Sun's curved limb; loop height and span = eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wf = w as f32;
+        let hf = h as f32;
+        let hi = h as i32;
+        let cx = wf / 2.0;
 
-        let cx = (w / 2) as f32;
-        let cy = (h / 2) as f32;
-        let star_r = (cy * 0.6).max(1.0);
+        // Limb: a large circle whose crown pokes up from the bottom edge.
+        let crown = (hf * 0.45).max(1.0);
+        let big_r = wf * 2.5;
+        let limb_y = |x: f32| -> f32 {
+            let dx = x - cx;
+            let under = (big_r * big_r - dx * dx).max(0.0).sqrt();
+            hf - crown + (big_r - under)
+        };
 
-        // Stellar disc.
-        let disc_steps = 64usize;
-        for s in 0..disc_steps {
-            let a = s as f32 / disc_steps as f32 * 2.0 * PI;
-            for dr in 0..=(star_r as i32) {
-                let frac = dr as f32 / star_r;
-                if hash(
-                    (s as u32)
-                        .wrapping_mul(13)
-                        .wrapping_add(dr.unsigned_abs() * 7),
-                ) % 10
-                    < (frac * 9.0 + 1.0) as u32
-                {
-                    let px = cx + dr as f32 * a.cos();
-                    let py = cy + dr as f32 * a.sin() * 0.55;
-                    draw::dot_i(grid, px as i32, py as i32);
+        // Surface: solid limb edge, granulated interior.
+        for x in 0..w {
+            let ly = limb_y(x as f32).round() as i32;
+            draw::dot_i(grid, x as i32, ly);
+            for y in (ly + 1)..hi {
+                let g = hash((x as u32).wrapping_mul(97) ^ (y as u32).wrapping_mul(31));
+                if (x + y as usize) % 2 == 0 || g % 3 == 0 {
+                    draw::dot_i(grid, x as i32, y);
+                }
+            }
+            // Spicules: short flickering hairs on the limb.
+            let sp = hash((x as u32).wrapping_add((ctx.time * 5.0) as u32 * 131));
+            if x % 5 == 0 && sp % 3 == 0 {
+                draw::dot_i(grid, x as i32, ly - 1);
+            }
+        }
+
+        // Coronal loop: half-ellipse between two footpoints on the limb.
+        let span = 8.0 + ctx.eased * (wf * 0.32);
+        let foot_l = cx - span / 2.0;
+        let foot_r = cx + span / 2.0;
+        let base_y = limb_y(cx);
+        let height = 2.0 + ctx.eased * (base_y - 1.0).max(0.0);
+        let steps = (span * 1.5) as i32 + 8;
+        let mut pts = Vec::with_capacity(steps as usize + 1);
+        for s in 0..=steps {
+            let a = PI * s as f32 / steps as f32;
+            let x = cx - (span / 2.0) * a.cos();
+            let y = limb_y(x) - height * a.sin();
+            pts.push((x.round() as i32, y.round() as i32));
+        }
+        for &(x, y) in &pts {
+            draw::dot_i(grid, x, y);
+            draw::dot_i(grid, x, y + 1);
+        }
+        // Plasma knots racing up one leg and down the other.
+        let n = pts.len().max(1);
+        for k in 0..3 {
+            let idx = ((ctx.time * 30.0) as usize + k * n / 3) % n;
+            let (x, y) = pts[idx];
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    draw::dot_i(grid, x + dx, y + dy);
                 }
             }
         }
-
-        // Flare arc: parametric, base rotates with time.
-        let base_angle = ctx.time * 0.4; // slow rotation
-        let arc_half_span = 0.4f32; // angular half-width of the base on the limb (radians)
-
-        // Arc from base_angle - arc_half_span → base_angle + arc_half_span via apex.
-        // Apex is above the limb, height = eased * extra.
-        let apex_r = star_r + ctx.eased * (cy * 1.2).max(1.0);
-
-        let arc_steps = 50usize;
-        for s in 0..arc_steps {
-            let t = s as f32 / arc_steps.saturating_sub(1).max(1) as f32;
-            // Parametric: angle sweeps from left base to right base;
-            // radius peaks at apex_r at t=0.5, equals star_r at t=0 and t=1.
-            let angle = (base_angle - arc_half_span) + t * 2.0 * arc_half_span;
-            let r = star_r + (apex_r - star_r) * (PI * t).sin();
-
-            let px = cx + r * angle.cos();
-            let py = cy + r * angle.sin() * 0.55;
-            draw::dot_i(grid, px as i32, py as i32);
-
-            // Glow: an extra dot offset slightly outward
-            if s % 3 == 0 {
-                let px2 = cx + (r + 1.5) * angle.cos();
-                let py2 = cy + (r + 1.5) * angle.sin() * 0.55;
-                draw::dot_i(grid, px2 as i32, py2 as i32);
-            }
+        // Footpoint brightenings.
+        for fx in [foot_l, foot_r] {
+            let fy = limb_y(fx).round() as i32;
+            draw::hline(
+                grid,
+                fx.max(1.0) as usize - 1,
+                fx.max(0.0) as usize + 1,
+                (fy - 1).max(0) as usize,
+            );
         }
 
-        // Tint: star warm orange, flare hot white
+        // Tint: surface in the end colour, loop/corona in the start colour.
         let (cells_w, cells_h) = grid.dimensions();
         for cx_c in 0..cells_w {
-            let t = cx_c as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
+            let ly = limb_y(cx_c as f32 * 2.0 + 1.0);
             for cy_c in 0..cells_h {
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
+                let top = cy_c as f32 * 4.0;
+                let col = if top + 3.0 >= ly {
+                    ctx.palette.end
+                } else {
+                    ctx.palette.start
+                };
+                draw::tint_row(grid, cy_c, cx_c, cx_c, col);
             }
         }
 
@@ -538,16 +658,15 @@ impl ProgressStyle for AuroraCurtains {
         Ok(())
     }
 }
-
 // ---------------------------------------------------------------------------
 // 7 — Meteor shower
 // ---------------------------------------------------------------------------
-// Structural idea: diagonal streaks rain from top-right to bottom-left.
-// Active meteor count = eased * max_meteors; each meteor has a stable entry
-// point on the top/right edge and trails behind it with decreasing dot density.
-// Direction and density-from-count are structurally unlike all other styles.
+// Structural idea: long diagonal streaks with bright 2×2 heads and tapering
+// tails rain from top-right to bottom-left over a twinkling star field. Each
+// meteor loops on its own phase; the number in the sky grows with eased, and
+// a horizon line along the bottom fills to eased.
 
-/// Meteor shower: diagonal streaks rain across the canvas; count = eased * max.
+/// Meteor shower: streaking meteors rain down; count and horizon fill = eased.
 struct MeteorShower;
 impl ProgressStyle for MeteorShower {
     fn name(&self) -> &str {
@@ -557,65 +676,70 @@ impl ProgressStyle for MeteorShower {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Meteor shower: diagonal streaks rain top-right → bottom-left; count scales with eased"
+        "Meteor shower: bright-headed streaks with tapering tails rain across the stars; count and horizon fill with eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wi = w as i32;
+        let hi = h as i32;
+        let horizon = hi - 1;
 
-        let max_meteors = 20u32;
-        let active = (ctx.eased * max_meteors as f32) as u32;
-
-        for m in 0..active.min(max_meteors) {
-            // Stable entry x along top edge + right edge combined.
-            let entry_frac = hash_f(m);
-            let speed = 0.6 + hash_f(m + 300) * 1.2;
-            let trail_len = (4.0 + hash_f(m + 600) * 8.0) as usize;
-
-            // Entry x (spread across full width plus some from right edge).
-            let entry_x = (entry_frac * (w + h) as f32) as i32 - h as i32;
-            // Head position: travels diagonally at rate (speed, speed/2).
-            let travel = (ctx.time * speed * 8.0) as i32;
-            // Wrap travel so shower continues indefinitely.
-            let period = (w + h) as i32;
-            let travel = travel % period.max(1);
-
-            let head_x = entry_x - travel;
-            let head_y = travel / 2;
-
-            // Trail dots from head backward along the streak direction (+1, -0.5 per dot).
-            for t in 0..trail_len {
-                let tx = head_x + t as i32;
-                let ty = head_y - t as i32 / 2;
-                // Density drops with distance from head.
-                let frac = 1.0 - t as f32 / trail_len as f32;
-                if hash(
-                    m.wrapping_mul(31)
-                        .wrapping_add(t as u32 * 7)
-                        .wrapping_add((ctx.time * 4.0) as u32),
-                ) % 10
-                    < (frac * frac * 9.5 + 0.5) as u32
-                {
-                    draw::dot_i(grid, tx, ty);
-                }
-            }
-            // Bright head: 2-dot cluster.
-            draw::dot_i(grid, head_x, head_y);
-            draw::dot_i(grid, head_x - 1, head_y);
-        }
-
-        // Background star field (stable, sparse).
-        for i in 0u32..20 {
+        // Background star field (stable, sparse, gently twinkling).
+        for i in 0u32..24 {
             let sx = (hash_f(i + 9000) * w as f32) as i32;
-            let sy = (hash_f(i + 9100) * h as f32) as i32;
-            if hash(i.wrapping_add((ctx.time * 2.0) as u32)) % 4 != 0 {
+            let sy = (hash_f(i + 9100) * (hi - 2).max(1) as f32) as i32;
+            if hash(i.wrapping_add((ctx.time * 2.0) as u32)) % 5 != 0 {
                 draw::dot_i(grid, sx, sy);
             }
         }
 
-        // Tint: cool blue at top, warmer orange at bottom (heat from entry).
+        // Meteors: each travels (−2, +1) dots per step along its own loop.
+        let max_meteors = 12u32;
+        let active = 3 + (ctx.eased * (max_meteors - 3) as f32) as u32;
+        let period = (hi + 24).max(1);
+        for m in 0..active.min(max_meteors) {
+            let speed = 10.0 + hash_f(m + 300) * 8.0;
+            let trail = 10 + (hash_f(m + 600) * 10.0) as i32;
+            let entry_x = 2 * hi + (hash_f(m) * wi as f32) as i32;
+            let s = ((ctx.time * speed) as i32
+                + ((m as f32 * 0.618).fract() * period as f32) as i32)
+                .rem_euclid(period);
+            let head_x = entry_x - 2 * s;
+            let head_y = s - 3;
+
+            // Tail: solid near the head, broken further back.
+            for k in 1..trail {
+                if k > trail / 2 && k % 2 == 1 {
+                    continue;
+                }
+                let tx = head_x + 2 * k;
+                let ty = head_y - k;
+                if ty < horizon {
+                    draw::dot_i(grid, tx, ty);
+                    draw::dot_i(grid, tx - 1, ty);
+                }
+            }
+            // Bright head: 2×2 block.
+            if head_y < horizon {
+                draw::dot_i(grid, head_x, head_y);
+                draw::dot_i(grid, head_x - 1, head_y);
+                draw::dot_i(grid, head_x, head_y + 1);
+                draw::dot_i(grid, head_x - 1, head_y + 1);
+            }
+        }
+
+        // Horizon: solid to eased, dotted beyond.
+        let filled = (ctx.eased * wi as f32) as i32;
+        for x in 0..wi {
+            if x < filled || x % 3 == 0 {
+                draw::dot_i(grid, x, horizon);
+            }
+        }
+
+        // Tint: cool sky at top, warmer toward the horizon.
         let (cells_w, cells_h) = grid.dimensions();
         for cy_c in 0..cells_h {
             let t = 1.0 - cy_c as f32 / cells_h.saturating_sub(1).max(1) as f32;
@@ -645,7 +769,7 @@ impl ProgressStyle for TotalEclipse {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Moon occluder crosses star limb from right; corona ring bursts at mid-eclipse"
+        "Total eclipse: the dark Moon slides across the round Sun; corona streamers flare out at totality"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -672,10 +796,10 @@ impl ProgressStyle for TotalEclipse {
             let a = s as f32 / steps as f32 * 2.0 * PI;
             for dr in 0..=star_r {
                 let px = star_cx + (dr as f32 * a.cos()) as i32;
-                let py = star_cy + (dr as f32 * a.sin() * 0.5) as i32;
+                let py = star_cy + (dr as f32 * a.sin()) as i32;
                 // Check if this dot is inside the moon disc.
                 let ddx = px - moon_cx;
-                let ddy = (py - moon_cy) * 2; // undo vertical squeeze
+                let ddy = py - moon_cy;
                 let in_moon = ddx * ddx + ddy * ddy <= moon_r * moon_r;
                 if !in_moon {
                     draw::dot_i(grid, px, py);
@@ -688,7 +812,7 @@ impl ProgressStyle for TotalEclipse {
             let a = s as f32 / steps as f32 * 2.0 * PI;
             for dr in 0..=moon_r {
                 let px = moon_cx + (dr as f32 * a.cos()) as i32;
-                let py = moon_cy + (dr as f32 * a.sin() * 0.5) as i32;
+                let py = moon_cy + (dr as f32 * a.sin()) as i32;
                 // We draw only the outline to leave the moon "dark" (no dots inside).
                 if dr == moon_r || dr == moon_r - 1 {
                     draw::dot_i(grid, px, py);
@@ -696,20 +820,23 @@ impl ProgressStyle for TotalEclipse {
             }
         }
 
-        // Corona ring: visible only near totality (eased ≈ 0.5).
-        let totality_closeness = 1.0 - (ctx.eased * 2.0 - 1.0).abs(); // peaks at 0.5
-        let corona_steps = 48usize;
-        // Breathe at 0.25 Hz so the 4-second loop stays seamless.
-        let corona_r = star_r + 2 + (ctx.time * 0.5 * PI).sin().round() as i32;
-        let corona_r = corona_r.max(star_r + 1);
-        for s in 0..corona_steps {
-            let a = s as f32 / corona_steps as f32 * 2.0 * PI;
-            let px = star_cx + (corona_r as f32 * a.cos()) as i32;
-            let py = star_cy + (corona_r as f32 * a.sin() * 0.5) as i32;
-            // Only appear when near totality; flicker via time.
-            let threshold = (totality_closeness * 10.0) as u32;
-            if hash((s as u32).wrapping_add((ctx.time * 5.0) as u32)) % 10 < threshold {
-                draw::dot_i(grid, px, py);
+        // Corona streamers: radial rays that grow as the Moon covers the Sun
+        // and flicker with time.
+        // Overlap of the two discs: 0 apart, 1 at totality.
+        let overlap =
+            (1.0 - (moon_cx - star_cx).abs() as f32 / (2 * star_r).max(1) as f32).clamp(0.0, 1.0);
+        let rays = 16usize;
+        let max_ray = (overlap * overlap * 3.0 * star_r as f32) as i32;
+        for s in 0..rays {
+            let a = s as f32 / rays as f32 * 2.0 * PI + 0.1;
+            let flick = hash((s as u32).wrapping_add((ctx.time * 5.0) as u32 * 31)) % 4;
+            let len = (max_ray - flick as i32 * 2).max(0);
+            for r in (star_r + 2)..=(star_r + 1 + len) {
+                draw::dot_i(
+                    grid,
+                    star_cx + (r as f32 * a.cos()).round() as i32,
+                    star_cy + (r as f32 * a.sin()).round() as i32,
+                );
             }
         }
 
@@ -942,11 +1069,13 @@ impl ProgressStyle for CosmicWeb {
 // ---------------------------------------------------------------------------
 // 11 — Redshift wavefronts
 // ---------------------------------------------------------------------------
-// Structural idea: concentric horizontal wavefronts (hlines) expanding from a
-// central source. Their spacing grows with eased (wavelength stretches = redshift).
-// No circles — purely horizontal bands whose spacing is the progress indicator.
+// Structural idea: a spiral galaxy recedes to the right as eased grows. The
+// light wave it sends back to the observer's dish on the left is stretched:
+// wavelength λ = λ₀·(1 + z) with z rising with eased, and the wave scrolls
+// with time. Along the bottom a spectrum strip shows an absorption line
+// sliding redward from its rest-frame tick — the measurement itself.
 
-/// Redshift: wavefronts stretch horizontally from centre; spacing = eased wavelength.
+/// Redshift: receding galaxy's light wave stretches; spectral line shifts = eased.
 struct Redshift;
 impl ProgressStyle for Redshift {
     fn name(&self) -> &str {
@@ -956,78 +1085,109 @@ impl ProgressStyle for Redshift {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Redshift wavefronts: horizontal bands from source; spacing stretches with eased"
+        "Redshift: a receding spiral galaxy's light wave stretches toward the observer; spectral line slides redward with eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wf = w as f32;
+        let wi = w as i32;
+        let hi = h as i32;
+        let spec_y = hi - 1;
+        let sky_h = if hi >= 12 { hi - 3 } else { hi };
+        let cy = (sky_h - 1) / 2;
 
-        // Source at vertical centre.
-        let cy = (h / 2) as f32;
-
-        // Wavelength stretches: at eased=0 waves are packed (short λ, blue);
-        // at eased=1 they are widely spaced (long λ, red).
-        let min_lambda = 2.0f32;
-        let max_lambda = (h as f32 * 0.45).max(min_lambda + 0.5);
-        let lambda = min_lambda + ctx.eased * (max_lambda - min_lambda);
-
-        // Emit wave fronts from cy; they scroll outward via time.
-        // Offset = time * wave_speed mod lambda.
-        let wave_speed = 3.0f32;
-        let phase_offset = (ctx.time * wave_speed) % lambda.max(0.01);
-
-        // Draw wavefronts above and below the source.
-        let mut y_up = cy - phase_offset;
-        let mut y_dn = cy + phase_offset;
-
-        let max_waves = 20usize;
-        for _wv in 0..max_waves {
-            // Draw a horizontal line at this y position.
-            let iy_up = y_up.round() as i32;
-            let iy_dn = y_dn.round() as i32;
-            if iy_up >= 0 {
-                // Partial width: wavefront amplitude decays with distance from source.
-                let dist_frac = (cy - y_up) / cy.max(1.0);
-                let width_frac = (1.0 - dist_frac * 0.4).clamp(0.1, 1.0);
-                let x_margin = ((1.0 - width_frac) * w as f32 * 0.5) as usize;
-                draw::hline(
+        // Galaxy recedes rightward with progress.
+        let gx = (wf * 0.45 + ctx.eased * (wf * 0.55 - 9.0).max(0.0)) as i32;
+        let disk_a = 6.0_f32;
+        let disk_b = (sky_h as f32 / 4.0).max(1.0);
+        // Spiral arms: two log-spiral-ish sweeps around the bulge.
+        let spin = ctx.time * 0.8;
+        for arm in 0..2 {
+            for s in 0..24 {
+                let t = s as f32 / 24.0;
+                let a = spin + arm as f32 * PI + t * 3.5;
+                let r = 1.5 + t * disk_a;
+                draw::dot_i(
                     grid,
-                    x_margin,
-                    w.saturating_sub(x_margin + 1),
-                    iy_up as usize,
+                    gx + (r * a.cos()).round() as i32,
+                    cy + (r * a.sin() * disk_b / disk_a).round() as i32,
                 );
             }
-            if iy_dn < h as i32 && iy_dn != iy_up {
-                let dist_frac = (y_dn - cy) / (h as f32 - cy).max(1.0);
-                let width_frac = (1.0 - dist_frac * 0.4).clamp(0.1, 1.0);
-                let x_margin = ((1.0 - width_frac) * w as f32 * 0.5) as usize;
-                draw::hline(
-                    grid,
-                    x_margin,
-                    w.saturating_sub(x_margin + 1),
-                    iy_dn as usize,
-                );
-            }
-
-            y_up -= lambda;
-            y_dn += lambda;
-
-            if y_up < 0.0 && y_dn >= h as f32 {
-                break;
+        }
+        for dy in -1i32..=1 {
+            for dx in -2i32..=2 {
+                draw::dot_i(grid, gx + dx, cy + dy);
             }
         }
 
-        // Source dot at centre.
-        draw::dot_i(grid, (w / 2) as i32, cy as i32);
+        // Observer's dish on the left, facing the galaxy.
+        for k in -3i32..=3 {
+            draw::dot_i(grid, 1 + (k * k) / 4, cy + k);
+        }
+        draw::hline(grid, 2, 4, cy.max(0) as usize);
 
-        // Tint: blue at eased=0, red at eased=1 (redshift colour shift).
+        // The light wave: λ grows with eased (z from 0 to 2).
+        let lambda = 6.0 * (1.0 + 2.0 * ctx.eased);
+        let amp = (sky_h as f32 / 2.0 - 1.0).clamp(0.0, 4.0);
+        let x_end = gx - disk_a as i32 - 2;
+        let mut prev_y: Option<i32> = None;
+        for x in 6..x_end.max(6) {
+            let ph = 2.0 * PI * ((gx - x) as f32 / lambda) + ctx.time * 6.0;
+            let y = cy + (amp * ph.sin()).round() as i32;
+            // Bridge steep steps so the wave stays a continuous line.
+            if let Some(py) = prev_y {
+                if (py - y).abs() > 1 {
+                    draw::vline(
+                        grid,
+                        x as usize,
+                        py.min(y).max(0) as usize,
+                        py.max(y).max(0) as usize,
+                    );
+                }
+            }
+            draw::dot_i(grid, x, y);
+            prev_y = Some(y);
+        }
+
+        // Spectrum strip with an absorption line shifting redward.
+        let mut line_x = 0;
+        if hi >= 12 {
+            let rest_x = (wf * 0.2) as i32;
+            line_x = rest_x + (ctx.eased * wf * 0.65) as i32;
+            for x in 0..wi {
+                if (x - line_x).abs() > 1 {
+                    draw::dot_i(grid, x, spec_y);
+                    draw::dot_i(grid, x, spec_y - 1);
+                }
+            }
+            draw::dot_i(grid, rest_x, spec_y - 2);
+        }
+
+        // Tint: wave shifts toward the end colour with z; spectrum graded.
         let (cells_w, cells_h) = grid.dimensions();
-        for cy_c in 0..cells_h {
-            let t = ctx.eased; // fixed tint driven by eased, not position
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy_c, 0, cells_w.saturating_sub(1), color);
+        let wave_col = ctx.palette.sample(ctx.eased);
+        let sky_cells = if hi >= 12 { cells_h - 1 } else { cells_h };
+        for cy_c in 0..sky_cells {
+            draw::tint_row(grid, cy_c, 0, cells_w, wave_col);
+        }
+        let g_lo = ((gx - 7).max(0) as usize) / 2;
+        let g_hi = ((gx + 7).max(0) as usize) / 2;
+        for cy_c in 0..sky_cells {
+            draw::tint_row(grid, cy_c, g_lo, g_hi, ctx.palette.end);
+        }
+        if hi >= 12 {
+            for cx_c in 0..cells_w {
+                let t = cx_c as f32 / cells_w.saturating_sub(1).max(1) as f32;
+                let col = if (cx_c as i32 * 2 - line_x).abs() <= 2 {
+                    ctx.palette.track
+                } else {
+                    ctx.palette.sample(t)
+                };
+                draw::tint_row(grid, cells_h - 1, cx_c, cx_c, col);
+            }
         }
 
         Ok(())
@@ -1037,13 +1197,12 @@ impl ProgressStyle for Redshift {
 // ---------------------------------------------------------------------------
 // 12 — Quasar jet
 // ---------------------------------------------------------------------------
-// Structural idea: two opposed straight-line relativistic jets fire along the
-// vertical axis from a central nucleus; jet length = eased * half-height.
-// Knots (bright blobs) travel along the jet at speed driven by time.
-// A small accretion torus ring is drawn perpendicular to the jets.
-// The structural element is a VLINE-based bidirectional jet — unique.
+// Structural idea: a bright nucleus inside an edge-on accretion disc (a tall
+// thin ring) fires two opposed relativistic jets out along the long axis.
+// Jet length = eased * half-width; knots stream outward with time and each
+// jet ends in a bow-shock radio lobe that travels out with progress.
 
-/// Quasar jet: twin relativistic jets fire along vertical axis; length = eased.
+/// Quasar jet: twin relativistic jets fire from a disc-wrapped nucleus; length = eased.
 struct QuasarJet;
 impl ProgressStyle for QuasarJet {
     fn name(&self) -> &str {
@@ -1053,75 +1212,91 @@ impl ProgressStyle for QuasarJet {
         "cosmos"
     }
     fn describe(&self) -> &str {
-        "Quasar twin jets fire vertically from nucleus; length = eased; knots travel via time"
+        "Quasar: edge-on accretion disc around a blazing nucleus fires twin jets with streaming knots; jet length = eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let wi = w as i32;
+        let hi = h as i32;
+        let cx = wi / 2;
+        let cy = (hi - 1) / 2;
+        let max_len = (cx - 7).max(1);
+        let len = (ctx.eased * max_len as f32) as i32;
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-
-        // Jet length grows with eased.
-        let jet_len = (ctx.eased * cy as f32) as i32;
-
-        // Draw primary jet spine (3 dots wide for visibility).
-        for jet_dir in [-1i32, 1i32] {
-            for offset in [-1i32, 0, 1] {
-                let col = (cx + offset).max(0);
-                let y_end = cy + jet_dir * jet_len;
-                let y0 = cy.min(y_end).max(0) as usize;
-                let y1 = cy.max(y_end).min(h as i32 - 1) as usize;
-                draw::vline(grid, col as usize, y0, y1);
-            }
+        // Edge-on accretion disc: a tall, thin ring around the nucleus.
+        let disc_b = (hi / 2 - 1).max(1) as f32;
+        let disc_a = 3.0_f32;
+        let steps = 40;
+        for s in 0..steps {
+            let a = s as f32 / steps as f32 * 2.0 * PI;
+            draw::dot_i(
+                grid,
+                cx + (disc_a * a.cos()).round() as i32,
+                cy + (disc_b * a.sin()).round() as i32,
+            );
         }
 
-        // Bright knots travelling outward along each jet.
-        let knot_count = 4usize;
-        let knot_speed = 5.0f32;
-        for jet_dir in [-1i32, 1i32] {
-            for k in 0..knot_count {
-                let phase = k as f32 / knot_count as f32;
-                let knot_pos = ((ctx.time * knot_speed + phase * jet_len as f32)
-                    % jet_len.max(1) as f32) as i32;
-                let ky = cy + jet_dir * knot_pos;
-                // Cross-shaped bright knot.
-                for dy in -1i32..=1 {
-                    for dx in -2i32..=2 {
-                        if dx.abs() + dy.abs() <= 2 {
-                            draw::dot_i(grid, cx + dx, ky + dy);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Accretion torus: small horizontal ellipse around the nucleus.
-        let torus_rx = (w / 6).max(2) as i32;
-        let torus_ry = 1i32;
-        let torus_steps = 32usize;
-        for s in 0..torus_steps {
-            let a = s as f32 / torus_steps as f32 * 2.0 * PI;
-            let px = cx + (torus_rx as f32 * a.cos()) as i32;
-            let py = cy + (torus_ry as f32 * a.sin()) as i32;
-            draw::dot_i(grid, px, py);
-        }
-
-        // Nucleus.
+        // Nucleus: solid core.
         for dy in -1i32..=1 {
             for dx in -1i32..=1 {
                 draw::dot_i(grid, cx + dx, cy + dy);
             }
         }
+        draw::dot_i(grid, cx, cy - 2);
+        draw::dot_i(grid, cx, cy + 2);
 
-        // Tint: jet colour from palette top→bottom.
+        for dir in [-1i32, 1] {
+            // Jet body: a narrow cone, solid spine with flaring edges.
+            for r in 4..=len + 3 {
+                let x = cx + dir * r;
+                let half = (r as f32 * 0.06) as i32;
+                draw::dot_i(grid, x, cy);
+                if r % 2 == 0 {
+                    draw::dot_i(grid, x, cy - 1 - half);
+                    draw::dot_i(grid, x, cy + 1 + half);
+                }
+            }
+            // Knots streaming outward along the jet.
+            if len > 4 {
+                let spacing = 9;
+                let off = (ctx.time * 14.0) as i32;
+                let mut k = (off % spacing) + 4;
+                while k < len + 3 {
+                    let x = cx + dir * k;
+                    for dy in -1i32..=1 {
+                        draw::dot_i(grid, x, cy + dy);
+                        draw::dot_i(grid, x + dir, cy + dy);
+                    }
+                    k += spacing;
+                }
+            }
+            // Bow-shock radio lobe at the jet head.
+            if len > 2 {
+                let tip = cx + dir * (len + 3);
+                let lobe_r = 2.0 + (len as f32 / max_len as f32) * (hi as f32 / 2.0 - 3.0).max(0.0);
+                let steps = 16;
+                for s in 0..=steps {
+                    let a = -PI / 2.0 + PI * s as f32 / steps as f32;
+                    draw::dot_i(
+                        grid,
+                        tip - dir * 2 + dir * (lobe_r * 0.6 * a.cos()).round() as i32,
+                        cy + (lobe_r * a.sin()).round() as i32,
+                    );
+                }
+            }
+        }
+
+        // Tint: jets graded outward along the palette; disc/core in the end colour.
         let (cells_w, cells_h) = grid.dimensions();
-        for cy_c in 0..cells_h {
-            let t = cy_c as f32 / cells_h.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t);
-            draw::tint_row(grid, cy_c, 0, cells_w.saturating_sub(1), color);
+        let ccx = cells_w / 2;
+        for cx_c in 0..cells_w {
+            let d = (cx_c as f32 - ccx as f32).abs() / ccx.max(1) as f32;
+            for cy_c in 0..cells_h {
+                draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(1.0 - d));
+            }
         }
 
         Ok(())

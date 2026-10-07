@@ -13,14 +13,14 @@
 //! | `linear-lr`       | straight fill advancing left → right                |
 //! | `linear-tb`       | straight fill advancing top → bottom                |
 //! | `barn-door`       | two halves parting from the centre outward           |
-//! | `iris`            | expanding filled circle from the centre              |
+//! | `iris`            | round aperture opening from the centre, white rim    |
 //! | `iris-diamond`    | expanding diamond (L1 / Manhattan distance)          |
 //! | `diagonal`        | 45° diagonal wipe line sweeping across               |
 //! | `checkerboard`    | checkerboard cells filling in threshold order        |
 //! | `venetian-blinds` | horizontal slats that each grow from their midpoint  |
 //! | `dissolve`        | ordered 4×4 Bayer-dither per-pixel threshold fade    |
-//! | `clock-wipe`      | radial pie-slice sweeping 0 → 2π around the centre  |
-//! | `spiral`          | Archimedean spiral mask filling outward              |
+//! | `clock-wipe`      | pie slice swept clockwise from 12 by a white hand    |
+//! | `spiral`          | Archimedean coiled tape unrolling outward, grooved   |
 //! | `split`           | top and bottom edges advance inward to the midline   |
 //! | `zigzag`          | wipe whose leading edge is a sine-wave sawtooth      |
 //! | `pixelate`        | coarse blocks fill with increasing shade density     |
@@ -183,7 +183,7 @@ impl ProgressStyle for BarnDoor {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Iris: expanding filled circle from the centre
+// 4. Iris: round aperture opening from the centre, white rim
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Iris;
@@ -195,40 +195,60 @@ impl ProgressStyle for Iris {
         "wipe"
     }
     fn describe(&self) -> &str {
-        "Iris wipe: a filled circle expands from the grid's centre, its radius \
-         growing from zero to cover the full screen as progress reaches 1"
+        "Iris wipe: a round aperture opens from the centre with a bright white \
+         rim; it is only gently widened on wide strips so it stays round, and \
+         grows by revealed area so progress reads evenly to the corners"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
-        // max_r must reach the far corner.
-        let max_r = ((cx * cx + cy * cy) as f32).sqrt() + 1.0;
-        let r = ctx.eased * max_r;
-        let r2 = r * r;
-        // Rasterise: any dot whose centre is within radius r is lit.
+        // At most a 2:1 oval — round enough to read as an aperture, wide
+        // enough that its curved sides survive on a short strip.
+        let sx = (cx / cy.max(0.5)).clamp(1.0, 2.0);
+        let dist = |x: f32, y: f32| ((x - cx) / sx).hypot(y - cy);
+
+        // Radius at which the revealed area equals `eased` of the frame.
+        let mut all: Vec<f32> = Vec::with_capacity(dw * dh);
         for dy in 0..dh {
-            let vy = dy as f32 + 0.5 - cy;
             for dx in 0..dw {
-                let vx = dx as f32 + 0.5 - cx;
-                if vx * vx + vy * vy <= r2 {
+                all.push(dist(dx as f32 + 0.5, dy as f32 + 0.5));
+            }
+        }
+        all.sort_by(f32::total_cmp);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let r = if all.is_empty() || e <= 0.0 {
+            -1.0
+        } else {
+            all[((e * all.len() as f32) as usize).clamp(1, all.len()) - 1]
+        };
+
+        for dy in 0..dh {
+            for dx in 0..dw {
+                if dist(dx as f32 + 0.5, dy as f32 + 0.5) <= r {
                     draw::dot(grid, dx, dy);
                 }
             }
         }
-        // Tint radially.
+
+        // Tint cells fully inside the aperture by radius; cells straddling the
+        // edge are left untinted so the rim reads as a bright white ring.
         let (cw, ch) = grid.dimensions();
-        let ccx = cw as f32 / 2.0;
-        let ccy = ch as f32 / 2.0;
-        let max_rc = ((ccx * ccx + ccy * ccy) as f32).sqrt().max(1.0);
+        let r_max = all.last().copied().unwrap_or(1.0).max(1.0);
         for cy_idx in 0..ch {
             for cx_idx in 0..cw {
-                let vx = cx_idx as f32 + 0.5 - ccx;
-                let vy = cy_idx as f32 + 0.5 - ccy;
-                let dist = (vx * vx + vy * vy).sqrt();
-                if dist / max_rc <= ctx.eased {
-                    let t = (dist / max_rc).clamp(0.0, 1.0);
-                    let color = ctx.palette.sample(t);
+                let mut inside = 0;
+                for oy in 0..4 {
+                    for ox in 0..2 {
+                        let (x, y) = (cx_idx * 2 + ox, cy_idx * 4 + oy);
+                        if dist(x as f32 + 0.5, y as f32 + 0.5) <= r {
+                            inside += 1;
+                        }
+                    }
+                }
+                if inside == 8 {
+                    let d = dist(cx_idx as f32 * 2.0 + 1.0, cy_idx as f32 * 4.0 + 2.0);
+                    let color = ctx.palette.sample((d / r_max).clamp(0.0, 1.0));
                     draw::tint_row(grid, cy_idx, cx_idx, cx_idx, color);
                 }
             }
@@ -492,7 +512,7 @@ impl ProgressStyle for Dissolve {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Clock-wipe: radial pie-slice sweep 0 → 2π
+// 10. Clock-wipe: pie slice swept clockwise from 12 by a hand
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct ClockWipe;
@@ -504,51 +524,68 @@ impl ProgressStyle for ClockWipe {
         "wipe"
     }
     fn describe(&self) -> &str {
-        "Clock wipe: a radial pie slice rotates clockwise from 12 o'clock, \
-         sweeping the filled region around the centre like a clock hand until \
-         the full circle is revealed at progress 1"
+        "Clock wipe: a pie slice sweeps clockwise from 12 o'clock around the \
+         centre, led by a bright clock hand with a hub dot, until the full \
+         frame is revealed at progress 1"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
-        // Sweep angle: 0 → 2π, starting from -π/2 (12 o'clock), clockwise.
-        let sweep = ctx.eased * 2.0 * PI;
-        let start = -PI / 2.0; // 12 o'clock in standard coords
+        let two_pi = 2.0 * PI;
+        // Sweep angle: 0 → 2π, measured clockwise from 12 o'clock.
+        let sweep = ctx.eased.clamp(0.0, 1.0) * two_pi;
+        // Angles are taken in frame-normalised space (the frame is treated as
+        // a stretched square) so the swept area grows evenly with progress.
+        // atan2(x, -y) is "clockwise from 12" in screen coords.
+        let (nx, ny) = (cx.max(0.5), cy.max(0.5));
+        let cw_angle = |vx: f32, vy: f32| (vx / nx).atan2(-vy / ny).rem_euclid(two_pi);
         for dy in 0..dh {
             let vy = dy as f32 + 0.5 - cy;
             for dx in 0..dw {
                 let vx = dx as f32 + 0.5 - cx;
-                // atan2 in standard coords; convert to clockwise angle from 12.
-                let angle = vx.atan2(-vy); // atan2(x, -y) gives CW from 12
-                                           // Normalise to [0, 2π).
-                let norm_angle = if angle < start {
-                    angle - start + 2.0 * PI
-                } else {
-                    angle - start
-                };
-                if norm_angle < sweep {
+                if cw_angle(vx, vy) < sweep {
                     draw::dot(grid, dx, dy);
                 }
             }
         }
-        // Tint by angular position.
+
+        // The hand: a line from the hub along the sweep front, plus a fixed
+        // 12 o'clock mark so the start of the dial is always readable.
         let (cw, ch) = grid.dimensions();
-        let ccx = cw as f32 / 2.0;
-        let ccy = ch as f32 / 2.0;
+        let mut hand_cells = vec![false; cw * ch];
+        let (hx, hy) = (sweep.sin() * nx, -sweep.cos() * ny);
+        let steps = ((dw + dh) * 2) as i32;
+        for i in 0..=steps {
+            let d = 1.5 * i as f32 / steps.max(1) as f32;
+            let (px, py) = (cx + hx * d, cy + hy * d);
+            draw::dot_i(grid, px as i32, py as i32);
+            if px >= 0.0 && py >= 0.0 {
+                let (ux, uy) = (px as usize / 2, py as usize / 4);
+                if ux < cw && uy < ch {
+                    hand_cells[uy * cw + ux] = true;
+                }
+            }
+        }
+        let top = (cy as usize).saturating_sub(1).min(3);
+        draw::vline(grid, cx as usize, 0, top);
+        draw::fill_rect(
+            grid,
+            (cx as usize).saturating_sub(1),
+            (cy as usize).saturating_sub(1),
+            3,
+            3,
+        );
+
+        // Tint swept cells by angle (cell centres measured in dot space);
+        // cells along the hand are left untinted so the hand reads white.
         for cy_idx in 0..ch {
             for cx_idx in 0..cw {
-                let vx = cx_idx as f32 + 0.5 - ccx;
-                let vy = cy_idx as f32 + 0.5 - ccy;
-                let angle = vx.atan2(-vy);
-                let norm_angle = if angle < start {
-                    angle - start + 2.0 * PI
-                } else {
-                    angle - start
-                };
-                if norm_angle < sweep {
-                    let t = (norm_angle / (2.0 * PI)).clamp(0.0, 1.0);
-                    let color = ctx.palette.sample(t);
+                let vx = cx_idx as f32 * 2.0 + 1.0 - cx;
+                let vy = cy_idx as f32 * 4.0 + 2.0 - cy;
+                let a = cw_angle(vx, vy);
+                if a < sweep && !hand_cells[cy_idx * cw + cx_idx] {
+                    let color = ctx.palette.sample((a / two_pi).clamp(0.0, 1.0));
                     draw::tint_row(grid, cy_idx, cx_idx, cx_idx, color);
                 }
             }
@@ -558,7 +595,7 @@ impl ProgressStyle for ClockWipe {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. Spiral: Archimedean spiral mask filling outward
+// 11. Spiral: grooved Archimedean tape unrolling outward
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Spiral;
@@ -570,62 +607,69 @@ impl ProgressStyle for Spiral {
         "wipe"
     }
     fn describe(&self) -> &str {
-        "Archimedean spiral wipe: each dot is revealed according to its spiral \
-         parameter θ = √(r/r_max)·N_turns·2π, so the filled region uncoils \
-         outward from the centre in a continuous tight helix"
+        "Spiral wipe: a coiled tape unrolls outward from the centre along an \
+         Archimedean spiral; an empty groove between the coils keeps the spiral \
+         visible and the colour runs along the tape from first coil to last"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
-        let max_r = ((cx * cx + cy * cy) as f32).sqrt().max(1.0);
-        // Number of spiral arms / turns.
-        let n_turns = 3.0f32;
         let two_pi = 2.0 * PI;
-        // For each dot compute its canonical spiral phase in [0, 1).
-        // Phase = (angle_from_12_normalised + radial_fraction * n_turns) / n_turns,
-        // clamped to [0, 1].  A dot is revealed when phase ≤ eased.
+        // Squash x so the coils stay round-ish on a wide strip but still reach
+        // the side edges; the outer coil is allowed to run off top/bottom.
+        let sx = (cx / cy.max(1.0)).clamp(1.0, 2.5);
+        let r_max = ((cx / sx).powi(2) + cy * cy).sqrt().max(1.0);
+        let n_turns = (r_max / 4.0).clamp(1.0, 5.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
+
+        // Spiral parameter of a point: which coil it is on plus how far round.
+        // Returns (s in 0..1 along the tape, fractional position across coil).
+        let param = |vx: f32, vy: f32| {
+            let r = ((vx / sx).powi(2) + vy * vy).sqrt() / r_max;
+            let a = vx.atan2(-vy).rem_euclid(two_pi) / two_pi;
+            let turn = r * n_turns - a;
+            let coil = turn.floor();
+            ((coil + a) / n_turns, turn - coil)
+        };
+
+        // The outer coils mostly run off a wide strip, so reveal by on-screen
+        // area: the threshold is the `e`-quantile of every dot's tape position.
+        let mut all: Vec<f32> = Vec::with_capacity(dw * dh);
+        for dy in 0..dh {
+            for dx in 0..dw {
+                all.push(param(dx as f32 + 0.5 - cx, dy as f32 + 0.5 - cy).0);
+            }
+        }
+        all.sort_by(f32::total_cmp);
+        let e = if all.is_empty() || e <= 0.0 {
+            f32::NEG_INFINITY
+        } else {
+            all[((e * all.len() as f32) as usize).clamp(1, all.len()) - 1]
+        };
+
         for dy in 0..dh {
             let vy = dy as f32 + 0.5 - cy;
             for dx in 0..dw {
                 let vx = dx as f32 + 0.5 - cx;
-                let r = (vx * vx + vy * vy).sqrt();
-                let r_frac = (r / max_r).clamp(0.0, 1.0);
-                // Angle clockwise from 12 o'clock, in [0, 2π).
-                let raw_angle = vx.atan2(-vy); // CW from 12
-                let angle = if raw_angle < 0.0 {
-                    raw_angle + two_pi
-                } else {
-                    raw_angle
-                };
-                // Combine angle and radius into a spiral parameter.
-                let phase = (angle / two_pi + r_frac * n_turns) / n_turns;
-                if phase <= ctx.eased {
+                let (s, across) = param(vx, vy);
+                // Groove: a thin empty band between neighbouring coils.
+                if s <= e && across > 0.22 {
                     draw::dot(grid, dx, dy);
                 }
             }
         }
-        // Tint by radial fraction.
+
+        // Tint along the tape; the cells at the unrolling tip stay white.
         let (cw, ch) = grid.dimensions();
-        let ccx = cw as f32 / 2.0;
-        let ccy = ch as f32 / 2.0;
-        let max_rc = ((ccx * ccx + ccy * ccy) as f32).sqrt().max(1.0);
+        let tip = 0.6 / (n_turns * 4.0).max(1.0);
         for cy_idx in 0..ch {
             for cx_idx in 0..cw {
-                let vx = cx_idx as f32 + 0.5 - ccx;
-                let vy = cy_idx as f32 + 0.5 - ccy;
-                let r = (vx * vx + vy * vy).sqrt();
-                let r_frac = r / max_rc;
-                let raw_angle = vx.atan2(-vy);
-                let angle = if raw_angle < 0.0 {
-                    raw_angle + two_pi
-                } else {
-                    raw_angle
-                };
-                let phase = (angle / two_pi + r_frac * n_turns) / n_turns;
-                if phase <= ctx.eased {
-                    let t = r_frac.clamp(0.0, 1.0);
-                    let color = ctx.palette.sample(t);
+                let vx = cx_idx as f32 * 2.0 + 1.0 - cx;
+                let vy = cy_idx as f32 * 4.0 + 2.0 - cy;
+                let (s, _) = param(vx, vy);
+                if s <= e && e - s > tip {
+                    let color = ctx.palette.sample(s.clamp(0.0, 1.0));
                     draw::tint_row(grid, cy_idx, cx_idx, cx_idx, color);
                 }
             }

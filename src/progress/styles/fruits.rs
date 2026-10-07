@@ -5,22 +5,32 @@
 //! go through `draw::` helpers so every coordinate is silently bounds-safe.
 //!
 //! Styles in this file:
-//! - `citrus-wheel`    — orange/citrus radial segments filling like a pie
-//! - `apple-bite`      — apple silhouette with a bite that grows with eased
-//! - `banana-peel`     — peel strips folding down progressively
-//! - `grape-bunch`     — triangular grape cluster filling grape by grape
-//! - `watermelon-slice`— semicircle rind-to-center fill with seeds appearing
-//! - `strawberry-seeds`— strawberry body with seed-dimple pattern spreading
-//! - `pineapple-lattice`— diamond-lattice rind advancing column by column
-//! - `cherry-swing`    — cherry pair on stems, swinging with time
-//! - `juice-squeeze`   — fruit compresses top-down, juice level rises below
-//! - `berry-pop`       — berry cluster popping in one by one with a bounce
-//! - `kiwi-rings`      — cross-section concentric elliptic rings filling outward
+//! - `citrus-wheel`    — orange wheels filling segment by segment
+//! - `apple-bite`      — row of red apples eaten bite by bite down to cores
+//! - `banana-peel`     — curved banana peeled from the tip, flaps dangling
+//! - `grape-bunch`     — swaying grape bunches ripening purple grape by grape
+//! - `watermelon-slice`— half-moon slices with rind and seeded red flesh
+//! - `strawberry-seeds`— leafy-topped strawberries ripening red from the tip up
+//! - `pineapple-lattice`— crosshatched pineapple ripening under a leaf crown
+//! - `cherry-swing`    — swinging cherry pairs ripening red pair by pair
+//! - `juice-squeeze`   — lemon half squeezed flat over a filling glass
+//! - `berry-pop`       — crowned blueberries popping into a row with a bounce
+//! - `kiwi-rings`      — kiwi halves with seed rings, cut open one by one
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
+
+/// Set dot `(x, y)` and tint its cell `c`. Colour is one per cell (2×4 dots),
+/// so the last object drawn over a cell decides its colour.
+fn px(grid: &mut BrailleGrid, x: i32, y: i32, c: Color) {
+    if x >= 0 && y >= 0 {
+        draw::dot_i(grid, x, y);
+        let (cx, cy) = (x as usize / 2, y as usize / 4);
+        draw::tint_row(grid, cy, cx, cx, c);
+    }
+}
 
 /// All styles in the `fruits` theme.
 ///
@@ -43,8 +53,9 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 }
 
 // ── CitrusWheel ───────────────────────────────────────────────────────────────
-// Orange/citrus cross-section: pie segments fill clockwise with eased.
-// Each segment is a triangular wedge drawn via polar scan.
+// A row of orange wheels seen face-on: an orange rind ring and eight juicy
+// segments split by gap membranes radiating from the centre. Segments
+// fill in clockwise, wheel after wheel, with eased; the wheels slowly turn.
 
 struct CitrusWheel;
 impl ProgressStyle for CitrusWheel {
@@ -55,82 +66,45 @@ impl ProgressStyle for CitrusWheel {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Orange cross-section: radial pie segments fill clockwise as progress grows"
+        "Row of orange wheels — rind and eight juicy segments — filling segment by segment"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        // Radius fits inside the smaller dimension.
-        let r = ((w.min(h * 2) / 2).saturating_sub(1)).max(1) as f32;
-        // How many full radians are filled (clockwise from top = -PI/2).
-        let filled_angle = ctx.eased * 2.0 * PI;
-        // Animate a slow rotation of the whole wheel with time.
-        let spin = ctx.time * 0.3;
-        // Draw the outer circle outline.
-        let steps = (r * 2.0 * PI) as usize + 1;
-        for i in 0..=steps {
-            let theta = i as f32 / steps.max(1) as f32 * 2.0 * PI;
-            let px = cx + (r * theta.cos()) as i32;
-            let py = cy + (r * 0.5 * theta.sin()) as i32; // 0.5 = dot aspect
-            draw::dot_i(grid, px, py);
-        }
-        // Fill wedge: for every dot inside the circle, check if its angle is filled.
-        let ri = r as i32;
-        for dy in -ri..=ri {
-            for dx in -ri..=ri {
-                // Dot-space has 2:1 aspect (x dots = 2× cells, y dots = 4× cells)
-                // so vertical dots are half the visual height of horizontal dots.
-                // Compensate by scaling dy by 2 for distance check.
-                let dist2 = dx * dx + dy * dy * 4;
-                if dist2 as f32 > r * r {
-                    continue;
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi - 1) / 2).clamp(1, 7);
+        let cy = hi / 2;
+        let n = (wi / (2 * r + 6)).max(1);
+        let pitch = wi / n;
+        let rind = Color::rgb(255, 125, 0);
+        let pulp = Color::rgb(255, 205, 90);
+        let rf = r as f32;
+        let segs = ctx.eased * (n * 8) as f32;
+        for i in 0..n {
+            let cx = pitch * i + pitch / 2;
+            let spin = ctx.time * 0.5 + i as f32;
+            let filled = (segs - (i * 8) as f32).clamp(0.0, 8.0);
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let d = ((dx * dx + dy * dy) as f32).sqrt();
+                    if d > rf + 0.3 {
+                        continue;
+                    }
+                    let (x, y) = (cx + dx, cy + dy);
+                    if d > rf - 1.0 {
+                        px(grid, x, y, rind);
+                        continue;
+                    }
+                    // Clockwise angle from the top, in segment units 0..8.
+                    let a = ((dx as f32).atan2(-dy as f32) + spin).rem_euclid(2.0 * PI);
+                    let s = a * 8.0 / (2.0 * PI);
+                    let membrane = s.fract() < 0.25 || d < 1.5 || d > rf - 1.6;
+                    if s < filled && !membrane {
+                        px(grid, x, y, pulp);
+                    }
                 }
-                // Angle from top, going clockwise.
-                let angle = (dy as f32 * 2.0).atan2(dx as f32) + PI / 2.0 - spin;
-                let angle = ((angle % (2.0 * PI)) + 2.0 * PI) % (2.0 * PI);
-                if angle <= filled_angle {
-                    draw::dot_i(grid, cx + dx, cy + dy);
-                }
-            }
-        }
-        // Segment divider lines (8 segments like a real citrus).
-        let n_seg = 8u32;
-        for s in 0..n_seg {
-            let theta = s as f32 / n_seg as f32 * 2.0 * PI - PI / 2.0 + spin;
-            let seg_angle = ((theta + PI / 2.0 - spin) % (2.0 * PI) + 2.0 * PI) % (2.0 * PI);
-            if seg_angle > filled_angle + 0.01 {
-                continue;
-            }
-            // Draw a thin line from center to rim.
-            let steps_r = r as usize;
-            for ri2 in 0..=steps_r {
-                let frac = ri2 as f32 / steps_r.max(1) as f32;
-                let px = cx + (frac * r * theta.cos()) as i32;
-                let py = cy + (frac * r * 0.5 * theta.sin()) as i32;
-                // Draw divider as "empty" — skip every other dot to create a gap line.
-                if ri2 % 2 == 0 {
-                    // We can't easily erase, so just mark them — the sector fill gives
-                    // enough visual distinction without erasure.
-                    let _ = (px, py); // dividers are implicit in the wedge boundaries
-                }
-            }
-        }
-        // Tint the filled cells orange.
-        let (cells_w, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy2 in 0..cells_h {
-            for cx2 in 0..filled_cells.min(cells_w) {
-                let t = if filled_cells <= 1 {
-                    0.5
-                } else {
-                    cx2 as f32 / filled_cells as f32
-                };
-                let color = ctx.palette.sample(t);
-                draw::tint_row(grid, cy2, cx2, cx2, color);
             }
         }
         Ok(())
@@ -138,9 +112,9 @@ impl ProgressStyle for CitrusWheel {
 }
 
 // ── AppleBite ────────────────────────────────────────────────────────────────
-// Apple silhouette: full apple drawn as an ellipse; a circular bite hole grows
-// from the right side as eased increases, erasing dots inside the bite region.
-// Since we cannot erase, we scan and draw only dots outside the bite.
+// A row of red apples (two overlapping lobes, brown stem, green leaf) eaten
+// left to right. The apple being eaten loses up to three bites and wobbles;
+// finished apples are left as cream cores with their stems.
 
 struct AppleBite;
 impl ProgressStyle for AppleBite {
@@ -151,71 +125,110 @@ impl ProgressStyle for AppleBite {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Apple silhouette with a bite taken from the right — bite grows with progress"
+        "Row of red apples with stems and leaves, eaten bite by bite down to their cores"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        let cx = (w / 2) as i32;
-        // Apple body centered slightly above middle.
-        let cy = (h / 2).saturating_add(h / 8) as i32;
-        let rx = (w / 2).saturating_sub(1).max(1) as f32;
-        let ry = (h / 2).saturating_sub(1).max(1) as f32;
-        // Bite center: right edge, mid-height. Radius grows with progress.
-        let bite_cx = w as i32 - 1;
-        let bite_cy = cy;
-        let bite_r = (ctx.eased * (rx * 0.9 + 1.0)).max(0.0);
-        // Stem (a short vline above apple).
-        let stem_x = cx;
-        let stem_top = 0i32;
-        let stem_bot = (cy as i32 - ry as i32).max(0);
-        for sy in stem_top..=stem_bot {
-            draw::dot_i(grid, stem_x, sy);
-        }
-        // Leaf: a few dots to the right of the stem.
-        let leaf_y = (stem_bot + stem_top) / 2;
-        draw::dot_i(grid, stem_x + 1, leaf_y);
-        draw::dot_i(grid, stem_x + 2, leaf_y - 1);
-        // Scan the apple ellipse and draw dots not inside the bite.
-        let rx_i = rx as i32 + 1;
-        let ry_i = ry as i32 + 1;
-        for dy in -ry_i..=ry_i {
-            for dx in -rx_i..=rx_i {
-                // Inside apple ellipse? (scale for dot aspect).
-                let in_apple =
-                    (dx as f32 / rx).powi(2) + (dy as f32 * 2.0 / (ry * 2.0)).powi(2) <= 1.0;
-                if !in_apple {
-                    continue;
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi - 4) / 2).clamp(1, 6);
+        let cy = hi - 1 - r;
+        let n = (wi / (2 * r + 8)).max(1);
+        let pitch = wi / n;
+        let red = Color::rgb(225, 40, 50);
+        let flesh = Color::rgb(240, 225, 170);
+        let stem = Color::rgb(150, 95, 45);
+        let leaf = Color::rgb(80, 200, 70);
+        let eaten = ctx.eased * n as f32;
+        let r2 = r * r + r / 2;
+        let rb = r / 2 + 1;
+        for i in 0..n {
+            let cx = (pitch * i + pitch / 2) & !1;
+            let f = (eaten - i as f32).clamp(0.0, 1.0);
+            if f >= 1.0 {
+                // Core: narrow waist with flared ends and two seed gaps.
+                for dy in -r..=r {
+                    let hw = if dy.abs() >= r - 1 {
+                        3
+                    } else if dy.abs() >= r - 2 {
+                        2
+                    } else {
+                        1
+                    };
+                    for dx in -hw..=hw {
+                        if dx == 0 && dy.abs() == 1 {
+                            continue;
+                        }
+                        px(grid, cx + dx, cy + dy, flesh);
+                    }
                 }
-                let px = cx + dx;
-                let py = cy + dy;
-                // Inside bite hole?
-                let bdx = px - bite_cx;
-                let bdy = py - bite_cy;
-                let in_bite = ((bdx * bdx + bdy * bdy * 4) as f32) < bite_r * bite_r;
-                if !in_bite {
-                    draw::dot_i(grid, px, py);
+            } else {
+                let wob = if f > 0.0 {
+                    ((ctx.time * 9.0).sin() * 0.9).round() as i32
+                } else {
+                    0
+                };
+                // Bites appear at f > 0, 1/3, 2/3: right, left, right-low.
+                let bites = [
+                    (cx + r + 2, cy - r / 3, 0.0),
+                    (cx - r - 2, cy + r / 4, 0.34),
+                    (cx + r + 1, cy + r / 2 + 1, 0.67),
+                ];
+                for dy in -r..=r {
+                    for dx in -(r + 2)..=(r + 2) {
+                        let lobe = (dx + 2) * (dx + 2) + dy * dy <= r2
+                            || (dx - 2) * (dx - 2) + dy * dy <= r2;
+                        if !lobe {
+                            continue;
+                        }
+                        let (x, y) = (cx + dx + wob, cy + dy);
+                        let mut c = red;
+                        let mut gone = false;
+                        for &(bx, by, at) in &bites {
+                            if f > at {
+                                let d = (x - bx - wob) * (x - bx - wob) + (y - by) * (y - by);
+                                if d <= rb * rb {
+                                    gone = true;
+                                } else if d <= (rb + 2) * (rb + 2) {
+                                    c = flesh;
+                                }
+                            }
+                        }
+                        if !gone {
+                            px(grid, x, y, c);
+                        }
+                    }
+                }
+                // Leaf on the right of the stem.
+                for &(lx, ly) in &[(1, -2), (2, -3), (3, -3), (2, -2), (3, -2), (4, -3)] {
+                    px(grid, cx + lx + wob, cy - r + ly, leaf);
                 }
             }
-        }
-        // Tint apple cells.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cy2 in 0..cells_h {
-            for cx2 in 0..cells_w {
-                let t = cx2 as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy2, cx2, cx2, ctx.palette.sample(t));
-            }
+            // Stem sits on every apple and core.
+            draw::vline(
+                grid,
+                cx.max(0) as usize,
+                (cy - r - 2).max(0) as usize,
+                (cy - r).max(0) as usize,
+            );
+            draw::tint_row(
+                grid,
+                ((cy - r - 2).max(0) / 4) as usize,
+                (cx / 2) as usize,
+                (cx / 2) as usize,
+                stem,
+            );
         }
         Ok(())
     }
 }
 
 // ── BananaPeel ───────────────────────────────────────────────────────────────
-// A banana being peeled: the bar width represents the banana. Peel strips
-// (4 vertical bands) fold outward progressively. The inner flesh is revealed
-// as eased increases. Strips swing down via a fold angle proportional to eased.
+// One long banana lying in a smile-shaped curve across the bar: yellow skin,
+// brown stem and tip. Progress peels it from the right: the peeled part shows
+// cream fruit, and three peel flaps hang from the peel line, swaying with time.
 
 struct BananaPeel;
 impl ProgressStyle for BananaPeel {
@@ -226,61 +239,68 @@ impl ProgressStyle for BananaPeel {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Banana being peeled: four peel strips fold outward as progress advances"
+        "Curved yellow banana peeled from the tip as progress grows; peel flaps dangle and sway"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 4 {
             return Ok(());
         }
-        let n_strips = 4usize;
-        let strip_w = (w / n_strips).max(1);
-        // How far the peel has opened: 0 = closed, 1 = fully peeled.
-        let peel = ctx.eased;
-        // Animate a gentle sway.
-        let sway = (ctx.time * 2.0).sin() * 0.5;
-        let mid = h / 2;
-        for strip in 0..n_strips {
-            let x_center = strip * strip_w + strip_w / 2;
-            // Fold angle: how far the top of the strip has swung away from center.
-            // At peel=0 strips are straight (no fold); at peel=1 they droop fully.
-            let fold_frac = (peel * 1.2 - strip as f32 * 0.15).clamp(0.0, 1.0);
-            let droop = (fold_frac * h as f32 * 0.4 + sway) as i32;
-            // Draw the peel strip: a curved arc from top (with droop) to bottom.
-            for y in 0..h {
-                // Horizontal offset from center: parabolic curve simulating peel fold.
-                let t_strip = y as f32 / h.max(1) as f32;
-                // Top half folds away from center, bottom half stays anchored.
-                let fold_off = if t_strip < 0.5 {
-                    // Fold top outward.
-                    let t2 = t_strip * 2.0; // 0..1 over top half
-                    let expand = (strip as i32 * 2 - n_strips as i32 + 1).signum(); // direction
-                    (fold_frac * expand as f32 * strip_w as f32 * t2 * 0.5) as i32
-                } else {
-                    0i32
-                };
-                let px = x_center as i32 + fold_off;
-                let py =
-                    y as i32 - (droop as i32 * (1 - (y as i32 * 2 / h.max(1) as i32).abs())).max(0);
-                let py = py.clamp(0, h as i32 - 1);
-                draw::dot_i(grid, px, py);
-                // Peel edge dots on both sides of the strip.
-                draw::dot_i(grid, px - 1, py);
-                draw::dot_i(grid, px + 1, py);
+        let (wi, hi) = (w as i32, h as i32);
+        let skin = Color::rgb(250, 215, 50);
+        let fruit = Color::rgb(250, 240, 200);
+        let brown = Color::rgb(140, 90, 40);
+        let mid = (wi - 1) as f32 / 2.0;
+        let half = (wi as f32 / 2.0 - 2.0).max(1.0);
+        let hf = hi as f32;
+        // Centreline sags in the middle; thickness tapers toward both ends.
+        let centre = |x: i32| {
+            let u = (x as f32 - mid) / half;
+            (hf * 0.62 - hf * 0.42 * u * u, u)
+        };
+        let peel_x = wi as f32 - 2.0 - ctx.eased * (wi as f32 - 6.0);
+        for x in 0..wi {
+            let (yc, u) = centre(x);
+            if u.abs() > 1.0 {
+                continue;
             }
-            // Inner flesh: fill the center as strips peel away.
-            if peel > strip as f32 / n_strips as f32 {
-                let flesh_top = (mid as f32 * (1.0 - peel * 0.5)) as usize;
-                let flesh_bot = h.saturating_sub(flesh_top);
-                draw::vline(grid, x_center.min(w - 1), flesh_top, flesh_bot.min(h - 1));
+            let thick = (hf * 0.36 * (1.0 - u * u).max(0.0).sqrt()).max(1.0);
+            let peeled = x as f32 > peel_x && u < 0.93;
+            let ys = (yc - thick / 2.0).round() as i32;
+            let ye = (yc + thick / 2.0).round() as i32;
+            for y in ys..=ye {
+                let c = if u.abs() > 0.93 {
+                    brown
+                } else if peeled {
+                    fruit
+                } else {
+                    skin
+                };
+                // A ridge line of negative space runs along the skin.
+                if !peeled && y == ys + 1 && thick > 3.0 && x % 3 != 0 {
+                    continue;
+                }
+                if peeled && (y == ys || y == ye) && thick > 2.5 {
+                    continue;
+                }
+                px(grid, x, y, c);
             }
         }
-        // Tint yellow-ish using palette.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            for cx in 0..cells_w {
-                let t = cx as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Peel flaps hang from the peel line once peeling has started.
+        if ctx.eased > 0.02 {
+            let x = peel_x.round() as i32;
+            let (yc, _) = centre(x);
+            for k in -1..=1 {
+                let sway = (ctx.time * 2.5 + k as f32).sin() * 1.5;
+                let y0 = yc.round() as i32;
+                for y in y0..hi {
+                    let t = (y - y0) as f32 / hf;
+                    let fx = x + (k as f32 * (2.0 + t * 8.0) + sway * t * 2.0).round() as i32;
+                    px(grid, fx, y, skin);
+                    if y + 1 == hi {
+                        px(grid, fx, y, brown);
+                    }
+                }
             }
         }
         Ok(())
@@ -288,8 +308,10 @@ impl ProgressStyle for BananaPeel {
 }
 
 // ── GrapeBunch ───────────────────────────────────────────────────────────────
-// Triangular cluster of grape circles. Grapes appear bottom-to-top (heavy
-// bottom cluster first) as eased advances. Each grape is a small filled circle.
+// Hanging grape bunches: rows of 3-2-1 round grapes under a brown stem and a
+// green leaf. Grapes ripen (fill purple, with a glossy highlight) one at a
+// time with eased; unripe grapes are dim rings. Bunches sway with time, the
+// lower rows swinging further than the top.
 
 struct GrapeBunch;
 impl ProgressStyle for GrapeBunch {
@@ -300,73 +322,66 @@ impl ProgressStyle for GrapeBunch {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Triangular grape bunch filling grape-by-grape from the bottom of the cluster"
+        "Swaying grape bunches on stems; grapes ripen purple one by one as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        // Build a triangular grid of grape positions (in dot coords).
-        // Grape radius: small enough to pack several across the bar.
-        let grape_r = (w.min(h * 2) / 10).max(1) as i32;
-        let diam = grape_r * 2 + 1;
-        // Number of columns at the widest row: as many as fit.
-        let max_cols = (w as i32 / diam.max(1)).max(1) as usize;
-        // Number of rows: triangle means row k has (max_cols - k) grapes.
-        let max_rows = max_cols.max(1);
-        // Collect all grape centers in bottom-to-top order.
-        let mut grapes: Vec<(i32, i32)> = Vec::new();
-        for row in 0..max_rows {
-            let n_in_row = max_cols.saturating_sub(row);
-            if n_in_row == 0 {
-                break;
+        let (wi, hi) = (w as i32, h as i32);
+        let n = (wi / 22).max(1);
+        let pitch = wi / n;
+        let purple = [Color::rgb(130, 60, 200), Color::rgb(165, 85, 225)];
+        let dim = Color::rgb(85, 85, 110);
+        let stem = Color::rgb(150, 100, 50);
+        let leaf = Color::rgb(70, 190, 70);
+        let total = n * 6;
+        let ripe = ctx.eased * total as f32;
+        let mut g = 0;
+        for i in 0..n {
+            let bx = pitch * i + pitch / 2;
+            let sway = (ctx.time * 1.8 + i as f32 * 1.3).sin();
+            // Collect grape centres; later (lower) grapes overlap earlier ones,
+            // and a one-dot gap ring around each keeps the grapes distinct.
+            let mut grapes = [(0i32, 0i32, false); 6];
+            let mut m = 0;
+            for (j, count) in [3, 2, 1].iter().enumerate() {
+                let gy = 5 + j as i32 * 4;
+                let off = (sway * (j as f32 + 1.0) * 0.5).round() as i32;
+                for k in 0..*count {
+                    let gx = bx - (count - 1) * 3 + k * 6 + off;
+                    grapes[m] = (gx, gy, (g as f32) < ripe.floor());
+                    m += 1;
+                    g += 1;
+                }
             }
-            // Center this row horizontally.
-            let row_w = n_in_row as i32 * diam;
-            let x_start = (w as i32 - row_w) / 2 + grape_r;
-            let y = h as i32 - 1 - row as i32 * diam;
-            if y < 0 {
-                break;
-            }
-            for col in 0..n_in_row {
-                let x = x_start + col as i32 * diam;
-                grapes.push((x, y));
-            }
-        }
-        // How many grapes are visible.
-        let visible = (ctx.eased * grapes.len() as f32).ceil() as usize;
-        // Draw stem from top grape up.
-        if let Some(&(sx, sy)) = grapes.last() {
-            let stem_top = 0i32;
-            for sy2 in stem_top..sy.saturating_sub(grape_r) {
-                draw::dot_i(grid, sx, sy2);
-            }
-        }
-        // Draw each visible grape as a small filled circle.
-        for (i, &(gx, gy)) in grapes.iter().enumerate() {
-            if i >= visible {
-                break;
-            }
-            // Fill a circle of radius grape_r centered at (gx, gy).
-            for dy in -grape_r..=grape_r {
-                for dx in -grape_r..=grape_r {
-                    // Dot-aspect: vertical dots are narrower visually.
-                    if dx * dx + dy * dy * 4 <= grape_r * grape_r * 4 {
-                        draw::dot_i(grid, gx + dx, gy + dy);
+            for y in 2..hi {
+                for x in (bx - 9)..=(bx + 9) {
+                    let d = |q: usize| {
+                        let (gx, gy, _) = grapes[q];
+                        (x - gx) * (x - gx) + (y - gy) * (y - gy)
+                    };
+                    let Some(o) = (0..6).rev().find(|&q| d(q) <= 5) else {
+                        continue;
+                    };
+                    if (o + 1..6).any(|q| d(q) <= 8) {
+                        continue;
+                    }
+                    let (gx, gy, full) = grapes[o];
+                    if full && !(x - gx == -1 && y - gy == -1) {
+                        px(grid, x, y, purple[o % 2]);
+                    } else if !full && d(o) >= 4 {
+                        px(grid, x, y, dim);
                     }
                 }
             }
-            // Highlight: one bright dot near top-left of each grape.
-            draw::dot_i(grid, gx - grape_r / 2, gy.saturating_sub(grape_r / 2 + 1));
-        }
-        // Tint visible grapes.
-        let (cells_w, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx in 0..filled_cells.min(cells_w) {
-                let t = cx as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+            // Stem and leaf, drawn last so their cells keep their colours.
+            for y in 0..3 {
+                px(grid, bx, y, stem);
+            }
+            for &(lx, ly) in &[(2, 0), (3, 0), (4, 0), (5, 1), (3, 1), (4, 1), (2, 1)] {
+                px(grid, bx + lx, ly, leaf);
             }
         }
         Ok(())
@@ -374,8 +389,9 @@ impl ProgressStyle for GrapeBunch {
 }
 
 // ── WatermelonSlice ───────────────────────────────────────────────────────────
-// A semicircular watermelon slice: rind drawn at top, flesh fills from the flat
-// bottom edge upward with eased. Black seed dots appear as flesh fills in.
+// A row of half-moon watermelon slices, flat side up: green rind around the
+// curve, a pale band, then red flesh with black-seed gaps. Each slice fills
+// with flesh from the rind upward in turn; the juicy surface ripples with time.
 
 struct WatermelonSlice;
 impl ProgressStyle for WatermelonSlice {
@@ -386,79 +402,53 @@ impl ProgressStyle for WatermelonSlice {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Watermelon slice: flesh fills from flat bottom up; seeds appear as it ripens"
+        "Half-moon watermelon slices with green rind and seeded red flesh, filling one by one"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 4 {
             return Ok(());
         }
-        let base = (h - 1) as i32;
-        let cx = (w / 2) as i32;
-        let r = (w / 2).saturating_sub(1).max(1) as f32;
-        // Flat bottom edge (the cut face).
-        draw::hline(grid, 0, w - 1, h - 1);
-        // Outer rind arc (upper semicircle).
-        let arc_steps = (r * PI) as usize + 1;
-        for i in 0..=arc_steps {
-            let theta = i as f32 / arc_steps.max(1) as f32 * PI; // 0..PI (upper half)
-            let px = cx + (r * theta.cos()) as i32;
-            let py = base - (r * 0.5 * theta.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            // Rind thickness: inner rind ring.
-            let inner_r = r * 0.88;
-            let ipx = cx + (inner_r * theta.cos()) as i32;
-            let ipy = base - (inner_r * 0.5 * theta.sin()) as i32;
-            draw::dot_i(grid, ipx, ipy);
-        }
-        // Fill flesh from base upward.
-        let fill_h = (ctx.eased * (h as f32 - 1.0)).round() as i32;
-        for dy in 0..fill_h {
-            let y = base - dy;
-            if y < 0 {
-                break;
-            }
-            // Half-width of the arc at this height.
-            let norm = dy as f32 / (h.max(1) as f32 - 1.0);
-            let half_w = (r * (1.0 - (1.0 - norm * 2.0).powi(2)).sqrt() * 0.95) as i32;
-            draw::hline(
-                grid,
-                (cx - half_w).max(0) as usize,
-                (cx + half_w).min(w as i32 - 1) as usize,
-                y as usize,
-            );
-        }
-        // Seeds: fixed positions, appear once the fill reaches their row.
-        // Seed positions as (fraction_from_center_x, fraction_from_base_y).
-        let seeds: &[(f32, f32)] = &[
-            (-0.35, 0.25),
-            (0.0, 0.2),
-            (0.35, 0.25),
-            (-0.55, 0.45),
-            (-0.18, 0.50),
-            (0.18, 0.50),
-            (0.55, 0.45),
-            (-0.38, 0.68),
-            (0.38, 0.68),
-        ];
-        for &(sx_frac, sy_frac) in seeds {
-            let sx = cx + (sx_frac * r * 0.9) as i32;
-            let sy = base - (sy_frac * (h as f32 - 1.0)) as i32;
-            // Seed is visible only if the fill has reached its row.
-            let seed_fill_needed = sy_frac;
-            if ctx.eased >= seed_fill_needed {
-                draw::dot_i(grid, sx, sy);
-                draw::dot_i(grid, sx + 1, sy);
-                draw::dot_i(grid, sx, sy - 1);
-            }
-        }
-        // Tint filled portion.
-        let (cells_w, cells_h) = grid.dimensions();
-        let fill_cells = (ctx.eased * cells_h as f32) as usize;
-        for cy in (cells_h.saturating_sub(fill_cells))..cells_h {
-            for cx2 in 0..cells_w {
-                let t = cx2 as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx2, cx2, ctx.palette.sample(t));
+        let (wi, hi) = (w as i32, h as i32);
+        let r = (hi - 3).clamp(2, 12);
+        let y0 = hi - 1 - r;
+        let n = (wi / (2 * r + 2)).max(1);
+        let pitch = wi / n;
+        let rind = Color::rgb(40, 170, 70);
+        let flesh = Color::rgb(240, 50, 70);
+        let pale = Color::rgb(210, 240, 190);
+        let r2 = r * r;
+        let inner = (r - 2) * (r - 2);
+        let flesh_r = (r - 3) * (r - 3);
+        for i in 0..n {
+            let cx = pitch * i + pitch / 2;
+            let f = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            for dy in 0..=r {
+                // Surface level (rows from the rind upward), rippling.
+                let ripple = (ctx.time * 4.0 + dy as f32).sin() * 0.6;
+                for dx in -r..=r {
+                    let d = dx * dx + dy * dy;
+                    if d > r2 {
+                        continue;
+                    }
+                    let (x, y) = (cx + dx, y0 + dy);
+                    if d > inner {
+                        px(grid, x, y, rind);
+                    } else if d > flesh_r {
+                        if dy == 0 {
+                            px(grid, x, y, pale);
+                        }
+                    } else {
+                        let depth = r as f32 - (d as f32).sqrt();
+                        let filled = depth <= f * (r as f32 - 1.0) + ripple;
+                        let seed = (dy % 4 == 2) && (dx + dy).rem_euclid(5) == 0 && dy < r - 4;
+                        if f > 0.0 && filled && !seed {
+                            px(grid, x, y, flesh);
+                        } else if dy == 0 {
+                            px(grid, x, y, pale);
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -466,8 +456,10 @@ impl ProgressStyle for WatermelonSlice {
 }
 
 // ── StrawberrySeeds ───────────────────────────────────────────────────────────
-// A strawberry outline: heart-like shape fills from bottom (tip) upward.
-// Seed dimples (tiny dots scattered on the surface) appear as the fill rises.
+// A row of strawberries: heart-shouldered bodies tapering to a point, with a
+// spiky green calyx and stem. Each berry ripens from its tip upward with
+// eased, turning from a pale outline into solid red dotted with seed gaps.
+// Calyx tips flutter with time.
 
 struct StrawberrySeeds;
 impl ProgressStyle for StrawberrySeeds {
@@ -478,100 +470,79 @@ impl ProgressStyle for StrawberrySeeds {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Strawberry body fills tip-to-top; seed dimples appear across the surface"
+        "Row of strawberries with leafy green tops, ripening red and seeded from tip to shoulder"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        let cx = (w / 2) as i32;
-        let tip_y = (h - 1) as i32;
-        let top_y = 0i32;
-        // Strawberry shape: an inverted teardrop. Width at each row:
-        //   - narrow at the tip (bottom), widens going up, then slightly narrows at top for calyx.
-        let body_h = h as i32;
-        let max_hw = (w / 2).saturating_sub(1).max(1) as f32;
-        // Fill from tip upward — fill_rows is how many rows are filled.
-        let fill_rows = (ctx.eased * body_h as f32).round() as i32;
-        for dy in 0..body_h {
-            let y = tip_y - dy;
-            if y < top_y {
-                break;
-            }
-            // Normalized position: 0 at tip, 1 at top.
-            let t = dy as f32 / body_h.max(1) as f32;
-            // Width profile: 0 at tip, grows to max at 60%, slight indent at top.
-            let hw = if t < 0.6 {
-                max_hw * (t / 0.6).sqrt()
-            } else {
-                max_hw * (1.0 - (t - 0.6) / 0.4 * 0.15)
-            };
-            let hw_i = hw.round() as i32;
-            // Draw outline.
-            draw::dot_i(grid, cx - hw_i, y);
-            draw::dot_i(grid, cx + hw_i, y);
-            // Fill if within progress.
-            if dy < fill_rows {
-                for dx in -hw_i..=hw_i {
-                    draw::dot_i(grid, cx + dx, y);
+        let (wi, hi) = (w as i32, h as i32);
+        let bh = (hi - 4).clamp(2, 12);
+        let y0 = hi - bh;
+        let n = (wi / 18).max(1);
+        let pitch = wi / n;
+        let red = Color::rgb(230, 35, 60);
+        let pale = Color::rgb(195, 225, 165);
+        let leaf = Color::rgb(70, 185, 60);
+        let ripe = ctx.eased * n as f32;
+        for i in 0..n {
+            let cx = pitch * i + pitch / 2;
+            let f = (ripe - i as f32).clamp(0.0, 1.0);
+            for row in 0..bh {
+                let t = row as f32 / bh as f32;
+                let mut hw = 6.5 * (1.0 - t).sqrt();
+                if row == 0 {
+                    hw -= 1.5;
+                } else if row == 1 {
+                    hw -= 0.5;
+                }
+                let hw = hw.round().max(0.0) as i32;
+                let y = y0 + row;
+                let ripe_row = t >= 1.0 - f;
+                for dx in -hw..=hw {
+                    let edge = dx.abs() == hw || row == 0 || row == bh - 1;
+                    if ripe_row {
+                        let seed = row % 3 == 1 && (dx + (row / 3 % 2) * 2).rem_euclid(4) == 0;
+                        if edge || !seed {
+                            px(grid, cx + dx, y, red);
+                        }
+                    } else if edge {
+                        px(grid, cx + dx, y, pale);
+                    }
                 }
             }
-        }
-        // Calyx (leaves) at the top: a few dots above the fruit.
-        draw::dot_i(grid, cx, top_y - 1);
-        draw::dot_i(grid, cx - 2, top_y - 1);
-        draw::dot_i(grid, cx + 2, top_y - 1);
-        draw::dot_i(grid, cx - 1, top_y - 2);
-        draw::dot_i(grid, cx + 1, top_y - 2);
-        // Seeds: scattered positions as (t_across, t_up_from_tip).
-        let seeds: &[(f32, f32)] = &[
-            (-0.3, 0.2),
-            (0.3, 0.2),
-            (0.0, 0.3),
-            (-0.5, 0.4),
-            (0.5, 0.4),
-            (-0.2, 0.5),
-            (0.2, 0.5),
-            (-0.45, 0.65),
-            (0.45, 0.65),
-            (0.0, 0.6),
-            (-0.3, 0.75),
-            (0.3, 0.75),
-            (0.0, 0.85),
-        ];
-        for &(sx_frac, sy_frac) in seeds {
-            let t = sy_frac;
-            // Width at this row.
-            let hw_at = if t < 0.6 {
-                max_hw * (t / 0.6).sqrt()
-            } else {
-                max_hw * (1.0 - (t - 0.6) / 0.4 * 0.15)
-            };
-            let sx = cx + (sx_frac * hw_at) as i32;
-            let sy = tip_y - (sy_frac * body_h as f32) as i32;
-            // Seed is visible once the fill has reached its row.
-            if ctx.eased >= sy_frac && sy >= top_y {
-                draw::dot_i(grid, sx, sy);
+            // Calyx: a band of leaves with fluttering tips, plus a short stem.
+            let fl = ((ctx.time * 3.0 + i as f32).sin() * 1.2).round() as i32;
+            draw::hline(
+                grid,
+                (cx - 4).max(0) as usize,
+                (cx + 4).max(0) as usize,
+                (y0 - 1).max(0) as usize,
+            );
+            for &tx in &[-5, -2, 2, 5] {
+                px(grid, cx + tx + fl * tx.signum(), y0 - 2, leaf);
             }
-        }
-        // Tint.
-        let (cells_w, cells_h) = grid.dimensions();
-        let fill_cells = (ctx.eased * cells_h as f32) as usize;
-        for cy in (cells_h.saturating_sub(fill_cells))..cells_h {
-            for cx2 in 0..cells_w {
-                let t = cx2 as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx2, cx2, ctx.palette.sample(t));
-            }
+            px(grid, cx, y0 - 2, leaf);
+            px(grid, cx, y0 - 3, leaf);
+            px(grid, cx + 1, y0 - 4, leaf);
+            draw::tint_row(
+                grid,
+                ((y0 - 1).max(0) / 4) as usize,
+                ((cx - 5).max(0) / 2) as usize,
+                ((cx + 5).max(0) / 2) as usize,
+                leaf,
+            );
         }
         Ok(())
     }
 }
 
 // ── PineappleLattice ──────────────────────────────────────────────────────────
-// Pineapple rind: a diamond lattice pattern fills the bar column by column.
-// Each cell of the lattice is a small diamond of dots. The pattern sweeps left
-// to right with eased.
+// A pineapple lying on its side: an oval body with a leaf crown fanning out to
+// the right. Ripe (filled) rind is solid gold cut by diagonal grooves, giving
+// the crosshatched diamond skin; unripe rind is an outline with lattice nodes.
+// The ripe region sweeps left to right with eased; the crown sways with time.
 
 struct PineappleLattice;
 impl ProgressStyle for PineappleLattice {
@@ -582,73 +553,64 @@ impl ProgressStyle for PineappleLattice {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Pineapple diamond-lattice rind filling column by column across the bar"
+        "Pineapple on its side: crosshatched gold skin ripens left to right under a swaying leaf crown"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 4 {
             return Ok(());
         }
-        // Diamond cell size: spacing between lattice nodes.
-        let cell_x = 4usize;
-        let cell_y = 3usize;
-        // How many dot columns are revealed.
-        let filled_w = (ctx.eased * w as f32).round() as usize;
-        // Time-driven shimmer: the whole pattern slowly drifts.
-        let drift_y = ((ctx.time * 1.5) as usize) % cell_y.max(1);
-        // Draw diamond lattice nodes and connecting lines.
-        // Lattice is a grid of points at (col*cell_x, row*cell_y + offset_for_odd_cols).
-        let cols = w / cell_x + 2;
-        let rows = h / cell_y + 2;
-        for col in 0..cols {
-            let cx2 = col * cell_x;
-            if cx2 >= filled_w {
-                break;
-            }
-            for row in 0..rows {
-                // Alternate rows are offset by cell_y/2 for each column to make diamonds.
-                let y_off = if col % 2 == 0 { 0 } else { cell_y / 2 };
-                let ry = (row * cell_y + y_off + drift_y) % (h + cell_y);
-                if ry >= h {
+        let (wi, hi) = (w as i32, h as i32);
+        let crown_len = (wi / 4).clamp(2, 22);
+        let x0 = 1;
+        let x1 = (wi - crown_len - 1).max(x0 + 2);
+        let cx = (x0 + x1) as f32 / 2.0;
+        let rx = ((x1 - x0) as f32 / 2.0).max(1.0);
+        let cy = (hi - 1) as f32 / 2.0;
+        let ry = (hi as f32 / 2.0 - 0.5).max(1.0);
+        let inside = |x: i32, y: i32| {
+            let nx = (x as f32 - cx) / rx;
+            let ny = (y as f32 - cy) / ry;
+            nx * nx + ny * ny <= 1.0
+        };
+        let fill_x = x0 as f32 + ctx.eased * (x1 - x0 + 1) as f32;
+        let gold = Color::rgb(245, 185, 40);
+        let green = Color::rgb(120, 150, 60);
+        let leaf = Color::rgb(60, 195, 80);
+        for y in 0..hi {
+            for x in x0..=x1 {
+                if !inside(x, y) {
                     continue;
                 }
-                // Diamond node: a small cross.
-                draw::dot(grid, cx2.min(w - 1), ry);
-                if cx2 + 1 < filled_w {
-                    draw::dot(grid, (cx2 + 1).min(w - 1), ry);
-                }
-                // Connect to adjacent nodes to form diamond edges.
-                // Right neighbor (same row, next column).
-                if cx2 + cell_x < filled_w {
-                    let next_y_off = if (col + 1) % 2 == 0 { 0 } else { cell_y / 2 };
-                    // Draw a diagonal line bridging the two nodes.
-                    let nx = cx2 + cell_x;
-                    let ny = (row * cell_y + next_y_off + drift_y) % (h + cell_y);
-                    if ny < h {
-                        let mid_x = (cx2 + nx) / 2;
-                        let mid_y = (ry + ny) / 2;
-                        draw::dot(grid, mid_x.min(w - 1), mid_y.min(h - 1));
+                let edge = !inside(x - 1, y)
+                    || !inside(x + 1, y)
+                    || !inside(x, y - 1)
+                    || !inside(x, y + 1);
+                let a = (x + y).rem_euclid(6);
+                let b = (x - y).rem_euclid(6);
+                if (x as f32) < fill_x {
+                    // Ripe: solid skin, diagonal grooves left as negative space.
+                    if edge || (a != 0 && b != 0) {
+                        px(grid, x, y, gold);
                     }
+                } else if edge || (a == 0 && b == 0) {
+                    px(grid, x, y, green);
                 }
             }
         }
-        // Crown at the top: a few upward spikes above the bar.
-        let crown_cols = (w / 6).max(1);
-        for s in 0..crown_cols {
-            let sx = s * 6 + 3;
-            if sx >= w {
-                break;
-            }
-            draw::dot_i(grid, sx as i32, -1); // above bar, ignored safely
-            draw::dot(grid, sx.min(w - 1), 0);
-        }
-        // Tint.
-        let (cells_w, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx_col in 0..filled_cells.min(cells_w) {
-                let t = cx_col as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx_col, cx_col, ctx.palette.sample(t));
+        // Leaf crown: five blades fanning from the stem end, each swaying.
+        let base_y = cy.round() as i32;
+        for k in 0..5 {
+            let a = (k as f32 - 2.0) * 0.42 + (ctx.time * 2.2 + k as f32).sin() * 0.1;
+            let len = crown_len as f32 * (1.0 - (k as f32 - 2.0).abs() * 0.18);
+            let steps = len.max(1.0) as i32;
+            for s in 0..=steps {
+                let lx = x1 - 1 + (s as f32 * a.cos()).round() as i32;
+                let ly = base_y + (s as f32 * a.sin()).round() as i32;
+                px(grid, lx, ly, leaf);
+                if s < steps / 2 {
+                    px(grid, lx, ly + 1, leaf);
+                }
             }
         }
         Ok(())
@@ -656,10 +618,9 @@ impl ProgressStyle for PineappleLattice {
 }
 
 // ── CherrySwing ───────────────────────────────────────────────────────────────
-// Two cherries hanging on a Y-shaped stem. The pair swings as a pendulum
-// driven by ctx.time. Progress fills the cherries — each is a small filled
-// circle that fills from empty to solid as eased crosses 0.5 (one cherry) and
-// 1.0 (both cherries), with the bar background showing stem trail.
+// A row of cherry pairs: two round cherries on stems that meet at a leafy top,
+// each pair swinging like a pendulum with time. Pairs ripen left to right with
+// eased: solid red with a glint once ripe, pale-green rings before.
 
 struct CherrySwing;
 impl ProgressStyle for CherrySwing {
@@ -670,80 +631,55 @@ impl ProgressStyle for CherrySwing {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Cherry pair on a Y-stem swinging as a pendulum; each fruit fills with progress"
+        "Row of swinging cherry pairs on joined stems, ripening red one pair at a time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 8 {
             return Ok(());
         }
-        // Pendulum swing: amplitude decreases as progress completes (settling).
-        let settle = 1.0 - ctx.eased * 0.7;
-        let swing = (ctx.time * 2.5).sin() * settle * (h as f32 * 0.2);
-        // The pair is centered horizontally; at progress=0 they're near the top,
-        // at progress=1 they're pulled down (ripe and hanging heavy).
-        let cx = (w / 2) as i32;
-        let stem_top_y = 0i32;
-        let stem_fork_y = (h as f32 * 0.35) as i32;
-        // Cherry centers below fork.
-        let cherry_r = (h.min(w / 2) / 5).max(1) as i32;
-        let cherry_y = stem_fork_y + cherry_r * 2 + (swing.abs() as i32).min(h as i32 / 4);
-        let cherry_left_x = cx - cherry_r * 2 - 1;
-        let cherry_right_x = cx + cherry_r * 2 + 1;
-        // Horizontal shift from pendulum swing.
-        let sx = swing as i32;
-        // Draw the main stem from top to fork.
-        for y in stem_top_y..=stem_fork_y {
-            draw::dot_i(grid, cx + sx * y / (stem_fork_y.max(1)), y);
-        }
-        // Left and right sub-stems from fork to each cherry.
-        let fork_x = cx + sx;
-        let clx = cherry_left_x + sx;
-        let crx = cherry_right_x + sx;
-        let cy2 = cherry_y;
-        // Left sub-stem.
-        for t in 0..=8 {
-            let t_f = t as f32 / 8.0;
-            let px = fork_x + ((clx - fork_x) as f32 * t_f) as i32;
-            let py = stem_fork_y + ((cy2 - cherry_r - stem_fork_y) as f32 * t_f) as i32;
-            draw::dot_i(grid, px, py);
-        }
-        // Right sub-stem.
-        for t in 0..=8 {
-            let t_f = t as f32 / 8.0;
-            let px = fork_x + ((crx - fork_x) as f32 * t_f) as i32;
-            let py = stem_fork_y + ((cy2 - cherry_r - stem_fork_y) as f32 * t_f) as i32;
-            draw::dot_i(grid, px, py);
-        }
-        // Draw the cherry circles. First cherry filled at eased >= 0.5, second at 1.0.
-        let left_fill = (ctx.eased * 2.0).clamp(0.0, 1.0);
-        let right_fill = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
-        for dr in -cherry_r..=cherry_r {
-            for dc in -cherry_r..=cherry_r {
-                let dist2 = dr * dr * 4 + dc * dc;
-                if dist2 > cherry_r * cherry_r * 4 {
-                    continue;
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi - 6) / 2).clamp(1, 4);
+        let n = (wi / 22).max(1);
+        let pitch = wi / n;
+        let red = Color::rgb(215, 20, 50);
+        let unripe = Color::rgb(170, 215, 120);
+        let stem = Color::rgb(90, 160, 60);
+        let leaf = Color::rgb(60, 200, 80);
+        let ripe = ctx.eased * n as f32;
+        let cy = hi - 1 - r;
+        for i in 0..n {
+            let top_x = pitch * i + pitch / 2;
+            let swing = (ctx.time * 2.0 + i as f32 * 0.9).sin() * 2.0;
+            let f = (ripe - i as f32).clamp(0.0, 1.0);
+            for side in [-1, 1] {
+                let cx = top_x + side * (r + 1) + swing.round() as i32;
+                // Stem: a curve from the shared top to the cherry.
+                let steps = cy - r;
+                for s in 0..steps {
+                    let t = s as f32 / steps.max(1) as f32;
+                    let sx = top_x as f32 + (cx - top_x) as f32 * t.sqrt();
+                    px(grid, sx.round() as i32, s, stem);
                 }
-                // Outline always.
-                let on_edge = dist2 > (cherry_r - 1) * (cherry_r - 1) * 4;
-                // Left cherry.
-                let in_left_fill = (dr as f32 / cherry_r as f32 + 1.0) / 2.0 <= left_fill;
-                if on_edge || in_left_fill {
-                    draw::dot_i(grid, clx + dc, cy2 + dr);
-                }
-                // Right cherry.
-                let in_right_fill = (dr as f32 / cherry_r as f32 + 1.0) / 2.0 <= right_fill;
-                if on_edge || in_right_fill {
-                    draw::dot_i(grid, crx + dc, cy2 + dr);
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        let d = dx * dx + dy * dy;
+                        if d > r * r + 1 {
+                            continue;
+                        }
+                        let (x, y) = (cx + dx, cy + dy);
+                        if f >= 1.0 || (f > 0.0 && side < 0) {
+                            if !(dx == -r / 2 && dy == -r / 2) {
+                                px(grid, x, y, red);
+                            }
+                        } else if d > (r - 1) * (r - 1) {
+                            px(grid, x, y, unripe);
+                        }
+                    }
                 }
             }
-        }
-        // Tint.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cy_t in 0..cells_h {
-            for cx_t in 0..cells_w {
-                let t = ctx.eased;
-                draw::tint_row(grid, cy_t, cx_t, cx_t, ctx.palette.sample(t));
+            for &(lx, ly) in &[(1, 0), (2, 0), (3, 1), (2, 1), (4, 1)] {
+                px(grid, top_x + lx, ly, leaf);
             }
         }
         Ok(())
@@ -751,9 +687,9 @@ impl ProgressStyle for CherrySwing {
 }
 
 // ── JuiceSqueeze ──────────────────────────────────────────────────────────────
-// A citrus fruit in the top half compresses vertically (squish) as progress
-// rises. The juice level in a glass below rises to match. The squeeze is
-// animated with a gentle pulsing vibration from ctx.time.
+// A lemon half is squeezed over a glass: the lemon flattens as progress rises,
+// juice drips fall from it with time, and the glass fills with yellow juice.
+// Spent lemon rinds pile up beside the glass as the squeezing goes on.
 
 struct JuiceSqueeze;
 impl ProgressStyle for JuiceSqueeze {
@@ -764,106 +700,67 @@ impl ProgressStyle for JuiceSqueeze {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Fruit compresses top-down while juice level rises in a glass below"
+        "Lemon half squeezed flat over a glass that fills with juice; drips fall and spent rinds pile up"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 24 || h < 12 {
             return Ok(());
         }
-        let cx = (w / 2) as i32;
-        // Divide bar: top half = fruit, bottom half = glass.
-        let split_y = (h / 2) as i32;
-        // Fruit: an ellipse that gets compressed vertically with progress.
-        // At eased=0 it's a full circle; at eased=1 it's very flat.
-        let pulse = (ctx.time * 8.0).sin() * 0.05 * ctx.eased;
-        let fruit_rx = (w / 4).max(1) as f32;
-        let fruit_ry_full = (split_y as f32 * 0.45).max(1.0);
-        let squeeze = (ctx.eased + pulse).clamp(0.0, 1.0);
-        let fruit_ry = fruit_ry_full * (1.0 - squeeze * 0.75).max(0.1);
-        let fruit_cy = (split_y as f32 * 0.5) as i32;
-        // Draw fruit ellipse outline.
-        let arc_steps = (fruit_rx * 2.0 * PI) as usize + 1;
-        for i in 0..=arc_steps {
-            let theta = i as f32 / arc_steps.max(1) as f32 * 2.0 * PI;
-            let px = cx + (fruit_rx * theta.cos()) as i32;
-            let py = fruit_cy + (fruit_ry * theta.sin() * 0.5) as i32;
-            draw::dot_i(grid, px, py);
+        let (wi, hi) = (w as i32, h as i32);
+        let lemon = Color::rgb(240, 235, 60);
+        let pith = Color::rgb(255, 250, 205);
+        let juice = Color::rgb(255, 170, 30);
+        let glass = Color::rgb(175, 205, 225);
+        let p = ctx.eased;
+        // Glass in the middle: walls and base; juice rises with progress.
+        let gw = 22;
+        let x0 = (wi / 2 - gw / 2) | 1;
+        let x1 = x0 + gw + 1;
+        let gtop = hi - 9;
+        for y in gtop..hi {
+            px(grid, x0, y, glass);
+            px(grid, x1, y, glass);
         }
-        // Fill the fruit.
-        let rx_i = fruit_rx as i32 + 1;
-        let ry_i = (fruit_ry * 0.5) as i32 + 1;
-        for dy in -ry_i..=ry_i {
-            for dx in -rx_i..=rx_i {
-                if (dx as f32 / fruit_rx).powi(2) + (dy as f32 / (fruit_ry * 0.5).max(0.1)).powi(2)
-                    <= 1.0
-                {
-                    draw::dot_i(grid, cx + dx, fruit_cy + dy);
-                }
+        for x in x0..=x1 {
+            px(grid, x, hi - 1, glass);
+        }
+        let level = (p * (hi - 1 - gtop) as f32).round() as i32;
+        for y in (hi - 1 - level..hi - 1).rev() {
+            for x in x0 + 1..x1 {
+                px(grid, x, y, juice);
             }
         }
-        // Drops falling from fruit to glass (time-animated).
-        let drop_t = (ctx.time * 3.0).fract();
-        if ctx.eased > 0.05 {
-            let drop_y = (fruit_cy + ry_i + 1) as f32
-                + drop_t * (split_y as f32 - fruit_cy as f32 - ry_i as f32 - 1.0);
-            draw::dot_i(grid, cx, drop_y as i32);
-            draw::dot_i(grid, cx, drop_y as i32 + 1);
+        // Lemon half, cut face down, flattening as it is squeezed.
+        let cx = (x0 + x1) / 2;
+        let lh = (5.0 - p * 3.0).round() as i32;
+        let lw = 9 + (p * 3.0) as i32;
+        let base = gtop - 2;
+        for dy in 0..=lh {
+            let t = dy as f32 / lh.max(1) as f32;
+            let hw = (lw as f32 * (1.0 - t * t).sqrt()).round() as i32;
+            let c = if dy == 0 { pith } else { lemon };
+            for dx in -hw..=hw {
+                px(grid, cx + dx, base - dy, c);
+            }
         }
-        // Glass outline: a trapezoid — slightly wider at top.
-        let glass_top_y = split_y + 1;
-        let glass_bot_y = h as i32 - 1;
-        let glass_h = (glass_bot_y - glass_top_y).max(1);
-        let glass_top_hw = (w as i32 / 3).max(1);
-        let glass_bot_hw = (glass_top_hw as f32 * 0.8) as i32;
-        // Left and right walls (angled inward).
-        for y in glass_top_y..=glass_bot_y {
-            let t_g = (y - glass_top_y) as f32 / glass_h as f32;
-            let hw = glass_top_hw - ((glass_top_hw - glass_bot_hw) as f32 * t_g) as i32;
-            draw::dot_i(grid, cx - hw, y);
-            draw::dot_i(grid, cx + hw, y);
+        // Drips falling from the cut face into the glass.
+        if p > 0.0 && p < 1.0 {
+            let surface = hi - 2 - level;
+            for k in 0..2 {
+                let ph = (ctx.time * 1.8 + k as f32 * 0.5).fract();
+                let dy = (ph * (surface - base).max(1) as f32) as i32;
+                px(grid, cx - 2 + k * 4, base + 1 + dy, juice);
+            }
         }
-        // Bottom of glass.
-        draw::hline(
-            grid,
-            (cx - glass_bot_hw).max(0) as usize,
-            (cx + glass_bot_hw).min(w as i32 - 1) as usize,
-            glass_bot_y as usize,
-        );
-        // Juice fill inside glass, rising with progress.
-        let juice_h = (ctx.eased * glass_h as f32).round() as i32;
-        for y in (glass_bot_y - juice_h).max(glass_top_y)..=glass_bot_y {
-            let t_g = (y - glass_top_y) as f32 / glass_h as f32;
-            let hw =
-                (glass_top_hw - ((glass_top_hw - glass_bot_hw) as f32 * t_g) as i32 - 1).max(0);
-            draw::hline(
-                grid,
-                (cx - hw).max(0) as usize,
-                (cx + hw).min(w as i32 - 1) as usize,
-                y as usize,
-            );
-        }
-        // Juice surface ripple (time-animated).
-        let juice_top_y = (glass_bot_y - juice_h).max(glass_top_y);
-        if juice_h > 0 {
-            let ripple = (ctx.time * 5.0).sin() * 1.5;
-            let t_g = (juice_top_y - glass_top_y) as f32 / glass_h as f32;
-            let hw =
-                (glass_top_hw - ((glass_top_hw - glass_bot_hw) as f32 * t_g) as i32 - 1).max(0);
-            draw::dot_i(grid, cx + ripple as i32, juice_top_y - 1);
-            let _ = hw; // suppress unused warning — hw used for draw call above
-        }
-        // Tint.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cy_t in 0..cells_h {
-            let half = cells_h / 2;
-            for cx_t in 0..cells_w {
-                let t = if cy_t >= half {
-                    ctx.eased
-                } else {
-                    cx_t as f32 / cells_w.max(1) as f32
-                };
-                draw::tint_row(grid, cy_t, cx_t, cx_t, ctx.palette.sample(t));
+        // Spent rinds pile up on the left: small flattened domes.
+        let spent = (p * 4.0) as i32;
+        for k in 0..spent {
+            let rx = x0 - 8 - k * 9;
+            for dy in 0..2 {
+                for dx in -3 + dy..=3 - dy {
+                    px(grid, rx + dx, hi - 1 - dy, lemon);
+                }
             }
         }
         Ok(())
@@ -871,9 +768,9 @@ impl ProgressStyle for JuiceSqueeze {
 }
 
 // ── BerryPop ──────────────────────────────────────────────────────────────────
-// A cluster of berries pops in one by one. Each berry (small filled circle)
-// appears with a brief outward "pop" bloom that is animated with ctx.time.
-// The positions are spread across the bar area in a scattered pattern.
+// Blueberries pop into a row one by one with eased: each is a round blue berry
+// with the star-shaped crown gap on top and a pale glint. The newest berry
+// drops in and bounces with time; empty spots wait as dim rings.
 
 struct BerryPop;
 impl ProgressStyle for BerryPop {
@@ -884,79 +781,59 @@ impl ProgressStyle for BerryPop {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Berry cluster appearing one by one — each fruit pops in with a radial bloom"
+        "Crowned blueberries pop into a row one by one, the newest bouncing as it lands"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        // Pre-computed scattered berry positions as (x_frac, y_frac) in [0,1].
-        // Laid out to avoid overlap for small sizes.
-        let positions: &[(f32, f32)] = &[
-            (0.08, 0.5),
-            (0.18, 0.25),
-            (0.18, 0.75),
-            (0.30, 0.5),
-            (0.40, 0.2),
-            (0.40, 0.8),
-            (0.50, 0.5),
-            (0.60, 0.3),
-            (0.60, 0.7),
-            (0.72, 0.5),
-            (0.82, 0.25),
-            (0.82, 0.75),
-            (0.92, 0.5),
-        ];
-        let n_berries = positions.len();
-        let berry_r = (w.min(h * 2) / (n_berries + 2)).clamp(1, 3) as i32;
-        let visible = (ctx.eased * n_berries as f32).ceil() as usize;
-        // Each berry's progress fraction threshold.
-        for (i, &(xf, yf)) in positions.iter().enumerate() {
-            if i >= visible {
-                break;
-            }
-            let bx = (xf * (w.saturating_sub(1)) as f32) as i32;
-            let by = (yf * (h.saturating_sub(1)) as f32) as i32;
-            // Pop animation: how long ago this berry appeared (in seconds worth of progress).
-            let berry_threshold = i as f32 / n_berries as f32;
-            let age = (ctx.eased - berry_threshold) * n_berries as f32; // 0..1 within its own slot
-                                                                        // Map age to a pop bloom radius (blooms quickly, then settles).
-            let bloom_r = if age < 0.3 {
-                (berry_r as f32 + (0.3 - age) / 0.3 * berry_r as f32 * 1.5) as i32
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi - 2) / 2).clamp(1, 5);
+        let n = (wi / (2 * r + 2)).max(1);
+        let pitch = wi / n;
+        let blue = Color::rgb(70, 95, 215);
+        let crown = Color::rgb(45, 55, 130);
+        let dim = Color::rgb(70, 75, 100);
+        let popped = ctx.eased * n as f32;
+        let rf = r as f32;
+        for i in 0..n {
+            let cx = pitch * i + pitch / 2;
+            let f = (popped - i as f32).clamp(0.0, 1.0);
+            let newest = f > 0.0 && (popped - i as f32) < 1.5;
+            // The newest berry bounces; others rest on the floor.
+            let lift = if newest {
+                ((ctx.time * 5.0 + i as f32).sin().abs() * (hi - 2 * r - 1) as f32) as i32
             } else {
-                berry_r
+                0
             };
-            // Draw bloom ring.
-            if bloom_r > berry_r {
-                let bloom_steps = (bloom_r as f32 * 2.0 * PI) as usize + 1;
-                for b in 0..bloom_steps {
-                    let theta = b as f32 / bloom_steps.max(1) as f32 * 2.0 * PI;
-                    let px = bx + (bloom_r as f32 * theta.cos()) as i32;
-                    let py = by + (bloom_r as f32 * 0.5 * theta.sin()) as i32;
-                    draw::dot_i(grid, px, py);
-                }
-            }
-            // Draw solid berry.
-            for dy in -berry_r..=berry_r {
-                for dx in -berry_r..=berry_r {
-                    if dx * dx + dy * dy * 4 <= berry_r * berry_r * 4 {
-                        draw::dot_i(grid, bx + dx, by + dy);
+            let cy = hi - 1 - r - lift;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let d = ((dx * dx + dy * dy) as f32).sqrt();
+                    if d > rf + 0.3 {
+                        continue;
                     }
+                    let (x, y) = (cx + dx, cy + dy);
+                    if f <= 0.0 {
+                        if d > rf - 0.8 {
+                            px(grid, x, y, dim);
+                        }
+                        continue;
+                    }
+                    // Crown: an X-shaped gap just below the top of the berry.
+                    let star = dy <= -r + 3 && dy > -r && (dx.abs() == (dy + r - 2).abs());
+                    let glint = dx == r / 2 && dy == 0;
+                    if star || glint {
+                        continue;
+                    }
+                    let c = if dy <= -r + 3 && dx.abs() <= 2 {
+                        crown
+                    } else {
+                        blue
+                    };
+                    px(grid, x, y, c);
                 }
-            }
-            // Highlight dot (top-left of berry).
-            draw::dot_i(grid, bx - berry_r / 2, by.saturating_sub(berry_r / 2 + 1));
-            // Stem nub above each berry.
-            draw::dot_i(grid, bx, by - berry_r - 1);
-        }
-        // Tint visible portion.
-        let (cells_w, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx2 in 0..filled_cells.min(cells_w) {
-                let t = cx2 as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy, cx2, cx2, ctx.palette.sample(t));
             }
         }
         Ok(())
@@ -964,9 +841,9 @@ impl ProgressStyle for BerryPop {
 }
 
 // ── KiwiRings ────────────────────────────────────────────────────────────────
-// Kiwi/lemon cross-section: concentric elliptic rings fill outward from center
-// as eased increases. The center is solid (seed zone), then each subsequent
-// ring appears until the outer rind ring is reached. Time animates a slow pulse.
+// A row of kiwi halves seen face-on: fuzzy brown skin, green flesh, a ring of
+// black seeds (gaps) around a cream core. Halves are cut one by one with
+// eased (uncut ones show only the skin outline); the seed ring slowly turns.
 
 struct KiwiRings;
 impl ProgressStyle for KiwiRings {
@@ -977,90 +854,53 @@ impl ProgressStyle for KiwiRings {
         "fruits"
     }
     fn describe(&self) -> &str {
-        "Kiwi cross-section: concentric elliptic rings fill outward from center to rind"
+        "Row of kiwi halves — brown skin, green flesh, seed ring and pale core — cut open one by one"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        // Outer radius fits inside the bar.
-        let max_r = (w.min(h * 2) / 2).saturating_sub(1).max(1) as f32;
-        let n_rings = 6usize;
-        // Pulse: rings gently breathe with time.
-        let pulse = 1.0 + (ctx.time * 2.0).sin() * 0.03;
-        // Number of rings drawn grows with eased (innermost first).
-        let rings_visible = (ctx.eased * n_rings as f32).ceil() as usize;
-        // Draw rings from outer to inner, only those within eased.
-        for ring in 0..rings_visible.min(n_rings) {
-            // Ring index from inside (0 = innermost/center).
-            let r_frac = (ring + 1) as f32 / n_rings as f32;
-            let r = max_r * r_frac * pulse;
-            // Draw ellipse ring.
-            let steps = (r * 2.0 * PI) as usize + 4;
-            for i in 0..steps {
-                let theta = i as f32 / steps.max(1) as f32 * 2.0 * PI;
-                let px = cx + (r * theta.cos()) as i32;
-                let py = cy + (r * 0.5 * theta.sin()) as i32;
-                draw::dot_i(grid, px, py);
-            }
-            // Fill interior of ring (only for innermost ring — the seed center).
-            if ring == 0 {
-                let ri = r as i32;
-                for dy in -ri..=ri {
-                    for dx in -ri..=ri {
-                        if (dx as f32 / r).powi(2) + (dy as f32 * 2.0 / r).powi(2) <= 1.0 {
-                            draw::dot_i(grid, cx + dx, cy + dy);
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi - 1) / 2).clamp(1, 7);
+        let cy = hi / 2;
+        let n = (wi / (2 * r + 4)).max(1);
+        let pitch = wi / n;
+        let skin = Color::rgb(140, 95, 50);
+        let flesh = Color::rgb(120, 200, 60);
+        let core = Color::rgb(235, 240, 200);
+        let rf = r as f32;
+        let cut = ctx.eased * n as f32;
+        for i in 0..n {
+            let cx = pitch * i + pitch / 2;
+            let open = cut > i as f32 + 0.5;
+            let spin = ctx.time * 0.6 + i as f32;
+            for (pass, dy) in (0..2).flat_map(|p| (-r..=r).map(move |dy| (p, dy))) {
+                for dx in -r..=r {
+                    let d = ((dx * dx + dy * dy) as f32).sqrt();
+                    if d > rf + 0.3 {
+                        continue;
+                    }
+                    let (x, y) = (cx + dx, cy + dy);
+                    if d > rf - 1.0 {
+                        // Skin is drawn in a first pass so flesh owns shared cells.
+                        if pass == 0 {
+                            px(grid, x, y, skin);
+                        }
+                    } else if !open || pass == 0 {
+                        // Uncut halves show only their skin.
+                    } else if d < rf * 0.3 {
+                        px(grid, x, y, core);
+                    } else {
+                        // Seed ring: gaps at regular angles around mid-radius.
+                        let a = (dy as f32).atan2(dx as f32) + spin;
+                        let ring = (d - rf * 0.5).abs() < 0.9;
+                        let seed = ring && (a * 12.0 / (2.0 * PI)).rem_euclid(1.0) < 0.5;
+                        if !seed {
+                            px(grid, x, y, flesh);
                         }
                     }
                 }
-            }
-        }
-        // Seed dots in the center zone (appear at eased > 0.1).
-        if ctx.eased > 0.1 {
-            let seed_offsets: &[(i32, i32)] = &[
-                (0, -1),
-                (1, 0),
-                (0, 1),
-                (-1, 0),
-                (2, -1),
-                (-2, -1),
-                (2, 1),
-                (-2, 1),
-            ];
-            for &(dx, dy) in seed_offsets {
-                draw::dot_i(grid, cx + dx, cy + dy);
-            }
-        }
-        // Outer rind (always drawn for context).
-        {
-            let r = max_r;
-            let steps = (r * 2.0 * PI) as usize + 4;
-            for i in 0..steps {
-                let theta = i as f32 / steps.max(1) as f32 * 2.0 * PI;
-                let px = cx + (r * theta.cos()) as i32;
-                let py = cy + (r * 0.5 * theta.sin()) as i32;
-                draw::dot_i(grid, px, py);
-                // Double rind line.
-                let r2 = max_r + 1.0;
-                let px2 = cx + (r2 * theta.cos()) as i32;
-                let py2 = cy + (r2 * 0.5 * theta.sin()) as i32;
-                draw::dot_i(grid, px2, py2);
-            }
-        }
-        // Tint: color by ring depth.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cy_t in 0..cells_h {
-            for cx_t in 0..cells_w {
-                // t = distance from center of grid, normalized.
-                let dx = (cx_t as f32 + 0.5) - cells_w as f32 / 2.0;
-                let dy = (cy_t as f32 + 0.5) - cells_h as f32 / 2.0;
-                let dist = (dx * dx + dy * dy * 4.0).sqrt();
-                let max_dist = ((cells_w as f32 / 2.0).powi(2) + (cells_h as f32).powi(2)).sqrt();
-                let t = (dist / max_dist.max(1.0)).clamp(0.0, 1.0) * ctx.eased;
-                draw::tint_row(grid, cy_t, cx_t, cx_t, ctx.palette.sample(t));
             }
         }
         Ok(())

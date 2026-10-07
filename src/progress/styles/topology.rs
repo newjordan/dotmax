@@ -1,9 +1,12 @@
 //! Topology / parametric-surface / 3D-projection progress bars.
 //!
-//! Each bar maps `ctx.eased` to the extent of a surface reveal or curve trace,
-//! and `ctx.time` to a continuous 3D rotation. A shared helper rotates a point
-//! by Euler angles (ax, ay) and orthographically projects it onto the dot
-//! lattice, centred on the grid and scaled to fit both axes.
+//! Most bars show one solid-looking object that slides along a wire through
+//! the bar's middle — the wire solid behind it (done) and dotted ahead (to
+//! go) — so `ctx.eased` is its position, while `ctx.time` turns it in 3-D.
+//! A small perspective camera plus a per-dot depth buffer gives hidden-line
+//! surfaces, silhouettes and true over/under knot crossings.  The helix grows
+//! along the bar instead; the last three styles still use the older
+//! orthographic reveal helper.
 //!
 //! All surfaces are rendered in **dot space** via `draw::dot_i`, so out-of-
 //! bounds plots are silently discarded. Per-frame point counts are bounded to
@@ -13,14 +16,14 @@
 //!
 //! | Name | Surface |
 //! |---|---|
-//! | `mobius-strip` | Möbius strip, u revealed by eased |
-//! | `torus-wireframe` | (R,r)-torus latitude/longitude wire mesh |
-//! | `torus-knot` | (2,3) torus knot trace |
-//! | `trefoil-knot` | Trefoil knot, reveals and spins |
-//! | `klein-bottle` | Figure-8 Klein bottle immersion |
-//! | `hopf-fibers` | Three Hopf fibration circles |
-//! | `sphere-inflate` | Wireframe sphere inflating with eased |
-//! | `helix-climb` | Double helix climbing with eased |
+//! | `mobius-strip` | Half-twisted Möbius band, hidden lines removed, slides along a wire |
+//! | `torus-wireframe` | Perspective doughnut, hidden-line mesh, spins as it slides |
+//! | `torus-knot` | (2,5) torus knot with over/under crossings |
+//! | `trefoil-knot` | Trefoil knot with over/under crossings, rocking |
+//! | `klein-bottle` | Glass Klein bottle, neck through the wall (x-ray dotted) |
+//! | `hopf-fibers` | Three mutually linked Hopf fibers (Villarceau circles) |
+//! | `sphere-inflate` | Spinning lat/long globe inflating as it rolls along |
+//! | `helix-climb` | DNA double helix with rungs, growing along the bar |
 //! | `saddle-surface` | Hyperbolic paraboloid (saddle) wireframe |
 //! | `tesseract-spin` | Rotating 4-D hypercube projected to 2-D |
 //! | `roman-surface` | Steiner's Roman surface parametric |
@@ -97,6 +100,177 @@ fn grid_cxys(grid: &BrailleGrid) -> (i32, i32, f32) {
     (cx, cy, scale)
 }
 
+// ── Depth-tested perspective engine (styles 1–6) ─────────────────────────────
+
+/// Camera for the solid-looking styles: spin `az` about the object's own Z
+/// axis, tilt `ax` about X, turn `ay` about Y, then a mild perspective divide.
+/// `stretch` widens the screen x-axis so small objects use the wide bar.
+#[derive(Clone, Copy)]
+struct Cam {
+    ax: f32,
+    ay: f32,
+    az: f32,
+    cx: f32,
+    cy: f32,
+    scale: f32,
+    stretch: f32,
+}
+
+impl Cam {
+    /// Project to `(sx, sy, depth)` — larger depth is nearer the viewer.
+    fn proj(&self, p: (f32, f32, f32)) -> (i32, i32, f32) {
+        let (x, y, z) = self.rot(p);
+        let k = 6.0 / (6.0 - z.clamp(-3.0, 3.0));
+        (
+            (self.cx + x * self.scale * k * self.stretch).round() as i32,
+            (self.cy - y * self.scale * k).round() as i32,
+            z,
+        )
+    }
+    /// Rotate a point / direction into view space (no projection).
+    fn rot(&self, p: (f32, f32, f32)) -> (f32, f32, f32) {
+        let (x, y, z) = p;
+        let (s, c) = self.az.sin_cos();
+        let (x, y) = (x * c - y * s, x * s + y * c);
+        let (s, c) = self.ax.sin_cos();
+        let (y, z) = (y * c - z * s, y * s + z * c);
+        let (s, c) = self.ay.sin_cos();
+        let (x, z) = (x * c + z * s, -x * s + z * c);
+        (x, y, z)
+    }
+}
+
+/// Rasterise surface `f(u, v)` over `[0, u.0] × [0, v.0]` (with `u.1 × v.1`
+/// samples) into a depth buffer, and draw its visible silhouette — the points
+/// where the surface turns edge-on to the viewer.  Returns the buffer so the
+/// caller can hidden-line its own wires against it.
+fn surface<F>(
+    grid: &mut BrailleGrid,
+    cam: &Cam,
+    u: (f32, usize),
+    v: (f32, usize),
+    eps: f32,
+    f: F,
+) -> ZBuf
+where
+    F: Fn(f32, f32) -> (f32, f32, f32),
+{
+    let mut zb = ZBuf::new(grid);
+    let (du, dv) = (u.0 / u.1.max(1) as f32, v.0 / v.1.max(1) as f32);
+    let mut rim = Vec::new();
+    for i in 0..=u.1 {
+        for j in 0..=v.1 {
+            let (uu, vv) = (i as f32 * du, j as f32 * dv);
+            let p = f(uu, vv);
+            let (x, y, z) = cam.proj(p);
+            zb.splat(x, y, z, 1);
+            // Normal by finite differences, rotated into view space.
+            let a = f(uu + du * 0.5, vv);
+            let b = f(uu, vv + dv * 0.5);
+            let a = cam.rot((a.0 - p.0, a.1 - p.1, a.2 - p.2));
+            let b = cam.rot((b.0 - p.0, b.1 - p.1, b.2 - p.2));
+            let n = (
+                a.1 * b.2 - a.2 * b.1,
+                a.2 * b.0 - a.0 * b.2,
+                a.0 * b.1 - a.1 * b.0,
+            );
+            let len = (n.0 * n.0 + n.1 * n.1 + n.2 * n.2).sqrt();
+            if len > 1e-9 && (n.2 / len).abs() < 0.22 {
+                rim.push((x, y, z));
+            }
+        }
+    }
+    for (x, y, z) in rim {
+        if zb.front(x, y, z, eps) {
+            draw::dot_i(grid, x, y);
+        }
+    }
+    zb
+}
+
+/// Per-dot depth buffer (nearest z wins) for hidden-line removal.
+struct ZBuf {
+    w: i32,
+    h: i32,
+    z: Vec<f32>,
+}
+
+impl ZBuf {
+    fn new(grid: &BrailleGrid) -> Self {
+        let (dw, dh) = draw::dot_dims(grid);
+        Self {
+            w: dw as i32,
+            h: dh as i32,
+            z: vec![f32::NEG_INFINITY; dw * dh],
+        }
+    }
+    /// Record depth `z` at `(x, y)` and its `r`-dot neighbourhood.
+    fn splat(&mut self, x: i32, y: i32, z: f32, r: i32) {
+        for yy in y - r..=y + r {
+            for xx in x - r..=x + r {
+                if xx >= 0 && yy >= 0 && xx < self.w && yy < self.h {
+                    let i = (yy * self.w + xx) as usize;
+                    if z > self.z[i] {
+                        self.z[i] = z;
+                    }
+                }
+            }
+        }
+    }
+    /// `true` if a point at depth `z` is not behind anything (within `eps`).
+    fn front(&self, x: i32, y: i32, z: f32, eps: f32) -> bool {
+        if x < 0 || y < 0 || x >= self.w || y >= self.h {
+            return false;
+        }
+        z + eps >= self.z[(y * self.w + x) as usize]
+    }
+}
+
+/// Sample closed curve `f` over `[0, 2π)` into projected points.
+fn sample_loop<F>(cam: &Cam, steps: usize, f: F) -> Vec<(i32, i32, f32)>
+where
+    F: Fn(f32) -> (f32, f32, f32),
+{
+    let n = steps.max(1);
+    (0..n)
+        .map(|i| cam.proj(f(i as f32 / n as f32 * 2.0 * PI)))
+        .collect()
+}
+
+/// Draw projected curve points as a knot diagram: where two strands cross on
+/// screen the farther one is broken, giving true over/under crossings.
+fn draw_crossings(grid: &mut BrailleGrid, pts: &[(i32, i32, f32)], eps: f32) {
+    let mut zb = ZBuf::new(grid);
+    for &(x, y, z) in pts {
+        zb.splat(x, y, z, 1);
+    }
+    for &(x, y, z) in pts {
+        if zb.front(x, y, z, eps) {
+            draw::dot_i(grid, x, y);
+        }
+    }
+}
+
+/// Lay out an object that slides along a wire through the bar's middle:
+/// solid behind it (done), dotted ahead (to go).  `ex`/`ey` are its projected
+/// half-width / half-height in object units (before `stretch`).  Returns the
+/// camera centre and scale.
+fn travel(grid: &mut BrailleGrid, ctx: &BarContext, ex: f32, ey: f32) -> (f32, f32, f32) {
+    let (dw, dh) = draw::dot_dims(grid);
+    let scale = ((dh as f32 - 2.0) / (2.0 * ey * 1.12)).max(0.3);
+    let half = (ex * scale * 1.12).min(dw as f32 / 2.0);
+    let cx = half + ctx.eased * (dw as f32 - 2.0 * half).max(0.0);
+    let cy = (dh / 2) as f32;
+    let y = dh / 2;
+    for x in 0..dw {
+        let fx = x as f32;
+        if fx < cx - half - 1.0 || (fx > cx + half + 1.0 && x % 3 == 0) {
+            draw::dot(grid, x, y);
+        }
+    }
+    (cx, cy, scale)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Möbius strip
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,32 +285,44 @@ impl ProgressStyle for MobiusStrip {
         "topology"
     }
     fn describe(&self) -> &str {
-        "A one-sided Möbius strip unfurling along its parametric u-axis as progress advances, rotating lazily on time"
+        "A one-sided Möbius band with its half-twist, hidden lines removed, cross-rulings flowing round it as it slides along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.37;
-        let ay = ctx.time * 0.53;
-        let view = View {
-            ax,
-            ay,
+        // Band centreline radius 1, half-width 0.7, x stretched ×1.7.
+        let (cx, cy, scale) = travel(grid, ctx, 1.7 * 1.7, 1.5);
+        let cam = Cam {
+            ax: 0.95,
+            ay: 0.0,
+            az: 0.2 * (ctx.time * 0.8).sin(),
             cx,
             cy,
             scale,
+            stretch: 1.0,
         };
-        // Reveal u from 0 to eased·2π across ~20 stripes in v.
-        let u_max = ctx.eased * 2.0 * PI;
-        let u_steps = 120usize;
-        let v_lines = 9usize; // v ∈ [-1, 1] in v_lines steps
-        for vi in 0..v_lines {
-            let v = -1.0 + 2.0 * vi as f32 / (v_lines - 1).max(1) as f32;
-            plot_curve(grid, 0.0, u_max, u_steps, &view, |u| {
-                let half = 0.5 * v * (u / 2.0).cos();
-                let x = (1.0 + half) * u.cos();
-                let y = (1.0 + half) * u.sin();
-                let z = 0.5 * v * (u / 2.0).sin();
-                (x, y, z)
-            });
+        let band = |u: f32, v: f32| {
+            let r = 1.0 + 0.7 * v * (u / 2.0).cos();
+            (1.7 * r * u.cos(), r * u.sin(), 0.7 * v * (u / 2.0).sin())
+        };
+        let eps = 1.5 / scale;
+        let zb = surface(grid, &cam, (2.0 * PI, 120), (2.0, 8), eps, |u, v| {
+            band(u, v - 1.0)
+        });
+        let mut plot = |p: (i32, i32, f32)| {
+            if zb.front(p.0, p.1, p.2, eps) {
+                draw::dot_i(grid, p.0, p.1);
+            }
+        };
+        // The single boundary edge (v = ±1 is one curve going round twice).
+        for i in 0..240 {
+            let u = i as f32 / 240.0 * 4.0 * PI;
+            plot(cam.proj(band(u, 1.0)));
+        }
+        // Rulings across the band, drifting round with time.
+        for k in 0..10 {
+            let u = (k as f32 + ctx.time * 0.8) / 10.0 * 2.0 * PI;
+            for j in 0..=6 {
+                plot(cam.proj(band(u, -1.0 + j as f32 / 3.0)));
+            }
         }
         Ok(())
     }
@@ -156,54 +342,55 @@ impl ProgressStyle for TorusWireframe {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Latitude/longitude wireframe of a (R=1, r=0.38) torus, circles revealed row-by-row as progress grows"
+        "A doughnut torus in perspective, hidden-line wireframe spinning about its axis as it rolls along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.4 + 0.4;
-        let ay = ctx.time * 0.6;
-        let view = View {
-            ax,
-            ay,
+        let (big, small) = (1.0f32, 0.45f32);
+        let tilt = 0.8f32;
+        let ey = (big + small) * tilt.cos() + small * tilt.sin();
+        let (cx, cy, scale) = travel(grid, ctx, (big + small) * 1.3, ey);
+        let cam = Cam {
+            ax: tilt,
+            ay: 0.15 * (ctx.time * 0.7).sin(),
+            az: ctx.time * 0.9,
             cx,
             cy,
             scale,
+            stretch: 1.3,
         };
-        let r_big = 1.0_f32;
-        let r_small = 0.38_f32;
-        let n_lat = 14usize; // latitude circles (constant v)
-        let n_lon = 10usize; // longitude circles (constant u)
-        let u_steps = 60usize;
-
-        // Latitude circles: reveal the first `n_lit` of them.
-        let n_lit = (ctx.eased * (n_lat + n_lon) as f32).round() as usize;
-
-        for i in 0..n_lit.min(n_lat) {
-            let v = 2.0 * PI * i as f32 / n_lat as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, u_steps, &view, |u| {
-                let x = (r_big + r_small * v.cos()) * u.cos();
-                let y = (r_big + r_small * v.cos()) * u.sin();
-                let z = r_small * v.sin();
-                (x, y, z)
-            });
+        let torus = |u: f32, v: f32| {
+            let r = big + small * v.cos();
+            (r * u.cos(), r * u.sin(), small * v.sin())
+        };
+        let eps = 1.5 / scale;
+        let _ = surface(grid, &cam, (2.0 * PI, 90), (2.0 * PI, 36), eps, torus);
+        // Wires are back-face culled with the analytic surface normal.
+        let mut plot = |u: f32, v: f32| {
+            let n = cam.rot((v.cos() * u.cos(), v.cos() * u.sin(), v.sin()));
+            if n.2 > -0.05 {
+                let p = cam.proj(torus(u, v));
+                draw::dot_i(grid, p.0, p.1);
+            }
+        };
+        // Meridians (tube cross-sections); the silhouette gives the outline.
+        for k in 0..8 {
+            let u = k as f32 / 8.0 * 2.0 * PI;
+            for j in 0..32 {
+                plot(u, j as f32 / 32.0 * 2.0 * PI);
+            }
         }
-        // Longitude circles.
-        let n_lon_lit = n_lit.saturating_sub(n_lat).min(n_lon);
-        for i in 0..n_lon_lit {
-            let u = 2.0 * PI * i as f32 / n_lon as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, u_steps, &view, |v| {
-                let x = (r_big + r_small * v.cos()) * u.cos();
-                let y = (r_big + r_small * v.cos()) * u.sin();
-                let z = r_small * v.sin();
-                (x, y, z)
-            });
+        // Outer equator and the inner rim of the hole.
+        for &v in &[0.0, PI] {
+            for i in 0..140 {
+                plot(i as f32 / 140.0 * 2.0 * PI, v);
+            }
         }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Torus knot (2,3)
+// 3. Torus knot (2,5)
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct TorusKnot;
@@ -216,34 +403,24 @@ impl ProgressStyle for TorusKnot {
         "topology"
     }
     fn describe(&self) -> &str {
-        "(2,3) torus knot traced on a torus surface — a trefoil path that wraps twice around the tube for every three loops of the core"
+        "A five-lobed (2,5) torus knot with true over/under crossings, turning slowly as it slides along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.29;
-        let ay = ctx.time * 0.47;
-        let view = View {
-            ax,
-            ay,
+        let (cx, cy, scale) = travel(grid, ctx, 3.0 * 1.6, 3.0);
+        let cam = Cam {
+            ax: 0.35 * (ctx.time * 0.6).sin(),
+            ay: 0.3 * (ctx.time * 0.45).cos(),
+            az: ctx.time * 0.5,
             cx,
             cy,
             scale,
+            stretch: 1.6,
         };
-        let p = 2_i32;
-        let q = 3_i32;
-        let r_big = 1.0_f32;
-        let r_small = 0.35_f32;
-        // Parametric: t ∈ [0, 2π·lcm(p,q)] but one pass = 2π suffices for (2,3).
-        let t_max = ctx.eased * 2.0 * PI;
-        let steps = 200usize;
-        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
-            let u = p as f32 * t;
-            let v = q as f32 * t;
-            let x = (r_big + r_small * v.cos()) * u.cos();
-            let y = (r_big + r_small * v.cos()) * u.sin();
-            let z = r_small * v.sin();
-            (x, y, z)
+        let pts = sample_loop(&cam, 520, |t| {
+            let r = 2.0 + (5.0 * t).cos();
+            (r * (2.0 * t).cos(), r * (2.0 * t).sin(), -(5.0 * t).sin())
         });
+        draw_crossings(grid, &pts, 1.5 / scale);
         Ok(())
     }
 }
@@ -262,38 +439,58 @@ impl ProgressStyle for TrefoilKnot {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Trefoil knot: x=sin t+2sin 2t, y=cos t−2cos 2t, z=−sin 3t — the simplest non-trivial knot, spinning on time"
+        "The three-lobed trefoil knot with alternating over/under crossings, rocking in 3-D as it slides along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.33;
-        let ay = ctx.time * 0.55;
-        let t_max = ctx.eased * 2.0 * PI;
-        let steps = 200usize;
-        // Normalise scale: trefoil radius ≈ 3, so shrink by 1/3.
-        let s = scale / 3.0;
-        let view = View {
-            ax,
-            ay,
+        let (cx, cy, scale) = travel(grid, ctx, 3.0 * 1.6, 3.0);
+        let cam = Cam {
+            ax: 0.4 * (ctx.time * 0.7).sin(),
+            ay: 0.4 * (ctx.time * 0.5).cos(),
+            az: ctx.time * 0.4,
             cx,
             cy,
-            scale: s,
+            scale,
+            stretch: 1.6,
         };
-        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
-            let x = t.sin() + 2.0 * (2.0 * t).sin();
-            let y = t.cos() - 2.0 * (2.0 * t).cos();
-            let z = -(3.0 * t).sin();
-            (x, y, z)
+        let pts = sample_loop(&cam, 420, |t| {
+            (
+                t.sin() + 2.0 * (2.0 * t).sin(),
+                t.cos() - 2.0 * (2.0 * t).cos(),
+                -(3.0 * t).sin(),
+            )
         });
+        draw_crossings(grid, &pts, 1.5 / scale);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Klein bottle (figure-8 immersion)
+// 5. Klein bottle (bottle immersion)
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct KleinBottle;
+
+/// The classic glass-bottle immersion of the Klein bottle, `u ∈ [0, π]`
+/// along the bottle, `v ∈ [0, 2π]` round the tube.
+fn klein(u: f32, v: f32) -> (f32, f32, f32) {
+    let (su, cu) = u.sin_cos();
+    let (sv, cv) = v.sin_cos();
+    let c2 = cu * cu;
+    let c4 = c2 * c2;
+    let c6 = c4 * c2;
+    let x = -2.0 / 15.0
+        * cu
+        * (3.0 * cv - 30.0 * su + 90.0 * c4 * su - 60.0 * c6 * su + 5.0 * cu * cv * su);
+    let y = -1.0 / 15.0
+        * su
+        * (3.0 * cv - 3.0 * c2 * cv - 48.0 * c4 * cv + 48.0 * c6 * cv - 60.0 * su
+            + 5.0 * cu * cv * su
+            - 5.0 * c2 * cu * cv * su
+            - 80.0 * c4 * cu * cv * su
+            + 80.0 * c6 * cu * cv * su);
+    let z = 2.0 / 15.0 * (3.0 + 5.0 * cu * su) * sv;
+    (x, y, z)
+}
 
 impl ProgressStyle for KleinBottle {
     fn name(&self) -> &str {
@@ -303,46 +500,59 @@ impl ProgressStyle for KleinBottle {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Figure-8 immersion of the Klein bottle in ℝ³ — a non-orientable surface with no inside revealed petal by petal"
+        "A glass Klein bottle lying on its side: the neck bends back and passes through the wall (hidden lines dotted) as it turns and slides along"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.28 + 0.6;
-        let ay = ctx.time * 0.44;
-        // Figure-8 (Lawson) immersion: u ∈ [0,π], v ∈ [0,2π].
-        // Reveal u-strips up to eased·π.
-        let u_max = ctx.eased * PI;
-        let u_lines = 20usize;
-        let v_steps = 60usize;
-        let s = scale / 2.5;
-        let view = View {
-            ax,
-            ay,
+        // The immersion spans roughly x ∈ [-1.6, 1.6], y ∈ [0, 4]; lay it on its
+        // side (y → screen x) centred on the origin.
+        let lie = |p: (f32, f32, f32)| (p.1 - 2.0, -p.0, p.2);
+        let (cx, cy, scale) = travel(grid, ctx, 2.1 * 1.3, 1.6);
+        let cam = Cam {
+            ax: ctx.time * 0.7,
+            ay: 0.2,
+            az: 0.0,
             cx,
             cy,
-            scale: s,
+            scale,
+            stretch: 1.3,
         };
-        for ui in 0..u_lines {
-            let u = u_max * ui as f32 / u_lines.max(1) as f32;
-            plot_curve(grid, 0.0, 2.0 * PI, v_steps, &view, |v| {
-                // Standard figure-8 Klein bottle parametrisation.
-                let cu = u.cos();
-                let su = u.sin();
-                let cv = v.cos();
-                let sv = v.sin();
-                let a = 2.5;
-                let x = (a + cu * (cv + 1.0)) * (2.0 * u).cos() - su * (2.0 * u).cos() * cv;
-                let y = (a + cu * (cv + 1.0)) * (2.0 * u).sin() - su * (2.0 * u).sin() * cv;
-                let z = su * (cv + 1.0) + cu * sv;
-                (x * 0.3, y * 0.3, z * 0.5)
-            });
+        // Swap rotation so the bottle spins about its own long (x) axis.
+        let pr = |p: (f32, f32, f32)| {
+            let (x, y, z) = lie(p);
+            cam.proj((x, y, z))
+        };
+        let eps = 1.5 / scale;
+        let zb = surface(grid, &cam, (PI, 72), (2.0 * PI, 24), eps, |u, v| {
+            lie(klein(u, v))
+        });
+        let mut n = 0u32;
+        let mut plot = |p: (i32, i32, f32)| {
+            n = n.wrapping_add(1);
+            // Visible wire solid; wire seen *through* the glass dotted.
+            if zb.front(p.0, p.1, p.2, eps) || n % 5 == 0 {
+                draw::dot_i(grid, p.0, p.1);
+            }
+        };
+        // Cross-section rings along the bottle.
+        for k in 0..8 {
+            let u = (k as f32 + 0.5) / 8.0 * PI;
+            for j in 0..28 {
+                plot(pr(klein(u, j as f32 / 28.0 * 2.0 * PI)));
+            }
+        }
+        // Long seams down the bottle.
+        for k in 0..4 {
+            let v = k as f32 / 4.0 * 2.0 * PI;
+            for i in 0..90 {
+                plot(pr(klein(i as f32 / 89.0 * PI, v)));
+            }
         }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Hopf fibration (three fibers)
+// 6. Hopf fibration (linked fibers)
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct HopfFibers;
@@ -355,63 +565,34 @@ impl ProgressStyle for HopfFibers {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Three Hopf fibration circles stereographically projected from S³ — every fiber is a great circle linking every other"
+        "Three Hopf fibers — circles that each link every other — stereographically projected, interlocked with over/under crossings and turning"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.31;
-        let ay = ctx.time * 0.52;
-        // Base points on S²: we choose 3 latitudes on the sphere, evenly spread.
-        // For base point (θ,φ) on S², the Hopf fiber is the circle in S³
-        // parameterised by t, and we stereographically project S³→ℝ³.
-        // Base points: three points on S² at latitudes 0°, 60°, −60°.
-        let bases: [(f32, f32); 3] = [
-            (0.0, 0.0),
-            (PI / 3.0, 2.0 * PI / 3.0),
-            (-PI / 3.0, 4.0 * PI / 3.0),
-        ];
-        let t_max = ctx.eased * 2.0 * PI;
-        let steps = 100usize;
-        let s = scale * 0.55;
-        let view = View {
-            ax,
-            ay,
+        let (cx, cy, scale) = travel(grid, ctx, 2.0 * 1.5, 1.9);
+        let cam = Cam {
+            ax: 1.0,
+            ay: 0.2 * (ctx.time * 0.6).sin(),
+            az: ctx.time * 0.5,
             cx,
             cy,
-            scale: s,
+            scale,
+            stretch: 1.5,
         };
-        for &(theta, phi) in &bases {
-            // Hopf fiber: quaternion (cos α, sin α · p) where p ∈ S²,
-            // stereographically projected from S³ \ {north pole} to ℝ³.
-            let (st, ct) = theta.sin_cos();
-            let (sp, cp) = phi.sin_cos();
-            // Base point on S² as quaternion component: p = (ct·cp, ct·sp, st).
-            // Fiber in S³: (cos t · 1  +  sin t · base-quat-pair).
-            // We use a clean parameterisation:
-            //   q(t) = (cos t · cos(θ/2),  cos t · sin(θ/2)·e^{iφ},
-            //           sin t · cos(θ/2),  sin t · sin(θ/2)·e^{iφ})  [simplified]
-            let hth = theta / 2.0;
-            let (shth, chth) = hth.sin_cos();
-            plot_curve(grid, 0.0, t_max, steps, &view, |t| {
-                // q = (q0,q1,q2,q3) ∈ S³.
-                let q0 = t.cos() * chth;
-                let q1 = t.cos() * shth * cp;
-                let q2 = t.sin() * chth;
-                let q3 = t.sin() * shth * cp;
-                // Stereographic from north pole (1,0,0,0):
-                // Project: (x,y,z) = (q1,q2,q3)/(1-q0).
-                // Guard: if q0 ≈ 1 skip point.
-                let denom = 1.0 - q0;
-                if denom.abs() < 1e-4 {
-                    (0.0, 0.0, 0.0)
-                } else {
-                    let inv = 1.0 / denom;
-                    // Blend in phi so fibers spread out.
-                    let _ = (st, sp, ct); // suppress unused
-                    (q1 * inv, q2 * inv, q3 * inv)
-                }
-            });
+        let eta = PI / 4.0;
+        let (se, ce) = eta.sin_cos();
+        let mut pts = Vec::with_capacity(3 * 160);
+        for k in 0..3 {
+            let a = k as f32 / 3.0 * 2.0 * PI;
+            // Fiber over a base point: (cos η·e^{i(a+t)}, sin η·e^{it}) ⊂ S³,
+            // projected stereographically from (0,0,0,1).
+            pts.extend(sample_loop(&cam, 160, |t| {
+                let (x1, x2) = (ce * (a + t).cos(), ce * (a + t).sin());
+                let (x3, x4) = (se * t.cos(), se * t.sin());
+                let d = (1.0 - x4).max(0.05);
+                (x1 / d * 0.8, x2 / d * 0.8, x3 / d * 0.8)
+            }));
         }
+        draw_crossings(grid, &pts, 1.5 / scale);
         Ok(())
     }
 }
@@ -430,39 +611,40 @@ impl ProgressStyle for SphereInflate {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Unit sphere wireframe expanding from a point to full radius as progress grows, spinning on time"
+        "A spinning latitude/longitude globe, back half hidden, inflating from a pea to full size as it rolls along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.35;
-        let ay = ctx.time * 0.62;
-        let view = View {
-            ax,
-            ay,
+        let (cx, cy, scale) = travel(grid, ctx, 1.0, 1.0);
+        let rad = 0.4 + 0.6 * ctx.eased;
+        let cam = Cam {
+            ax: 1.2,
+            ay: 0.0,
+            az: ctx.time * 0.8,
             cx,
             cy,
             scale,
+            stretch: 1.0,
         };
-        let r = ctx.eased; // radius grows with eased, 0 → 1
-        let n_lat = 7usize;
-        let n_lon = 8usize;
-        let steps = 50usize;
-        // Latitude circles (constant polar angle θ).
-        for i in 0..n_lat {
-            let theta = PI * (i + 1) as f32 / (n_lat + 1) as f32;
-            let ring_r = r * theta.sin();
-            let z0 = r * theta.cos();
-            plot_curve(grid, 0.0, 2.0 * PI, steps, &view, |phi| {
-                (ring_r * phi.cos(), ring_r * phi.sin(), z0)
-            });
+        // Only wire on the hemisphere facing the viewer is drawn.
+        let mut plot = |lon: f32, lat: f32| {
+            let n = (lat.cos() * lon.cos(), lat.cos() * lon.sin(), lat.sin());
+            if cam.rot(n).2 > -0.05 {
+                let p = cam.proj((n.0 * rad, n.1 * rad, n.2 * rad));
+                draw::dot_i(grid, p.0, p.1);
+            }
+        };
+        // Meridians.
+        for k in 0..8 {
+            let lon = k as f32 / 8.0 * 2.0 * PI;
+            for j in 0..=40 {
+                plot(lon, -PI / 2.0 + j as f32 / 40.0 * PI);
+            }
         }
-        // Longitude arcs (constant azimuth φ).
-        for i in 0..n_lon {
-            let phi = 2.0 * PI * i as f32 / n_lon as f32;
-            let (sp, cp) = phi.sin_cos();
-            plot_curve(grid, 0.0, PI, steps, &view, |theta| {
-                (r * theta.sin() * cp, r * theta.sin() * sp, r * theta.cos())
-            });
+        // Parallels, equator included.
+        for &lat in &[-0.9f32, -0.45, 0.0, 0.45, 0.9] {
+            for i in 0..100 {
+                plot(i as f32 / 100.0 * 2.0 * PI, lat);
+            }
         }
         Ok(())
     }
@@ -482,48 +664,44 @@ impl ProgressStyle for HelixClimb {
         "topology"
     }
     fn describe(&self) -> &str {
-        "Double helix on a cylinder — two strands climb in opposite phase as progress advances, rotating with time"
+        "A DNA-style double helix screwing along the bar: two strands in opposite phase with base-pair rungs, the back strand broken where it passes behind"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_cxys(grid);
-        let ax = ctx.time * 0.25 + 0.3;
-        let ay = ctx.time * 0.58;
-        let view = View {
-            ax,
-            ay,
-            cx,
-            cy,
-            scale,
-        };
-        let turns = 4.0_f32;
-        let t_max = ctx.eased * turns * 2.0 * PI;
-        let steps = 200usize;
-        let r = 0.6_f32;
-        let height = 2.0_f32; // total height -1 to +1
-                              // Strand A.
-        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
-            let z = -1.0 + height * t / (turns * 2.0 * PI);
-            (r * t.cos(), r * t.sin(), z)
-        });
-        // Strand B (π offset in phase).
-        plot_curve(grid, 0.0, t_max, steps, &view, |t| {
-            let z = -1.0 + height * t / (turns * 2.0 * PI);
-            (r * (t + PI).cos(), r * (t + PI).sin(), z)
-        });
-        // Cross-links every half turn.
-        let n_links = (ctx.eased * turns * 2.0) as usize;
-        for i in 0..n_links {
-            let t_link = i as f32 * PI;
-            let z = -1.0 + height * t_link / (turns * 2.0 * PI);
-            plot_curve(grid, 0.0, 1.0, 4, &view, |s| {
-                let angle_a = t_link;
-                let angle_b = t_link + PI;
-                let xa = r * angle_a.cos();
-                let ya = r * angle_a.sin();
-                let xb = r * angle_b.cos();
-                let yb = r * angle_b.sin();
-                (xa + s * (xb - xa), ya + s * (yb - ya), z)
-            });
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
+        let cy = (dh as f32 - 1.0) / 2.0;
+        let amp = (dh as f32 - 1.0) / 2.0;
+        // The helix grows from the left; a dotted axis shows what is to come.
+        let reveal = (8.0 + ctx.eased * dw as f32).min(dw as f32) as usize;
+        let spin = ctx.time * 3.0;
+        for x in 0..dw {
+            if x >= reveal {
+                if x % 3 == 0 {
+                    draw::dot(grid, x, dh / 2);
+                }
+                continue;
+            }
+            let ph = x as f32 * 0.28 - spin;
+            let (s, c) = ph.sin_cos();
+            // Strand A at +s, strand B at −s; A is in front when cos > 0.
+            let ya = cy + amp * s;
+            let yb = cy - amp * s;
+            let (front, back) = if c > 0.0 { (ya, yb) } else { (yb, ya) };
+            draw::dot_i(grid, x as i32, front.round() as i32);
+            // The back strand breaks where it crosses behind the front one.
+            if (front - back).abs() > 2.5 {
+                draw::dot_i(grid, x as i32, back.round() as i32);
+            }
+            // Base-pair rungs every few dots, between the strands.
+            if x % 5 == 0 && (front - back).abs() > 3.0 {
+                let (lo, hi) = if ya < yb { (ya, yb) } else { (yb, ya) };
+                let (lo, hi) = (lo.round() as i32 + 2, hi.round() as i32 - 2);
+                for y in lo..=hi {
+                    draw::dot_i(grid, x as i32, y);
+                }
+            }
         }
         Ok(())
     }
@@ -588,13 +766,12 @@ impl ProgressStyle for TesseractSpin {
         "topology"
     }
     fn describe(&self) -> &str {
-        "4-D hypercube (tesseract) rotated in the XW and YZ planes then perspective-projected to 2-D — edges revealed by progress, spinning on time"
+        "4-D hypercube (tesseract) rotated in the XW and YZ planes then perspective-projected to 2-D — the full inner/outer cube wireframe turning inside out as it slides along the bar"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        let cx = (dw / 2) as i32;
-        let cy = (dh / 2) as i32;
-        let scale = (dw.min(dh * 2) as f32 * 0.35).max(1.0);
+        // The whole hypercube slides along the bar; its projection spans ±~0.7.
+        let (fcx, fcy, scale) = travel(grid, ctx, 0.7 * 1.5, 0.7);
+        let (cx, cy) = (fcx as i32, fcy as i32);
 
         // The 16 vertices of a unit tesseract in (x,y,z,w) ∈ {-1,+1}^4.
         let verts: [[f32; 4]; 16] = {
@@ -616,9 +793,6 @@ impl ProgressStyle for TesseractSpin {
                 }
             }
         }
-
-        // Reveal edges up to progress.
-        let n_show = (ctx.eased * edges.len() as f32).round() as usize;
 
         // 4-D rotation angles: XW plane (time), YZ plane (time/2).
         let a_xw = ctx.time * 0.48;
@@ -651,14 +825,14 @@ impl ProgressStyle for TesseractSpin {
             } else {
                 1.0 / w_dist
             };
-            let sx = cx + (x3 * inv * scale) as i32;
+            let sx = cx + (x3 * inv * scale * 1.5) as i32;
             let sy = cy - (y3 * inv * scale) as i32;
             (sx, sy)
         };
 
         let projected: Vec<(i32, i32)> = verts.iter().map(|&v| project4(v)).collect();
 
-        for &(a, b) in edges.iter().take(n_show) {
+        for &(a, b) in &edges {
             let (x0, y0) = projected[a];
             let (x1, y1) = projected[b];
             // Bresenham line between projected endpoints.

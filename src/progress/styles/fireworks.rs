@@ -67,7 +67,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     ]
 }
 
-/// Rockets launch one per ten percent, each leaving a star at apex.
+/// Rockets launch one per ten percent, each bursting into a starburst at apex.
 struct Launch;
 impl ProgressStyle for Launch {
     fn name(&self) -> &str {
@@ -77,7 +77,7 @@ impl ProgressStyle for Launch {
         "fireworks"
     }
     fn describe(&self) -> &str {
-        "Rockets launching one per ten percent"
+        "Rockets launching one per ten percent, each bursting into a star"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -88,8 +88,9 @@ impl ProgressStyle for Launch {
             draw::dot(grid, x, h - 1);
             let _ = grid.set_cell_color(x / 2, (h - 1) / 4, Color::rgb(96, 92, 104));
         }
-        let apex = 2usize;
-        let span = (h - 1 - apex) as f32;
+        let apex = (h / 4).max(1);
+        let span = h.saturating_sub(1 + apex) as f32;
+        let slot = (ctx.time * 6.0) as i32;
         for k in 0..count {
             let x = ((k as f32 + 0.5) / count as f32 * w as f32) as usize;
             if x >= w {
@@ -97,24 +98,39 @@ impl ProgressStyle for Launch {
             }
             let window = (ctx.eased * count as f32) - k as f32;
             if window >= 1.0 {
-                // Arrived: a twinkling star at apex.
-                if hash3(k as i32, 5, (ctx.time * 4.0) as i32) > 0.25 {
-                    draw::dot(grid, x, apex);
-                    draw::dot(grid, x.saturating_sub(1), apex + 1);
-                    draw::dot(grid, (x + 1).min(w - 1), apex + 1);
-                    let _ = grid.set_cell_color(x / 2, apex / 4, fw_color(k as i32));
-                }
-            } else if window > 0.0 {
-                // In flight: rocket climbs with a short flame trail.
-                let y = (h as f32 - 1.0 - window * span) as usize;
-                draw::dot(grid, x, y);
-                for t in 1..4usize {
-                    let ty = y + t;
-                    if ty < h && hash3(k as i32, t as i32, (ctx.time * 12.0) as i32) > 0.3 {
-                        draw::dot(grid, x, ty);
+                // Arrived: a small starburst at apex, its eight rays
+                // twinkling in and out around a hot center.
+                let color = fw_color(k as i32);
+                draw::dot(grid, x, apex);
+                let _ = grid.set_cell_color(x / 2, apex / 4, FW_FLASH);
+                for r in 0..8 {
+                    if hash3(k as i32 * 8 + r, 5, slot) < 0.2 {
+                        continue;
+                    }
+                    let ang = r as f32 * TAU / 8.0;
+                    for d in 2..=3 {
+                        let px = x as f32 + ang.cos() * d as f32 * 1.2;
+                        let py = apex as f32 + ang.sin() * d as f32;
+                        if px >= 0.0 && py >= 0.0 {
+                            draw::dot(grid, px as usize, py as usize);
+                            let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, color);
+                        }
                     }
                 }
+            } else if window > 0.0 {
+                // In flight: a white rocket body over a crackling gold trail.
+                let y = (h as f32 - 1.0 - window * span) as usize;
+                draw::dot(grid, x, y);
+                draw::dot(grid, x, y + 1);
                 let _ = grid.set_cell_color(x / 2, y / 4, FW_FLASH);
+                for t in 2..7usize {
+                    let ty = y + t;
+                    if ty < h && hash3(k as i32, t as i32, (ctx.time * 12.0) as i32) > 0.3 {
+                        let jitter = (hash3(k as i32, t as i32 + 9, slot) * 3.0) as usize;
+                        draw::dot(grid, (x + jitter).saturating_sub(1), ty);
+                        let _ = grid.set_cell_color(x / 2, ty / 4, FW_GOLD);
+                    }
+                }
             }
         }
         Ok(())
@@ -169,7 +185,7 @@ impl ProgressStyle for Peony {
     }
 }
 
-/// A double shell: a dense core disc inside a ring of falling petals.
+/// A double shell: long drooping gold trails around a short cyan pistil.
 struct Chrysanthemum;
 impl ProgressStyle for Chrysanthemum {
     fn name(&self) -> &str {
@@ -179,45 +195,55 @@ impl ProgressStyle for Chrysanthemum {
         "fireworks"
     }
     fn describe(&self) -> &str {
-        "A double shell with drooping petals"
+        "A double shell of long gold star trails around a cyan pistil, opening with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
-        let cx = w as f32 / 2.0;
-        let cy = h as f32 * 0.4;
-        let max_r = w as f32 / 2.0 - 1.0;
-        let r = ctx.eased * max_r;
-        // Core disc: time-slotted dither so the heart of the shell sparkles.
-        let core = r * 0.35;
-        let slot = (ctx.time * 4.0) as i32;
-        for y in 0..h {
-            for x in 0..w {
-                let dx = x as f32 - cx;
-                let dy = (y as f32 - cy) * 2.2;
-                if dx * dx + dy * dy <= core * core && hash3(x as i32, y as i32, slot) < 0.6 {
-                    draw::dot(grid, x, y);
-                    let _ = grid.set_cell_color(x / 2, y / 4, FW_GOLD);
+        let (wf, hf) = (w as f32, h as f32);
+        let cx = wf / 2.0;
+        let cy = hf * 0.45;
+        // The shell opens wider with progress and breathes slightly with time.
+        let breathe = 0.96 + 0.04 * (ctx.time * TAU * 0.8).sin();
+        let rx = (0.12 + 0.88 * ctx.eased) * (wf / 2.0 - 2.0).max(1.0) * breathe;
+        let ry = (rx * 0.5).min(hf * 0.42).max(0.5);
+        let droop = hf * 0.12 * ctx.eased;
+        let slot = (ctx.time * 6.0) as i32;
+        // Each star leaves a visible trail — that's what makes a chrysanthemum.
+        // `(petals, from, to, color)`: the outer gold shell, and an inner
+        // cyan pistil shell inside it, with dark sky between the two. Rays
+        // are evenly spaced by eye and clipped to the shell's ellipse.
+        let shells = [(18, 0.4, 1.0, FW_GOLD), (10, 0.06, 0.26, FW_CYAN)];
+        for (si, &(petals, from, to, color)) in shells.iter().enumerate() {
+            for p in 0..petals {
+                let ang = (p as f32 + 0.5 * si as f32) * TAU / petals as f32;
+                let (ca, sa) = (ang.cos(), ang.sin());
+                let r = 1.0 / ((ca / rx).powi(2) + (sa / ry).powi(2)).sqrt();
+                let len = to * (0.9 + 0.1 * hash2(p, 7 + si as i32));
+                let steps = ((len - from) * r).max(1.0) as i32;
+                for k in 0..=steps {
+                    let u = from + (len - from) * k as f32 / steps as f32;
+                    // Trails thin toward the burst center, fizzing with time.
+                    if hash3(p * 31 + k, si as i32, slot) < 0.25 * (1.0 - u) {
+                        continue;
+                    }
+                    let px = cx + ca * r * u;
+                    let py = cy + sa * r * u + droop * u * u;
+                    if px < 0.0 || py < 0.0 {
+                        continue;
+                    }
+                    draw::dot(grid, px as usize, py as usize);
+                    let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, color);
                 }
-            }
-        }
-        // Outer petals: ring points sagging with age.
-        let petals = 22;
-        for p in 0..petals {
-            let ang = p as f32 * TAU / petals as f32;
-            let sag = (r / max_r.max(1.0)).powi(2) * h as f32 * 0.3;
-            // Petals twinkle in and out as the shell ages.
-            if hash3(p, 5, slot) < 0.18 {
-                continue;
-            }
-            let px = cx + ang.cos() * r;
-            let py = cy + ang.sin() * r * 0.4 + sag;
-            draw::dot_i(grid, px as i32, py as i32);
-            // A short trailing spark that drifts with the twinkle.
-            let lift = 2 + (hash3(p, 11, slot) * 2.0) as i32;
-            draw::dot_i(grid, px as i32, py as i32 - lift);
-            if px >= 0.0 && py >= 0.0 && (px as usize) < w && (py as usize) < h {
-                let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, fw_color(p));
+                // A white-hot star twinkling at the tip of each outer petal.
+                if si == 0 && hash3(p, 13, slot) < 0.7 {
+                    let px = cx + ca * r * len;
+                    let py = cy + sa * r * len + droop * len * len;
+                    if px >= 0.0 && py >= 0.0 {
+                        draw::dot(grid, px as usize, py as usize + 1);
+                        let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, FW_FLASH);
+                    }
+                }
             }
         }
         Ok(())
@@ -273,7 +299,8 @@ impl ProgressStyle for Crackle {
     }
 }
 
-/// A candle at the left lobs shots that burst at the progress point.
+/// A wrapped tube at the left fires coloured stars one after another; each
+/// arcs out trailing sparks and pops at the progress point.
 struct RomanCandle;
 impl ProgressStyle for RomanCandle {
     fn name(&self) -> &str {
@@ -283,62 +310,87 @@ impl ProgressStyle for RomanCandle {
         "fireworks"
     }
     fn describe(&self) -> &str {
-        "Arcing shots bursting at the progress point"
+        "A striped tube firing coloured stars that arc out and pop at the progress point"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
-        // The candle tube at the left edge.
-        for y in (h * 2 / 3)..h {
-            draw::dot(grid, 0, y);
-            draw::dot(grid, 1.min(w - 1), y);
+        let (wf, hf) = (w as f32, h as f32);
+        // The tube: four dots wide, wrapped in alternating paper bands.
+        let tube_top = h.saturating_sub((h / 2).max(1));
+        for y in tube_top..h {
+            draw::hline(grid, 0, 3, y);
         }
-        let _ = grid.set_cell_color(0, (h - 1) / 4, Color::rgb(120, 104, 86));
-        let target = (ctx.eased * (w as f32 - 3.0)) + 2.0;
-        // Milestone embers where earlier shots landed: little glow mounds.
-        for k in 1..=10 {
-            let mx = (k as f32 / 10.0 * (w as f32 - 3.0) + 2.0) as usize;
-            if (mx as f32) < target && hash3(k, 8, (ctx.time * 4.0) as i32) > 0.25 {
-                draw::dot(grid, mx, h - 1);
-                draw::dot(grid, (mx + 1).min(w - 1), h - 1);
-                draw::dot(grid, mx, h - 2);
-                let _ = grid.set_cell_color(mx / 2, (h - 2) / 4, fw_color(k));
+        for cy in tube_top / 4..(h + 3) / 4 {
+            let band = if cy % 2 == 0 {
+                FW_CORAL
+            } else {
+                Color::rgb(236, 226, 200)
+            };
+            draw::tint_row(grid, cy, 0, 1, band);
+        }
+        let slot = (ctx.time * 10.0) as i32;
+        // Muzzle sparks flickering at the mouth.
+        for k in 0..3 {
+            if hash3(k, 3, slot) < 0.5 {
+                let x = 1 + (hash3(k, 4, slot) * 3.0) as i32 - 1;
+                draw::dot_i(grid, x + 1, tube_top as i32 - 1 - k);
             }
         }
-        // Target marker: a blinking tick where the next shot lands.
-        if (ctx.time * 3.0) as i32 % 2 == 0 {
-            let tx = (target as usize).min(w.saturating_sub(1));
-            draw::vline(grid, tx, h.saturating_sub(4), h - 1);
-            let _ = grid.set_cell_color(tx / 2, (h - 1) / 4, FW_FLASH);
+        if tube_top >= 1 {
+            let _ = grid.set_cell_color(0, (tube_top - 1) / 4, FW_GOLD);
+            let _ = grid.set_cell_color(1, (tube_top - 1) / 4, FW_GOLD);
         }
-        // The shot in flight: a fat spark on a parabolic arc, with a trail.
-        let phase = (ctx.time * 0.75).fract();
-        let sx = 1.0 + phase * (target - 1.0);
-        let ft = sx / w.max(1) as f32;
-        let arc = (phase * (1.0 - phase)) * 4.0; // 0..1 peak mid-flight
-        let sy = (h as f32 - 2.0) - arc * (h as f32 - 4.0) * (0.5 + ft * 0.5);
-        for k in 0..4i32 {
-            let tp = (phase - k as f32 * 0.03).max(0.0);
-            let tx = 1.0 + tp * (target - 1.0);
-            let tarc = (tp * (1.0 - tp)) * 4.0;
-            let ty = (h as f32 - 2.0) - tarc * (h as f32 - 4.0) * (0.5 + ft * 0.5);
-            draw::dot_i(grid, tx as i32, ty as i32);
-        }
-        draw::dot_i(grid, sx as i32, sy as i32 - 1);
-        draw::dot_i(grid, sx as i32 + 1, sy as i32);
-        if sx >= 0.0 && sy >= 0.0 && (sx as usize) < w && (sy as usize) < h {
-            let _ = grid.set_cell_color(sx as usize / 2, sy as usize / 4, FW_FLASH);
-        }
-        // Burst bloom when the shot arrives.
-        if phase > 0.9 {
-            let bloom = (phase - 0.9) * 10.0;
-            for ray in 0..8 {
-                let ang = ray as f32 * TAU / 8.0;
-                let px = target + ang.cos() * bloom * 5.0;
-                let py = (h as f32 - 3.0) + ang.sin() * bloom * 3.0;
-                draw::dot_i(grid, px as i32, py as i32);
-                if px >= 0.0 && py >= 0.0 && (px as usize) < w && (py as usize) < h {
-                    let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, fw_color(ray));
+        // Stars in flight: a parabola from the mouth to the progress point.
+        let (x0, y0) = (2.0f32, tube_top as f32 - 1.0);
+        let tx = 8.0 + ctx.eased * (wf - 12.0).max(0.0);
+        let ty = hf * 0.35;
+        let lift = hf * 0.35;
+        let path = |u: f32| {
+            (
+                x0 + (tx - x0) * u,
+                y0 + (ty - y0) * u - lift * 4.0 * u * (1.0 - u),
+            )
+        };
+        for s in 0..3 {
+            let clock = ctx.time * 0.8 + s as f32 / 3.0;
+            let (cycle, phase) = (clock.floor() as i32, clock.fract());
+            let color = fw_color(s * 5 + cycle);
+            if phase < 0.75 {
+                let u = phase / 0.75;
+                // Sparkling trail along the arc behind the star.
+                for k in 1..12 {
+                    let ut = u - k as f32 * 0.025;
+                    if ut < 0.0 || hash3(s * 50 + k, cycle, slot) < 0.4 {
+                        continue;
+                    }
+                    let (px, py) = path(ut);
+                    if px >= 0.0 && py >= 0.0 {
+                        draw::dot(grid, px as usize, py as usize);
+                        let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, FW_GOLD);
+                    }
+                }
+                // The star itself: a solid 2x2 ball.
+                let (px, py) = path(u);
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    draw::dot_i(grid, px as i32 + dx, py as i32 + dy);
+                }
+                if px >= 0.0 && py >= 0.0 {
+                    let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, color);
+                }
+            } else {
+                // The pop: a small ring of rays opening at the target.
+                let a = (phase - 0.75) / 0.25;
+                let rad = 1.5 + a * 4.0;
+                for r in 0..8 {
+                    let ang = r as f32 * TAU / 8.0;
+                    let px = tx + ang.cos() * rad * 1.3;
+                    let py = ty + ang.sin() * rad * 0.8 + a * 1.5;
+                    if px >= 0.0 && py >= 0.0 {
+                        draw::dot(grid, px as usize, py as usize);
+                        let c = if a < 0.2 { FW_FLASH } else { color };
+                        let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, c);
+                    }
                 }
             }
         }
@@ -556,7 +608,8 @@ impl ProgressStyle for StrobePop {
     }
 }
 
-/// The whole show at once: a gauge below, a sky that fills with bursts.
+/// The whole show at once: a fuse-gold gauge along the ground while rockets
+/// climb and burst overhead — more shells in the air the further along.
 struct GrandFinale;
 impl ProgressStyle for GrandFinale {
     fn name(&self) -> &str {
@@ -566,46 +619,63 @@ impl ProgressStyle for GrandFinale {
         "fireworks"
     }
     fn describe(&self) -> &str {
-        "A sky filling with bursts toward the finale"
+        "Rockets climbing and bursting, more shells overhead as progress builds"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
-        let (cw, ch) = grid.dimensions();
-        // The gauge: a crisp eighth-block bar on the bottom cell row.
-        if ch > 0 {
-            draw::hbar(grid, ch - 1, ctx.eased);
-            for cx in 0..cw {
-                let _ = grid.set_cell_color(cx, ch - 1, FW_GOLD);
+        let (wf, hf) = (w as f32, h as f32);
+        // The gauge: a solid two-dot line along the ground.
+        let filled = (ctx.eased * wf).round() as usize;
+        if filled > 0 && h > 0 {
+            for y in h.saturating_sub(2)..h {
+                draw::hline(grid, 0, filled - 1, y);
             }
+            draw::tint_row(grid, (h - 1) / 4, 0, (filled - 1) / 2, FW_GOLD);
         }
-        // The sky above fills with simultaneous bursts as progress climbs.
-        let sky_h = h.saturating_sub(4);
-        if sky_h < 3 {
+        // The sky above: rockets rise then burst, more of them as progress
+        // climbs. Each shell runs its own cycle with a fresh spot per cycle.
+        let sky = hf - 3.0;
+        if sky < 3.0 {
             return Ok(());
         }
-        let bursts = 1 + (ctx.eased * 5.0) as i32;
-        for b in 0..bursts {
-            let age = (ctx.time * 0.5 + hash2(b, 61)).fract();
-            let bx = (hash3(b, 62, (ctx.time * 0.5 + hash2(b, 61)) as i32) * w as f32) as f32;
-            let by = 1.0 + hash2(b, 63) * (sky_h as f32 * 0.6);
-            let radius = age * 7.0;
+        let shells = 2 + (ctx.eased * 8.0) as i32;
+        for b in 0..shells {
+            let clock = ctx.time / (1.4 + 0.5 * hash2(b, 60)) + hash2(b, 61);
+            let (cycle, age) = (clock.floor() as i32, clock.fract());
+            let bx = (0.06 + 0.88 * hash3(b, 62, cycle)) * wf;
+            let by = sky * (0.35 + 0.2 * hash3(b, 63, cycle));
+            let color = fw_color(b * 7 + cycle);
+            if age < 0.25 {
+                // The climb: a short white streak rising toward the break.
+                let k = age / 0.25;
+                let y = sky + (by - sky) * k;
+                for d in 0..3 {
+                    draw::dot_i(grid, bx as i32, y as i32 + d);
+                }
+                if y >= 0.0 {
+                    let _ = grid.set_cell_color(bx as usize / 2, y as usize / 4, FW_FLASH);
+                }
+                continue;
+            }
+            // The break: rays streak outward, sag, and burn out.
+            let a = (age - 0.25) / 0.75;
+            let radius = (5.0 + 5.0 * hash2(b, 64)) * a.sqrt() + 1.0;
+            let sag = a * a * 3.0;
             let rays = 10;
             for r in 0..rays {
-                let ang = r as f32 * TAU / rays as f32 + hash2(b, 64) * TAU;
-                let px = bx + ang.cos() * radius;
-                let py = by + ang.sin() * radius * 0.5 + age * age * 2.5;
-                if py >= sky_h as f32 {
+                if hash3(b * 17 + r, 65, cycle) < (a - 0.6).max(0.0) * 2.5 {
                     continue;
                 }
-                if hash3(b, r, 9) > age {
-                    draw::dot_i(grid, px as i32, py as i32);
-                    if px >= 0.0 && py >= 0.0 && (px as usize) < w && (py as usize) < h {
-                        let c = if age < 0.12 {
-                            FW_FLASH
-                        } else {
-                            fw_color(b * 13 + r)
-                        };
+                let ang = r as f32 * TAU / rays as f32 + hash2(b, 66) * TAU;
+                let (ca, sa) = (ang.cos(), ang.sin() * 0.55);
+                for k in 0..=(radius * 0.4) as i32 {
+                    let d = radius * 0.6 + k as f32;
+                    let px = bx + ca * d * 1.4;
+                    let py = by + sa * d + sag * d / radius;
+                    if px >= 0.0 && py >= 0.0 && py < sky + 1.0 {
+                        draw::dot(grid, px as usize, py as usize);
+                        let c = if a < 0.12 { FW_FLASH } else { color };
                         let _ = grid.set_cell_color(px as usize / 2, py as usize / 4, c);
                     }
                 }

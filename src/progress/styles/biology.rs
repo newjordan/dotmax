@@ -11,17 +11,17 @@
 //! | Name                  | Concept                                              |
 //! |-----------------------|------------------------------------------------------|
 //! | `dna-helix`           | Double helix with rotating strands and base-pair rungs |
-//! | `mitosis`             | Single cell pinches and divides into two             |
+//! | `mitosis`             | Chromosomes align, split to poles; cell pinches in two |
 //! | `action-potential`    | PQRST-like spike travelling along an axon            |
 //! | `logistic-growth`     | S-curve fill with carrying-capacity ceiling          |
 //! | `ecg-heartbeat`       | Scrolling ECG waveform; beats counted = progress     |
-//! | `protein-folding`     | Chain collapses from extended to compact blob        |
-//! | `photosynthesis`      | Sun rays hit leaf; sugar store fills                 |
+//! | `protein-folding`     | Bead chain folds from strand into a β-sheet          |
+//! | `photosynthesis`      | Rayed sun beams photons; veined leaf fills with colour |
 //! | `phylogenetic-tree`   | Bifurcating tree grows outward with eased            |
-//! | `blood-flow`          | Red cells stream through a vessel with pulse         |
-//! | `enzyme-kinetics`     | Substrate binds active site; product count = eased   |
-//! | `virus-spread`        | Infection sweeps a tissue grid cell by cell          |
-//! | `ion-channels`        | Ion pumps cycle; electrochemical gradient builds     |
+//! | `blood-flow`          | Biconcave red cells tumble through a pulsing vessel  |
+//! | `enzyme-kinetics`     | Wedge substrate docks in active site; products stack |
+//! | `virus-spread`        | Nucleated cells turn solid; virions bud at the front |
+//! | `ion-channels`        | Lipid bilayer + protein pores; ions pile up inside   |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -151,9 +151,14 @@ impl ProgressStyle for DnaHelix {
 
 // ---------------------------------------------------------------------------
 // 2. Mitosis
-//    A single circle starts centered. As eased→1 it pinches at the equator
-//    and separates into two daughter cells. The cleavage furrow deepens
-//    proportionally with eased.
+//    One cell runs through the phases of division as eased advances:
+//    prophase (nucleus envelope, condensing X-shaped chromosomes) →
+//    metaphase (chromosomes line up on the equator, spindle fibres reach in
+//    from both poles) → anaphase (sister chromatids are pulled apart to the
+//    poles while the cell elongates) → telophase / cytokinesis (the membrane
+//    pinches into a furrow and two daughter cells with fresh nuclei
+//    separate). The membrane is drawn as the union of two ellipses whose
+//    centres slide apart; time makes it breathe and the chromosomes jiggle.
 // ---------------------------------------------------------------------------
 struct Mitosis;
 impl ProgressStyle for Mitosis {
@@ -164,69 +169,142 @@ impl ProgressStyle for Mitosis {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Cell mitosis: a circle pinches at its equator and divides into two daughter cells"
+        "Cell mitosis: chromosomes line up, spindles pull them apart, and the cell pinches into two daughter cells"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let cx = fw / 2.0;
+        let cy = (fh - 1.0) / 2.0;
+        let r = (fh / 2.0 - 0.5).min(fw / 8.0).max(1.0);
+        // Horizontal stretch: the cell is an ellipse, wider than tall.
+        let k = 1.5_f32;
+        let membrane = ctx.palette.sample(0.0);
+        let dna = ctx.palette.sample(1.0);
 
-        let mid_y = (h / 2) as f32;
-        let base_r = ((w.min(h) as f32) * 0.30).max(2.0);
-
-        // eased 0→0.5: shrink horizontally (pinch), 0.5→1: split apart
-        let e = ctx.eased;
-        let pinch = (e * 2.0).min(1.0); // 0→1 over first half
-        let split = ((e - 0.5) * 2.0).max(0.0); // 0→1 over second half
-
-        // Horizontal squeeze factor: cell flattens at equator
-        let h_scale = 1.0 - pinch * 0.45;
-        // Vertical elongation before split
-        let v_scale = 1.0 + pinch * 0.2;
-        // Separation of the two daughter nuclei
-        let sep = split * base_r * 1.8;
-
-        let draw_cell = |grid: &mut BrailleGrid, cx: f32, cy: f32, rx: f32, ry: f32| {
-            let steps = ((rx + ry) as usize * 8).max(16);
-            for s in 0..=steps {
-                let angle = s as f32 / steps as f32 * 2.0 * PI;
-                let px = (cx + rx * angle.cos()) as i32;
-                let py = (cy + ry * angle.sin()) as i32;
-                draw::dot_i(grid, px, py);
-            }
-        };
-
-        if split < 0.01 {
-            // Single cell, possibly pinching
-            let rx = base_r * h_scale;
-            let ry = base_r * v_scale;
-            let cx = (w / 2) as f32;
-            draw_cell(grid, cx, mid_y, rx, ry);
-            // Cleavage furrow: two horizontal dents closing in
-            let furrow_depth = (pinch * ry * 0.5) as i32;
-            let fx = cx as i32;
-            for d in 0..furrow_depth {
-                draw::dot_i(grid, fx - d, mid_y as i32);
-                draw::dot_i(grid, fx + d, mid_y as i32);
-            }
+        // Half-separation of the two daughter centres: a slow elongation
+        // through anaphase, then the split.
+        let half = if p < 0.3 {
+            0.0
+        } else if p < 0.65 {
+            (p - 0.3) / 0.35 * r * k * 0.45
         } else {
-            // Two daughter cells separating
-            let r = base_r * 0.8;
-            let cx1 = (w as f32 / 2.0) - sep;
-            let cx2 = (w as f32 / 2.0) + sep;
-            draw_cell(grid, cx1, mid_y, r, r);
-            draw_cell(grid, cx2, mid_y, r, r);
-            // Nucleus dot in each
-            draw::dot_i(grid, cx1 as i32, mid_y as i32);
-            draw::dot_i(grid, cx2 as i32, mid_y as i32);
+            r * k * 0.45 + (p - 0.65) / 0.35 * (r * k * 0.9 + 3.0)
+        };
+        let (lc, rc) = (cx - half, cx + half);
+
+        // --- Membrane: outline of the union of two circles ---
+        let ri = (r + 2.0) as i32;
+        let rxi = (r * k + 2.0) as i32;
+        for &c in &[lc, rc] {
+            for dy in -ri..=ri {
+                for dx in -rxi..=rxi {
+                    let (x, y) = (c.round() as i32 + dx, cy.round() as i32 + dy);
+                    let (fx, fy) = (x as f32, y as f32);
+                    let ang = (fy - cy).atan2((fx - c) / k);
+                    let rr = r + 0.35 * (ang * 3.0 + ctx.time * 2.0).sin();
+                    let d = (((fx - c) / k).powi(2) + (fy - cy).powi(2)).sqrt();
+                    let other = if c < cx { rc } else { lc };
+                    let d_other = (((fx - other) / k).powi(2) + (fy - cy).powi(2)).sqrt();
+                    if (d - rr).abs() < 0.6 && (half <= 0.0 || d_other > rr - 0.3) {
+                        draw::dot_i(grid, x, y);
+                        if x >= 0 && y >= 0 {
+                            let c2 = (x / 2) as usize;
+                            draw::tint_row(grid, y as usize / 4, c2, c2, membrane);
+                        }
+                    }
+                }
+            }
         }
 
-        // Tint across the whole grid keyed by progress
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let col = ctx.palette.sample(ctx.eased);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), col);
+        // --- Chromosomes / chromatids ---
+        let n = 4;
+        let pitch = (fh / 5.0).max(1.0);
+        let mark = |grid: &mut BrailleGrid, x: f32, y: f32, shape: &[(i32, i32)]| {
+            let (xi, yi) = (x.round() as i32, y.round() as i32);
+            for &(dx, dy) in shape {
+                draw::dot_i(grid, xi + dx, yi + dy);
+            }
+            if xi >= 0 && yi >= 0 {
+                let c2 = (xi / 2) as usize;
+                draw::tint_row(grid, yi as usize / 4, c2, c2, dna);
+            }
+        };
+        let x_shape = [(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)];
+        let to_left = [(1, -1), (0, 0), (1, 1)];
+        let to_right = [(-1, -1), (0, 0), (-1, 1)];
+        if p < 0.65 {
+            // Poles for the spindle fibres (metaphase onward).
+            let pole_l = lc - r * k * 0.85;
+            let pole_r = rc + r * k * 0.85;
+            for i in 0..n {
+                let jig = (ctx.time * 3.0 + i as f32 * 1.7).sin() * 0.6;
+                let ey = cy + (i as f32 - (n as f32 - 1.0) / 2.0) * pitch;
+                // Prophase: scattered; metaphase: aligned on the equator.
+                let settle = (p / 0.3).min(1.0);
+                let sx = cx + ((i as f32 * 2.3).sin() * r * k * 0.4) * (1.0 - settle) + jig;
+                let sy = ey + ((i as f32 * 1.3).cos() * 1.5) * (1.0 - settle);
+                if p < 0.4 {
+                    mark(grid, sx, sy, &x_shape);
+                } else {
+                    // Anaphase: sister chromatids pulled to opposite poles.
+                    let pull = (p - 0.4) / 0.25 * (r * k * 0.75);
+                    mark(grid, sx - 1.0 - pull, sy, &to_left);
+                    mark(grid, sx + 1.0 + pull, sy, &to_right);
+                }
+                if p >= 0.2 {
+                    let off = if p < 0.4 {
+                        2.0
+                    } else {
+                        (p - 0.4) / 0.25 * r * k * 0.75 + 2.0
+                    };
+                    line_i(
+                        grid,
+                        pole_l.round() as i32,
+                        cy.round() as i32,
+                        (sx - off).round() as i32,
+                        sy.round() as i32,
+                    );
+                    line_i(
+                        grid,
+                        pole_r.round() as i32,
+                        cy.round() as i32,
+                        (sx + off).round() as i32,
+                        sy.round() as i32,
+                    );
+                }
+            }
+            // Nuclear envelope during prophase.
+            if p < 0.15 {
+                let nr = r * 0.6;
+                for seg in 0..24 {
+                    if seg % 2 == 0 {
+                        let a = seg as f32 / 24.0 * PI * 2.0;
+                        draw::dot_i(
+                            grid,
+                            (cx + a.cos() * nr * k).round() as i32,
+                            (cy + a.sin() * nr).round() as i32,
+                        );
+                    }
+                }
+            }
+        } else {
+            // Telophase: each daughter re-forms a solid nucleus.
+            let nr = r * 0.4;
+            for &c in &[lc, rc] {
+                let ni = nr.ceil() as i32;
+                for dy in -ni..=ni {
+                    for dx in -ni..=ni {
+                        if (dx * dx + dy * dy) as f32 <= nr * nr + 0.5 {
+                            mark(grid, c + dx as f32, cy + dy as f32, &[(0, 0)]);
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -509,9 +587,12 @@ impl ProgressStyle for EcgHeartbeat {
 
 // ---------------------------------------------------------------------------
 // 6. Protein Folding
-//    An amino-acid chain (polyline) starts extended across the bar at eased=0
-//    and collapses into a compact, looping blob as eased→1. Individual
-//    residues are dots; the backbone is a continuous polyline.
+//    A bead-on-a-string amino-acid chain: residues are solid beads joined by
+//    backbone bonds. At eased=0 the chain lies extended across the bar and
+//    jiggles thermally; as eased→1 every residue slides to its slot in a
+//    compact snake-folded β-sheet (rows joined by hairpin turns), the jiggle
+//    calms, and dotted hydrogen bonds snap in between neighbouring strands.
+//    Hydrophobic residues (every third) take the end colour.
 // ---------------------------------------------------------------------------
 struct ProteinFolding;
 impl ProgressStyle for ProteinFolding {
@@ -522,69 +603,96 @@ impl ProgressStyle for ProteinFolding {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Protein folding: amino-acid chain collapses from extended strand to a compact folded blob"
+        "Protein folding: a bead-on-string residue chain folds from an extended strand into a compact hydrogen-bonded β-sheet"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let n_residues = (w / 4).clamp(4, 32);
-        let mid_y = (h / 2) as f32;
-        // Folded target: a compact spiral / blob centered in the bar
-        let blob_r = (w.min(h) as f32 * 0.30).max(2.0);
-        let cx = (w / 2) as f32;
-
-        // Extended: residues evenly spaced across the bar at mid height
-        // Folded: residues placed on a spiral centered at cx, mid_y
-        // Interpolate with eased
+        let wf = w as f32;
+        let hf = h as f32;
         let e = ctx.eased;
-        // Animate the folded state gently rotating with time
-        let fold_rot = ctx.time * 0.4;
 
-        let mut prev_x: Option<i32> = None;
-        let mut prev_y: Option<i32> = None;
+        // Folded sheet layout: `rows` strands joined by hairpins.
+        let rows = (h / 5).clamp(1, 3);
+        let per_row = 5usize;
+        let n = rows * per_row;
+        let pitch = 6.0_f32;
+        let row_gap = (hf / rows as f32).max(1.0);
+        let block_w = pitch * (per_row - 1) as f32;
+        let fx0 = wf / 2.0 - block_w / 2.0;
+        let mid_y = (hf - 1.0) / 2.0;
 
-        for i in 0..n_residues {
-            let frac = if n_residues <= 1 {
-                0.5
-            } else {
-                i as f32 / (n_residues - 1) as f32
-            };
+        // Thermal jiggle fades as the chain settles.
+        let jig = (1.0 - e) * 1.5;
 
-            // Extended position: spread across bar
-            let ex = frac * (w - 1) as f32;
-            let ey = mid_y + (i as f32 * 1.3).sin() * (h as f32 * 0.05);
-
-            // Folded position: tightly wound helix
-            let spiral_angle = frac * 4.0 * PI + fold_rot;
-            let spiral_r = blob_r * (0.3 + frac * 0.7);
-            let fx = cx + spiral_r * spiral_angle.cos();
-            let fy = mid_y + spiral_r * 0.55 * spiral_angle.sin();
-
-            // Interpolate
-            let px = (ex + (fx - ex) * e) as i32;
-            let py = (ey + (fy - ey) * e) as i32;
-
-            // Draw residue
-            draw::dot_i(grid, px, py);
-
-            // Connect backbone
-            if let (Some(lx), Some(ly)) = (prev_x, prev_y) {
-                line_i(grid, lx, ly, px, py);
-            }
-            prev_x = Some(px);
-            prev_y = Some(py);
+        let mut pts: Vec<(i32, i32)> = Vec::with_capacity(n);
+        for i in 0..n {
+            let frac = i as f32 / (n - 1).max(1) as f32;
+            // Extended strand across the bar with a gentle wave.
+            let ex = 2.0 + frac * (wf - 5.0).max(0.0);
+            let ey = mid_y + (i as f32 * 0.9 + ctx.time * 2.0).sin() * jig * 1.5;
+            // Folded slot: boustrophedon rows.
+            let r = i / per_row;
+            let c = i % per_row;
+            let col = if r % 2 == 0 { c } else { per_row - 1 - c };
+            let fx = fx0 + col as f32 * pitch;
+            let fy = row_gap * (r as f32 + 0.5);
+            let jx = (ctx.time * 7.0 + i as f32 * 2.3).sin() * jig;
+            let x = ex + (fx - ex) * e + jx;
+            let y = ey + (fy - ey) * e;
+            pts.push((x.round() as i32, y.round() as i32));
         }
 
-        // Tint the blob region when folded
+        // Backbone bonds, then beads on top.
+        for pair in pts.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            line_i(grid, a.0, a.1, b.0, b.1);
+        }
+        for &(x, y) in &pts {
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    draw::dot_i(grid, x + dx, y + dy);
+                }
+            }
+        }
+
+        // Hydrogen bonds between neighbouring strands once nearly folded.
+        if e > 0.85 && rows > 1 {
+            for i in 0..n {
+                let r = i / per_row;
+                if r + 1 >= rows {
+                    continue;
+                }
+                let c = i % per_row;
+                // Partner directly below in the next strand.
+                let j = (r + 1) * per_row + (per_row - 1 - c);
+                if j < n && c % 2 == 0 {
+                    let (a, b) = (pts[i], pts[j]);
+                    let mut y = a.1.min(b.1) + 2;
+                    while y < a.1.max(b.1) - 1 {
+                        draw::dot_i(grid, a.0, y);
+                        y += 2;
+                    }
+                }
+            }
+        }
+
+        // Tint: chain in the start colour, hydrophobic beads in the end colour.
         let (cw, ch) = grid.dimensions();
-        let blob_cells = (e * cw as f32).round() as usize;
-        for cx2 in 0..blob_cells.min(cw) {
-            let t = cx2 as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx2, cx2, ctx.palette.sample(t));
+        for cy in 0..ch {
+            draw::tint_row(grid, cy, 0, cw, ctx.palette.start);
+        }
+        for (i, &(x, y)) in pts.iter().enumerate() {
+            if i % 3 == 0 && x >= 0 && y >= 0 {
+                draw::tint_row(
+                    grid,
+                    y as usize / 4,
+                    x as usize / 2,
+                    x as usize / 2,
+                    ctx.palette.end,
+                );
             }
         }
         Ok(())
@@ -593,8 +701,11 @@ impl ProgressStyle for ProteinFolding {
 
 // ---------------------------------------------------------------------------
 // 7. Photosynthesis
-//    Sun (arc) on the left emits rays that hit a leaf silhouette in the centre.
-//    A glucose "store" rectangle on the right fills as eased increases.
+//    A rayed sun on the left beams photons (dots travelling along rays) onto
+//    a large leaf: stalk, almond blade with a pointed tip, midrib and
+//    side veins left as negative space. The blade greens up — filling solid
+//    from the stalk toward the tip — with eased progress, while the sun's
+//    rays slowly rotate.
 // ---------------------------------------------------------------------------
 struct Photosynthesis;
 impl ProgressStyle for Photosynthesis {
@@ -605,86 +716,97 @@ impl ProgressStyle for Photosynthesis {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Photosynthesis: sun rays hit a leaf; glucose store fills with eased progress"
+        "Photosynthesis: a rayed sun beams photons onto a veined leaf that fills with colour from stalk to tip"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let mid = (fh - 1.0) / 2.0;
 
-        let mid_y = (h / 2) as i32;
-
-        // --- Sun (left 1/5): partial circle arc ---
-        let sun_cx = (w as f32 * 0.08) as i32;
-        let sun_r = (h as f32 * 0.30).max(2.0) as i32;
-        let sun_steps = 24usize;
-        for s in 0..sun_steps {
-            let angle = s as f32 / sun_steps as f32 * PI * 1.2 - PI * 0.1; // right-facing arc
-            let ax = sun_cx + (angle.cos() * sun_r as f32) as i32;
-            let ay = mid_y + (angle.sin() * sun_r as f32) as i32;
-            draw::dot_i(grid, ax, ay);
+        // --- Sun: solid disc + rotating rays ---
+        let sr = (fh * 0.2).min(fw * 0.05).max(1.0);
+        let sx = sr + 3.0;
+        let ri = sr.ceil() as i32;
+        for dy in -ri..=ri {
+            for dx in -ri..=ri {
+                if (dx * dx + dy * dy) as f32 <= sr * sr + 0.5 {
+                    draw::dot_i(grid, sx as i32 + dx, mid.round() as i32 + dy);
+                }
+            }
+        }
+        for k in 0..8 {
+            let a = k as f32 * PI / 4.0 + ctx.time * 0.6;
+            let (c, s) = (a.cos(), a.sin());
+            line_i(
+                grid,
+                (sx + c * (sr + 1.5)).round() as i32,
+                (mid + s * (sr + 1.5)).round() as i32,
+                (sx + c * (sr + 3.0)).round() as i32,
+                (mid + s * (sr + 3.0)).round() as i32,
+            );
         }
 
-        // --- Animated light rays ---
-        let ray_count = 5usize;
-        let leaf_cx = (w as f32 * 0.50) as i32;
-        let ray_phase = ctx.time * 1.8;
-        for ri in 0..ray_count {
-            let angle_spread = PI * 0.55;
-            let angle =
-                -angle_spread / 2.0 + (ri as f32 / (ray_count - 1).max(1) as f32) * angle_spread;
-            // Ray pulses along its length with time
-            let pulse = (ray_phase + ri as f32 * 0.7).sin() * 0.5 + 0.5;
-            let ray_len = ((leaf_cx - sun_cx) as f32 * (0.6 + pulse * 0.4)) as i32;
-            let rx_end = sun_cx + (angle.cos() * ray_len as f32) as i32;
-            let ry_end = mid_y + (angle.sin() * ray_len as f32) as i32;
-            let rx_start = sun_cx + (angle.cos() * sun_r as f32) as i32;
-            let ry_start = mid_y + (angle.sin() * sun_r as f32) as i32;
-            line_i(grid, rx_start, ry_start, rx_end, ry_end);
+        // --- Leaf geometry ---
+        let stalk0 = sx + sr + 6.0;
+        let l0 = stalk0 + (fw * 0.06).max(2.0);
+        let l1 = fw - 3.0;
+        let span = (l1 - l0).max(1.0);
+        let big_h = (fh - 2.0) / 2.0;
+        let half = |x: f32| {
+            let u = ((x - l0) / span).clamp(0.0, 1.0);
+            big_h * (PI * u.powf(0.6)).sin()
+        };
+
+        // Photons travel from the sun toward the leaf's upper and lower faces.
+        for i in 0..4 {
+            let ph = (ctx.time * 0.8 + i as f32 * 0.25).fract();
+            let tx = l0 + span * (0.2 + 0.15 * i as f32);
+            let ty = if i % 2 == 0 { 0.0 } else { fh - 1.0 };
+            let px = sx + (tx - sx) * ph;
+            let py = mid + (ty - mid) * ph * 0.9;
+            draw::dot_i(grid, px.round() as i32, py.round() as i32);
         }
 
-        // --- Leaf (centre): simple leaf silhouette (two arcs) ---
-        let leaf_h = (h as f32 * 0.70).max(2.0);
-        let leaf_w = (w as f32 * 0.12).max(2.0);
-        let leaf_steps = 20usize;
-        for s in 0..=leaf_steps {
-            let t = s as f32 / leaf_steps as f32;
-            let angle = t * PI;
-            // Upper arc
-            let lx = leaf_cx + (leaf_w * (angle - PI / 2.0).cos()) as i32;
-            let ly = mid_y - (leaf_h / 2.0 * angle.sin()) as i32;
-            draw::dot_i(grid, lx, ly);
-            // Lower arc (mirror)
-            draw::dot_i(grid, lx, mid_y + (mid_y - ly));
-        }
-        // Midrib
-        draw::vline(
-            grid,
-            leaf_cx as usize,
-            (mid_y - (leaf_h / 2.0) as i32).max(0) as usize,
-            (mid_y + (leaf_h / 2.0) as i32).min(h as i32 - 1) as usize,
-        );
+        // Stalk.
+        draw::hline(grid, stalk0 as usize, l0 as usize, mid.round() as usize);
 
-        // --- Glucose store (right 1/5): fills with eased ---
-        let store_x = (w as f32 * 0.80) as usize;
-        let store_w = (w as f32 * 0.15).max(2.0) as usize;
-        let store_h = (h as f32 * 0.70).max(2.0) as usize;
-        let store_y = (h - store_h) / 2;
-        draw::rect_outline(grid, store_x, store_y, store_w, store_h);
-        let fill_h = (ctx.eased * store_h as f32) as usize;
-        let fill_y = store_y + store_h.saturating_sub(fill_h);
-        if fill_h > 0 && store_w > 2 {
-            draw::fill_rect(grid, store_x + 1, fill_y, store_w.saturating_sub(2), fill_h);
-        }
-
-        // Tint
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Blade outline + progressive solid fill with negative-space veins.
+        let fill_x = l0 + span * ctx.eased;
+        let mut prev: Option<(i32, i32)> = None;
+        let xs = l0.round() as i32;
+        let xe = l1.round() as i32;
+        for x in xs..=xe {
+            let hw = half(x as f32);
+            let top = (mid - hw).round() as i32;
+            let bot = (mid + hw).round() as i32;
+            match prev {
+                Some((pt, pb)) => {
+                    line_i(grid, x - 1, pt, x, top);
+                    line_i(grid, x - 1, pb, x, bot);
+                }
+                None => line_i(grid, x, top, x, bot),
+            }
+            prev = Some((top, bot));
+            if (x as f32) <= fill_x {
+                let my = mid.round() as i32;
+                for y in (top + 1)..bot {
+                    let off = (y - my).abs();
+                    let vein = (x - xs - off * 2).rem_euclid(9) == 0;
+                    if y != my && !vein {
+                        draw::dot_i(grid, x, y);
+                    }
+                }
+                if x >= 0 {
+                    let u = (x as f32 - l0) / span;
+                    let c = (x / 2) as usize;
+                    let (_, ch) = grid.dimensions();
+                    for cy in 0..ch {
+                        draw::tint_row(grid, cy, c, c, ctx.palette.sample(u));
+                    }
+                }
             }
         }
         Ok(())
@@ -807,7 +929,7 @@ impl ProgressStyle for BloodFlow {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Blood flow: red cells stream through a vessel at pulsatile speed; perfused fraction = progress"
+        "Blood flow: biconcave red cells tumble through a walled vessel in pulsing surges; perfused fraction = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -816,47 +938,51 @@ impl ProgressStyle for BloodFlow {
         }
 
         let mid = h / 2;
-        let vessel_r = (h as f32 * 0.25).max(1.0) as usize;
+        let vessel_r = (h as f32 * 0.45).max(1.0) as usize;
 
-        // Vessel walls (two hlines)
+        // Vessel walls: double lines (endothelium + outer wall)
         let top_wall = mid.saturating_sub(vessel_r);
         let bot_wall = (mid + vessel_r).min(h - 1);
         draw::hline(grid, 0, w.saturating_sub(1), top_wall);
         draw::hline(grid, 0, w.saturating_sub(1), bot_wall);
+        if h >= 16 {
+            draw::hline(grid, 0, w.saturating_sub(1), top_wall + 1);
+            draw::hline(grid, 0, w.saturating_sub(1), bot_wall - 1);
+        }
 
         // Perfused segment fills from left with eased
         let perfused_w = (ctx.eased * w as f32) as usize;
 
-        // Pulsatile flow speed: heartbeat modulates velocity
-        // Systole: 0→0.3 of cardiac cycle; diastole: rest
+        // Pulsatile flow: steady drift plus a systolic surge each beat
+        // (displacement stays monotonic, so cells never run backwards).
         let cardiac_freq = 1.1_f32; // Hz
-        let cardiac_phase = (ctx.time * cardiac_freq).fract();
-        let pulse_v = if cardiac_phase < 0.3 {
-            // Systolic peak
-            1.0 + 2.0 * (cardiac_phase / 0.15 * PI).sin().powi(2)
-        } else {
-            // Diastolic trickle
-            0.4 + 0.1 * (cardiac_phase * 4.0 * PI).sin()
-        };
+        let travel = ctx.time * 10.0 + 1.2 * (ctx.time * cardiac_freq * 2.0 * PI).sin();
 
-        // Red blood cells: flattened ovals (2-dot wide blobs)
-        let n_cells = 12usize;
+        // Red blood cells: biconcave discs (a ring with a pale centre) in two
+        // lanes, tumbling between face-on and narrower three-quarter views.
+        let face: [&[u8]; 4] = [b".####.", b"##..##", b"##..##", b".####."];
+        let turned: [&[u8]; 4] = [b".##.", b"#..#", b"#..#", b".##."];
+        let lanes = [
+            mid as i32 - (vessel_r as i32) / 2 - 1,
+            mid as i32 + (vessel_r as i32) / 2 - 2,
+        ];
+        let n_cells = (w / 9).max(1);
         for ci in 0..n_cells {
-            // Base position spread evenly; scroll driven by pulse_v and time
-            let base_x = (ci as f32 / n_cells as f32) * w as f32;
-            let scroll = (ctx.time * pulse_v * 8.0 + base_x) % w as f32;
-            let cx = scroll as i32;
-            let cy = mid as i32;
-
-            // Only in perfused region
-            if (scroll as usize) < perfused_w {
-                // Biconcave disc: 3 dots horizontally, 1 center dot dimmer
-                draw::dot_i(grid, cx - 1, cy);
-                draw::dot_i(grid, cx, cy);
-                draw::dot_i(grid, cx + 1, cy);
-                // Slight vertical extent
-                draw::dot_i(grid, cx, cy - 1);
-                draw::dot_i(grid, cx, cy + 1);
+            let lane = ci % 2;
+            let base_x = (ci as f32 / n_cells as f32) * w as f32 + lane as f32 * 3.0;
+            let scroll = (travel + base_x).rem_euclid(w as f32);
+            if (scroll as usize) >= perfused_w {
+                continue;
+            }
+            let tumble = (ctx.time * 1.3 + ci as f32 * 0.9).sin() > 0.2;
+            let shape: &[&[u8]; 4] = if tumble { &turned } else { &face };
+            let (x0, y0) = (scroll as i32 - 3, lanes[lane]);
+            for (dy, row) in shape.iter().enumerate() {
+                for (dx, &c) in row.iter().enumerate() {
+                    if c == b'#' {
+                        draw::dot_i(grid, x0 + dx as i32, y0 + dy as i32);
+                    }
+                }
             }
         }
 
@@ -875,9 +1001,12 @@ impl ProgressStyle for BloodFlow {
 
 // ---------------------------------------------------------------------------
 // 10. Enzyme Kinetics (Michaelis-Menten)
-//     An active-site pocket (U-shape) on the left; substrates approach from
-//     the right, snap in, and exit as products. Product count = eased.
-//     Rate = Vmax·S / (Km + S); S decreases as eased rises.
+//     Lock and key: a large solid enzyme on the left with a wedge-shaped
+//     active site opening to the right. Each catalytic cycle (driven by time)
+//     a matching wedge-shaped substrate slides in along the axis, docks
+//     (enzyme-substrate complex), then splits into two product halves that
+//     drop away. Finished products stack in a tally along the floor; the
+//     tally length = eased.
 // ---------------------------------------------------------------------------
 struct EnzymeKinetics;
 impl ProgressStyle for EnzymeKinetics {
@@ -888,98 +1017,89 @@ impl ProgressStyle for EnzymeKinetics {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Michaelis-Menten kinetics: substrates bind the active site; products counted = progress"
+        "Enzyme kinetics: a wedge substrate docks in the enzyme's active site and splits into products that stack up with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 4 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let ey = (fh - 1.0) / 2.0;
+        let ry = (fh / 2.0 - 0.5).max(1.0);
+        let rx = (ry * 1.6).min(fw * 0.2);
+        let ex = rx + 1.0;
+        let enzyme = ctx.palette.sample(0.0);
+        let substrate = ctx.palette.sample(1.0);
+        // Active-site wedge: apex inside the enzyme, opening to the right.
+        let apex = ex + rx * 0.15;
+        let slope = 0.7_f32;
+        let in_site = |x: f32, y: f32| x > apex && (y - ey).abs() < (x - apex) * slope;
 
-        let mid = (h / 2) as i32;
-        let enzyme_cx = (w as f32 * 0.20) as i32;
-        let pocket_r = (h as f32 * 0.30).max(2.0) as i32;
-
-        // Enzyme body: U-shaped pocket (lower semicircle)
-        let steps = 24usize;
-        for s in 0..=steps {
-            let angle = s as f32 / steps as f32 * PI; // 0..π bottom half
-            let ax = enzyme_cx + (angle.cos() * pocket_r as f32) as i32;
-            let ay = mid + (angle.sin() * pocket_r as f32) as i32;
-            draw::dot_i(grid, ax, ay);
-        }
-        // Left arm
-        draw::vline(
-            grid,
-            (enzyme_cx - pocket_r).max(0) as usize,
-            (mid - pocket_r).max(0) as usize,
-            mid as usize,
-        );
-        // Right arm
-        draw::vline(
-            grid,
-            (enzyme_cx + pocket_r).min(w as i32 - 1) as usize,
-            (mid - pocket_r).max(0) as usize,
-            mid as usize,
-        );
-
-        // Michaelis-Menten rate: at eased=0 S is high, rate is high; at eased=1 S exhausted
-        let s_conc = 1.0 - ctx.eased; // substrate concentration decreases
-        let km = 0.3_f32;
-        let v_max = 1.0_f32;
-        let rate = v_max * s_conc / (km + s_conc); // 0..1
-
-        // Substrate molecules approaching from the right, speed driven by rate
-        let n_substrates = 4usize;
-        for si in 0..n_substrates {
-            let phase = (ctx.time * rate * 1.5 + si as f32 * 0.25) % 1.0;
-            // Travel from right edge to pocket
-            let sx = (w as f32 - (enzyme_cx + pocket_r + 2) as f32) * (1.0 - phase)
-                + (enzyme_cx + pocket_r + 2) as f32;
-            let sy = mid - 1 + (si % 2) as i32 * 2;
-            if phase < 0.85 {
-                // Substrate in transit: small square
-                draw::dot_i(grid, sx as i32, sy);
-                draw::dot_i(grid, sx as i32 + 1, sy);
-                draw::dot_i(grid, sx as i32, sy + 1);
-                draw::dot_i(grid, sx as i32 + 1, sy + 1);
+        // --- Enzyme body ---
+        let (rxi, ryi) = (rx.ceil() as i32, ry.ceil() as i32);
+        for dy in -ryi..=ryi {
+            for dx in -rxi..=rxi {
+                let (x, y) = (ex + dx as f32, ey.round() + dy as f32);
+                let (u, v) = ((x - ex) / rx, (y - ey) / ry);
+                if u * u + v * v <= 1.0 && !in_site(x, y) {
+                    draw::dot_i(grid, x as i32, y as i32);
+                    if x >= 0.0 && y >= 0.0 {
+                        let c = x as usize / 2;
+                        draw::tint_row(grid, y as usize / 4, c, c, enzyme);
+                    }
+                }
             }
         }
 
-        // Product molecules exiting to the right (below the axis)
-        let n_products = (ctx.eased * 6.0) as usize;
-        for pi in 0..n_products {
-            let px = enzyme_cx + pocket_r + 2 + (pi as i32 * 5);
-            let py = mid + pocket_r / 2;
-            draw::dot_i(grid, px, py);
-            draw::dot_i(grid, px + 1, py);
+        // --- One catalytic cycle: approach → dock → split ---
+        let ph = (ctx.time * 0.7).fract();
+        let len = (rx * 0.85).max(2.0);
+        let docked_x = apex + 1.0;
+        let wedge = |grid: &mut BrailleGrid, tip_x: f32, tip_y: f32, half: i32| {
+            // half: 0 = whole wedge, -1 = upper half, 1 = lower half.
+            for i in 0..=(len as i32) {
+                let x = tip_x + i as f32;
+                let spread = (i as f32 * slope - 0.8).max(0.0);
+                let (lo, hi) = match half {
+                    -1 => (-spread, 0.0),
+                    1 => (1.0, spread),
+                    _ => (-spread, spread),
+                };
+                let y_lo = (tip_y + lo).round() as i32;
+                let y_hi = (tip_y + hi).floor() as i32;
+                for y in y_lo..=y_hi {
+                    draw::dot_i(grid, x.round() as i32, y);
+                    if x >= 0.0 && y >= 0 {
+                        let c = x as usize / 2;
+                        draw::tint_row(grid, y as usize / 4, c, c, substrate);
+                    }
+                }
+            }
+        };
+        let far = fw * 0.62;
+        if ph < 0.45 {
+            let t = ph / 0.45;
+            let x = far + (docked_x - far) * (1.0 - (1.0 - t) * (1.0 - t));
+            wedge(grid, x, ey, 0);
+        } else if ph < 0.65 {
+            wedge(grid, docked_x, ey, 0);
+        } else {
+            let t = (ph - 0.65) / 0.35;
+            let x = docked_x + t * rx * 1.2;
+            wedge(grid, x, ey - t * ry * 0.6, -1);
+            wedge(grid, x, ey + t * ry * 0.6, 1);
         }
 
-        // Rate curve below the enzyme (mini graph)
-        let graph_y_base = (h as f32 * 0.88) as usize;
-        let graph_h = (h as f32 * 0.10).max(1.0) as usize;
-        for xi in 0..w {
-            let s = 1.0 - xi as f32 / w as f32; // S decreases left→right
-            let v = v_max * s / (km + s);
-            let bar_h = (v * graph_h as f32) as usize;
-            for y in graph_y_base.saturating_sub(bar_h)..graph_y_base {
-                draw::dot(grid, xi, y);
-            }
-        }
-        // Mark Km on the graph
-        let km_x = ((1.0 - km) * w as f32) as usize;
-        if km_x < w {
-            draw::dot(grid, km_x, graph_y_base);
-        }
-
-        // Tint product side
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
+        // --- Product tally along the floor ---
+        let x0 = (ex + rx + 4.0) as usize;
+        let slots = w.saturating_sub(x0 + 1) / 4;
+        let done = (ctx.eased * slots as f32).round() as usize;
+        let y = h - 2;
+        for i in 0..done {
+            let x = x0 + i * 4;
+            draw::fill_rect(grid, x, y, 2, 2);
+            draw::tint_row(grid, y / 4, x / 2, x / 2, substrate);
         }
         Ok(())
     }
@@ -987,9 +1107,10 @@ impl ProgressStyle for EnzymeKinetics {
 
 // ---------------------------------------------------------------------------
 // 11. Virus Spread
-//    A tissue grid of cells (shade glyphs for cell-sized elements, dots for
-//    infection front). Infection spreads outward from upper-left; infected
-//    fraction = eased. Time animates a shimmer on the wavefront.
+//    A tissue of round-cornered cells, each with a nucleus. Infection starts
+//    at the left edge and sweeps right with a ragged front: infected cells
+//    turn solid and coloured, and at the frontier spiky virions bud off and
+//    drift into the next healthy cell. Infected fraction = eased.
 // ---------------------------------------------------------------------------
 struct VirusSpread;
 impl ProgressStyle for VirusSpread {
@@ -1000,50 +1121,69 @@ impl ProgressStyle for VirusSpread {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Viral spread: infection sweeps a tissue grid cell by cell; infected fraction = progress"
+        "Viral spread: a tissue of nucleated cells turns solid as infection sweeps right; spiky virions bud into healthy neighbours"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 8 || h < 4 {
             return Ok(());
         }
+        let px = 8usize;
+        let py = if h >= 8 { 8usize } else { h };
+        let cols = w / px;
+        let rows = (h / py).max(1);
+        let ox = (w - cols * px) / 2;
+        let reach = ctx.eased * (cols as f32 + 1.5);
+        let infected = |c: usize, r: usize| {
+            let k = (c * 7 + r * 13) as u32;
+            let jitter = (k.wrapping_mul(2654435761) >> 16) % 100;
+            c as f32 + jitter as f32 / 100.0 * 1.5 < reach
+        };
+        let sick = ctx.palette.sample(1.0);
+        let (s, e) = (px - 1, py - 1);
 
-        // Infection spreads in a diagonal wave from top-left
-        // Cell order: sorted by (cx + cy) ascending (Manhattan distance from origin)
-        // We can approximate by iterating and checking if (cx+cy) / (cw+ch-2) <= eased
-
-        for cy in 0..ch {
-            for cx in 0..cw {
-                // Normalized Manhattan distance from TL corner
-                let dist = (cx + cy) as f32 / ((cw + ch).saturating_sub(2).max(1)) as f32;
-                // Wavefront shimmer: cells near the boundary pulse
-                let at_front = (dist - ctx.eased).abs() < 0.08;
-                let shimmer = (ctx.time * 6.0 + dist * 4.0).sin() * 0.5 + 0.5;
-
-                if dist <= ctx.eased {
-                    // Infected: dense shade
-                    let density = if at_front && shimmer > 0.5 { 3usize } else { 4 };
-                    draw::shade(grid, cx, cy, density);
-                    // Color
-                    let col = ctx.palette.sample(dist);
-                    draw::tint_row(grid, cy, cx, cx, col);
-                } else if dist <= ctx.eased + 0.06 {
-                    // Wavefront: lighter shade
-                    draw::shade(grid, cx, cy, 2);
+        for r in 0..rows {
+            for c in 0..cols {
+                let (x, y) = (ox + c * px, r * py);
+                // Membrane with cut corners.
+                draw::hline(grid, x + 1, x + s - 2, y);
+                draw::hline(grid, x + 1, x + s - 2, y + e - 1);
+                draw::vline(grid, x, y + 1, y + e.saturating_sub(2));
+                draw::vline(grid, x + s - 1, y + 1, y + e.saturating_sub(2));
+                if infected(c, r) {
+                    draw::fill_rect(grid, x + 1, y + 1, s - 2, e.saturating_sub(2));
+                    for cy in (y / 4)..=((y + e - 1) / 4) {
+                        draw::tint_row(grid, cy, x / 2, (x + s - 1) / 2, sick);
+                    }
+                    // Virions bud toward a healthy right-hand neighbour.
+                    if c + 1 < cols && !infected(c + 1, r) {
+                        let ph = (ctx.time * 0.9 + (c + r) as f32 * 0.31).fract();
+                        let vx = (x + s) as f32 + ph * px as f32 * 0.8;
+                        let vy = y as f32 + e as f32 * 0.5 + (ph * PI * 2.0).sin();
+                        let (vx, vy) = (vx.round() as i32, vy.round() as i32 - 1);
+                        draw::dot_i(grid, vx, vy);
+                        for (dx, dy) in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, -2), (0, 2)] {
+                            draw::dot_i(grid, vx + dx, vy + dy);
+                        }
+                    }
+                } else {
+                    // Nucleus.
+                    draw::fill_rect(grid, x + s / 2 - 1, y + e / 2 - 1, 2, 2);
                 }
-                // Uninfected cells: leave blank (empty)
             }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 // 12. Ion Channels (Cell Membrane)
-//    Two parallel lines represent the lipid bilayer. Ion channels (vertical
-//    slits) pump ions (dots) through; the electrochemical gradient builds as
-//    eased rises. Inside vs. outside ion density difference = progress.
+//    A phospholipid bilayer spans the bar: two leaflets of round heads with
+//    paired tails pointing inward. Transmembrane channel proteins (solid
+//    columns flanking an open pore) punctuate it, and ions (+ signs) stream
+//    through each pore from outside to inside, driven by time. The gradient
+//    builds with eased progress: ions pile up along the inside face from the
+//    left while the outside reservoir drains.
 // ---------------------------------------------------------------------------
 struct IonChannels;
 impl ProgressStyle for IonChannels {
@@ -1054,94 +1194,75 @@ impl ProgressStyle for IonChannels {
         "biology"
     }
     fn describe(&self) -> &str {
-        "Cell membrane ion channels: pumps drive ions through the bilayer; gradient builds with progress"
+        "Ion channels: a phospholipid bilayer with protein pores; + ions stream through and pile up inside as progress builds"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
+        let fh = h as f32;
+        let row = |f: f32| (f * fh / 16.0).round() as usize;
+        let (head_top, head_bot) = (row(4.0), row(10.0));
+        let (ion_top, ion_bot) = (row(1.0), row(14.0));
+        let lipid = ctx.palette.sample(0.0);
+        let protein = ctx.palette.sample(1.0);
 
-        // Bilayer: two horizontal lines at 1/3 and 2/3 height
-        let outer_y = (h as f32 * 0.35) as usize;
-        let inner_y = (h as f32 * 0.65) as usize;
-        draw::hline(grid, 0, w.saturating_sub(1), outer_y);
-        draw::hline(grid, 0, w.saturating_sub(1), inner_y);
+        // Channel pore centres.
+        let n = (w / 30).clamp(1, 5);
+        let pores: Vec<usize> = (0..n).map(|i| w * (2 * i + 1) / (2 * n)).collect();
+        let near_pore = |x: usize| pores.iter().any(|&p| x + 6 > p && x < p + 6);
 
-        // Ion channels: vertical gaps in the membrane with a gate indicator
-        let n_channels = (w / 10).clamp(1, 8);
-        for ci in 0..n_channels {
-            let ch_x = (ci * w / n_channels + w / (n_channels * 2).max(1)).min(w - 1);
-            // Gate open fraction oscillates with time and ci phase
-            let gate_phase = ctx.time * 2.0 + ci as f32 * 0.9;
-            let open = (gate_phase.sin() * 0.5 + 0.5) * ctx.eased;
-            // Clear membrane at channel (draw gap as empty — draw dots on either side)
-            let gap_half = 2usize;
-            // Left edge of channel
-            if ch_x > gap_half {
-                draw::dot(grid, ch_x - gap_half - 1, outer_y);
-                draw::dot(grid, ch_x - gap_half - 1, inner_y);
+        // --- Bilayer: heads (2×2) with tails pointing into the core ---
+        let mut x = 1;
+        while x + 1 < w {
+            if !near_pore(x) && !near_pore(x + 1) {
+                draw::fill_rect(grid, x, head_top, 2, 2);
+                draw::fill_rect(grid, x, head_bot, 2, 2);
+                draw::vline(grid, x, head_top + 2, head_top + 3);
+                draw::vline(grid, x + 1, head_bot.saturating_sub(2), head_bot - 1);
+                draw::tint_row(grid, head_top / 4, x / 2, x / 2, lipid);
+                draw::tint_row(grid, head_bot / 4, x / 2, x / 2, lipid);
             }
-            // Right edge
-            if ch_x + gap_half + 1 < w {
-                draw::dot(grid, ch_x + gap_half + 1, outer_y);
-                draw::dot(grid, ch_x + gap_half + 1, inner_y);
+            x += 4;
+        }
+
+        // --- Channel proteins and ions passing through ---
+        let (p0, p1) = (row(2.0), row(13.0));
+        for (i, &p) in pores.iter().enumerate() {
+            for side in [p.saturating_sub(4), p + 2] {
+                draw::fill_rect(grid, side, p0 + 1, 3, p1.saturating_sub(p0 + 1));
+                draw::hline(grid, side + 1, side + 1, p0);
+                draw::hline(grid, side + 1, side + 1, p1);
+                for cy in (p0 / 4)..=(p1 / 4) {
+                    draw::tint_row(grid, cy, side / 2, (side + 2) / 2, protein);
+                }
             }
-            // Gate: vertical bar at half-open position
-            let gate_y_outer = outer_y as i32;
-            let gate_y_inner = inner_y as i32;
-            let gate_midpoint = gate_y_outer + ((gate_y_inner - gate_y_outer) as f32 * 0.5) as i32;
-            let gate_len = ((gate_y_inner - gate_y_outer) as f32 * (1.0 - open) * 0.4) as i32;
-            draw::dot_i(grid, ch_x as i32, gate_midpoint - gate_len / 2);
-            draw::dot_i(grid, ch_x as i32, gate_midpoint + gate_len / 2);
+            let ph = (ctx.time * 0.7 + i as f32 * 0.37).fract();
+            let iy = ion_top as f32 + ph * (ion_bot - ion_top) as f32;
+            plus(grid, p as i32, iy.round() as i32);
+        }
 
-            // Ions moving through the channel
-            let ion_progress = (ctx.time * 1.5 + ci as f32 * 0.6).fract();
-            let ion_y = (outer_y as f32 + ion_progress * (inner_y - outer_y) as f32) as i32;
-            if open > 0.2 {
-                draw::dot_i(grid, ch_x as i32, ion_y);
-                draw::dot_i(grid, ch_x as i32 - 1, ion_y);
+        // --- Gradient: inside fills from the left, outside drains ---
+        let split = (ctx.eased * w as f32) as usize;
+        let mut x = 2;
+        while x + 1 < w {
+            if !near_pore(x) {
+                if x < split {
+                    plus(grid, x as i32, ion_bot as i32);
+                } else {
+                    plus(grid, x as i32, ion_top as i32);
+                }
             }
+            x += 6;
         }
-
-        // Outside ions (above outer membrane): sparse, few at start
-        let outside_density = 1.0 - ctx.eased; // high outside before pumping
-        let n_outside = (outside_density * w as f32 * 0.3) as usize;
-        for oi in 0..n_outside {
-            let ox = (oi * w / n_outside.max(1)) as i32;
-            let oy_base = outer_y.saturating_sub(1) as i32;
-            let oy = oy_base
-                - ((ctx.time * 1.3 + oi as f32 * 0.5).sin() * (outer_y as f32 * 0.5)).abs() as i32;
-            draw::dot_i(grid, ox, oy.max(0));
-        }
-
-        // Inside ions (below inner membrane): accumulate with eased
-        let inside_density = ctx.eased;
-        let n_inside = (inside_density * w as f32 * 0.3) as usize;
-        for ii in 0..n_inside {
-            let ix = (ii * w / n_inside.max(1)) as i32;
-            let iy_base = (inner_y + 1).min(h - 1) as i32;
-            let iy = iy_base
-                + ((ctx.time * 1.1 + ii as f32 * 0.6).sin()
-                    * (h.saturating_sub(inner_y) as f32 * 0.4))
-                    .abs() as i32;
-            draw::dot_i(grid, ix, iy.min(h as i32 - 1));
-        }
-
-        // Tint: inside region (below inner membrane) gets gradient
-        let (cw, ch_cells) = grid.dimensions();
-        let inner_cell_y = inner_y / 4;
-        for cy in inner_cell_y.min(ch_cells.saturating_sub(1))..ch_cells {
-            let t = ctx.eased;
-            let col = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), col);
-        }
-        // Outside region gets complementary tint
-        for cy in 0..outer_y / 4 {
-            let col = ctx.palette.sample(1.0 - ctx.eased);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), col);
-        }
-
         Ok(())
+    }
+}
+
+/// Small `+` ion marker centred at `(x, y)`.
+fn plus(grid: &mut BrailleGrid, x: i32, y: i32) {
+    for (dx, dy) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+        draw::dot_i(grid, x + dx, y + dy);
     }
 }

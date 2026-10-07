@@ -8,34 +8,21 @@
 //!
 //! Systems implemented:
 //! - **Lorenz** — the canonical butterfly attractor (σ=10, ρ=28, β=8/3).
-//! - **Rössler** — a single spiral band (a=0.2, b=0.2, c=5.7).
-//! - **Clifford** — algebraic iterated-function system with animated params.
-//! - **De Jong** — sinusoidal IFS, slowly morphing.
-//! - **Hénon map** — folded parabola (a=1.4, b=0.3).
+//! - **Rössler** — the tilted spiral band with its fold-over lobe (a=0.2, b=0.2, c=5.7).
+//! - **Clifford** — three classic parameter sets, density-rendered side by side.
+//! - **De Jong** — three classic parameter sets, density-rendered side by side.
+//! - **Hénon map** — the folded boomerang attractor (a=1.4, b=0.3).
 //! - **Logistic bifurcation** — bifurcation diagram swept across the bar.
-//! - **Double pendulum** — Lagrangian chaotic trace.
-//! - **Standard map** — area-preserving twist map on the torus.
-//! - **Gingerbreadman map** — triangular symmetry cellular automaton-like.
+//! - **Double pendulum** — two rods and bobs from a pivot riding the progress rail.
+//! - **Standard map** — phase portrait whose KAM curves break up as K rises.
+//! - **Gingerbreadman map** — the chaotic orbit from (−0.1, 0) filling its silhouette.
 //! - **Duffing oscillator** — phase portrait of the forced anharmonic well.
-//! - **Tinkerbell map** — complex-parameter fractal boundary.
+//! - **Tinkerbell map** — the classic wand-trail attractor.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
-
-// ---------------------------------------------------------------------------
-// Deterministic hash helper for seeding
-// ---------------------------------------------------------------------------
-
-// Hot path: called per-dot inside every chaos render loop; inlining is deliberate.
-#[allow(clippy::inline_always)]
-#[inline(always)]
-fn hash(n: u32) -> u32 {
-    let mut x = n.wrapping_mul(2_654_435_761);
-    x ^= x >> 15;
-    x.wrapping_mul(2_246_822_519)
-}
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -119,10 +106,20 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 //    dy/dt = x(ρ − z) − y    ρ = 28
 //    dz/dt = xy − βz         β = 8/3
 //
-//    Progress reveals orbit length. Time rotates the (x,z) projection.
+//    Progress reveals orbit length. Time swings the view about the z axis.
 // ---------------------------------------------------------------------------
 
 struct LorenzAttractor;
+
+/// Bresenham-style dot line between two signed dot coordinates.
+fn seg(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
+    let n = (x1 - x0).abs().max((y1 - y0).abs()).clamp(1, 512);
+    for i in 0..=n {
+        let x = x0 + (x1 - x0) * i / n;
+        let y = y0 + (y1 - y0) * i / n;
+        draw::dot_i(grid, x, y);
+    }
+}
 
 impl ProgressStyle for LorenzAttractor {
     fn name(&self) -> &str {
@@ -132,73 +129,50 @@ impl ProgressStyle for LorenzAttractor {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Lorenz butterfly attractor: σ=10 ρ=28 β=8/3 — orbit revealed by progress, time rotates projection"
+        "Lorenz butterfly attractor (σ=10 ρ=28 β=8/3) seen in the x–z plane: the orbit loops \
+         round both wings as progress lengthens it, and the view swings about the z axis with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        let sigma: f32 = 10.0;
-        let rho: f32 = 28.0;
-        let beta: f32 = 8.0 / 3.0;
-        let dt: f32 = 0.01;
-
-        // Total steps budget; eased controls how many we draw.
-        let n_total: usize = 2800;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        // Fixed seed — attractor min/max known analytically.
-        let x_range = (-20.0_f32, 20.0_f32);
-        let z_range = (0.0_f32, 50.0_f32);
-
-        // Slow rotation of the projection plane with time.
-        let angle = ctx.time * 0.3;
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-
-        let mut x: f32 = 0.1;
-        let mut y: f32 = 0.0;
-        let mut z: f32 = 0.0;
-
-        // Burn-in to get onto the attractor.
-        for _ in 0..300 {
-            let dx = sigma * (y - x);
-            let dy = x * (rho - z) - y;
-            let dz = x * y - beta * z;
-            x += dx * dt;
-            y += dy * dt;
-            z += dz * dt;
+        let (sigma, rho, beta) = (10.0f32, 28.0f32, 8.0f32 / 3.0);
+        let dt = 0.01f32;
+        let (mut x, mut y, mut z) = (1.0f32, 1.0f32, 20.0f32);
+        let step = |x: &mut f32, y: &mut f32, z: &mut f32| {
+            // Midpoint (RK2) step — stable at dt = 0.01.
+            let (dx, dy, dz) = (sigma * (*y - *x), *x * (rho - *z) - *y, *x * *y - beta * *z);
+            let (mx, my, mz) = (*x + dx * dt * 0.5, *y + dy * dt * 0.5, *z + dz * dt * 0.5);
+            *x += sigma * (my - mx) * dt;
+            *y += (mx * (rho - mz) - my) * dt;
+            *z += (mx * my - beta * mz) * dt;
+        };
+        // Burn in so the orbit starts on the attractor.
+        for _ in 0..200 {
+            step(&mut x, &mut y, &mut z);
         }
-
-        for _ in 0..n_draw.min(n_total) {
-            let dx = sigma * (y - x);
-            let dy = x * (rho - z) - y;
-            let dz = x * y - beta * z;
-            x += dx * dt;
-            y += dy * dt;
-            z += dz * dt;
-
-            // Project: rotate in (x,y) plane then use (proj_x, z) for screen.
-            let proj_x = x * cos_a - y * sin_a;
-            let norm_x = (proj_x - x_range.0) / (x_range.1 - x_range.0);
-            let norm_z = (z - z_range.0) / (z_range.1 - z_range.0);
-
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_z.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
+        // Gentle swing of the camera about the z axis.
+        let th = (ctx.time * 0.6).sin() * 0.25;
+        let (c, s) = (th.cos(), th.sin());
+        // Wings span |x| ≲ 20, z ∈ [3, 48]; stretch x to use the wide bar.
+        let sx = (dw as f32 * 0.3) / 22.0;
+        let sz = (dh as f32 - 1.0) / 46.0;
+        let cx = dw as f32 * 0.5;
+        let proj = |x: f32, y: f32, z: f32| {
+            let u = x * c + y * s;
+            ((cx + u * sx) as i32, ((48.0 - z) * sz) as i32)
+        };
+        let steps = (80.0 + ctx.eased * 1100.0) as u32;
+        let mut prev = proj(x, y, z);
+        for _ in 0..steps {
+            step(&mut x, &mut y, &mut z);
+            let p = proj(x, y, z);
+            seg(grid, prev.0, prev.1, p.0, p.1);
+            prev = p;
         }
-
-        // Progress-bar underline: fill the bottom dot row to show eased.
-        let filled = (ctx.eased * dw as f32) as usize;
-        draw::hline(
-            grid,
-            0,
-            filled.saturating_sub(1).min(dw.saturating_sub(1)),
-            dh - 1,
-        );
-
+        // Bright head on the orbit's leading point.
+        draw::fill_rect(grid, prev.0.max(0) as usize, prev.1.max(0) as usize, 2, 2);
         Ok(())
     }
 }
@@ -209,7 +183,8 @@ impl ProgressStyle for LorenzAttractor {
 //    dy/dt = x + ay          a = 0.2
 //    dz/dt = b + z(x − c)   b = 0.2, c = 5.7
 //
-//    Progress reveals orbit length. Time phase-shifts the (x,y) projection.
+//    Oblique view: the x–y spiral band seen tilted, z lifting the fold-over
+//    lobe above it. Progress reveals orbit length; time swings the view.
 // ---------------------------------------------------------------------------
 
 struct RosslerAttractor;
@@ -222,7 +197,9 @@ impl ProgressStyle for RosslerAttractor {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Rössler spiral band: a=0.2 b=0.2 c=5.7 — single spiralling lobe revealed by progress"
+        "Rössler attractor (a=b=0.2, c=5.7) seen from above and a little to the side: the \
+         orbit winds outward round a tilted spiral band, then lifts into the fold-over lobe \
+         and drops back to the centre; progress lengthens the orbit, time turns the view"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -233,53 +210,46 @@ impl ProgressStyle for RosslerAttractor {
         let a: f32 = 0.2;
         let b: f32 = 0.2;
         let c: f32 = 5.7;
-        let dt: f32 = 0.025;
+        let dt: f32 = 0.03;
 
-        let n_total = 2400usize;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
+        let n_total = 1500usize;
+        let n_draw = ((ctx.eased * n_total as f32) as usize).clamp(2, n_total);
 
-        // Known attractor x,y range ≈ [-11, 11] × [-11, 11].
-        let xy_min = -13.0_f32;
-        let xy_max = 13.0_f32;
+        // View: swing a little about the z axis, tilt so the disc is an ellipse
+        // and the z excursion (the fold) rises above it.
+        let yaw = 0.35 * (ctx.time * 0.5).sin();
+        let (cy_, sy_) = (yaw.cos(), yaw.sin());
+        // Fit: horizontal extent ≈ 24 units, vertical ≈ disc depth + lobe.
+        let hs = (dw as f32 - 2.0) / 24.0;
+        let hs = hs.min(dh as f32 * 0.17).max(0.1);
+        let vs = (dh as f32 - 2.0) / 22.0;
+        let ox = dw as f32 * 0.5;
+        let base = dh as f32 * 0.62;
 
-        let angle = ctx.time * 0.2;
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-
-        let mut x: f32 = 1.0;
-        let mut y: f32 = 0.0;
-        let mut z: f32 = 0.0;
-
-        // Burn-in.
-        for _ in 0..200 {
-            let dx = -y - z;
-            let dy = x + a * y;
-            let dz = b + z * (x - c);
+        let (mut x, mut y, mut z) = (1.0f32, 0.0f32, 0.0f32);
+        for _ in 0..300 {
+            let (dx, dy, dz) = (-y - z, x + a * y, b + z * (x - c));
             x += dx * dt;
             y += dy * dt;
             z += dz * dt;
         }
-
-        for _ in 0..n_draw.min(n_total) {
-            let dx = -y - z;
-            let dy = x + a * y;
-            let dz = b + z * (x - c);
+        let project = |x: f32, y: f32, z: f32| -> (i32, i32) {
+            let rx = x * cy_ - y * sy_;
+            let ry = x * sy_ + y * cy_;
+            let sx = ox + rx * hs;
+            let sy = base - ry * vs * 0.55 - z * vs * 0.55;
+            (sx.round() as i32, sy.round() as i32)
+        };
+        let mut prev = project(x, y, z);
+        for _ in 0..n_draw {
+            let (dx, dy, dz) = (-y - z, x + a * y, b + z * (x - c));
             x += dx * dt;
             y += dy * dt;
             z += dz * dt;
-
-            // Rotate in (x,y).
-            let rx = x * cos_a - y * sin_a;
-            let ry = x * sin_a + y * cos_a;
-
-            let norm_x = (rx - xy_min) / (xy_max - xy_min);
-            let norm_y = (ry - xy_min) / (xy_max - xy_min);
-
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
+            let p = project(x, y, z);
+            seg(grid, prev.0, prev.1, p.0, p.1);
+            prev = p;
         }
-
         Ok(())
     }
 }
@@ -289,10 +259,99 @@ impl ProgressStyle for RosslerAttractor {
 //    x_{n+1} = sin(a·y) + c·cos(a·x)
 //    y_{n+1} = sin(b·x) + d·cos(b·y)
 //
-//    a,b animated with time; c,d fixed. 3000 iterations, eased fraction shown.
+//    Three classic (a,b,c,d) sets; a breathes with time. Density-rendered.
 // ---------------------------------------------------------------------------
 
 struct CliffordAttractor;
+
+/// Shared renderer for 2-D iterated-map attractors.
+///
+/// Lays out `panels` copies of the attractor across the bar (each its own
+/// parameter set, chosen by `map`'s panel index), developing them left to
+/// right: panel `k` iterates `300 + local·5000` points where `local` is its
+/// share of progress. Each panel's bounding box is measured from a short
+/// warm-up orbit, then hits accumulate in a density buffer and only cells
+/// visited often enough are lit — so the attractor's filaments read as lines
+/// rather than a solid blob. `aspect` caps a panel's width at `aspect × height`.
+fn attractor_row(
+    grid: &mut BrailleGrid,
+    ctx: &BarContext,
+    panels: usize,
+    aspect: f32,
+    seed: impl Fn(usize) -> (f32, f32),
+    map: impl Fn(usize, f32, f32) -> (f32, f32),
+) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if dw < 2 || dh < 2 {
+        return;
+    }
+    let n = if dw >= dh * 4 { panels.max(1) } else { 1 };
+    let pw = dw / n;
+    let bw = ((dh as f32 * aspect) as usize)
+        .min(pw.saturating_sub(2))
+        .max(1);
+    let mut hits = vec![0u8; bw * dh];
+    for k in 0..n {
+        let x0 = if n == 1 {
+            // A lone figure travels along the bar with progress, leaving a dotted wake.
+            let x0 = ((dw - bw) as f32 * ctx.eased) as usize;
+            for x in (0..x0).step_by(3) {
+                draw::dot(grid, x, dh - 1);
+            }
+            x0
+        } else {
+            k * pw + (pw - bw) / 2
+        };
+        let local = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+        if local <= 0.0 {
+            // Waiting panel: a dotted baseline marks its slot.
+            for x in (x0..x0 + bw).step_by(3) {
+                draw::dot(grid, x, dh - 1);
+            }
+            continue;
+        }
+        let (mut x, mut y) = seed(k);
+        let (mut lo_x, mut hi_x, mut lo_y, mut hi_y) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for i in 0..900 {
+            (x, y) = map(k, x, y);
+            if !x.is_finite() || !y.is_finite() || x.abs() > 1e4 || y.abs() > 1e4 {
+                break;
+            }
+            if i >= 100 {
+                lo_x = lo_x.min(x);
+                hi_x = hi_x.max(x);
+                lo_y = lo_y.min(y);
+                hi_y = hi_y.max(y);
+            }
+        }
+        if !(lo_x < hi_x && lo_y < hi_y) {
+            continue;
+        }
+        let (sx, sy) = (
+            (bw - 1) as f32 / (hi_x - lo_x).max(1e-3),
+            (dh - 1) as f32 / (hi_y - lo_y).max(1e-3),
+        );
+        hits.fill(0);
+        let count = (300.0 + local * 5000.0) as usize;
+        for _ in 0..count {
+            (x, y) = map(k, x, y);
+            let px = ((x - lo_x) * sx).round();
+            let py = ((hi_y - y) * sy).round();
+            if px >= 0.0 && py >= 0.0 && (px as usize) < bw && (py as usize) < dh {
+                let h = &mut hits[py as usize * bw + px as usize];
+                *h = h.saturating_add(1);
+            }
+        }
+        let thr = (1 + count / 1000) as u8;
+        for py in 0..dh {
+            for px in 0..bw {
+                if hits[py * bw + px] >= thr {
+                    draw::dot(grid, x0 + px, py);
+                }
+            }
+        }
+    }
+}
 
 impl ProgressStyle for CliffordAttractor {
     fn name(&self) -> &str {
@@ -302,44 +361,32 @@ impl ProgressStyle for CliffordAttractor {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Clifford IFS: sin/cos parameter orbit — params a,b slowly drift with time"
+        "Three Clifford attractors (x′=sin ay+c·cos ax, y′=sin bx+d·cos by) from classic parameter \
+         sets, each densifying from a sprinkle into its swirling filaments as progress reaches it; \
+         parameters breathe with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        // Animate a and b in ranges that keep the attractor bounded and chaotic.
-        let a = -1.7 + 0.4 * (ctx.time * 0.17).sin();
-        let b = 1.8 + 0.3 * (ctx.time * 0.13).cos();
-        let c = -1.9_f32;
-        let d = -0.4_f32;
-
-        let n_total = 3000usize;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        // Clifford attractor bounded by approx. ±2.
-        let xy_min = -2.5_f32;
-        let xy_max = 2.5_f32;
-        let range = xy_max - xy_min;
-
-        let mut x: f32 = 0.1;
-        let mut y: f32 = 0.0;
-
-        for _ in 0..n_draw.min(n_total) {
-            let xn = (a * y).sin() + c * (a * x).cos();
-            let yn = (b * x).sin() + d * (b * y).cos();
-            x = xn;
-            y = yn;
-
-            let norm_x = (x - xy_min) / range;
-            let norm_y = (y - xy_min) / range;
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
-        }
-
+        const SETS: [[f32; 4]; 3] = [
+            [-1.4, 1.6, 1.0, 0.7],
+            [1.7, 1.7, 0.6, 1.2],
+            [-1.7, 1.3, -0.1, -1.2],
+        ];
+        let t = ctx.time;
+        attractor_row(
+            grid,
+            ctx,
+            3,
+            1.7,
+            |_| (0.1, 0.1),
+            |k, x, y| {
+                let [a, b, c, d] = SETS[k % 3];
+                let a = a + 0.06 * (t * 0.4 + k as f32).sin();
+                (
+                    (a * y).sin() + c * (a * x).cos(),
+                    (b * x).sin() + d * (b * y).cos(),
+                )
+            },
+        );
         Ok(())
     }
 }
@@ -349,7 +396,7 @@ impl ProgressStyle for CliffordAttractor {
 //    x_{n+1} = sin(a·y) − cos(b·x)
 //    y_{n+1} = sin(c·x) − cos(d·y)
 //
-//    All four params animated slowly with time.
+//    Three classic parameter sets; a breathes with time. Density-rendered.
 // ---------------------------------------------------------------------------
 
 struct DeJongAttractor;
@@ -362,43 +409,29 @@ impl ProgressStyle for DeJongAttractor {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "De Jong IFS: sin−cos iterated map — all four params drift with time for morphing forms"
+        "Three Peter de Jong attractors (x′=sin ay−cos bx, y′=sin cx−cos dy) from classic \
+         parameter sets, densifying into their folded ribbons one after another with progress; \
+         parameters breathe with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
+        const SETS: [[f32; 4]; 3] = [
+            [1.4, -2.3, 2.4, -2.1],
+            [-2.7, -0.09, -0.86, -2.2],
+            [-0.827, -1.637, 1.659, -0.943],
+        ];
         let t = ctx.time;
-        let a = -2.0 + 0.5 * (t * 0.11).sin();
-        let b = -2.0 + 0.4 * (t * 0.07).cos();
-        let c = 1.2 + 0.5 * (t * 0.09).sin();
-        let d = 2.0 + 0.3 * (t * 0.13).cos();
-
-        let n_total = 3000usize;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        let xy_min = -2.5_f32;
-        let xy_max = 2.5_f32;
-        let range = xy_max - xy_min;
-
-        let mut x: f32 = 0.1;
-        let mut y: f32 = 0.1;
-
-        for _ in 0..n_draw.min(n_total) {
-            let xn = (a * y).sin() - (b * x).cos();
-            let yn = (c * x).sin() - (d * y).cos();
-            x = xn;
-            y = yn;
-
-            let norm_x = (x - xy_min) / range;
-            let norm_y = (y - xy_min) / range;
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
-        }
-
+        attractor_row(
+            grid,
+            ctx,
+            3,
+            1.7,
+            |_| (0.1, 0.1),
+            |k, x, y| {
+                let [a, b, c, d] = SETS[k % 3];
+                let a = a + 0.05 * (t * 0.35 + k as f32).sin();
+                ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos())
+            },
+        );
         Ok(())
     }
 }
@@ -408,8 +441,8 @@ impl ProgressStyle for DeJongAttractor {
 //    x_{n+1} = 1 − a·x² + y    a = 1.4
 //    y_{n+1} = b·x              b = 0.3
 //
-//    Classic banana-shaped strange attractor. Progress = steps drawn.
-//    Time shifts the plotting window to reveal hidden structure.
+//    Classic boomerang-shaped strange attractor. Progress = points iterated
+//    and the figure's position along the bar; a breathes with time.
 // ---------------------------------------------------------------------------
 
 struct HenonMap;
@@ -422,56 +455,19 @@ impl ProgressStyle for HenonMap {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Hénon map: a=1.4 b=0.3 — banana strange attractor self-similar at every scale"
+        "Hénon map (a=1.4, b=0.3): the boomerang-shaped strange attractor with its parallel folded \
+         bands, densifying from scattered points as progress iterates it; a breathes with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        let a: f32 = 1.4;
-        let b: f32 = 0.3;
-
-        let n_total = 2800usize;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        // Known attractor bounds: x ∈ [−1.33, 1.33], y ∈ [−0.43, 0.43].
-        // Add margin: ±1.5, ±0.5.
-        let x_min = -1.5_f32;
-        let x_max = 1.5_f32;
-        let y_min = -0.5_f32;
-        let y_max = 0.5_f32;
-
-        let mut x: f32 = 0.1;
-        let mut y: f32 = 0.1;
-
-        // Small burn-in.
-        for _ in 0..50 {
-            let xn = 1.0 - a * x * x + y;
-            let yn = b * x;
-            x = xn;
-            y = yn;
-        }
-
-        for _ in 0..n_draw.min(n_total) {
-            let xn = 1.0 - a * x * x + y;
-            let yn = b * x;
-            x = xn;
-            y = yn;
-
-            // Bail out if the orbit escaped.
-            if x.abs() > 10.0 || y.abs() > 10.0 {
-                break;
-            }
-
-            let norm_x = (x - x_min) / (x_max - x_min);
-            let norm_y = (y - y_min) / (y_max - y_min);
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
-        }
-
+        let a = 1.4 - 0.01 * (1.0 + (ctx.time * 0.5).sin());
+        attractor_row(
+            grid,
+            ctx,
+            1,
+            3.6,
+            |_| (0.1, 0.1),
+            |_, x, y| (1.0 - a * x * x + y, 0.3 * x),
+        );
         Ok(())
     }
 }
@@ -482,8 +478,10 @@ impl ProgressStyle for HenonMap {
 //
 //    The x-axis is the bar: r swept from 2.8 to 4.0 left→right.
 //    ctx.eased gates how far right r has been revealed.
-//    At each r column we iterate 300 steps (discard) + 80 (plot).
-//    The y-axis is x (attractor values). Time shifts x₀ slightly.
+//    At each r column we iterate 400+ steps (discard) + 8 (plot), enough to
+//    show every branch of periods 1, 2, 4, 8 and the period-3 window.
+//    The y-axis is x (attractor values). Time shifts which stretch of the
+//    orbit is sampled, so the chaotic band shimmers.
 //
 //    This is the most gorgeous bar — the entire period-doubling cascade
 //    is drawn column by column as progress advances.
@@ -499,7 +497,9 @@ impl ProgressStyle for LogisticBifurcation {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Logistic map bifurcation diagram r∈[2.8,4.0] — period-doubling route to chaos column by column"
+        "Logistic-map bifurcation diagram: r runs 2.8→4.0 left to right, the long-run values \
+         of x stacked up each column — one branch forks into 2, 4, 8 and dissolves into \
+         chaos, with the period-3 window near r≈3.83; progress sweeps r, time stirs the chaos"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -509,34 +509,32 @@ impl ProgressStyle for LogisticBifurcation {
 
         let r_min: f32 = 2.8;
         let r_max: f32 = 4.0;
+        let reveal_cols = ((ctx.eased * dw as f32).round() as usize).min(dw);
+        // Time picks which stretch of the long-run orbit is sampled, so the
+        // chaotic band shimmers while periodic branches stay put.
+        let skip = (ctx.time * 12.0).max(0.0) as usize % 64;
+        // Sparse samples keep the chaos speckled so windows and forks read.
+        // Eight samples cover every branch of periods 1, 2, 4, 8 and 3.
+        let samples = 8usize;
 
-        // How many dot-columns to reveal (controlled by eased progress).
-        let reveal_cols = (ctx.eased * dw as f32).round() as usize;
-
-        // x₀ drifts very slowly with time (barely visible — keeps it alive).
-        let x0 = 0.5 + 0.01 * (ctx.time * 0.05).sin();
-
-        for col in 0..reveal_cols.min(dw) {
+        for col in 0..reveal_cols {
             let r = r_min + (col as f32 / dw.saturating_sub(1).max(1) as f32) * (r_max - r_min);
-
-            let mut x = x0.clamp(0.01, 0.99);
-
-            // Discard transient.
-            for _ in 0..300 {
+            let mut x = 0.5f32;
+            for _ in 0..(400 + skip) {
                 x = r * x * (1.0 - x);
             }
-
-            // Plot attractor.
-            for _ in 0..80 {
+            for _ in 0..samples {
                 x = r * x * (1.0 - x);
-                // x is in [0,1]; map to dot row.
-                let row = ((1.0 - x) * (dh - 1) as f32).round() as usize;
-                if row < dh {
-                    draw::dot(grid, col, row);
-                }
+                let row = ((1.0 - x.clamp(0.0, 1.0)) * (dh - 1) as f32).round() as usize;
+                draw::dot(grid, col, row);
             }
         }
-
+        // Leading edge: the column being computed now.
+        if reveal_cols > 0 && reveal_cols < dw && (ctx.time * 4.0).sin() > 0.0 {
+            for y in (0..dh).step_by(3) {
+                draw::dot(grid, reveal_cols, y);
+            }
+        }
         Ok(())
     }
 }
@@ -551,7 +549,8 @@ impl ProgressStyle for LogisticBifurcation {
 //    θ̈₂ = [2sin(θ₁−θ₂)(θ̇₁²l·2m + g·2m·cosθ₁ + θ̇₂²l·m·cos(θ₁−θ₂))]
 //           / [l(2m − m·cos(2θ₁−2θ₂))]
 //
-//    Integrated with RK4 for accuracy. Progress reveals the chaotic tip trace.
+//    Semi-implicit Euler from rest, replayed each frame (24 s loop).
+//    Progress moves the pivot along the rail; the lower bob leaves a trail.
 // ---------------------------------------------------------------------------
 
 struct DoublePendulum;
@@ -564,93 +563,70 @@ impl ProgressStyle for DoublePendulum {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Double pendulum chaotic trace — RK4 Lagrangian integration, tip path revealed by progress"
+        "A real double pendulum (two rods, two bobs) swinging chaotically from a pivot that \
+         rides along the top rail with progress, the lower bob trailing its recent path"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        let g: f32 = 9.81;
-        let dt: f32 = 0.02;
-
-        let n_total: usize = 2000;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        // State: [θ₁, ω₁, θ₂, ω₂]
-        let mut th1: f32 = PI / 2.0 + 0.05 * (ctx.time * 0.001).sin();
-        let mut om1: f32 = 0.0;
-        let mut th2: f32 = PI + 0.03;
-        let mut om2: f32 = 0.0;
-
-        // The tip of the second rod (length 1+1=2 from pivot) traces a
-        // path in Cartesian space. Scale so it fits in ±2 units → dot grid.
-        let scale = 2.0_f32; // max extent (full length of both rods)
-
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-
-        let deriv = |th1: f32, om1: f32, th2: f32, om2: f32| -> (f32, f32, f32, f32) {
-            let delta = th2 - th1;
-            let denom = 2.0 - (2.0 * delta).cos(); // (2m - m·cos(2θ₁−2θ₂)) / m
-            let denom = if denom.abs() < 1e-6 {
-                1e-6_f32.copysign(denom)
-            } else {
-                denom
-            };
-
-            let dom1 = (-g * 2.0 * th1.sin()
-                - g * delta.cos() * 2.0 * th2.sin() // approx — simplified form
-                - 2.0 * delta.sin() * (om2 * om2 + om1 * om1 * delta.cos()))
-                / denom;
-
-            let dom2 = (2.0
-                * delta.sin()
-                * (om1 * om1 * 2.0 + g * 2.0 * th1.cos() + om2 * om2 * delta.cos()))
-                / denom;
-
-            (om1, dom1, om2, dom2)
+        // Equal masses and rod lengths; full Lagrangian equations of motion.
+        let g = 9.81f32;
+        let dt = 0.004f32;
+        let (mut a1, mut a2, mut w1, mut w2) = (1.35f32, 2.2f32, 0.0f32, 0.0f32);
+        let accel = |a1: f32, a2: f32, w1: f32, w2: f32| {
+            let d = a1 - a2;
+            let den = 3.0 - (2.0 * d).cos();
+            let n1 = -3.0 * g * a1.sin()
+                - g * (a1 - 2.0 * a2).sin()
+                - 2.0 * d.sin() * (w2 * w2 + w1 * w1 * d.cos());
+            let n2 = 2.0 * d.sin() * (2.0 * w1 * w1 + 2.0 * g * a1.cos() + w2 * w2 * d.cos());
+            (n1 / den, n2 / den)
         };
-
-        for i in 0..n_draw.min(n_total) {
-            // RK4 step.
-            let (k1a, k1b, k1c, k1d) = deriv(th1, om1, th2, om2);
-            let (k2a, k2b, k2c, k2d) = deriv(
-                th1 + k1a * dt / 2.0,
-                om1 + k1b * dt / 2.0,
-                th2 + k1c * dt / 2.0,
-                om2 + k1d * dt / 2.0,
-            );
-            let (k3a, k3b, k3c, k3d) = deriv(
-                th1 + k2a * dt / 2.0,
-                om1 + k2b * dt / 2.0,
-                th2 + k2c * dt / 2.0,
-                om2 + k2d * dt / 2.0,
-            );
-            let (k4a, k4b, k4c, k4d) = deriv(
-                th1 + k3a * dt,
-                om1 + k3b * dt,
-                th2 + k3c * dt,
-                om2 + k3d * dt,
-            );
-
-            th1 += dt / 6.0 * (k1a + 2.0 * k2a + 2.0 * k3a + k4a);
-            om1 += dt / 6.0 * (k1b + 2.0 * k2b + 2.0 * k3b + k4b);
-            th2 += dt / 6.0 * (k1c + 2.0 * k2c + 2.0 * k3c + k4c);
-            om2 += dt / 6.0 * (k1d + 2.0 * k2d + 2.0 * k3d + k4d);
-
-            // Tip position (second bob).
-            let tip_x = th1.sin() + th2.sin();
-            let tip_y = -(th1.cos() + th2.cos()); // y positive downward
-
-            // Plot every step.
-            let _ = i; // suppress unused warning
-            let px = (cx + tip_x / scale * cx) as i32;
-            let py = (cy + tip_y / scale * cy) as i32;
-            draw::dot_i(grid, px, py);
+        // Stateless: replay from rest each frame; loop every 24 s to bound cost.
+        let t = ctx.time.max(0.0) % 24.0;
+        let total = (t / dt) as u32;
+        let trail = 160u32;
+        let rail = 1i32;
+        let len = ((dh as f32 - 2.0) / 2.0).max(1.0);
+        // Keep the swing on screen: the pivot travels between the margins.
+        let margin = (len * 3.0).min(dw as f32 * 0.25);
+        let px = (margin + ctx.eased * (dw as f32 - 1.0 - 2.0 * margin)) as i32;
+        let tip = |a1: f32, a2: f32| {
+            let (x1, y1) = (a1.sin() * len, a1.cos() * len);
+            (x1 + a2.sin() * len, y1 + a2.cos() * len)
+        };
+        for k in 0..total {
+            // Semi-implicit Euler: velocities first, then angles.
+            let (e1, e2) = accel(a1, a2, w1, w2);
+            w1 += e1 * dt;
+            w2 += e2 * dt;
+            a1 += w1 * dt;
+            a2 += w2 * dt;
+            if total - k <= trail && k % 2 == 0 {
+                let (tx, ty) = tip(a1, a2);
+                draw::dot_i(grid, px + (tx * 2.0) as i32, rail + ty as i32);
+            }
         }
-
+        // Top rail: solid up to the pivot (progress), dotted beyond.
+        for x in 0..dw as i32 {
+            if x <= px || x % 3 == 0 {
+                draw::dot_i(grid, x, 0);
+            }
+        }
+        // Rods and bobs. Horizontal is doubled so the swing reads on the wide bar.
+        let (x1, y1) = (a1.sin() * len * 2.0, a1.cos() * len);
+        let (tx, ty) = tip(a1, a2);
+        let b1 = (px + x1 as i32, rail + y1 as i32);
+        let b2 = (px + (tx * 2.0) as i32, rail + ty as i32);
+        seg(grid, px, rail, b1.0, b1.1);
+        seg(grid, b1.0, b1.1, b2.0, b2.1);
+        for (bx, by) in [b1, b2] {
+            draw::dot_i(grid, bx + 1, by);
+            draw::dot_i(grid, bx, by + 1);
+            draw::dot_i(grid, bx + 1, by + 1);
+        }
         Ok(())
     }
 }
@@ -660,9 +636,9 @@ impl ProgressStyle for DoublePendulum {
 //    p_{n+1} = p_n + K·sin(θ_n)   (mod 2π)
 //    θ_{n+1} = θ_n + p_{n+1}      (mod 2π)
 //
-//    K = stochasticity parameter. Progress ramps K from 0 → 4π.
-//    Multiple orbits launched from a grid of initial conditions.
-//    Time slowly shifts the phase-space viewport.
+//    K = stochasticity parameter. Progress ramps K from 0.3 → 1.4.
+//    Seven orbits launched across the momentum axis.
+//    Time scrolls the portrait in θ.
 // ---------------------------------------------------------------------------
 
 struct StandardMap;
@@ -675,42 +651,32 @@ impl ProgressStyle for StandardMap {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Chirikov–Taylor standard map — K grows with progress, KAM tori shatter into chaos"
+        "Chirikov–Taylor standard map phase portrait (θ across, p up): a fan of orbits traces \
+         wavy KAM curves and island chains, and as progress raises K from 0.3 to 1.4 the curves \
+         break up into a chaotic sea; the portrait scrolls in θ with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // K = stochasticity. K=0 → all circles. K≥4 → fully chaotic.
-        let k = ctx.eased * 4.0 * PI;
-
-        // Launch orbits from a small grid of initial conditions.
-        let n_seeds = 8usize;
-        let n_iter = 200usize;
-
-        for si in 0..n_seeds {
-            for sj in 0..n_seeds {
-                let mut theta = 2.0 * PI * si as f32 / n_seeds as f32;
-                let mut p = 2.0 * PI * sj as f32 / n_seeds as f32;
-
-                // Small time-based phase shift.
-                theta += ctx.time * 0.04;
-
-                for _ in 0..n_iter {
-                    p = (p + k * theta.sin()).rem_euclid(2.0 * PI);
-                    theta = (theta + p).rem_euclid(2.0 * PI);
-
-                    let norm_x = theta / (2.0 * PI);
-                    let norm_y = p / (2.0 * PI);
-                    let px = (norm_x * (dw - 1) as f32) as i32;
-                    let py = ((1.0 - norm_y) * (dh - 1) as f32) as i32;
-                    draw::dot_i(grid, px, py);
-                }
+        let tau = 2.0 * PI;
+        let k = 0.3 + ctx.eased * 1.1;
+        let scroll = ctx.time * 0.25;
+        let orbits = 7u32;
+        for o in 0..orbits {
+            // Seeds fan out across the momentum axis.
+            let mut p = tau * (o as f32 + 0.5) / orbits as f32;
+            let mut th = 0.6 + o as f32 * 0.41;
+            for _ in 0..110 {
+                p = (p + k * th.sin()).rem_euclid(tau);
+                th = (th + p).rem_euclid(tau);
+                let x = ((th + scroll).rem_euclid(tau) / tau * dw as f32) as usize;
+                // Shift p by π so the main resonance island sits mid-bar.
+                let y = ((1.0 - (p + PI).rem_euclid(tau) / tau) * dh as f32) as usize;
+                draw::dot(grid, x.min(dw - 1), y.min(dh - 1));
             }
         }
-
         Ok(())
     }
 }
@@ -720,8 +686,8 @@ impl ProgressStyle for StandardMap {
 //    x_{n+1} = 1 − y + |x|
 //    y_{n+1} = x
 //
-//    Triangular symmetric strange attractor. Progress seeds more points;
-//    time slowly rotates the view to reveal self-similar structure.
+//    Chaotic orbit from (−0.1, 0) filling the gingerbread-man silhouette.
+//    Progress iterates more points and moves the figure along the bar.
 // ---------------------------------------------------------------------------
 
 struct Gingerbreadman;
@@ -734,51 +700,19 @@ impl ProgressStyle for Gingerbreadman {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Gingerbreadman map: x←1−y+|x|, y←x — fractal triangular symmetry, orbits seeded by progress"
+        "Gingerbreadman map (x′=1−y+|x|, y′=x) from (−0.1, 0): the orbit fills the chunky \
+         hexagonal gingerbread-man silhouette, densifying as progress iterates it"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        let n_seeds_max = 12usize;
-        let n_seeds = (ctx.eased * n_seeds_max as f32).max(1.0) as usize;
-        let n_iter = 200usize;
-
-        // Typical orbit extent ≈ ±100 for various seeds; normalize.
-        let extent = 120.0_f32;
-
-        let angle = ctx.time * 0.1;
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-
-        for si in 0..n_seeds.min(n_seeds_max) {
-            // Deterministic seed positions.
-            let h1 = hash(si as u32 * 17 + 3);
-            let h2 = hash(si as u32 * 31 + 7);
-            let mut x = (h1 % 40) as f32 - 20.0;
-            let mut y = (h2 % 40) as f32 - 20.0;
-
-            for _ in 0..n_iter {
-                let xn = 1.0 - y + x.abs();
-                let yn = x;
-                x = xn;
-                y = yn;
-
-                // Rotate.
-                let rx = x * cos_a - y * sin_a;
-                let ry = x * sin_a + y * cos_a;
-
-                let px = (cx + rx / extent * cx) as i32;
-                let py = (cy + ry / extent * cy) as i32;
-                draw::dot_i(grid, px, py);
-            }
-        }
-
+        let wob = 0.004 * (ctx.time * 0.7).sin();
+        attractor_row(
+            grid,
+            ctx,
+            1,
+            1.25,
+            |_| (-0.1 + wob, 0.0),
+            |_, x, y| (1.0 - y + x.abs(), x),
+        );
         Ok(())
     }
 }
@@ -788,7 +722,7 @@ impl ProgressStyle for Gingerbreadman {
 //     ẋ = y
 //     ẏ = −δy + αx − βx³ + γcos(ωt_sim)
 //
-//     δ=0.2, α=1.0, β=1.0, γ=0.3, ω=1.2 (periodic driving).
+//     δ=0.25, α=1.0, β=1.0, γ=0.3, ω=1.0 (chaotic two-well driving).
 //     Plot (x, y) = (position, velocity) phase portrait.
 //     Progress controls how many trajectory steps are drawn.
 //     ctx.time offsets the driving phase, ctx.eased gates steps.
@@ -804,7 +738,7 @@ impl ProgressStyle for DuffingOscillator {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Duffing oscillator phase portrait: ẏ=−δy+αx−βx³+γcos(ωt) — chaotic fractal basin boundary"
+        "Duffing oscillator phase portrait (ẏ=−δy+αx−βx³+γcos ωt): the forced orbit loops round both potential wells, its trace lengthening with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -812,19 +746,20 @@ impl ProgressStyle for DuffingOscillator {
             return Ok(());
         }
 
-        let delta: f32 = 0.2;
+        let delta: f32 = 0.25;
         let alpha: f32 = 1.0;
         let beta: f32 = 1.0;
         let gamma: f32 = 0.3;
-        let omega: f32 = 1.2;
+        let omega: f32 = 1.0;
         let dt: f32 = 0.02;
 
-        let n_total: usize = 2500;
+        let n_total: usize = 4000;
         let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
 
-        // Phase portrait fits in roughly x∈[−1.5,1.5], y∈[−1.5,1.5].
-        let x_range = 2.0_f32;
-        let y_range = 2.0_f32;
+        // Phase portrait fits in roughly x∈[−1.6,1.6], y∈[−1.1,1.1]; keep it
+        // to the middle of the bar so the two wells read as two lobes.
+        let x_range = 1.7_f32;
+        let y_range = 1.15_f32;
 
         let mut x: f32 = 1.0;
         let mut y: f32 = 0.0;
@@ -836,13 +771,14 @@ impl ProgressStyle for DuffingOscillator {
             let ax = y;
             let ay = -delta * y + alpha * x - beta * x * x * x + force;
 
-            x += ax * dt;
+            // Semi-implicit Euler keeps the orbit from drifting off in energy.
             y += ay * dt;
+            x += y * dt;
+            let _ = ax;
             t_sim += dt;
 
-            let norm_x = (x + x_range) / (2.0 * x_range);
             let norm_y = (y + y_range) / (2.0 * y_range);
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
+            let px = (dw as f32 * (0.5 + 0.3 * (x / x_range).clamp(-1.0, 1.0))) as i32;
             let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
             draw::dot_i(grid, px, py);
         }
@@ -858,7 +794,7 @@ impl ProgressStyle for DuffingOscillator {
 //
 //     a=0.9, b=−0.6013, c=2.0, d=0.5
 //     Named for the fractal boundary of its basin of attraction.
-//     Progress controls orbit length; time animates parameter a slightly.
+//     Progress iterates more points and moves the figure along the bar.
 // ---------------------------------------------------------------------------
 
 struct TinkerbellMap;
@@ -871,50 +807,25 @@ impl ProgressStyle for TinkerbellMap {
         "chaos"
     }
     fn describe(&self) -> &str {
-        "Tinkerbell map: a=0.9 b=−0.6013 c=2.0 d=0.5 — fractal basin boundary fairy-dust scatter"
+        "The Tinkerbell attractor (x′=x²−y²+ax+by, y′=2xy+cx+dy; a=0.9 b=−0.6013 c=2 d=0.5): \
+         its looping wand-trail shape densifies as it travels along the bar with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-
-        let a: f32 = 0.9 + 0.05 * (ctx.time * 0.08).sin();
-        let b: f32 = -0.6013;
-        let c: f32 = 2.0;
-        let d: f32 = 0.5;
-
-        let n_total = 3000usize;
-        let n_draw = (ctx.eased * n_total as f32).max(1.0) as usize;
-
-        // Known attractor extent: x ∈ [−0.7, 0.6], y ∈ [−0.7, 0.4].
-        // Use ±1.5 margin to be safe.
-        let x_min = -1.5_f32;
-        let x_max = 1.5_f32;
-        let y_min = -1.5_f32;
-        let y_max = 1.5_f32;
-
-        let mut x: f32 = -0.72;
-        let mut y: f32 = -0.64;
-
-        for _ in 0..n_draw.min(n_total) {
-            let xn = x * x - y * y + a * x + b * y;
-            let yn = 2.0 * x * y + c * x + d * y;
-            x = xn;
-            y = yn;
-
-            // Escape detection.
-            if x.abs() > 5.0 || y.abs() > 5.0 {
-                break;
-            }
-
-            let norm_x = (x - x_min) / (x_max - x_min);
-            let norm_y = (y - y_min) / (y_max - y_min);
-            let px = (norm_x.clamp(0.0, 1.0) * (dw - 1) as f32) as i32;
-            let py = ((1.0 - norm_y.clamp(0.0, 1.0)) * (dh - 1) as f32) as i32;
-            draw::dot_i(grid, px, py);
-        }
-
+        let wob = 0.004 * (ctx.time * 0.6).sin();
+        attractor_row(
+            grid,
+            ctx,
+            1,
+            2.2,
+            |_| (-0.72, -0.64),
+            |_, x, y| {
+                let [a, b, c, d] = [0.9, -0.6013, 2.0, 0.5];
+                (
+                    x * x - y * y + a * x + b * y,
+                    2.0 * x * y + c * x + d * y + wob,
+                )
+            },
+        );
         Ok(())
     }
 }

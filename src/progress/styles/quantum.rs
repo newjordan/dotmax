@@ -1,26 +1,27 @@
 //! Quantum-mechanics progress bars for dotmax.
 //!
-//! Ten styles, each grounded in a distinct quantum phenomenon.  Every bar is a
+//! Eleven styles, each grounded in a distinct quantum phenomenon.  Every bar is a
 //! pure function of `(ctx.progress, ctx.eased, ctx.time)` — no mutable state.
 //!
-//! ## Styles (10 total)
+//! ## Styles (11 total)
 //!
 //! | Name | Phenomenon | Key idea |
 //! |------|-----------|---------|
-//! | `qubit-superposition` | Qubit |0⟩↔|1⟩ | state oscillates, collapses to |1⟩ at 100% |
-//! | `bloch-sphere` | Bloch sphere | wireframe sphere, state vector precesses with time |
+//! | `qubit-superposition` | Qubit |0⟩↔|1⟩ | Rabi wave between ket levels, collapsed to |1⟩ behind progress |
+//! | `bloch-sphere` | Bloch sphere | round sphere travels; arrow tips |0⟩→|1⟩, precesses with time |
 //! | `wavefunction-collapse` | Measurement | probability cloud sharpens to spike as eased→1 |
 //! | `quantum-tunneling` | Tunneling | wave packet partially transmits through a barrier |
-//! | `harmonic-oscillator` | QHO eigenstates | |ψₙ|² density ladder, n from eased |
+//! | `harmonic-oscillator` | QHO eigenstates | |ψₙ|² in a parabolic well, n from eased |
 //! | `particle-in-box` | PIB standing modes | sin²(nπx/L) mode n from eased |
-//! | `spin-precession` | Spin precession | arrow coning on a circle, tilt from eased |
+//! | `spin-precession` | Spin precession | arrow cones about B, travels with eased, traces a wave |
 //! | `energy-levels` | Orbital filling | Bohr-like levels filling with electrons |
 //! | `decoherence` | Decoherence | sharp fringes wash out as eased increases |
-//! | `quantum-walk` | Quantum random walk | spreading binomial-like distribution |
+//! | `quantum-walk` | Quantum random walk | twin ballistic peaks spread linearly from the start site |
+//! | `electron-buildup` | Single-particle double-slit | particle hits build up fringes on a screen as eased→1 |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ use std::f32::consts::PI;
 
 /// All styles in the `quantum` theme.
 ///
-/// Returns 10 bars, each modelling a distinct quantum-mechanical phenomenon.
+/// Returns 11 bars, each modelling a distinct quantum-mechanical phenomenon.
 /// Safe to render at every size from 1×1 to 80×8 or beyond.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
@@ -43,6 +44,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(EnergyLevels),
         Box::new(Decoherence),
         Box::new(QuantumWalk),
+        Box::new(DoubleSlit),
     ]
 }
 
@@ -63,17 +65,38 @@ fn line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
 
 // ---------------------------------------------------------------------------
 // 1. Qubit Superposition
-//    A qubit lives in state α|0⟩ + β|1⟩.
-//    We render it as two columns (|0⟩ left, |1⟩ right) whose heights are
-//    |α|² and |β|² respectively.
-//    At rest, |α|² = cos²(θ/2), |β|² = sin²(θ/2).
-//    θ oscillates with time (quantum precession): θ(t) = π·sin(ω·t).
-//    Progress collapses the qubit: at eased=1, |β|²=1 (|1⟩ measured).
-//    The "collapse" is a smooth interpolation: at eased < 1 the bar
-//    oscillates; as eased→1 the oscillation damps and β²→1.
-//    Progress bar: two tall vblock columns side-by-side, rest of width is
-//    a dim track glyph; the relative heights encode the state amplitudes.
+//    Two basis levels, labelled |1⟩ (top) and |0⟩ (bottom) in a tiny dot
+//    font.  Ahead of the progress front the qubit is in superposition: its
+//    amplitude swings between the two levels as a travelling Rabi wave.
+//    Behind the front it has been measured — collapsed to a solid |1⟩ line.
 // ---------------------------------------------------------------------------
+
+/// 3×5 dot glyphs for ket labels: `|`, `0`, `1`, `⟩` (row-major bitmasks).
+const KET_FONT: [[u8; 5]; 4] = [
+    [0b010, 0b010, 0b010, 0b010, 0b010], // |
+    [0b111, 0b101, 0b101, 0b101, 0b111], // 0
+    [0b010, 0b110, 0b010, 0b010, 0b111], // 1
+    [0b100, 0b010, 0b001, 0b010, 0b100], // ⟩
+];
+
+/// Draw a ket `|d⟩` with its top-left at `(x, y)`; returns its width in dots.
+fn ket(grid: &mut BrailleGrid, x: i32, y: i32, digit: usize) -> i32 {
+    let glyphs = [0usize, 1 + digit.min(1), 3];
+    let mut cx = x;
+    for (n, &g) in glyphs.iter().enumerate() {
+        for (row, bits) in KET_FONT[g].iter().enumerate() {
+            for col in 0..3 {
+                if bits & (0b100 >> col) != 0 {
+                    draw::dot_i(grid, cx + col, y + row as i32);
+                }
+            }
+        }
+        // The bar of `|` is centred, so it only needs two columns.
+        cx += if n == 0 { 2 } else { 4 } + i32::from(n == 0);
+    }
+    cx - x
+}
+
 struct QubitSuperposition;
 impl ProgressStyle for QubitSuperposition {
     fn name(&self) -> &str {
@@ -83,67 +106,82 @@ impl ProgressStyle for QubitSuperposition {
         "quantum"
     }
     fn describe(&self) -> &str {
-        "Qubit |0⟩↔|1⟩ superposition: state oscillates, collapses to |1⟩ as progress reaches 100%"
+        "Qubit levels |0⟩ and |1⟩: a Rabi wave swings between them, collapsing to a solid |1⟩ behind progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
+        let (w, h) = (dw as i32, dh as i32);
+        if h < 12 || w < 24 {
+            // Too small for labels: wave ahead, collapsed line behind.
+            let front = (ctx.eased * dw as f32) as i32;
+            for x in 0..w {
+                let y = if x < front {
+                    0
+                } else {
+                    let s = ((x as f32 * 0.4 - ctx.time * 6.0).sin() + 1.0) * 0.5;
+                    (s * (h - 1) as f32).round() as i32
+                };
+                draw::dot_i(grid, x, y);
+            }
             return Ok(());
         }
 
-        // Oscillation angle θ(t) with collapse damping
-        let omega = 2.5_f32;
-        let osc = (omega * ctx.time).sin(); // -1..1
-                                            // At eased=0 it oscillates freely; at eased=1 it is frozen to |1⟩
-        let theta = PI * osc * (1.0 - ctx.eased); // collapses to 0 oscillation
+        // Level rows sit level with the label centres.
+        let (top_y, bot_y) = (2, h - 3);
+        let lw = ket(grid, 0, 0, 1);
+        ket(grid, 0, h - 5, 0);
+        let label_col = Color::rgb(200, 205, 225);
+        draw::tint_row(grid, 0, 0, (lw / 2) as usize, label_col);
+        draw::tint_row(
+            grid,
+            ((h - 1) / 4) as usize,
+            0,
+            (lw / 2) as usize,
+            label_col,
+        );
 
-        // State amplitudes (Born rule)
-        let beta_sq = (theta / 2.0).sin().powi(2) * (1.0 - ctx.eased) + ctx.eased; // → 1.0 at completion
-        let alpha_sq = (1.0 - beta_sq).max(0.0);
+        let x0 = lw + 2;
+        let span = (w - x0).max(1);
+        let front = x0 + (span as f32 * ctx.eased.clamp(0.0, 1.0)) as i32;
+        let shift = (ctx.time * 12.0) as i32;
 
-        // Tint: palette across the bar keyed by |β|²
-        let (dw, dh) = draw::dot_dims(grid);
-        let _ = (dw, dh);
-        for cy in 0..ch {
-            for cx in 0..cw {
-                let t = cx as f32 / cw.max(1) as f32;
-                let col = ctx.palette.sample(t * beta_sq);
-                draw::tint_row(grid, cy, cx, cx, col);
+        // Measured region: collapsed onto |1⟩ as a solid, bright level.
+        if front > x0 {
+            for y in top_y - 1..=top_y + 1 {
+                draw::hline(grid, x0 as usize, (front - 1) as usize, y as usize);
+            }
+            for cx in (x0 / 2)..=((front - 1) / 2) {
+                let t = (cx * 2 - x0) as f32 / span as f32;
+                draw::tint_row(grid, 0, cx as usize, cx as usize, ctx.palette.sample(t));
             }
         }
 
-        // Two prominent columns: left = |0⟩, right = |1⟩
-        // Each column is 2 cells wide; centred in the bar.
-        let col_w = (cw / 2).max(1);
-        let gap = col_w.min(2);
-        let left_x = cw / 4;
-        let right_x = (3 * cw / 4).min(cw.saturating_sub(1));
-
-        // Convert amplitudes → vblock levels (0..8)
-        let alpha_lv = (alpha_sq * 8.0).round() as usize;
-        let beta_lv = (beta_sq * 8.0).round() as usize;
-
-        // Draw from the bottom cell upward; top rows = full, bottom rows = empty
-        for cy in 0..ch {
-            let row_from_bottom = ch - 1 - cy;
-            // alpha column (|0⟩)
-            let alpha_rows = (alpha_lv * ch / 8).min(ch);
-            if row_from_bottom < alpha_rows {
-                for dx in 0..gap.max(1) {
-                    if left_x + dx < cw {
-                        draw::vblock(grid, left_x + dx, cy, 8);
-                    }
-                }
+        // Superposed region: dashed levels plus the Rabi wave between them.
+        let amp = (bot_y - top_y) as f32 * 0.5;
+        let mid = (top_y + bot_y) as f32 * 0.5;
+        let mut prev: Option<(i32, i32)> = None;
+        for x in front.max(x0)..w {
+            if (x + shift).rem_euclid(4) == 0 {
+                draw::dot_i(grid, x, top_y);
+                draw::dot_i(grid, x, bot_y);
             }
-            // beta column (|1⟩)
-            let beta_rows = (beta_lv * ch / 8).min(ch);
-            if row_from_bottom < beta_rows {
-                for dx in 0..gap.max(1) {
-                    if right_x + dx < cw {
-                        draw::vblock(grid, right_x + dx, cy, 8);
-                    }
-                }
+            let y = (mid - amp * (x as f32 * 0.28 - ctx.time * 5.0).sin()).round() as i32;
+            if let Some((px, py)) = prev {
+                line(grid, px, py, x, y);
             }
+            prev = Some((x, y));
+        }
+        // Collapse flash: a short vertical line at the measurement front.
+        if front > x0 && front < w {
+            line(grid, front, top_y - 1, front, bot_y);
+        }
+        let wave_col = Color::rgb(150, 160, 255);
+        for cy in 0..(h / 4) {
+            let lo = (front.max(x0) / 2) as usize;
+            draw::tint_row(grid, cy as usize, lo, (w / 2) as usize, wave_col);
         }
         Ok(())
     }
@@ -151,12 +189,11 @@ impl ProgressStyle for QubitSuperposition {
 
 // ---------------------------------------------------------------------------
 // 2. Bloch Sphere
-//    A state vector |ψ⟩ = cos(θ/2)|0⟩ + e^{iφ}sin(θ/2)|1⟩ lives on the
-//    unit sphere.  We render the sphere as three dot ellipses (equator +
-//    two great-circle arcs) and draw the state vector as a Bresenham line
-//    from the origin to its tip.
-//    φ(t) = 2π·t (azimuthal precession driven by time).
-//    θ = π·eased (polar angle: 0=north pole|0⟩ → π=south pole|1⟩).
+//    A round wireframe sphere — silhouette, tilted equator, polar axis with
+//    |0⟩ at the north pole — carrying a state-vector arrow.  The polar angle
+//    θ = π·eased tips the arrow from |0⟩ to |1⟩ while the azimuth φ precesses
+//    with time.  The sphere also rolls along the bar with progress, leaving a
+//    tinted trail.
 // ---------------------------------------------------------------------------
 struct BlochSphere;
 impl ProgressStyle for BlochSphere {
@@ -167,93 +204,114 @@ impl ProgressStyle for BlochSphere {
         "quantum"
     }
     fn describe(&self) -> &str {
-        "Bloch sphere: wireframe sphere + state vector precessing with time, polar angle from progress"
+        "Round Bloch sphere: state arrow tips from |0⟩ to |1⟩ with progress and precesses with time as the sphere travels"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (w, h) = (dw as i32, dh as i32);
+        // Round sphere: radius set by the shorter side.
+        let r = ((h - 1) / 2).min((w - 1) / 2).max(1);
+        let rf = r as f32;
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let cx = r + ((w - 1 - 2 * r).max(0) as f32 * e) as i32;
+        let cy = (h - 1) / 2;
+        let cyf = (h - 1) as f32 / 2.0;
 
-        let cx = (dw / 2) as i32;
-        let cy = (dh / 2) as i32;
-        // Sphere radii — fit inside the dot canvas
-        let rx = (dw / 2).saturating_sub(1) as i32; // horizontal radius
-        let ry = (dh / 2).saturating_sub(1) as i32; // vertical radius
-
-        // Draw equator (horizontal ellipse)
-        let eq_steps = (rx * 2 + 8).max(8) as usize * 2;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=eq_steps {
-            let a = s as f32 / eq_steps as f32 * 2.0 * PI;
-            // Project onto the inclined ellipse (perspective: y compressed)
-            let px = cx + (rx as f32 * a.cos()) as i32;
-            let py = cy + (ry as f32 * 0.35 * a.sin()) as i32; // flat equator
-            draw::dot_i(grid, px, py);
-            if let Some((lx, ly)) = prev {
-                line(grid, lx, ly, px, py);
+        // Trail: the path already travelled, along the equator line.
+        if cx - r > 1 {
+            draw::hline(grid, 0, (cx - r - 2) as usize, cy as usize);
+            for c in 0..=((cx - r - 2) / 2) {
+                let t = c as f32 * 2.0 / w as f32;
+                draw::tint_row(
+                    grid,
+                    (cy / 4) as usize,
+                    c as usize,
+                    c as usize,
+                    ctx.palette.sample(t),
+                );
             }
-            prev = Some((px, py));
         }
 
-        // Draw vertical great circle (meridian)
-        let me_steps = (ry * 2 + 8).max(8) as usize * 2;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=me_steps {
-            let a = s as f32 / me_steps as f32 * 2.0 * PI;
-            let px = cx + (rx as f32 * 0.35 * a.sin()) as i32; // slim meridian
-            let py = cy + (ry as f32 * a.cos()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((lx, ly)) = prev {
-                line(grid, lx, ly, px, py);
+        // Silhouette circle.
+        let steps = (rf * 8.0) as usize + 8;
+        for s in 0..steps {
+            let a = s as f32 / steps as f32 * 2.0 * PI;
+            draw::dot_i(
+                grid,
+                cx + (rf * a.cos()).round() as i32,
+                (cyf + rf * a.sin()).round() as i32,
+            );
+        }
+        // Equator: front half solid, back half dotted.
+        for s in 0..steps {
+            let a = s as f32 / steps as f32 * 2.0 * PI;
+            if a.sin() < 0.0 && s % 3 != 0 {
+                continue;
             }
-            prev = Some((px, py));
+            draw::dot_i(
+                grid,
+                cx + (rf * a.cos()).round() as i32,
+                (cyf + rf * 0.3 * a.sin()).round() as i32,
+            );
+        }
+        // Polar axis (dashed) with pole caps.
+        for y in (cy - r)..=(cy + r) {
+            if y % 2 == 0 {
+                draw::dot_i(grid, cx, y);
+            }
+        }
+        draw::dot_i(grid, cx - 1, cy - r);
+        draw::dot_i(grid, cx + 1, cy - r);
+        let sphere_col = Color::rgb(120, 130, 170);
+        for c in ((cx - r) / 2)..=((cx + r) / 2) {
+            for row in 0..=(h - 1) / 4 {
+                draw::tint_row(
+                    grid,
+                    row as usize,
+                    c.max(0) as usize,
+                    c.max(0) as usize,
+                    sphere_col,
+                );
+            }
         }
 
-        // Draw outer circle (full sphere silhouette)
-        let sil_steps = ((rx + ry) * 2 + 16).max(16) as usize;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=sil_steps {
-            let a = s as f32 / sil_steps as f32 * 2.0 * PI;
-            let px = cx + (rx as f32 * a.cos()) as i32;
-            let py = cy + (ry as f32 * a.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((lx, ly)) = prev {
-                line(grid, lx, ly, px, py);
-            }
-            prev = Some((px, py));
-        }
-
-        // State vector tip in 3D: (sin θ cos φ, sin θ sin φ, cos θ)
-        let theta = PI * ctx.eased;
-        let phi = 2.0 * PI * ctx.time * 0.5;
-        // Project 3D → 2D dot coords (simple orthographic + aspect)
-        let vx = theta.sin() * phi.cos(); // -1..1
-        let vz = theta.cos(); // -1..1
-        let tip_x = cx + (vx * rx as f32 * 0.85) as i32;
-        let tip_y = cy - (vz * ry as f32 * 0.85) as i32; // screen y flipped
+        // State vector: θ from progress, φ precessing with time.
+        let theta = PI * e;
+        let phi = ctx.time * 2.5;
+        let vx = theta.sin() * phi.cos();
+        let vy = theta.sin() * phi.sin(); // toward the viewer
+        let vz = theta.cos();
+        let tip_x = cx + (vx * rf * 0.95).round() as i32;
+        let tip_y = (cyf - vz * rf * 0.95 + vy * rf * 0.3).round() as i32;
         line(grid, cx, cy, tip_x, tip_y);
-        // Arrow head (small cross at tip)
-        draw::dot_i(grid, tip_x, tip_y);
-        draw::dot_i(grid, tip_x + 1, tip_y);
-        draw::dot_i(grid, tip_x - 1, tip_y);
-        draw::dot_i(grid, tip_x, tip_y + 1);
-        draw::dot_i(grid, tip_x, tip_y - 1);
-
-        // North/south poles
-        draw::dot_i(grid, cx, cy - ry);
-        draw::dot_i(grid, cx, cy + ry);
-
-        // Tint filled half of bar
-        let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cell_x in 0..filled_cells.min(cw) {
-            let t = cell_x as f32 / cw.max(1) as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
+        line(grid, cx + 1, cy, tip_x + 1, tip_y);
+        // Bright tip blob.
+        for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1)] {
+            draw::dot_i(grid, tip_x + dx, tip_y + dy);
         }
+        let arrow_col = ctx.palette.sample(e);
+        let (ax0, ax1) = (cx.min(tip_x) / 2, cx.max(tip_x + 1) / 2);
+        let (ay0, ay1) = (cy.min(tip_y) / 4, cy.max(tip_y) / 4);
+        for row in ay0.max(0)..=ay1 {
+            draw::tint_row(
+                grid,
+                row as usize,
+                ax0.max(0) as usize,
+                ax1.max(0) as usize,
+                arrow_col,
+            );
+        }
+        let tip_col = Color::rgb(255, 255, 255);
+        draw::tint_row(
+            grid,
+            (tip_y.max(0) / 4) as usize,
+            (tip_x.max(0) / 2) as usize,
+            (tip_x.max(0) / 2) as usize,
+            tip_col,
+        );
         Ok(())
     }
 }
@@ -462,7 +520,7 @@ impl ProgressStyle for HarmonicOscillator {
         "quantum"
     }
     fn describe(&self) -> &str {
-        "QHO eigenstate: |ψₙ|² density plotted — energy level n steps up the ladder with progress"
+        "QHO eigenstate |ψₙ|² inside its parabolic well; level n climbs the energy ladder with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -536,6 +594,21 @@ impl ProgressStyle for HarmonicOscillator {
                 line(grid, lx, ly, xi as i32, mid_dot);
             }
             prev = Some((xi as i32, mid_dot));
+        }
+
+        // The confining potential V(x) ∝ x²: a dotted parabolic well.
+        let bot = dh as i32 - 1;
+        for xi in (0..dw).step_by(2) {
+            let u = (2.0 * xi as f32 / dwf - 1.0).abs();
+            let y = bot - (u * u * bot as f32 * 1.6) as i32;
+            if y >= 0 {
+                draw::dot_i(grid, xi as i32, y);
+            }
+        }
+        // Energy ladder: one rung per level reached so far, on the left.
+        for k in 0..=n {
+            let y = bot - 2 - (k as i32 * (bot - 2)) / n_max as i32;
+            draw::hline(grid, 0, 3, y.max(0) as usize);
         }
 
         // Horizontal baseline
@@ -637,11 +710,11 @@ impl ProgressStyle for ParticleInBox {
 
 // ---------------------------------------------------------------------------
 // 7. Spin Precession
-//    A spin-½ particle in a magnetic field B precesses at the Larmor frequency.
-//    The spin vector traces a cone: tip draws a circle at polar angle θ.
-//    θ = π·eased/2 (equatorial plane = |+⟩ equally mixed, pole = pure|↑⟩).
-//    The precession cone is drawn as an ellipse; the spin arrow from origin
-//    to current tip is a Bresenham line; the cone base circle is dashed.
+//    A spin arrow pivots on a point and sweeps a cone about a vertical
+//    magnetic-field axis B (dashed, arrow-headed).  The cone's rim ellipse
+//    and sides are drawn faintly; the arrow's azimuth φ advances with time.
+//    The whole precessing spin travels along the bar with progress, its tip
+//    leaving a sinusoidal trace behind it over a filled baseline.
 // ---------------------------------------------------------------------------
 struct SpinPrecession;
 impl ProgressStyle for SpinPrecession {
@@ -652,84 +725,118 @@ impl ProgressStyle for SpinPrecession {
         "quantum"
     }
     fn describe(&self) -> &str {
-        "Spin precession: Larmor cone — polar tilt from progress, azimuth rotates with time"
+        "Spin arrow cones around a vertical B-field axis; the precessing spin travels with progress, tracing a wave behind it"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let dwf = dw as f32;
-        let dhf = dh as f32;
-
-        let origin_x = (dwf / 2.0) as i32;
-        let origin_y = (dhf * 0.55) as i32; // slightly below centre
-
-        // Spin vector length
-        let len = (dhf * 0.4 + dwf * 0.15).min(dhf * 0.7).max(2.0);
-
-        // Polar angle (cone half-angle) from eased; azimuth precesses with time
-        let theta = PI / 2.0 * ctx.eased; // 0 (pole) → π/2 (equator)
-        let phi = 2.0 * PI * ctx.time * 0.7; // Larmor precession
-
-        // Spin vector tip in dot-space (orthographic projection)
-        let tip_x = origin_x + (len * theta.sin() * phi.cos()) as i32;
-        // y: up in physics = up on screen, correct since origin is mid
-        let tip_y = origin_y - (len * theta.cos()) as i32;
-
-        // Draw vertical z-axis (field direction)
-        let z_top = (origin_y as f32 - len * 1.1) as i32;
-        let z_bot = (origin_y as f32 + len * 0.3) as i32;
-        for y in z_top.max(0)..=z_bot.min(dh as i32 - 1) {
-            if y % 2 == 0 {
-                draw::dot_i(grid, origin_x, y);
+        let (w, h) = (dw as i32, dh as i32);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        if h < 8 || w < 16 {
+            let reach = (e * dw as f32) as usize;
+            if reach > 0 {
+                draw::hline(grid, 0, reach - 1, dh - 1);
             }
+            return Ok(());
         }
 
-        // Cone outline: draw two generating lines (opposite azimuths)
-        let tip_x2 = origin_x - (len * theta.sin() * phi.cos()) as i32;
-        let tip_y2 = tip_y; // same height, opposite side
-        line(grid, origin_x, origin_y, tip_x, tip_y);
-        line(grid, origin_x, origin_y, tip_x2, tip_y2);
+        // Cone geometry: pivot at the bottom, rim ellipse near the top.
+        let rim_y = 3.0_f32;
+        let pivot_y = h - 2;
+        let ra = (h as f32 * 0.5).min(w as f32 / 4.0);
+        let rb = 2.0_f32;
+        let cx = ra.ceil() as i32 + 1 + ((w - 3 - 2 * ra.ceil() as i32).max(0) as f32 * e) as i32;
+        let cxf = cx as f32;
+        let phi = ctx.time * 4.0;
 
-        // Precession circle: the ellipse at height tip_y
-        let circle_rx = (len * theta.sin()).abs() as i32;
-        let circle_ry = (circle_rx as f32 * 0.35) as i32; // foreshortened
-        let circ_steps = (circle_rx * 2 + 8).max(8) as usize;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=circ_steps {
-            let a = s as f32 / circ_steps as f32 * 2.0 * PI;
-            let px = origin_x + (circle_rx as f32 * a.cos()) as i32;
-            let py = tip_y + (circle_ry as f32 * a.sin()) as i32;
-            // Dashed: every other pair of steps
-            if (s / 2) % 2 == 0 {
-                draw::dot_i(grid, px, py);
-                if let Some((lx, ly)) = prev {
-                    line(grid, lx, ly, px, py);
+        // Baseline fill and the tip's trace behind the spin.
+        let back = cx - ra.ceil() as i32 - 2;
+        if back > 0 {
+            draw::hline(grid, 0, back as usize, (h - 1) as usize);
+            let mut prev: Option<(i32, i32)> = None;
+            for x in 0..=back {
+                let a = phi - (cx - x) as f32 * 0.22;
+                let y = (rim_y + rb * a.cos()).round() as i32;
+                if let Some((px, py)) = prev {
+                    line(grid, px, py, x, y);
+                }
+                prev = Some((x, y));
+            }
+            for c in 0..=(back / 2) {
+                let col = ctx.palette.sample(c as f32 * 2.0 / w as f32);
+                for row in [0, (h - 1) / 4] {
+                    draw::tint_row(grid, row as usize, c as usize, c as usize, col);
                 }
             }
-            prev = Some((px, py));
         }
 
-        // Spin arrow and tip
-        line(grid, origin_x, origin_y, tip_x, tip_y);
-        draw::dot_i(grid, tip_x, tip_y);
-        draw::dot_i(grid, tip_x + 1, tip_y);
-        draw::dot_i(grid, tip_x, tip_y + 1);
-
-        // Origin dot
-        draw::dot_i(grid, origin_x, origin_y);
-
-        // Tint: radially from origin
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            let col = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
+        // B-field axis: dashed, with an arrowhead on top.
+        for y in 1..=pivot_y {
+            if y % 2 == 1 {
+                draw::dot_i(grid, cx, y);
             }
         }
+        draw::dot_i(grid, cx, 0);
+        draw::dot_i(grid, cx - 1, 1);
+        draw::dot_i(grid, cx + 1, 1);
+
+        // Cone: rim ellipse (back half sparse) and faint sides.
+        let steps = (ra * 6.0) as usize + 8;
+        for s in 0..steps {
+            let a = s as f32 / steps as f32 * 2.0 * PI;
+            if a.cos() < 0.0 && s % 2 == 0 {
+                continue;
+            }
+            let x = (cxf + ra * a.sin()).round() as i32;
+            let y = (rim_y + rb * a.cos()).round() as i32;
+            draw::dot_i(grid, x, y);
+        }
+        let ri = ra.round() as i32;
+        for (sx, step) in [(-ri, 3), (ri, 3)] {
+            let n = (pivot_y - rim_y as i32).max(1);
+            for i in (0..=n).step_by(step) {
+                draw::dot_i(grid, cx + sx * (n - i) / n, rim_y as i32 + i);
+            }
+        }
+        let cone_col = Color::rgb(110, 120, 160);
+        for c in ((cx - ri) / 2).max(0)..=((cx + ri) / 2) {
+            for row in 0..=(h - 1) / 4 {
+                draw::tint_row(grid, row as usize, c as usize, c as usize, cone_col);
+            }
+        }
+
+        // The spin itself: a thick arrow from pivot to its rim position.
+        let tip_x = (cxf + ra * phi.sin()).round() as i32;
+        let tip_y = (rim_y + rb * phi.cos()).round() as i32;
+        line(grid, cx, pivot_y, tip_x, tip_y);
+        line(grid, cx + 1, pivot_y, tip_x + 1, tip_y);
+        for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, -1), (1, -1), (0, 1), (2, 0)] {
+            draw::dot_i(grid, tip_x + dx, tip_y + dy);
+        }
+        draw::dot_i(grid, cx - 1, pivot_y + 1);
+        draw::dot_i(grid, cx + 2, pivot_y + 1);
+        let arrow_col = ctx.palette.sample(1.0);
+        let steps = (pivot_y - tip_y).max(1);
+        for i in 0..=steps {
+            let x = cx + (tip_x - cx) * i / steps;
+            let y = pivot_y - i;
+            draw::tint_row(
+                grid,
+                (y.max(0) / 4) as usize,
+                (x.max(0) / 2) as usize,
+                (x.max(0) / 2) as usize,
+                arrow_col,
+            );
+        }
+        draw::tint_row(
+            grid,
+            (tip_y.max(0) / 4) as usize,
+            (tip_x.max(0) / 2) as usize,
+            (tip_x.max(0) / 2) as usize,
+            Color::rgb(255, 255, 255),
+        );
         Ok(())
     }
 }
@@ -895,13 +1002,12 @@ impl ProgressStyle for Decoherence {
 
 // ---------------------------------------------------------------------------
 // 10. Quantum Random Walk
-//     A coin-flipped quantum walk spreads as a binomial distribution.
-//     After t steps the standard deviation σ ∝ t (not √t as for classical).
-//     We visualise the probability distribution over positions x ∈ [-W, W]
-//     after N_steps steps, where N_steps = round(eased · N_max).
-//     Distribution: approximate QW distribution (bimodal near ±σ),
-//     computed from a simplified analytic envelope.
-//     Rendered as a column-height bar chart (vblock glyphs).
+//    A 1-D lattice of sites drawn as a dotted baseline with a start marker
+//    at the centre.  The walker's probability distribution is a lollipop
+//    plot: the signature quantum-walk shape — two sharp ballistic peaks
+//    racing outward (spreading linearly, not √n) with interference ripples
+//    between them.  Peak separation grows with eased; the ripples shimmer
+//    with time.
 // ---------------------------------------------------------------------------
 struct QuantumWalk;
 impl ProgressStyle for QuantumWalk {
@@ -912,81 +1018,218 @@ impl ProgressStyle for QuantumWalk {
         "quantum"
     }
     fn describe(&self) -> &str {
-        "Quantum random walk: bimodal spreading distribution — spreads linearly (not √n) with progress"
+        "Quantum walk on a lattice: twin ballistic peaks race outward from the start site with progress, ripples between"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let cwf = cw as f32;
-        let chf = ch as f32;
+        let (w, h) = (dw as i32, dh as i32);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let base = h - 1;
+        let cx = (w - 1) / 2;
+        let cxf = (w - 1) as f32 / 2.0;
+        // Peak distance from the start site: ballistic, ∝ progress.
+        let spread = 2.0 + e * (cxf - 3.0).max(0.0);
+        let max_h = (h - 2).max(1) as f32;
 
-        // Number of walk steps (spread increases with steps)
-        let n_max = 40_usize;
-        let n_steps = (ctx.eased * n_max as f32).round() as usize;
-        let n_steps = n_steps.max(1);
+        // Lattice baseline: one dot per site.
+        for x in (0..w).step_by(2) {
+            draw::dot_i(grid, x, base);
+        }
+        // Start site marker.
+        line(grid, cx, base, cx, base - (h / 4).max(1));
+        draw::dot_i(grid, cx - 1, base - 1);
+        draw::dot_i(grid, cx + 1, base - 1);
 
-        // QW distribution: bimodal with peaks near ±n/√2, suppressed centre
-        // Approximate analytic envelope: P(x) ∝ 1/√(n² - x²) for |x| < n (arcsine-like)
-        // We normalise and render.
-        let nf = n_steps as f32;
-        let sigma = nf / (2.0_f32).sqrt(); // RMS spread
-
-        // Animated drift in peak position (Hadamard walk has slight asymmetry — animates)
-        let drift_phase = ctx.time * 0.4;
-
-        let mut densities = vec![0.0_f32; cw];
-        let mut max_d = 0.0_f32;
-        for (cx, density) in densities.iter_mut().enumerate() {
-            // Map column to position x ∈ [-nf, nf]
-            let x = (cx as f32 / cwf - 0.5) * 2.0 * nf;
-            // QW envelope: arcsine law ≈ (n² - x²)^(-1/2), zero outside
-            let arg = nf * nf - x * x;
-            let envelope = if arg > 0.0 { 1.0 / arg.sqrt() } else { 0.0 };
-            // Animated interference ripple inside the distribution
-            let ripple = 1.0 + 0.25 * (PI * x / sigma.max(0.1) + drift_phase).cos();
-            let d = envelope * ripple.max(0.0);
-            *density = d;
-            if d > max_d {
-                max_d = d;
+        // Probability stems on even sites.
+        for x in (0..w).step_by(2) {
+            let d = (x as f32 - cxf).abs();
+            let p = if d > spread + 1.5 {
+                0.0
+            } else {
+                // Sharp leading peak, rippling plateau inside it.
+                let edge = (-(d - spread).powi(2) / 3.0).exp();
+                let inner = if d < spread {
+                    let r = (d * 0.9 - ctx.time * 3.0).sin() * 0.5 + 0.5;
+                    0.12 + 0.2 * r * (d / spread)
+                } else {
+                    0.0
+                };
+                edge.max(inner)
+            };
+            let top = base - 1 - (p * max_h).round() as i32;
+            if top < base - 1 {
+                line(grid, x, base - 1, x, top);
+                draw::dot_i(grid, x + 1, top);
+                let col = if p > 0.6 {
+                    ctx.palette.sample(1.0)
+                } else {
+                    ctx.palette.sample(p)
+                };
+                for row in (top.max(0) / 4)..=(base / 4) {
+                    draw::tint_row(grid, row as usize, (x / 2) as usize, (x / 2) as usize, col);
+                }
             }
         }
-        let max_d = max_d.max(1e-9);
+        Ok(())
+    }
+}
 
-        for (cx, &density) in densities.iter().enumerate() {
-            let norm = (density / max_d).clamp(0.0, 1.0);
-            // vblock per cell row
-            for cy in 0..ch {
-                let row_thresh = 1.0 - cy as f32 / chf;
-                if norm >= row_thresh {
-                    draw::vblock(grid, cx, cy, 8);
-                } else {
-                    let partial =
-                        ((norm - (row_thresh - 1.0 / chf)) * chf * 8.0).clamp(0.0, 8.0) as usize;
-                    if partial > 0 {
-                        draw::vblock(grid, cx, cy, partial);
+// ---------------------------------------------------------------------------
+// 11. Double Slit
+//    The famous single-particle build-up.  A source on the left sends
+//    wavefronts at a barrier pierced by two slits; circular wavelets spread
+//    from each slit toward a detector screen on the right.  Individual hits
+//    land on the screen one at a time, sampled from the two-slit intensity
+//    cos²·envelope — sparse speckle early, crisp interference fringes as
+//    eased → 1.
+// ---------------------------------------------------------------------------
+struct DoubleSlit;
+impl ProgressStyle for DoubleSlit {
+    fn name(&self) -> &str {
+        "electron-buildup"
+    }
+    fn theme(&self) -> &str {
+        "quantum"
+    }
+    fn describe(&self) -> &str {
+        "Single-electron double-slit: wavelets spread from two slits and particle hits build up interference fringes with progress"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
+        let (w, h) = (dw as i32, dh as i32);
+        let hf = (h - 1) as f32;
+        let cy = hf / 2.0;
+        let e = ctx.eased.clamp(0.0, 1.0);
+
+        // Geometry: source | barrier with two slits | wavelets | hit band | screen.
+        let bx = ((w / 5) & !1).max(2);
+        let screen_x = w - 2;
+        let band_x0 = (w * 3 / 4).min(screen_x - 1);
+        let slit_off = (h / 5).max(1);
+        let slits = [cy as i32 - slit_off, cy as i32 + slit_off];
+
+        // Barrier wall, open only at the slits.
+        for y in 0..h {
+            if slits.iter().all(|&s| y != s && y != s + 1) {
+                draw::dot_i(grid, bx, y);
+                draw::dot_i(grid, bx + 1, y);
+            }
+        }
+        let wall = Color::rgb(140, 145, 165);
+        for row in 0..=(h - 1) / 4 {
+            draw::tint_row(
+                grid,
+                row as usize,
+                (bx / 2) as usize,
+                ((bx + 1) / 2) as usize,
+                wall,
+            );
+        }
+
+        // Source and plane wavefronts marching toward the barrier.
+        line(grid, 0, cy as i32 - 1, 0, cy as i32 + 1);
+        let gap = 6.0_f32;
+        let drift = (ctx.time * 10.0) % gap;
+        let mut x = 2.0 + drift;
+        while (x as i32) < bx - 1 {
+            for y in ((cy - hf * 0.3) as i32)..=((cy + hf * 0.3) as i32) {
+                if y % 2 == 0 {
+                    draw::dot_i(grid, x as i32, y);
+                }
+            }
+            x += gap;
+        }
+
+        // Circular wavelets from each slit, clipped to the gap before the band.
+        let reach = (band_x0 - bx - 6).max(1) as f32;
+        let n_rings = (reach / gap) as i32 + 1;
+        for &sy in &slits {
+            for k in 0..n_rings {
+                let r = k as f32 * gap + drift;
+                if r < 1.0 || r > reach {
+                    continue;
+                }
+                let steps = (r * 3.0) as i32 + 4;
+                for s in 0..=steps {
+                    let a = -PI / 2.0 + PI * s as f32 / steps as f32;
+                    let px = bx + 2 + (a.cos() * r) as i32;
+                    let py = sy + (a.sin() * r * 0.8) as i32;
+                    if px < band_x0 && (0..h).contains(&py) && s % 3 == 0 {
+                        draw::dot_i(grid, px, py);
                     }
                 }
             }
-
-            // Tint: peaks in vivid colour
-            let t = cx as f32 / cwf;
-            let col = ctx.palette.sample(t * norm + (1.0 - norm) * 0.2);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
-            }
+        }
+        let wave_col = Color::rgb(120, 150, 255);
+        for row in 0..=(h - 1) / 4 {
+            draw::tint_row(
+                grid,
+                row as usize,
+                ((bx + 2) / 2) as usize,
+                ((band_x0 - 1).max(0) / 2) as usize,
+                wave_col,
+            );
         }
 
-        // Mark the walk origin (centre) with a baseline tick
-        let centre_cell = cw / 2;
-        draw::vblock(
-            grid,
-            centre_cell.min(cw.saturating_sub(1)),
-            ch.saturating_sub(1),
-            1,
-        );
+        // Detector screen.
+        line(grid, screen_x, 0, screen_x, h - 1);
+        line(grid, screen_x + 1, 0, screen_x + 1, h - 1);
 
+        // Particle hits: deterministic samples from the fringe intensity.
+        let fringe = |y: f32| {
+            let u = (y - cy) / hf.max(1.0);
+            let env = (-u * u * 3.0).exp();
+            (u * PI * 3.0).cos().powi(2) * env
+        };
+        let band_w = (screen_x - band_x0).max(1);
+        let hits = (e * (band_w * h) as f32 * 0.55) as u32;
+        let mut placed = 0u32;
+        let mut i = 0u32;
+        while placed < hits && i < hits.saturating_mul(6) + 16 {
+            let y = (hashq(i * 2 + 1) * hf).round();
+            if hashq(i * 2 + 7) < fringe(y) {
+                let x = band_x0 + (hashq(i * 3 + 5) * band_w as f32) as i32;
+                draw::dot_i(grid, x.min(screen_x - 2), y as i32);
+                draw::dot_i(grid, x.min(screen_x - 2) + 1, y as i32);
+                placed += 1;
+            }
+            i += 1;
+        }
+        // Fringe colour: bright where the intensity peaks.
+        for row in 0..=(h - 1) / 4 {
+            let yc = (row * 4 + 2) as f32;
+            let col = ctx.palette.sample(fringe(yc).sqrt());
+            draw::tint_row(
+                grid,
+                row as usize,
+                (band_x0 / 2) as usize,
+                (w / 2) as usize,
+                col,
+            );
+        }
+        // The newest hit flashes white.
+        if hits > 0 {
+            let f = (ctx.time * 12.0) as u32;
+            let y = (hashq(f * 11 + 3) * hf) as i32;
+            let x = band_x0 + (hashq(f * 13 + 1) * band_w as f32) as i32;
+            draw::dot_i(grid, x, y);
+        }
         Ok(())
     }
+}
+
+/// Deterministic hash of `n` to `[0, 1)`.
+#[inline]
+fn hashq(n: u32) -> f32 {
+    let mut x = n.wrapping_mul(2_654_435_761);
+    x ^= x >> 15;
+    x = x.wrapping_mul(2_246_822_519);
+    x ^= x >> 13;
+    (x % 10_000) as f32 / 10_000.0
 }

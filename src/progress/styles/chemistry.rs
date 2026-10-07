@@ -9,15 +9,15 @@
 //!
 //! | Name | Chemical concept |
 //! |------|-----------------|
-//! | `periodic-table` | Element cells nucleate one-by-one across a grid |
-//! | `electron-orbitals` | s/p/d orbital dot-clouds grow with eased progress |
+//! | `periodic-table` | Real table silhouette; elements light up in Z order |
+//! | `electron-orbitals` | s sphere, p dumbbell, d cloverleaf clouds fill in turn |
 //! | `titration-curve` | Sigmoid pH–volume curve draws out; drops fall via time |
 //! | `reaction-kinetics` | [A] exponential decay + [B] sigmoid rise to equilibrium |
-//! | `crystallization` | Lattice nucleates at a seed and grows outward |
+//! | `crystallization` | Two-ion checkerboard lattice grows from a seed with facets |
 //! | `ph-scale` | Indicator dot slides along a shaded acid→base track |
 //! | `gas-diffusion` | Particles random-walk and spread; spread = eased |
-//! | `distillation` | Vapor rises, condenses, drips into receiver that fills |
-//! | `bond-vibration` | Two atoms oscillate on a spring; bond length = time |
+//! | `distillation` | Boiling flask → condenser → Erlenmeyer receiver fills |
+//! | `bond-vibration` | Two atoms vibrate on a coiled-spring bond that stretches |
 //! | `boltzmann-distribution` | Velocity histogram fills to Maxwell-Boltzmann shape |
 //! | `flame-spectral-lines` | Discrete emission lines appear as progress advances |
 
@@ -67,13 +67,76 @@ fn hash2(a: usize, b: usize) -> u32 {
     x
 }
 
+/// Straight line of dots between two signed dot coordinates.
+fn line_i(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
+    let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
+    for i in 0..=steps {
+        draw::dot_i(grid, x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps);
+    }
+}
+
+/// Filled disc of dots centred at `(cx, cy)` with radius `r` (dot units).
+fn disc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
+    let ri = r.ceil() as i32 + 1;
+    let (x0, y0) = (cx.round() as i32, cy.round() as i32);
+    for dy in -ri..=ri {
+        for dx in -ri..=ri {
+            let fx = (x0 + dx) as f32 - cx;
+            let fy = (y0 + dy) as f32 - cy;
+            if fx * fx + fy * fy <= r * r + 0.5 {
+                draw::dot_i(grid, x0 + dx, y0 + dy);
+            }
+        }
+    }
+}
+
+/// Tint every cell whose centre lies within `r` dots of `(cx, cy)`.
+fn tint_disc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32, color: crate::Color) {
+    let (cw, ch) = grid.dimensions();
+    for cy2 in 0..ch {
+        for cx2 in 0..cw {
+            let dx = cx2 as f32 * 2.0 + 1.0 - cx;
+            let dy = cy2 as f32 * 4.0 + 2.0 - cy;
+            if dx * dx + dy * dy <= (r + 1.5) * (r + 1.5) {
+                draw::tint_row(grid, cy2, cx2, cx2, color);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 1. Periodic table
-//    Element cells fill one-by-one reading left-to-right, top-to-bottom
-//    using vertical-block glyphs. eased controls how many cells are filled.
-//    Each filled cell shows a solid █; partial progress uses V_BLOCKS.
+//    The real table's silhouette: 18 groups × 7 periods (tall s-block on the
+//    left, the notch above the d-block, the p-block on the right, H and He at
+//    the far ends of the top row) plus the detached f-block strip below.
+//    Elements are claimed in atomic-number order — eased × 118 of them are
+//    solid, the rest are placeholder dots — and the next element blinks.
+//    Columns are coloured by block (s, d, p).
 // ---------------------------------------------------------------------------
 struct PeriodicTable;
+
+/// `(group 0..18, row 0..16)` of every element in atomic-number order.
+/// Periods sit on even rows 0–12; the lanthanide / actinide strip on 14 / 15
+/// is laid under groups 3–16.
+fn periodic_layout() -> Vec<(usize, usize)> {
+    let mut v = Vec::with_capacity(118);
+    v.push((0, 0));
+    v.push((17, 0));
+    for p in 1..3 {
+        v.extend([(0, p * 2), (1, p * 2)]);
+        v.extend((12..18).map(|g| (g, p * 2)));
+    }
+    for p in 3..5 {
+        v.extend((0..18).map(|g| (g, p * 2)));
+    }
+    for (p, f_row) in [(5, 14), (6, 15)] {
+        v.extend([(0, p * 2), (1, p * 2)]);
+        v.extend((2..16).map(|g| (g, f_row)));
+        v.extend((2..18).map(|g| (g, p * 2)));
+    }
+    v
+}
+
 impl ProgressStyle for PeriodicTable {
     fn name(&self) -> &str {
         "periodic-table"
@@ -82,40 +145,40 @@ impl ProgressStyle for PeriodicTable {
         "chemistry"
     }
     fn describe(&self) -> &str {
-        "Periodic table: element cells fill one-by-one left-to-right, top-to-bottom as progress advances"
+        "Periodic table: the real 18-group silhouette with its f-block strip; elements light up in atomic-number order"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let pitch = (w / 18).max(1);
+        let ew = pitch.saturating_sub(1).max(1);
+        let x0 = w.saturating_sub(18 * pitch) / 2;
+        let layout = periodic_layout();
+        let lit = (ctx.eased * layout.len() as f32).round() as usize;
+        let blink = (ctx.time * 4.0).fract() < 0.5;
 
-        let total_cells = cw * ch;
-        // How many full cells are lit by eased progress
-        let lit_f = ctx.eased * total_cells as f32;
-        let full = lit_f.floor() as usize;
-        let frac = lit_f - full as f32; // 0..1 partial
-
-        for idx in 0..total_cells {
-            let cx = idx % cw;
-            let cy = idx / cw;
-            if idx < full {
-                // Fully filled — solid block glyph
-                draw::glyph(grid, cx, cy, '█');
-            } else if idx == full && frac > 0.0 {
-                // Partial cell: pick a vertical-block level 1..8
-                let level = (frac * 8.0).round() as usize;
-                draw::vblock(grid, cx, cy, level.max(1));
+        for (z, &(g, row)) in layout.iter().enumerate() {
+            let x = x0 + g * pitch;
+            let y = row * h / 16;
+            let solid = z < lit || (z == lit && blink);
+            if solid {
+                draw::hline(grid, x, x + ew - 1, y);
+            } else {
+                draw::dot(grid, x + ew / 2, y);
             }
-            // else: empty cell — leave blank
-        }
-
-        // Tint filled region with palette gradient
-        for idx in 0..full.min(total_cells) {
-            let cx = idx % cw;
-            let cy = idx / cw;
-            let t = idx as f32 / total_cells as f32;
-            draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+            // Colour by block: s (groups 1–2), d (3–12), p (13–18).
+            let t = match g {
+                0 | 1 => 0.0,
+                12..=17 => 1.0,
+                _ => 0.5,
+            };
+            let t = if row >= 14 { 0.75 } else { t };
+            if solid {
+                let cy = y / 4;
+                draw::tint_row(grid, cy, x / 2, (x + ew - 1) / 2, ctx.palette.sample(t));
+            }
         }
         Ok(())
     }
@@ -123,11 +186,36 @@ impl ProgressStyle for PeriodicTable {
 
 // ---------------------------------------------------------------------------
 // 2. Electron orbitals
-//    s orbital (sphere), p orbital (dumbbell), d orbital (cloverleaf) —
-//    shape index cycles through s→p→d as eased increases (thirds).
-//    Dot density builds with eased within each shape.
+//    Three textbook orbital shapes side by side, each around its own nucleus:
+//    s (a sphere), p (a dumbbell of two lobes along the axis) and d (a
+//    four-lobed cloverleaf). Each shape's outline is always traced;
+//    eased fills the subshells in order s → p → d as shimmering electron
+//    clouds whose dot pattern re-rolls every frame with time.
 // ---------------------------------------------------------------------------
 struct ElectronOrbitals;
+
+/// Lobes `(cx, cy, rx, ry)` of orbital `kind` (0 = s, 1 = p, 2 = d), relative
+/// to the nucleus, for an orbital of radius `r` (dots).
+fn orbital_lobes(kind: usize, r: f32) -> Vec<(f32, f32, f32, f32)> {
+    match kind {
+        0 => vec![(0.0, 0.0, r, r)],
+        1 => vec![
+            (-r * 0.62, 0.0, r * 0.6, r * 0.62),
+            (r * 0.62, 0.0, r * 0.6, r * 0.62),
+        ],
+        _ => {
+            let (ox, oy) = (r * 0.62, r * 0.55);
+            let (lx, ly) = (r * 0.46, r * 0.42);
+            vec![
+                (-ox, -oy, lx, ly),
+                (ox, -oy, lx, ly),
+                (-ox, oy, lx, ly),
+                (ox, oy, lx, ly),
+            ]
+        }
+    }
+}
+
 impl ProgressStyle for ElectronOrbitals {
     fn name(&self) -> &str {
         "electron-orbitals"
@@ -136,76 +224,62 @@ impl ProgressStyle for ElectronOrbitals {
         "chemistry"
     }
     fn describe(&self) -> &str {
-        "Electron orbitals: s-sphere, p-dumbbell, d-cloverleaf shapes grow as progress fills the subshell"
+        "Electron orbitals: s-sphere, p-dumbbell and d-cloverleaf clouds fill with shimmering electrons in turn"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 6 || h < 4 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let cy = (fh - 1.0) / 2.0;
+        let frame = (ctx.time * 12.0) as usize;
 
-        // Shape index: 0=s, 1=p, 2=d  (advances with eased)
-        let shape = ((ctx.eased * 3.0).floor() as usize).min(2);
-        // Within each third, local progress 0..1 drives cloud density
-        let local = (ctx.eased * 3.0).fract();
+        for kind in 0..3 {
+            let cx = fw * (kind as f32 * 2.0 + 1.0) / 6.0;
+            let r = (fh / 2.0 - 0.5).min(fw / 6.0 - 1.0).max(1.0);
+            // Horizontal stretch: lobes may spread wider than the bar is tall.
+            let k = (fw / 6.0 - 2.0).max(r) / r;
+            let lobes: Vec<(f32, f32, f32, f32)> = orbital_lobes(kind, r)
+                .into_iter()
+                .map(|(lx, ly, rx, ry)| (lx * k, ly, rx * k.min(1.6), ry))
+                .collect();
+            // This subshell's share of progress.
+            let fill = (ctx.eased * 3.0 - kind as f32).clamp(0.0, 1.0);
+            let color = ctx.palette.sample(kind as f32 / 2.0);
 
-        let cx = (w / 2) as f32;
-        let cy = (h / 2) as f32;
-        let rx = (w as f32 * 0.48).max(1.0);
-        let ry = (h as f32 * 0.48).max(1.0);
-
-        // Animate orientation with time
-        let phase = ctx.time * 0.4;
-
-        // Threshold: only draw dots whose orbital density exceeds (1-local)
-        // giving a cloud that fills in as local → 1
-        let threshold = 1.0 - local;
-
-        for yi in 0..h {
-            for xi in 0..w {
-                let nx = (xi as f32 - cx) / rx; // normalised [-1, 1]
-                let ny = (yi as f32 - cy) / ry;
-                let r = (nx * nx + ny * ny).sqrt();
-                if r > 1.1 {
-                    continue;
-                }
-
-                let density = match shape {
-                    // s: spherical — density = Gaussian on r
-                    0 => {
-                        let sigma = 0.5_f32;
-                        (-(r * r) / (2.0 * sigma * sigma)).exp()
+            let x0 = (cx - fw / 6.0).max(0.0) as i32;
+            let x1 = (cx + fw / 6.0) as i32;
+            for y in 0..h as i32 {
+                for x in x0..=x1 {
+                    let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                    // Normalised distance to the nearest lobe centre.
+                    let d = lobes
+                        .iter()
+                        .map(|&(lx, ly, rx, ry)| {
+                            let (u, v) = ((dx - lx) / rx.max(0.5), (dy - ly) / ry.max(0.5));
+                            (u * u + v * v).sqrt()
+                        })
+                        .fold(f32::MAX, f32::min);
+                    if d > 1.0 {
+                        continue;
                     }
-                    // p: dumbbell along rotated axis
-                    // ψ_p ∝ cos(θ) where θ is angle from bond axis
-                    1 => {
-                        let angle = ny.atan2(nx) - phase;
-                        let lobe = angle.cos().powi(2);
-                        let radial = (-(r * r) / 0.4).exp();
-                        lobe * radial
+                    let edge = d > 0.8;
+                    let roll = (hash2(x as usize * 31 + y as usize, frame) % 1000) as f32 / 1000.0;
+                    let dense = fill * (1.05 - d * 0.6);
+                    // Solid outline so the shape reads before it fills.
+                    let lit = edge || roll < dense;
+                    if lit {
+                        draw::dot_i(grid, x, y);
+                        if fill > 0.0 {
+                            let c = (x / 2) as usize;
+                            draw::tint_row(grid, y as usize / 4, c, c, color);
+                        }
                     }
-                    // d: cloverleaf — 4-lobe pattern  ψ_d ∝ cos(2θ)
-                    _ => {
-                        let angle = ny.atan2(nx) - phase * 0.5;
-                        let lobe = (2.0 * angle).cos().powi(2);
-                        let radial = (-(r * r) / 0.35).exp();
-                        lobe * radial
-                    }
-                };
-
-                if density > threshold {
-                    draw::dot(grid, xi, yi);
                 }
             }
-        }
-
-        // Tint whole bar by orbital shape colour
-        let (cw, ch) = grid.dimensions();
-        for cx2 in 0..cw {
-            let t = ctx.eased;
-            for cy2 in 0..ch {
-                draw::tint_row(grid, cy2, cx2, cx2, ctx.palette.sample(t));
-            }
+            // Nucleus.
+            draw::fill_rect(grid, cx as usize, cy as usize, 2, 2);
         }
         Ok(())
     }
@@ -393,10 +467,12 @@ impl ProgressStyle for ReactionKinetics {
 
 // ---------------------------------------------------------------------------
 // 5. Crystallization
-//    A seed appears at the centre; the crystal lattice grows outward Manhattan-
-//    distance-first. Cells within radius r = eased × max_r are drawn as dots
-//    only if they sit on lattice positions (x and y both multiples of spacing).
-//    Off-lattice cells that are very close show shade characters.
+//    An ionic (rock-salt) lattice grows from a seed at the centre. Lattice
+//    sites sit every other cell; each site is a solid 2×2 ion, alternating
+//    between two ion species in a checkerboard, joined to its neighbours by
+//    bonds. The crystal's faceted front advances outward with eased progress
+//    (middle rows lead, outer rows lag, giving stepped facets) while free ions
+//    drift through the surrounding solution, driven by time.
 // ---------------------------------------------------------------------------
 struct Crystallization;
 impl ProgressStyle for Crystallization {
@@ -407,79 +483,58 @@ impl ProgressStyle for Crystallization {
         "chemistry"
     }
     fn describe(&self) -> &str {
-        "Crystallization: a lattice nucleates at the seed and grows outward — atoms snap onto grid positions"
+        "Crystallization: a two-ion checkerboard lattice grows from a central seed with faceted edges while free ions drift in solution"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        let (cw, ch) = grid.dimensions();
+        if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let kc = (cw / 2) as f32;
+        let jc = (ch as f32 - 1.0) / 2.0;
+        let radius = 2.0 + ctx.eased * (kc + jc * 3.0);
+        let inside =
+            |k: usize, j: usize| (k as f32 - kc).abs() + (j as f32 - jc).abs() * 3.0 <= radius;
+        let ion_a = ctx.palette.sample(0.0);
+        let ion_b = ctx.palette.sample(1.0);
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-
-        // Lattice spacing in dots — tighter for wider grids
-        let spacing = (w / 10).max(2) as i32;
-
-        // Maximum growth radius = diagonal of the half-grid
-        let max_r = (((cx * cx + cy * cy) as f32).sqrt()).max(1.0);
-        let r = ctx.eased * max_r;
-
-        // Draw lattice nodes within radius r
-        // Step across dot-space in lattice units
-        let mut lx = -(cx / spacing) * spacing - spacing;
-        while lx <= cx + cx {
-            let mut ly = -(cy / spacing) * spacing - spacing;
-            while ly <= cy + cy {
-                let dx = lx as f32;
-                let dy = ly as f32;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist <= r {
-                    let px = cx + lx;
-                    let py = cy + ly;
-                    // Node dot
-                    draw::dot_i(grid, px, py);
-                    // Bond lines to right and down neighbours (only if both in radius)
-                    let nx = lx + spacing;
-                    let ny = ly + spacing;
-                    let dist_r = ((nx as f32).powi(2) + (dy).powi(2)).sqrt();
-                    let dist_d = ((dx).powi(2) + (ny as f32).powi(2)).sqrt();
-                    if dist_r <= r && px >= 0 && (cx + nx) < w as i32 {
-                        draw::hline(
-                            grid,
-                            px.max(0) as usize,
-                            (cx + nx).max(0).min(w as i32 - 1) as usize,
-                            py.max(0).min(h as i32 - 1) as usize,
-                        );
+        // --- Lattice: ions on even cells, bonds through the odd cells ---
+        for j in 0..ch {
+            let mut k = cw / 2 % 2;
+            while k < cw {
+                if inside(k, j) {
+                    let (x, y) = (k * 2, j * 4);
+                    draw::fill_rect(grid, x, y + 1, 2, 2);
+                    let species = if (k / 2 + j) % 2 == 0 { ion_a } else { ion_b };
+                    draw::tint_row(grid, j, k, k, species);
+                    if k + 2 < cw && inside(k + 2, j) {
+                        draw::hline(grid, x + 2, x + 3, y + 2);
                     }
-                    if dist_d <= r && py >= 0 && (cy + ny) < h as i32 {
-                        draw::vline(
-                            grid,
-                            px.max(0).min(w as i32 - 1) as usize,
-                            py.max(0) as usize,
-                            (cy + ny).max(0).min(h as i32 - 1) as usize,
-                        );
+                    if j + 1 < ch && inside(k, j + 1) {
+                        draw::vline(grid, x, y + 3, y + 4);
                     }
                 }
-                ly += spacing;
+                k += 2;
             }
-            lx += spacing;
         }
 
-        // Shade cells near the growth frontier
-        let (cw, ch) = grid.dimensions();
-        for cx2 in 0..cw {
-            for cy2 in 0..ch {
-                let dx = cx2 as i32 - cw as i32 / 2;
-                let dy = cy2 as i32 - ch as i32 / 2;
-                // dot distance from seed
-                let d = ((dx * dx + dy * dy) as f32).sqrt();
-                // shade level: full inside crystal, trail near frontier
-                let r_cells = r / 2.0; // cell units (approx)
-                if d <= r_cells {
-                    let t = d / r_cells.max(1.0);
-                    draw::tint_row(grid, cy2, cx2, cx2, ctx.palette.sample(1.0 - t * 0.5));
-                }
+        // --- Free ions drifting in the solution outside the crystal ---
+        let (w, h) = draw::dot_dims(grid);
+        let n = (cw / 2).max(1);
+        for i in 0..n {
+            let seed = hash2(i, 17);
+            let bx = (seed % w.max(1) as u32) as f32;
+            let by = ((seed >> 8) % h.max(1) as u32) as f32;
+            let ph = (seed >> 16) as f32 * 0.001;
+            let px = bx + (ctx.time * 0.9 + ph).sin() * 3.0;
+            let py = by + (ctx.time * 1.3 + ph * 1.7).cos() * 1.5;
+            if px < 0.0 || py < 0.0 {
+                continue;
+            }
+            let (k, j) = ((px as usize) / 2, (py as usize) / 4);
+            let near = (k as f32 - kc).abs() + (j as f32 - jc).abs() * 3.0 <= radius + 2.0;
+            if !near {
+                draw::dot(grid, px as usize, py as usize);
             }
         }
         Ok(())
@@ -617,10 +672,10 @@ impl ProgressStyle for GasDiffusion {
 
 // ---------------------------------------------------------------------------
 // 8. Distillation
-//    A distillation column: vapour (dots) rises on the left half, condenses
-//    at the top, and drips down the right side into a receiver flask that
-//    fills with eased progress. Vapour density animated by time; receiver
-//    fill drawn as a rising fill_rect.
+//    A classic still drawn left to right: a round-bottom boiling flask whose
+//    liquid boils down, a slanted condenser arm (inner tube + cooling jacket)
+//    carrying vapour, and an Erlenmeyer receiver whose distillate rises with
+//    eased progress. time drives bubbles, vapour flow and the falling drip.
 // ---------------------------------------------------------------------------
 struct Distillation;
 impl ProgressStyle for Distillation {
@@ -631,87 +686,166 @@ impl ProgressStyle for Distillation {
         "chemistry"
     }
     fn describe(&self) -> &str {
-        "Distillation: vapor rises in a column, condenses at the top, drips down into a filling receiver"
+        "Distillation: a boiling flask feeds vapour down a condenser; distillate drips into an Erlenmeyer receiver that fills"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 4 || h < 4 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let hot = ctx.palette.sample(0.0);
+        let cool = ctx.palette.sample(1.0);
 
-        let mid_x = w / 2;
-
-        // --- Column walls ---
-        // Left (boiler) and right (receiver) vertical lines
-        if mid_x > 0 {
-            draw::vline(grid, 0, 0, h - 1);
-        }
-        draw::vline(grid, mid_x, 0, h - 1);
-        if w > 1 {
-            draw::vline(grid, w - 1, 0, h - 1);
-        }
-        // Condenser at the top
-        draw::hline(grid, 0, w - 1, 0);
-
-        // --- Vapour rising in left column (animated dots) ---
-        // Vapour particles rise from the bottom; position = time-based
-        let n_vapour = (mid_x / 2).max(1);
-        for vi in 0..n_vapour {
-            let speed = 0.7 + (vi as f32 * 0.13).sin().abs() * 0.4;
-            let phase = vi as f32 * 0.6;
-            // y position: starts at bottom, rises to top, loops
-            let y_frac = 1.0 - ((ctx.time * speed + phase).rem_euclid(1.8) / 1.8);
-            let y = (y_frac * (h - 1) as f32).round() as usize;
-            // x: slight lateral wobble inside left column
-            let x_wobble = (((ctx.time * 1.1 + vi as f32 * 0.4) * PI).sin() * 1.5) as i32;
-            let vx = (mid_x / 4) as i32 + x_wobble;
-            draw::dot_i(grid, vx.max(1).min(mid_x as i32 - 1), y as i32);
-        }
-
-        // --- Drip line on the right of the column ---
-        // One drop falling per period, animated by time
-        let drip_period = 0.6_f32;
-        let drip_y = ((ctx.time.rem_euclid(drip_period) / drip_period) * h as f32).round() as usize;
-        let drip_x = mid_x + (w - mid_x) / 2;
-        if drip_x < w && drip_y < h {
-            draw::dot(grid, drip_x.min(w - 2), drip_y);
-        }
-
-        // --- Receiver fill: liquid rising from bottom, height = eased ---
-        let receiver_x0 = mid_x + 1;
-        let receiver_w = w.saturating_sub(receiver_x0 + 1);
-        if receiver_w > 0 {
-            let fill_h = (ctx.eased * (h - 2) as f32).round() as usize;
-            if fill_h > 0 {
-                let fill_y0 = (h - 1).saturating_sub(fill_h);
-                draw::fill_rect(grid, receiver_x0, fill_y0, receiver_w, fill_h);
+        // --- Boiling flask (round bottom + neck) ---
+        let r = (fh * 0.31).min(fw * 0.12).max(1.0);
+        let fx = (fw * 0.04 + r + 1.0).round();
+        let fy = fh - 1.0 - r;
+        let neck_hw = (r * 0.3).max(1.0).round();
+        let ri = r.ceil() as i32 + 1;
+        // Liquid level drops as the charge boils away.
+        let level = fy - r * 0.15 + ctx.eased * r * 0.6;
+        for dy in -ri..=ri {
+            for dx in -ri..=ri {
+                let d = ((dx * dx + dy * dy) as f32).sqrt();
+                let (x, y) = (fx as i32 + dx, fy as i32 + dy);
+                if (d - r).abs() < 0.6 && !(dy < 0 && (dx as f32).abs() < neck_hw) {
+                    draw::dot_i(grid, x, y);
+                } else if d < r - 1.0 && y as f32 >= level {
+                    draw::dot_i(grid, x, y);
+                    if x >= 0 && y >= 0 {
+                        let c = (x / 2) as usize;
+                        draw::tint_row(grid, (y / 4) as usize, c, c, hot);
+                    }
+                }
             }
         }
-
-        // Tint the receiver fill with palette
-        let (cw, ch) = grid.dimensions();
-        let recv_cx0 = cw / 2 + 1;
-        let recv_filled = (ctx.eased * ch as f32).round() as usize;
-        for cy in (ch.saturating_sub(recv_filled))..ch {
-            let t = 1.0 - cy as f32 / ch as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                recv_cx0,
-                cw.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        let neck_top = 1;
+        let neck_bot = (fy - r).round() as i32;
+        draw::vline(
+            grid,
+            (fx - neck_hw).max(0.0) as usize,
+            neck_top,
+            neck_bot.max(1) as usize,
+        );
+        draw::vline(
+            grid,
+            (fx + neck_hw) as usize,
+            neck_top + 2,
+            neck_bot.max(1) as usize,
+        );
+        draw::hline(
+            grid,
+            (fx - neck_hw).max(0.0) as usize,
+            (fx + neck_hw) as usize,
+            0,
+        );
+        // Bubbles popping at the surface.
+        for i in 0..3 {
+            let ph = (ctx.time * 3.0 + i as f32 * 0.37).fract();
+            let bx = fx + (i as f32 - 1.0) * r * 0.45;
+            let by = level - 1.0 - ph * 2.5;
+            draw::dot_i(grid, bx.round() as i32, by.round() as i32);
         }
+
+        // --- Condenser: straight tube with a cooling jacket, then a bend
+        //     down into the receiver ---
+        let x0 = (fx + neck_hw) as i32;
+        let x1 = (fw * 0.80).round() as i32;
+        let ty = ((fh * 0.13).round() as i32).max(1); // tube top wall
+        let tb = ty + 2; // tube bottom wall; lumen is ty + 1
+        draw::hline(
+            grid,
+            x0.max(0) as usize,
+            (x1 + 1).max(0) as usize,
+            ty as usize,
+        );
+        draw::hline(
+            grid,
+            x0.max(0) as usize,
+            (x1 - 1).max(0) as usize,
+            tb as usize,
+        );
+        // Cooling jacket around the middle of the tube, with end caps and
+        // water ports.
+        let j0 = x0 + (x1 - x0) / 5;
+        let j1 = x1 - (x1 - x0) / 7;
+        let (jt, jb) = (ty - 1, tb + ((fh * 0.15).round() as i32).max(1));
+        draw::hline(
+            grid,
+            j0.max(0) as usize,
+            j1.max(0) as usize,
+            jt.max(0) as usize,
+        );
+        draw::hline(grid, j0.max(0) as usize, j1.max(0) as usize, jb as usize);
+        line_i(grid, j0, jt, j0, jb);
+        line_i(grid, j1, jt, j1, jb);
+        line_i(grid, j0 + 3, jb, j0 + 3, jb + 2);
+        line_i(grid, j1 - 3, jb, j1 - 3, jb + 2);
+        // Bend down into the receiver neck.
+        let rim = jb + 2;
+        line_i(grid, x1 + 1, ty, x1 + 1, rim - 1);
+        line_i(grid, x1 - 1, tb, x1 - 1, rim - 1);
+        // Vapour packets flowing along the lumen.
+        for i in 0..7 {
+            let u = (ctx.time * 0.3 + i as f32 / 7.0).fract();
+            let vx = x0 as f32 + (x1 - x0) as f32 * u;
+            draw::dot_i(grid, vx.round() as i32, ty + 1);
+        }
+
+        // --- Erlenmeyer receiver ---
+        let rx = x1;
+        let nhw = 2_i32;
+        let body0 = rim + ((fh * 0.1).round() as i32).max(1);
+        let bottom = h as i32 - 1;
+        let hb = (fh * 0.5).min(fw * 0.09).max(nhw as f32 + 1.0);
+        draw::dot_i(grid, rx - nhw - 1, rim);
+        draw::dot_i(grid, rx + nhw + 1, rim);
+        for y in rim..body0 {
+            draw::dot_i(grid, rx - nhw, y);
+            draw::dot_i(grid, rx + nhw, y);
+        }
+        let body_h = (bottom - body0).max(1) as f32;
+        let half = |y: i32| nhw as f32 + (hb - nhw as f32) * ((y - body0) as f32 / body_h);
+        for y in body0..=bottom {
+            let hw = half(y).round() as i32;
+            draw::dot_i(grid, rx - hw, y);
+            draw::dot_i(grid, rx + hw, y);
+        }
+        draw::hline(
+            grid,
+            (rx - hb.round() as i32).max(0) as usize,
+            (rx + hb.round() as i32).max(0) as usize,
+            bottom.max(0) as usize,
+        );
+        // Distillate fills from the bottom with eased progress.
+        let rows = ((bottom - body0) as f32 * ctx.eased).round() as i32;
+        let surface = bottom - rows;
+        for y in surface..bottom {
+            let hw = half(y).round() as i32 - 1;
+            for x in (rx - hw)..=(rx + hw) {
+                draw::dot_i(grid, x, y);
+                if x >= 0 && y >= 0 {
+                    let c = (x / 2) as usize;
+                    draw::tint_row(grid, (y / 4) as usize, c, c, cool);
+                }
+            }
+        }
+        // A drip falls from the condenser tip to the liquid surface.
+        let ph = (ctx.time * 1.6).fract();
+        let dy = rim as f32 + ph * (surface - rim).max(0) as f32;
+        draw::dot_i(grid, rx, dy.round() as i32);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 // 9. Bond vibration
-//    Two atoms (solid dots) sit at fixed centres; a spring-bond connects them.
-//    The internuclear distance oscillates: d(t) = d₀ + A·cos(ω·t).
-//    Bond length = progress-controlled d₀; amplitude A fixed.
-//    The spring is drawn as a zigzag line between the atoms.
+//    A diatomic molecule: two solid atoms joined by a coiled-spring bond.
+//    The left atom is anchored; the right atom's equilibrium position moves
+//    out with eased progress (the bond stretches toward dissociation) while
+//    it vibrates about that point: x(t) = x₀ + A·sin(ω·t). The spring keeps a
+//    fixed coil count so its coils visibly compress and stretch.
 // ---------------------------------------------------------------------------
 struct BondVibration;
 impl ProgressStyle for BondVibration {
@@ -722,70 +856,62 @@ impl ProgressStyle for BondVibration {
         "chemistry"
     }
     fn describe(&self) -> &str {
-        "Bond vibration: two atoms oscillate on a spring — frequency and bond length vary with progress"
+        "Bond vibration: two atoms on a coiled-spring bond vibrate; the bond stretches across the bar with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (fw, fh) = (w as f32, h as f32);
+        let mid_y = (fh - 1.0) / 2.0;
+        let r = (fh * 0.36).min(fw * 0.1).max(0.5);
 
-        let mid_y = (h / 2) as i32;
+        // Atom A anchored at the left; atom B's rest point stretches out.
+        let ax = r + 1.0;
+        let amp = (r * 0.7).max(1.0);
+        let min_d = 2.0 * r + 2.0 * amp + 6.0;
+        let max_d = (fw - 2.0 * r - 3.0).max(min_d);
+        let d0 = min_d + ctx.eased * (max_d - min_d);
+        let bx = ax + d0 + amp * (2.0 * PI * 1.25 * ctx.time).sin();
 
-        // Equilibrium bond length: progress controls separation
-        let d0 = ctx.eased * (w as f32 * 0.6) + w as f32 * 0.1;
-        // Vibrational amplitude
-        let amp = (h as f32 * 0.15).max(1.0);
-        // Vibrational frequency — higher at small d0 (Morse-like: stiffer at compressed bond)
-        let omega = 4.0 * PI * (1.0 + (1.0 - ctx.eased) * 2.0);
-        // Instantaneous displacement
-        let disp = amp * (omega * ctx.time).cos();
-
-        let cx = (w / 2) as f32;
-        // Atom A: left, Atom B: right — each displaced ±disp/2 from cx ± d0/2
-        let ax = (cx - d0 / 2.0 - disp / 2.0).round() as i32;
-        let bx = (cx + d0 / 2.0 + disp / 2.0).round() as i32;
-
-        // --- Draw atoms as small filled circles (3×3 dot clusters) ---
-        for dy in -1i32..=1 {
-            for dx in -1i32..=1 {
-                if dx * dx + dy * dy <= 1 {
-                    draw::dot_i(grid, ax + dx, mid_y + dy);
-                    draw::dot_i(grid, bx + dx, mid_y + dy);
-                }
-            }
+        // --- Spring: fixed coil count, so it compresses / stretches ---
+        let s0 = ax + r + 1.0;
+        let s1 = bx - r - 1.0;
+        let coils = (((s1 - s0) / 6.0) as usize).clamp(2, 7);
+        let tooth = (r * 0.75).max(1.0);
+        let n = coils * 2;
+        for i in 0..n {
+            let xa = s0 + (s1 - s0) * i as f32 / n as f32;
+            let xb = s0 + (s1 - s0) * (i + 1) as f32 / n as f32;
+            let ya = if i == 0 {
+                mid_y
+            } else if i % 2 == 0 {
+                mid_y + tooth
+            } else {
+                mid_y - tooth
+            };
+            let yb = if i + 1 == n {
+                mid_y
+            } else if i % 2 == 0 {
+                mid_y - tooth
+            } else {
+                mid_y + tooth
+            };
+            line_i(
+                grid,
+                xa.round() as i32,
+                ya.round() as i32,
+                xb.round() as i32,
+                yb.round() as i32,
+            );
         }
 
-        // --- Draw zigzag spring between atoms ---
-        let left_x = ax.max(0).min(bx);
-        let right_x = bx.max(0).max(ax);
-        let bond_len = (right_x - left_x).max(1);
-        let n_teeth = ((bond_len / 3).max(2) as usize).min(20);
-        let tooth_h = (h as i32 / 4).max(1);
-
-        for ti in 0..n_teeth {
-            let x0 = left_x + (ti as i32 * bond_len) / n_teeth as i32;
-            let x1 = left_x + ((ti + 1) as i32 * bond_len) / n_teeth as i32;
-            let y0 = mid_y + if ti % 2 == 0 { -tooth_h } else { tooth_h };
-            let y1 = mid_y + if ti % 2 == 0 { tooth_h } else { -tooth_h };
-            // Draw a line from (x0,y0) to (x1,y1) via interpolation
-            let steps = ((x1 - x0).abs() + (y1 - y0).abs()).max(1) as usize;
-            for s in 0..=steps {
-                let f = s as f32 / steps as f32;
-                let ix = (x0 as f32 + (x1 - x0) as f32 * f).round() as i32;
-                let iy = (y0 as f32 + (y1 - y0) as f32 * f).round() as i32;
-                draw::dot_i(grid, ix, iy);
-            }
-        }
-
-        // Tint by eased
-        let (cw, ch) = grid.dimensions();
-        for cx2 in 0..cw {
-            let t = cx2 as f32 / cw as f32;
-            for cy2 in 0..ch {
-                draw::tint_row(grid, cy2, cx2, cx2, ctx.palette.sample(t));
-            }
-        }
+        // --- Atoms: solid discs in two element colours ---
+        disc(grid, ax, mid_y, r);
+        disc(grid, bx, mid_y, r);
+        tint_disc(grid, ax, mid_y, r, ctx.palette.sample(0.0));
+        tint_disc(grid, bx, mid_y, r, ctx.palette.sample(1.0));
         Ok(())
     }
 }

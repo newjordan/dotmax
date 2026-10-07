@@ -6,9 +6,9 @@
 //!
 //! - [`RcCharge`] — exponential V=V₀(1−e^(−t/RC)) capacitor fill
 //! - [`Oscilloscope`] — graticule + live waveform sweep (sine/triangle/square)
-//! - [`LogicGate`] — signal pulse propagating through AND→OR→XOR→NOT
+//! - [`LogicGate`] — AND/OR/XOR/NOT schematic symbols lit by a signal front
 //! - [`SevenSegment`] — numeric counter rendered with segment lines
-//! - [`LedVuMeter`] — VU column meter with peak-hold dots
+//! - [`LedVuMeter`] — LED-segment VU columns with peak-hold LEDs
 //! - [`BinaryBus`] — parallel bit-bus with bits shifting left→right
 //! - [`SquareClock`] — clock signal with scrolling rising/falling edges
 //! - [`PwmDuty`] — PWM pulse whose duty cycle widens with progress
@@ -244,12 +244,70 @@ impl ProgressStyle for Oscilloscope {
 
 // ---------------------------------------------------------------------------
 // 3. Logic-gate cascade
-//    A signal pulse propagates through four gates: AND → OR → XOR → NOT.
-//    Gates are drawn as text symbols; the signal wire lights up between them
-//    as progress crosses each threshold (0.25, 0.5, 0.75, 1.0).
-//    The active gate flickers at ~4 Hz to indicate processing.
+//    Four schematic gate symbols drawn in dots — AND (flat back, round nose),
+//    OR (curved back, pointed nose), XOR (OR with a second back curve) and
+//    NOT (triangle with an output bubble) — chained by wires. The signal front
+//    advances with eased: wires behind it are solid, wires ahead are dotted,
+//    a bright pulse rides the front, and the gate it is in blinks.
 // ---------------------------------------------------------------------------
 struct LogicGate;
+
+/// Draw gate `kind` (0 AND, 1 OR, 2 XOR, 3 NOT) in a 13×12 box at `(x, y)`.
+fn gate_symbol(grid: &mut BrailleGrid, kind: usize, x: i32, y: i32) {
+    let dot = |grid: &mut BrailleGrid, dx: f32, dy: f32| {
+        draw::dot_i(grid, x + dx.round() as i32, y + dy.round() as i32);
+    };
+    match kind {
+        0 => {
+            // AND: flat back, straight shoulders, semicircular nose.
+            for i in 0..=11 {
+                dot(grid, 0.0, i as f32);
+            }
+            for i in 0..=5 {
+                dot(grid, i as f32, 0.0);
+                dot(grid, i as f32, 11.0);
+            }
+            for s in 0..=16 {
+                let a = -PI / 2.0 + PI * s as f32 / 16.0;
+                dot(grid, 5.0 + a.cos() * 6.5, 5.5 + a.sin() * 5.5);
+            }
+        }
+        3 => {
+            // NOT: triangle plus the inverting bubble.
+            for i in 0..=11 {
+                dot(grid, 0.0, i as f32);
+            }
+            for i in 0..=9 {
+                let t = i as f32 / 9.0;
+                dot(grid, 9.0 * t, 5.5 * t);
+                dot(grid, 9.0 * t, 11.0 - 5.5 * t);
+            }
+            for s in 0..8 {
+                let a = s as f32 * PI / 4.0;
+                dot(grid, 11.0 + a.cos() * 1.5, 5.5 + a.sin() * 1.5);
+            }
+        }
+        _ => {
+            // OR / XOR: concave back, curved flanks meeting in a point.
+            let shift = if kind == 2 { 2.0 } else { 0.0 };
+            for i in 0..=11 {
+                let v = (i as f32 - 5.5) / 5.5;
+                let back = 2.0 * (1.0 - v * v);
+                dot(grid, shift + back, i as f32);
+                if kind == 2 {
+                    dot(grid, back, i as f32);
+                }
+            }
+            for i in 0..=10 {
+                let t = i as f32 / 10.0;
+                let bow = 5.5 * t * t;
+                dot(grid, shift + 11.0 * t, bow);
+                dot(grid, shift + 11.0 * t, 11.0 - bow);
+            }
+        }
+    }
+}
+
 impl ProgressStyle for LogicGate {
     fn name(&self) -> &str {
         "logic-gate"
@@ -258,108 +316,52 @@ impl ProgressStyle for LogicGate {
         "electronics"
     }
     fn describe(&self) -> &str {
-        "Signal pulse cascades through AND→OR→XOR→NOT gates; active gate flickers"
+        "Logic-gate schematic: AND, OR, XOR and NOT symbols chained by wires; the signal front lights the wiring gate by gate as progress advances"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, _h) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let pitch = (wi / 4).max(1);
+        let top = (hi - 12) / 2;
+        let front = (ctx.eased * wi as f32) as i32;
+        let blink = (ctx.time * 4.0).fract() < 0.5;
 
-        // Gate labels; we render them as glyphs.
-        let gates = ["&", "|", "^", "!"];
-        let n_gates = gates.len();
-        // Each gate occupies (cw / (n_gates+1)) cells; wires fill the gaps.
-        let spacing = (cw / (n_gates + 1)).max(1);
-
-        // Wire row: middle cell row.
-        let wire_row = ch / 2;
-
-        // Draw the full wire as a horizontal run of dots.
-        let wire_dot_y = wire_row * 4 + 1; // a dot near the middle of the cell row
-        let wire_dot_y = wire_dot_y.min(w.saturating_sub(1)); // reuse h bound check via dot()
-                                                              // Horizontal baseline wire across the whole grid dot-width.
-        draw::hline(
-            grid,
-            0,
-            w.saturating_sub(1),
-            wire_dot_y.min({
-                let (_, dh) = draw::dot_dims(grid);
-                dh.saturating_sub(1)
-            }),
-        );
-
-        // Thicken the powered stretch of wire so progress reads without
-        // color, and race a pulse packet along it.
-        let (_, dh) = draw::dot_dims(grid);
-        let powered = (ctx.eased * w as f32) as usize;
-        let wire_y = (wire_row * 4 + 1).min(dh.saturating_sub(2));
-        for x in 0..powered.min(w) {
-            draw::dot(grid, x, wire_y + 1);
-        }
-        if powered > 4 {
-            let pulse = ((ctx.time * 0.75).fract() * powered as f32) as usize;
-            for k in 0..4usize {
-                if pulse >= k {
-                    draw::dot(grid, pulse - k, wire_y.saturating_sub(1));
+        // Wires: input stubs into each gate, output stub to the next one.
+        let wire = |grid: &mut BrailleGrid, x0: i32, x1: i32, y: i32| {
+            for x in x0..x1 {
+                if x < front || x % 2 == 0 {
+                    draw::dot_i(grid, x, y);
                 }
             }
+        };
+        for k in 0..4 {
+            let gx = k * pitch + pitch / 2 - 6;
+            let active = (gx..gx + 14).contains(&front);
+            if !(active && blink && ctx.eased < 1.0) {
+                gate_symbol(grid, k as usize, gx, top);
+            }
+            if k == 3 {
+                wire(grid, gx - 5, gx, top + 6);
+            } else {
+                wire(grid, gx - 5, gx + 1, top + 3);
+                wire(grid, gx - 5, gx + 1, top + 8);
+            }
+            let out = gx + if k == 3 { 13 } else { 12 };
+            wire(grid, out, out + 6, top + 6);
         }
 
-        // Draw each gate symbol and light up wires up to the active gate.
-        let lit_gates = (ctx.eased * n_gates as f32).floor() as usize;
-        let flicker_on = (ctx.time * 8.0) as usize % 2 == 0;
-
-        for (gi, &label) in gates.iter().enumerate() {
-            let gate_cell_x = (gi + 1) * spacing;
-            if gate_cell_x >= cw {
-                break;
-            }
-
-            // Draw the gate glyph at wire_row.
-            let ch_sym = label.chars().next().unwrap_or('?');
-            draw::glyph(grid, gate_cell_x, wire_row, ch_sym);
-
-            // Tint the wire cells leading up to this gate if lit.
-            if gi < lit_gates {
-                let wire_start = if gi == 0 { 0 } else { gi * spacing };
-                let wire_end = gate_cell_x.saturating_sub(1);
-                for cx in wire_start..=wire_end.min(cw.saturating_sub(1)) {
-                    let col = ctx.palette.sample(gi as f32 / n_gates as f32);
-                    for cy in 0..ch {
-                        draw::tint_row(grid, cy, cx, cx, col);
-                    }
-                }
-                // Tint the gate cell itself.
-                let col = ctx.palette.sample((gi + 1) as f32 / n_gates as f32);
-                for cy in 0..ch {
-                    draw::tint_row(grid, cy, gate_cell_x, gate_cell_x, col);
-                }
-            } else if gi == lit_gates && flicker_on {
-                // Active gate (being processed): flicker.
-                let col = ctx.palette.sample(0.8);
-                for cy in 0..ch {
-                    draw::tint_row(grid, cy, gate_cell_x, gate_cell_x, col);
-                }
-            }
-        }
-
-        // Tint the wire after the last lit gate.
-        if lit_gates >= n_gates {
-            let last_gate_x = n_gates * spacing;
-            let trail_start = last_gate_x + 1;
-            for cx in trail_start..cw {
-                let col = ctx.palette.sample(1.0);
-                for cy in 0..ch {
-                    draw::tint_row(grid, cy, cx, cx, col);
-                }
+        // The pulse riding the signal front.
+        if ctx.eased > 0.0 && ctx.eased < 1.0 {
+            for (ox, oy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                draw::dot_i(grid, front + ox, top + 5 + oy);
             }
         }
         Ok(())
     }
 }
-
 // ---------------------------------------------------------------------------
 // 4. 7-segment counter
 //    Counts from 0 up to a value proportional to eased (max 99 for 2 digits).
@@ -483,10 +485,11 @@ impl ProgressStyle for SevenSegment {
 
 // ---------------------------------------------------------------------------
 // 5. LED VU meter
-//    N vertical bar columns; each column's level is driven by a synthetic
-//    audio signal: A_k = |sin(k·time · f_k)| where f_k varies per column.
-//    The filled region (left columns) react fully; right columns are dim.
-//    Peak-hold: a single dot at the highest recent level per column.
+//    A stereo-rack LED bar graph: columns of discrete LED segments (3 dots
+//    wide, one dot of spacing) bounce to a synthetic audio signal
+//    A_k = |sin(time · f_k + φ_k)|. Each column keeps a peak-hold LED that
+//    lags the level. Columns left of the progress point play at full gain;
+//    columns beyond it show only their dark bottom LED.
 // ---------------------------------------------------------------------------
 struct LedVuMeter;
 impl ProgressStyle for LedVuMeter {
@@ -497,64 +500,51 @@ impl ProgressStyle for LedVuMeter {
         "electronics"
     }
     fn describe(&self) -> &str {
-        "LED VU bar graph: columns pulse to synthetic audio levels; peak-hold dot per column"
+        "LED VU bar graph: columns of discrete LED segments bounce to synthetic audio with a peak-hold LED each; active columns sweep in with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let n_cols = cw;
-        let lit_cols = (ctx.eased * n_cols as f32).round() as usize;
-
-        for col in 0..n_cols {
-            // Synthetic audio level per column: sum of two sinusoids.
-            let kf = (col + 1) as f32;
-            let freq1 = 0.7 + kf * 0.3;
-            let freq2 = 1.3 + kf * 0.17;
-            let raw = ((kf * ctx.time * freq1).sin().abs()
-                + (kf * 0.5 * ctx.time * freq2 + 1.0).sin().abs())
-                * 0.5;
-            let level = if col < lit_cols { raw } else { raw * 0.12 };
-
-            // Convert level [0,1] to vblock eighths per cell row.
-            // Columns fill from the bottom upward.
-            let total_eighths = (level * ch as f32 * 8.0).round() as usize;
-            let full_cells = total_eighths / 8;
-            let rem = total_eighths % 8;
-
-            // Draw full cells from bottom upward.
-            for row in 0..full_cells.min(ch) {
-                let cell_y = ch.saturating_sub(1).saturating_sub(row);
-                draw::vblock(grid, col, cell_y, 8);
+        let (wi, hi) = (w as i32, h as i32);
+        let cols = (wi / 4).max(1);
+        let segs = (hi / 2).max(1);
+        let active = (ctx.progress * cols as f32).round() as i32;
+        let level = |k: i32, t: f32| {
+            let f = 2.3 + (k * 7 % 5) as f32 * 0.6;
+            let a = (t * f + k as f32 * 0.9).sin().abs();
+            // Bass-heavy tilt: left columns ride higher.
+            let tilt = 1.0 - 0.35 * k as f32 / cols as f32;
+            ((a * tilt) * segs as f32).round() as i32
+        };
+        for k in 0..cols {
+            let x = k * 4;
+            if k >= active {
+                // Dark column: just the bottom LED outline.
+                draw::dot_i(grid, x + 1, hi - 1);
+                continue;
             }
-            // Partial cell above the full cells.
-            if rem > 0 && full_cells < ch {
-                let cell_y = ch.saturating_sub(1).saturating_sub(full_cells);
-                draw::vblock(grid, col, cell_y, rem);
-            }
-
-            // Peak-hold dot: place a single vblock=1 at the top of the level.
-            let peak_eighths = total_eighths.saturating_add(4).min(ch * 8);
-            let peak_row = ch.saturating_sub(1).saturating_sub(peak_eighths / 8);
-            if peak_row < ch && full_cells > 0 {
-                draw::vblock(grid, col, peak_row, 1);
-            }
-
-            // Tint the column.
-            if col < lit_cols {
-                let t = col as f32 / n_cols.max(1) as f32;
-                let col_color = ctx.palette.sample(t);
-                for cy in 0..ch {
-                    draw::tint_row(grid, cy, col, col, col_color);
+            let lit = level(k, ctx.time).max(1);
+            for s in 0..lit {
+                for dx in 0..3 {
+                    draw::dot_i(grid, x + dx, hi - 1 - s * 2);
                 }
+            }
+            // Peak hold: the highest level over the last ~0.4 s.
+            let peak = (1..=4)
+                .map(|i| level(k, ctx.time - i as f32 * 0.1))
+                .max()
+                .unwrap_or(0);
+            if peak > lit {
+                let y = hi - 1 - (peak.min(segs) - 1) * 2;
+                draw::dot_i(grid, x, y);
+                draw::dot_i(grid, x + 2, y);
             }
         }
         Ok(())
     }
 }
-
 // ---------------------------------------------------------------------------
 // 6. Binary data bus
 //    8 parallel horizontal bit lines. Bits shift left→right over time.

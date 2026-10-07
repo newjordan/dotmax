@@ -68,8 +68,8 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
 /// Returns one `Box<dyn ProgressStyle>` per structural form, covering the
 /// full range of block-element technique: smooth sub-cell hbar, coarse snap,
 /// segmented LED, equalizer columns, thermometer, shade dither, brick masonry,
-/// Bayer ordered dither, stacked rows, waterfall, double-ended, and a shade
-/// back-fill gradient meter.
+/// Bayer ordered dither, stacked rows, waterfall, double-ended, a shade
+/// back-fill gradient meter, and a battery cell with a terminal nub.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
         Box::new(Tinted(SmoothHbar)),
@@ -84,6 +84,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(Tinted(Waterfall)),
         Box::new(Tinted(DoubleEnded)),
         Box::new(Tinted(GradientMeter)),
+        Box::new(Tinted(Battery)),
     ]
 }
 
@@ -367,7 +368,7 @@ impl ProgressStyle for DitherRamp {
 }
 
 // ---------------------------------------------------------------------------
-// 7. brick-wall — masonry texture (offset rows) filling with eased
+// 7. brick-wall — running-bond courses laid with a stepped lead
 // ---------------------------------------------------------------------------
 
 struct BrickWall;
@@ -379,49 +380,56 @@ impl ProgressStyle for BrickWall {
         "blocks"
     }
     fn describe(&self) -> &str {
-        "Running-bond brick masonry pattern (alternating offset rows of █) filling with eased"
+        "Running-bond brick wall laid course by course: ▇ bricks with thin \
+         mortar lines and ▊ head joints, half-brick offsets on alternate \
+         courses, a stepped lead, and a fresh ▒/▓ brick being set at each frontier"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cells_w, cells_h) = grid.dimensions();
-        // Each brick: 3 wide, mortar gap is the blank between bricks.
-        let brick_w: usize = 3;
-        let frontier = (ctx.eased * cells_w as f32).round() as usize;
-        let frontier = frontier.min(cells_w);
+        if cells_w == 0 || cells_h == 0 {
+            return Ok(());
+        }
+        // Brick length in cells including its head joint; half for the bond.
+        let brick: i32 = if cells_w >= 20 { 5 } else { 3 };
+        let half = brick / 2;
+        // Masons build a stepped lead: each course up trails by half a brick.
+        let lag = half as f32;
+        let total = cells_w as f32 + lag * cells_h.saturating_sub(1) as f32;
+        let reach = ctx.eased.clamp(0.0, 1.0) * total;
+        let fresh = if (ctx.time * 6.0).sin() > 0.0 {
+            '▓'
+        } else {
+            '▒'
+        };
 
         for cy in 0..cells_h {
-            // Alternate rows offset by half a brick.
-            let offset = if cy % 2 == 1 { brick_w / 2 } else { 0 };
-            let mut cx = 0usize;
-            while cx < frontier {
-                // Shift start by row offset, wrapping within the brick cycle.
-                let brick_start = if cx == 0 && offset > 0 {
-                    // First partial brick at left edge.
-                    0
-                } else {
-                    cx
-                };
-                // Place solid block glyphs for `brick_w - 1` cells (1 mortar gap).
-                let body = (brick_w.saturating_sub(1)).max(1);
-                for bx in 0..body {
-                    let target = brick_start + bx;
-                    if target < frontier && target < cells_w {
-                        // Mortar gap every `brick_w` cell boundary (relative to offset).
-                        let col_in_cycle = (target + cells_w - offset) % brick_w;
-                        if col_in_cycle < brick_w.saturating_sub(1) {
-                            draw::glyph(grid, target, cy, '█');
-                        }
+            let course = cells_h - 1 - cy; // 0 = bottom course
+            let frontier = reach - course as f32 * lag;
+            let offset = if course % 2 == 1 { half } else { 0 };
+            let mut x0 = -offset;
+            while x0 < cells_w as i32 {
+                let x1 = x0 + brick;
+                let end = x1.min(cells_w as i32);
+                let laid = end as f32 <= frontier + 0.01;
+                let laying = !laid && (x0.max(0) as f32) < frontier;
+                if laid || laying {
+                    for cx in x0.max(0)..end {
+                        let c = if laying {
+                            fresh
+                        } else if cx == x1 - 1 {
+                            '▊' // head joint: a sliver of mortar on the right
+                        } else {
+                            '▇' // bed joint: the 1/8 gap on top is the mortar line
+                        };
+                        draw::glyph(grid, cx as usize, cy, c);
                     }
                 }
-                cx += brick_w;
+                x0 = x1;
             }
         }
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// 8. bayer-dither — 4×4 ordered Bayer matrix reveal
-// ---------------------------------------------------------------------------
 
 struct BayerDither;
 
@@ -496,7 +504,7 @@ impl ProgressStyle for StackedBars {
 }
 
 // ---------------------------------------------------------------------------
-// 10. waterfall — shade rows scrolling downward, intensity from a wave
+// 10. waterfall — ledge, falling shade streams, splashing pool
 // ---------------------------------------------------------------------------
 
 struct Waterfall;
@@ -508,31 +516,41 @@ impl ProgressStyle for Waterfall {
         "blocks"
     }
     fn describe(&self) -> &str {
-        "Shade glyphs cascading downward (driven by time) with intensity from a horizontal wave"
+        "Waterfall: water pours over a ▀ ledge and falls in ░▒▓█ streams that \
+         run downward at slightly different speeds into a ▄ pool churned by \
+         splashes; the falls widen left → right with eased"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cells_w, cells_h) = grid.dimensions();
-        let frontier = ctx.eased * cells_w as f32;
-        for cy in 0..cells_h {
-            for cx in 0..cells_w {
-                // Only draw within the progress frontier.
-                if cx as f32 >= frontier {
-                    continue;
-                }
-                // Wave: horizontal sine shifted by time and vertical position.
-                let wave = ((cx as f32 * 0.5 - ctx.time * 3.0 + cy as f32 * 0.8) * PI * 0.5).sin();
-                let intensity = (wave * 0.5 + 0.5).clamp(0.0, 1.0);
-                let level = (intensity * 4.0).round() as usize;
-                draw::shade(grid, cx, cy, level.min(4));
+        let frontier = (ctx.eased.clamp(0.0, 1.0) * cells_w as f32).round() as usize;
+        let lip = cells_h >= 3;
+        let pool = cells_h >= 3;
+        for cx in 0..frontier.min(cells_w) {
+            // Per-column hash: each stream has its own speed and offset.
+            let hash = ((cx as f32 * 12.9898).sin() * 43_758.547).fract().abs();
+            let speed = 1.6 + hash * 1.2;
+            for cy in 0..cells_h {
+                let c = if lip && cy == 0 {
+                    '▀' // the sheet of water curling over the ledge
+                } else if pool && cy == cells_h - 1 {
+                    // Pool surface, with splashes kicking up where streams land.
+                    let splash = (cx as f32 * 1.7 + ctx.time * 7.0 + hash * 6.0).sin();
+                    if splash > 0.75 {
+                        '▓'
+                    } else {
+                        '▄'
+                    }
+                } else {
+                    // Falling streak: the pattern slides down as time runs.
+                    let phase = (hash * 3.0 + ctx.time * speed - cy as f32 * 0.45).rem_euclid(1.0);
+                    draw::SHADES[(phase * 5.0).floor().clamp(1.0, 4.0) as usize]
+                };
+                draw::glyph(grid, cx, cy, c);
             }
         }
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// 11. double-ended — fills from both ends toward the centre
-// ---------------------------------------------------------------------------
 
 struct DoubleEnded;
 impl ProgressStyle for DoubleEnded {
@@ -620,6 +638,91 @@ impl ProgressStyle for GradientMeter {
             }
             if rem_eighths > 0 && full_cells < cells_w {
                 draw::glyph(grid, full_cells, cy, draw::H_BLOCKS[rem_eighths]);
+            }
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 13. battery — rounded cell with a terminal nub, charging left → right
+// ---------------------------------------------------------------------------
+
+struct Battery;
+impl ProgressStyle for Battery {
+    fn name(&self) -> &str {
+        "battery"
+    }
+    fn theme(&self) -> &str {
+        "blocks"
+    }
+    fn describe(&self) -> &str {
+        "Battery cell: a rounded ╭─╮ casing with a ▌ terminal nub, filled with \
+         eighth-precise █ charge; a ▓ charging ripple runs through the charge \
+         and the fill blinks while the level is low"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (cells_w, cells_h) = grid.dimensions();
+        if cells_w < 4 || cells_h == 0 {
+            draw::hbar(grid, 0, ctx.eased);
+            return Ok(());
+        }
+        // Last column is the terminal nub; the casing takes the rest.
+        let body_w = cells_w - 1;
+        let boxed = cells_h >= 3;
+        let (row0, row1) = if boxed {
+            (1, cells_h - 1)
+        } else {
+            (0, cells_h)
+        };
+        if boxed {
+            draw::glyph(grid, 0, 0, '╭');
+            draw::glyph(grid, body_w - 1, 0, '╮');
+            draw::glyph(grid, 0, cells_h - 1, '╰');
+            draw::glyph(grid, body_w - 1, cells_h - 1, '╯');
+            for x in 1..body_w - 1 {
+                draw::glyph(grid, x, 0, '─');
+                draw::glyph(grid, x, cells_h - 1, '─');
+            }
+        }
+        for y in row0..row1 {
+            draw::glyph(grid, 0, y, '│');
+            draw::glyph(grid, body_w - 1, y, '│');
+        }
+        // Nub: the middle rows only (all rows on a 1–2 row grid).
+        let (n0, n1) = if cells_h >= 4 {
+            (cells_h / 2 - 1, cells_h / 2 + 1)
+        } else if boxed {
+            (1, 2)
+        } else {
+            (0, cells_h)
+        };
+        for y in n0..n1 {
+            draw::glyph(grid, cells_w - 1, y, '▌');
+        }
+
+        // Charge: eighth-precise fill of the interior.
+        let inner = body_w.saturating_sub(2);
+        let eased = ctx.eased.clamp(0.0, 1.0);
+        let eighths = (eased * (inner * 8) as f32).round() as usize;
+        let full = (eighths / 8).min(inner);
+        let rem = eighths % 8;
+        // Low charge blinks; otherwise a ripple sweeps through the charge.
+        let blink_off = eased < 0.2 && (ctx.time * 4.0).sin() < 0.0;
+        let ripple = ((ctx.time * 0.9).fract() * (full + 4) as f32) as usize;
+        for y in row0..row1 {
+            for i in 0..full {
+                let c = if blink_off {
+                    '▒'
+                } else if i + 1 == ripple || i == ripple {
+                    '▓'
+                } else {
+                    '█'
+                };
+                draw::glyph(grid, 1 + i, y, c);
+            }
+            if rem > 0 && full < inner && !blink_off {
+                draw::glyph(grid, 1 + full, y, draw::H_BLOCKS[rem]);
             }
         }
         Ok(())

@@ -2,8 +2,9 @@
 //!
 //! Every style is driven by **real noise algorithms** written from scratch —
 //! value noise, fBm, Perlin-style gradient noise, domain warping, Worley /
-//! Voronoi cellular noise, DLA crystal growth, curl noise, topographic
-//! contour bands, plasma, Brownian trails, and a flow-field particle streamer.
+//! Voronoi cellular noise, real DLA crystal growth, curl noise, topographic
+//! isolines, plasma, a Brownian random walk, and a flow-field particle
+//! streamer.
 //!
 //! All algorithms are deterministic given `(ctx.progress, ctx.time)`.
 //! Per-frame cost is bounded to ≤ ~3 000 evaluations in the worst case so the
@@ -500,7 +501,8 @@ impl ProgressStyle for FlowField {
 // 6. WORLEY / CELLULAR NOISE
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Worley cellular noise: shade by F1 distance, reveal cells left of fill edge.
+/// Worley cellular noise: a nucleus where F1 is small, solid membranes where
+/// F2−F1 is small, a faint dithered rim beside them; revealed left of the fill.
 struct WorleyCell;
 impl ProgressStyle for WorleyCell {
     fn name(&self) -> &str {
@@ -510,35 +512,44 @@ impl ProgressStyle for WorleyCell {
         "noise"
     }
     fn describe(&self) -> &str {
-        "Worley cellular noise — distance to nearest feature point — fills with \
-         shimmering cell-membrane patterns, edges sharpening with progress."
+        "Worley cellular noise — distance to the nearest feature point — drawn \
+         as living cells: a nucleus at each point, solid F2−F1 membranes and a \
+         faint rim, revealed left-to-right with progress."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let fill_x = (ctx.eased * dw as f32) as usize;
-        let scale = 4.0 / dw as f32;
-        let sy = 3.0 / dh.max(1) as f32;
-        // Animate feature points slowly.
-        let t_offset = ctx.time * 0.15;
-        let seeds = 2u32;
-        // Threshold: draw dot when F2-F1 is small (near cell edges) or F1 is small.
+        // 4x4 ordered-dither matrix: turns the F1 distance into dot density.
+        const BAYER: [[f32; 4]; 4] = [
+            [0.0, 8.0, 2.0, 10.0],
+            [12.0, 4.0, 14.0, 6.0],
+            [3.0, 11.0, 1.0, 9.0],
+            [15.0, 7.0, 13.0, 5.0],
+        ];
+        // Visible starting state: the first couple of cells are always shown.
+        let fill_x = ((ctx.eased * dw as f32) as usize).max(12).min(dw);
+        // One lattice unit ≈ 11 dots, so a 16-dot-tall bar holds ~1.5 cell rows.
+        let s = 1.0 / 11.0;
+        // The texture drifts slowly sideways like cells under a microscope.
+        let drift = ctx.time * 0.12;
         for dy in 0..dh {
-            for dx in 0..fill_x.min(dw) {
-                let fx = dx as f32 * scale + t_offset * 0.1;
-                let fy = dy as f32 * sy;
-                let (f1, f2) = worley(fx, fy, seeds);
-                // Cell edge (F2-F1 near 0) or inside small cells (F1 small).
-                let edge = f2 - f1;
-                if edge < 0.08 || f1 < 0.12 {
+            for dx in 0..fill_x {
+                // Offset away from lattice row / column 0, where the hash
+                // inputs degenerate and feature points bunch together.
+                let (f1, f2) = worley(dx as f32 * s + drift + 3.3, dy as f32 * s + 2.37, 1);
+                // Membrane: equidistant from two feature points.
+                let membrane = f2 - f1 < 0.08;
+                // Nucleus: very close to a feature point.
+                let nucleus = f1 < 0.13;
+                // Cytoplasm: a faint dither hugging the membrane, so each
+                // cell darkens from its rim in toward its nucleus.
+                let rim = f2 - f1 < 0.16 && BAYER[dy % 4][dx % 4] < 3.0;
+                if membrane || nucleus || rim {
                     draw::dot(grid, dx, dy);
                 }
             }
-        }
-        if dh > 0 {
-            draw::hline(grid, 0, fill_x.saturating_sub(1), dh - 1);
         }
         Ok(())
     }
@@ -621,9 +632,10 @@ impl ProgressStyle for VoronoiDiagram {
 // 8. DLA (DIFFUSION-LIMITED AGGREGATION) CRYSTAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Deterministic DLA approximation: grow a crystal cluster whose size is
-/// controlled by `eased`.  Implemented as a space-filling hash walk so it's
-/// O(N) with no random-number state.
+/// Real diffusion-limited aggregation: fixed-seed random walkers launched
+/// just ahead of the crystal wander on the dot lattice and stick on first
+/// contact, growing dendrites off the left wall until the front reaches
+/// `eased`. Walker count and walk length are capped.
 struct DlaGrowth;
 impl ProgressStyle for DlaGrowth {
     fn name(&self) -> &str {
@@ -633,53 +645,87 @@ impl ProgressStyle for DlaGrowth {
         "noise"
     }
     fn describe(&self) -> &str {
-        "Deterministic DLA crystal: a branching, fern-like aggregate grows from \
-         the centre outward as progress increases."
+        "Diffusion-limited aggregation: random walkers drift in and stick on \
+         contact, growing branching dendrites off the left wall until the \
+         crystal reaches the progress point."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh == 0 {
             return Ok(());
         }
-        let cx = (dw / 2) as i32;
-        let cy = (dh / 2) as i32;
-        let max_particles = 200usize;
-        let n_alive = ((ctx.eased * max_particles as f32) as usize).min(max_particles);
-        // Animate: time shifts particle walks so the crystal breathes.
-        let t_int = (ctx.time * 1.5) as i32;
-        // Each particle performs a short deterministic random walk from the
-        // edge and "sticks" to the cluster approximated by a distance-from-centre
-        // budget that grows with eased.
-        let max_r = (ctx.eased * (dw.min(dh) as f32 * 0.45)).max(1.0);
-        for p in 0..n_alive {
-            // Deterministic start on the perimeter.
-            let angle = hash2(p as i32, t_int) * 2.0 * PI;
-            let mut px = cx + (angle.cos() * max_r * 1.2) as i32;
-            let mut py = cy + (angle.sin() * max_r * 0.6) as i32;
-            // Walk 20 steps toward centre with noise jitter.
-            for step in 0..20i32 {
-                let jitter_h = hash2(p as i32 * 31 + step, t_int ^ 0xABCD);
-                let jitter_v = hash2(p as i32 * 17 + step + 1000, t_int ^ 0x1234);
-                let dx2 = if jitter_h > 0.5 { 1i32 } else { -1 };
-                let dy2 = if jitter_v > 0.5 { 1i32 } else { -1 };
-                let bias_x = if px > cx { -1i32 } else { 1 };
-                let bias_y = if py > cy { -1i32 } else { 1 };
-                // Blend jitter with attraction.
-                let blend_h = hash2(p as i32 + step * 3, 7777);
-                let blend_v = hash2(p as i32 + step * 5, 8888);
-                px += if blend_h > 0.4 { bias_x } else { dx2 };
-                py += if blend_v > 0.4 { bias_y } else { dy2 };
-                // Stick when close enough to centre.
-                let r2 = ((px - cx).pow(2) + (py - cy).pow(2)) as f32;
-                if r2 < max_r * max_r * 0.5 {
-                    draw::dot_i(grid, px, py);
+        let (w, h) = (dw as i32, dh as i32);
+        // The crystal grows until its front reaches the progress point (with
+        // a small visible seed), so the reading is exact.
+        let target = ((ctx.eased * dw as f32) as i32).max(4).min(w - 1);
+        let mut stuck = vec![false; dw * dh];
+        // Seed: the whole left wall is "crystal".
+        for y in 0..dh {
+            stuck[y * dw] = true;
+        }
+        let occupied = |s: &[bool], x: i32, y: i32| -> bool {
+            x >= 0 && y >= 0 && x < w && y < h && s[(y * w + x) as usize]
+        };
+        // Fixed-seed xorshift: the same particle sequence every frame, so the
+        // crystal at higher progress is the one at lower progress plus more.
+        let mut rng: u32 = 0x9E37_79B9;
+        let mut next = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            rng
+        };
+        let mut front = 0i32;
+        // Hard caps on walkers and steps keep the per-frame cost bounded.
+        let mut attempts = 0;
+        while front < target && attempts < 1500 {
+            attempts += 1;
+            // Launch around / just ahead of the front, anywhere vertically,
+            // so walkers also reach the gaps between branches.
+            let lo = (front - 4).max(1);
+            let span = (front + 6 - lo).max(1) as u32;
+            let mut x = (lo + (next() % span) as i32).min(w - 1);
+            let mut y = (next() % h as u32) as i32;
+            let crowded = (-2..=2).any(|oy| (-2..=2).any(|ox| occupied(&stuck, x + ox, y + oy)));
+            if crowded {
+                continue;
+            }
+            for _ in 0..200 {
+                match next() & 3 {
+                    0 => x += 1,
+                    1 => x -= 1,
+                    2 => y += 1,
+                    _ => y -= 1,
+                }
+                // Reflect off the top / bottom edges; give up if it wanders off.
+                y = y.clamp(0, h - 1);
+                if x < 0 || x >= w || x > front + 8 {
+                    break;
+                }
+                let touch = (-1..=1).any(|oy| {
+                    (-1..=1).any(|ox| (ox != 0 || oy != 0) && occupied(&stuck, x + ox, y + oy))
+                });
+                if touch {
+                    stuck[(y * w + x) as usize] = true;
+                    front = front.max(x);
                     break;
                 }
             }
-            draw::dot_i(grid, px, py);
         }
-        // Always show a seed dot at the centre.
-        draw::dot_i(grid, cx, cy);
+        for y in 0..dh {
+            for x in 0..dw {
+                if stuck[y * dw + x] {
+                    draw::dot(grid, x, y);
+                }
+            }
+        }
+        // A few free walkers jitter ahead of the front (animated by time).
+        let slot = (ctx.time * 10.0) as i32;
+        for k in 0..4i32 {
+            let wx = front + 2 + (hash2(k, slot) * 7.0) as i32;
+            let wy = (hash2(k + 50, slot) * dh as f32) as i32;
+            draw::dot_i(grid, wx.min(w - 1), wy);
+        }
         Ok(())
     }
 }
@@ -688,7 +734,8 @@ impl ProgressStyle for DlaGrowth {
 // 9. BROWNIAN TRAIL
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Hash-driven random walk trails, revealed left-to-right by eased progress.
+/// One particle's fixed-seed 2-D random walk with a weak rightward drift,
+/// traced until it first reaches the progress column (step count capped).
 struct BrownianTrail;
 impl ProgressStyle for BrownianTrail {
     fn name(&self) -> &str {
@@ -698,42 +745,45 @@ impl ProgressStyle for BrownianTrail {
         "noise"
     }
     fn describe(&self) -> &str {
-        "Brownian random-walk trails: multiple walkers leave hash-driven paths \
-         that are progressively revealed as the bar fills."
+        "Brownian motion: a single particle's 2-D random walk — tangled, \
+         self-crossing, wandering back on itself — drifts across the bar and \
+         reaches the progress point; its head jitters live."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let n_walkers = 6usize;
-        let steps_per_walker = (dw / n_walkers.max(1)).max(4);
-        let reveal_x = (ctx.eased * dw as f32) as usize;
-        // Animate: walkers shift with time.
-        let t_seed = (ctx.time * 0.5) as i32;
-        for w in 0..n_walkers {
-            let mut x = (w * dw / n_walkers) as i32;
-            let mut y = (dh / 2) as i32;
-            for s in 0..steps_per_walker {
-                let hx = hash2(w as i32 * 1000 + s as i32, t_seed);
-                let hy = hash2(w as i32 * 2000 + s as i32, t_seed + 1);
-                x += if hx > 0.5 { 1 } else { -1 };
-                y += if hy > 0.66 {
-                    1
-                } else if hy < 0.33 {
-                    -1
-                } else {
-                    0
-                };
-                if x >= 0 && (x as usize) < reveal_x {
-                    draw::dot_i(grid, x, y);
-                }
+        let (w, h) = (dw as i32, dh as i32);
+        // The walk runs until it first reaches the progress column (a small
+        // visible start), with a hard step cap for cost.
+        let target = ((ctx.eased * dw as f32) as i32).max(3).min(w - 1);
+        let (mut x, mut y) = (0i32, h / 2);
+        draw::dot_i(grid, x, y);
+        // Fixed seed: the same path every frame, so the trail only extends.
+        // A weak rightward drift (3 of 8 moves go right, 1 left) keeps the
+        // crossing time bounded while the path still loops and doubles back.
+        for s in 0..(dw * 40) as i32 {
+            if x >= target {
+                break;
             }
+            let r = (hash2(s, 9_173) * 8.0) as i32;
+            match r {
+                0..=2 => x += 1,
+                3 => x -= 1,
+                4 | 5 => y += 1,
+                _ => y -= 1,
+            }
+            // Reflect off the walls.
+            x = x.clamp(0, w - 1);
+            y = y.clamp(0, h - 1);
+            draw::dot_i(grid, x, y);
         }
-        // Baseline.
-        if dh > 0 {
-            draw::hline(grid, 0, reveal_x.saturating_sub(1), dh - 1);
-        }
+        // The particle itself keeps jittering about the trail's head.
+        let slot = (ctx.time * 12.0) as i32;
+        let jx = (hash2(slot, 31) * 3.0) as i32 - 1;
+        let jy = (hash2(slot, 47) * 3.0) as i32 - 1;
+        draw::dot_i(grid, (x + jx).min(w - 1), (y + jy).clamp(0, h - 1));
         Ok(())
     }
 }
@@ -801,8 +851,9 @@ impl ProgressStyle for CurlNoise {
 // 11. TOPOGRAPHIC CONTOUR (fBm ISOLINES)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Marching contour bands of fBm — looks like a topographic map.
-/// Number of contour levels grows with progress.
+/// Topographic map: true isolines of an fBm height field — a dot is drawn
+/// wherever the quantised elevation changes between neighbouring dots, so
+/// contours are one dot thick and nest into closed hills and basins.
 struct TopoContour;
 impl ProgressStyle for TopoContour {
     fn name(&self) -> &str {
@@ -812,34 +863,46 @@ impl ProgressStyle for TopoContour {
         "noise"
     }
     fn describe(&self) -> &str {
-        "Topographic fBm isolines: contour bands of fractal Brownian motion \
-         multiply with progress, building a richly detailed elevation map."
+        "Topographic map: one-dot-thick isolines of an fBm height field nest \
+         into hills and basins, surveyed left-to-right as progress grows."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let n_levels = ((ctx.eased * 8.0) as usize).clamp(1, 8);
-        let scale = 3.5 / dw as f32;
-        let sy = 3.0 / dh.max(1) as f32;
-        let t = ctx.time * 0.2;
-        let octaves = 4;
-        let fill_x = (ctx.eased * dw as f32) as usize;
-        for dy in 0..dh {
-            for dx in 0..fill_x.min(dw) {
-                let n = fbm(
-                    dx as f32 * scale,
-                    dy as f32 * scale * sy / scale,
-                    t,
-                    octaves,
-                );
-                // Draw at contour bands: every 1/n_levels interval near an isoline.
-                let band = (n * n_levels as f32).fract();
-                // A dot is on the isoline if the band value is near 0 or 1.
-                if !(0.12..=0.88).contains(&band) {
-                    draw::dot(grid, dx, dy);
+        // Visible starting state: a few columns are always surveyed.
+        let fill_x = ((ctx.eased * dw as f32) as usize).max(6).min(dw);
+        // Isotropic sampling (braille dots are roughly square); time drifts
+        // the map slowly sideways.
+        let s = 0.075f32;
+        let drift = ctx.time * 0.1;
+        const LEVELS: f32 = 7.0;
+        // Quantised elevation for the surveyed window plus one guard column
+        // and row, so each dot can be compared with its right / lower neighbour.
+        let cw = (fill_x + 1).min(dw);
+        let mut q = vec![0i32; cw * (dh + 1)];
+        for y in 0..=dh {
+            for x in 0..cw {
+                let n = fbm(x as f32 * s + drift, y as f32 * s, 0.0, 2);
+                q[y * cw + x] = (n * LEVELS) as i32;
+            }
+        }
+        // An isoline passes wherever the elevation band changes.
+        for y in 0..dh {
+            for x in 0..fill_x {
+                let here = q[y * cw + x];
+                let right = if x + 1 < cw { q[y * cw + x + 1] } else { here };
+                let below = q[(y + 1) * cw + x];
+                if here != right || here != below {
+                    draw::dot(grid, x, y);
                 }
+            }
+        }
+        // Survey edge: a dashed vertical rule at the front.
+        if fill_x < dw {
+            for y in (0..dh).step_by(2) {
+                draw::dot(grid, fill_x, y);
             }
         }
         Ok(())

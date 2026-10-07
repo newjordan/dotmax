@@ -4,17 +4,17 @@
 //! symbol choice all differ. Colour alone is never the only differentiator.
 //!
 //! Styles:
-//! - `mario-run`      — Mario runs rightward; at 100% the flagpole drops.
+//! - `mario-run`      — Mario runs a brick road, hops a pipe, reaches the flagpole.
 //! - `zelda-hearts`   — Heart-container row fills one half-heart at a time.
 //! - `metroid-etanks` — Energy-tank segments charge one at a time.
 //! - `tetris-well`    — A well fills upward with a settling tetromino stack.
-//! - `duck-hunt`      — Ducks arc across the sky; scored ducks show progress.
-//! - `excitebike`     — A bike races right with a turbo-heat gauge on row 2.
-//! - `punchout-stars` — A stamina bar that depletes then refills as star-power.
+//! - `duck-hunt`      — A mallard flaps over the grass; the HIT counter fills.
+//! - `excitebike`     — A motocross rider races and jumps a ramp; TEMP gauge.
+//! - `punchout-stars` — Little Mac vs. a foe in the ring; stars earned fill.
 //! - `contra-spread`  — Spread-shot bullets fan out rightward.
-//! - `megaman-weapon` — Segmented Mega Man weapon-energy bar charges top-down.
-//! - `iceclimber-up`  — Platforms ascend; climber rises with `eased`.
-//! - `donkey-barrel`  — Barrels roll down girders; Mario climbs a ladder.
+//! - `megaman-weapon` — Mega Man fires pellets beside his tick energy meter.
+//! - `iceclimber-up`  — Popo hammers through ice-brick floors; mountain gauge shows altitude.
+//! - `donkey-barrel`  — DK throws barrels down girders; Mario climbs a ladder.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -73,31 +73,73 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sprite helpers — dot-art stamps for the pictorial styles.
+// ---------------------------------------------------------------------------
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+/// Off-grid dots are dropped, so sprites may hang off any edge.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// Solid block of dots from signed coordinates (clipped to the grid).
+fn block(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            draw::dot_i(grid, xx, yy);
+        }
+    }
+}
+
+/// Triangle wave `0 → 1 → 0` with period 1.
+fn tri(t: f32) -> f32 {
+    1.0 - (2.0 * t.rem_euclid(1.0) - 1.0).abs()
+}
+
 /// All styles in the `nintendo` theme.
 ///
 /// Returns one boxed implementor per NES game mechanic.  Every style is
 /// a stateless unit struct — no heap allocation beyond the `Box`.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
-        Box::new(Tinted(MarioRun)),
+        Box::new(MarioRun),
         Box::new(Tinted(ZeldaHearts)),
         Box::new(Tinted(MetroidETanks)),
         Box::new(Tinted(TetrisWell)),
-        Box::new(Tinted(DuckHunt)),
+        Box::new(DuckHunt),
         Box::new(Excitebike),
         Box::new(PunchOutStars),
         Box::new(Tinted(ContraSpread)),
         Box::new(MegaManWeapon),
-        Box::new(Tinted(IceClimberUp)),
-        Box::new(Tinted(DonkeyBarrel)),
+        Box::new(IceClimberUp),
+        Box::new(DonkeyBarrel),
     ]
 }
 
 // ─── 1. Mario Run ────────────────────────────────────────────────────────────
 
-/// Mario runs rightward with animated legs; at 100% a flagpole appears on the
-/// right and Mario "slides" (collapses to a dot at the base).
+/// Mario (capped, overalled, two-frame run cycle) runs along a brick ground,
+/// hops a green warp pipe and heads for the flagpole; the flag slides down as
+/// he reaches it. Each scene element gets its own NES colour.
 struct MarioRun;
+
+/// Small-Mario run frames: cap, face, shirt, overalls, legs.
+const MARIO_A: [&str; 10] = [
+    "..####..", ".#######", ".##.#...", ".######.", ".######.", "########", "##.##.##", ".######.",
+    ".##..##.", "##....##",
+];
+const MARIO_B: [&str; 10] = [
+    "..####..", ".#######", ".##.#...", ".######.", ".######.", "########", "##.##.##", ".######.",
+    "..####..", ".###.##.",
+];
+
 impl ProgressStyle for MarioRun {
     fn name(&self) -> &str {
         "mario-run"
@@ -106,66 +148,78 @@ impl ProgressStyle for MarioRun {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Mario sprints right in braille dots; flagpole drops at 100%"
+        "Mario in red cap and blue overalls runs a brick road, hops a green pipe and reaches the flagpole as progress fills"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (cw, ch) = grid.dimensions();
+        if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 2;
 
-        // Ground line across the bottom.
-        draw::hline(grid, 0, dw.saturating_sub(1), dh.saturating_sub(1));
+        // Brick ground: top edge plus staggered mortar joints.
+        draw::hline(grid, 0, w - 1, ground as usize);
+        for x in (0..wi).filter(|x| x % 4 == 0) {
+            draw::dot_i(grid, x + (x / 4 % 2) * 2, ground + 1);
+        }
 
-        let mario_x =
-            ((ctx.eased * (dw.saturating_sub(4)) as f32) as usize).min(dw.saturating_sub(1));
-        let ground_y = dh.saturating_sub(1);
+        // Green warp pipe mid-course: rim over a narrower body.
+        let pipe_x = wi / 2 - 4;
+        block(grid, pipe_x, ground - 6, 8, 2);
+        block(grid, pipe_x + 1, ground - 4, 6, 4);
 
-        if ctx.progress >= 0.999 {
-            // Flagpole on the far right.
-            let pole_x = dw.saturating_sub(2);
-            draw::vline(grid, pole_x, 0, ground_y);
-            // Flag (small filled square near top).
-            if dh >= 3 {
-                draw::fill_rect(grid, pole_x + 1, 0, 1, (dh / 3).max(1));
-            }
-            // Mario at the base of the pole (just a dot cluster).
-            draw::dot(grid, pole_x, ground_y);
-            if pole_x > 0 {
-                draw::dot(grid, pole_x.saturating_sub(1), ground_y);
-            }
+        // Flagpole: ball on top, pole, pennant sliding down at the finish.
+        let pole_x = wi - 3;
+        block(grid, pole_x - 1, 0, 3, 2);
+        draw::vline(
+            grid,
+            pole_x.max(0) as usize,
+            2,
+            (ground - 1).max(2) as usize,
+        );
+        let lower = ((ctx.eased - 0.9) / 0.1).clamp(0.0, 1.0);
+        let fy = 2 + (lower * (ground - 6).max(0) as f32) as i32;
+        sprite(grid, pole_x - 5, fy, &["#####", ".####", "...##"]);
+
+        // Mario: runs to the pole, hopping in an arc over the pipe.
+        let mx = (ctx.eased * (pole_x - 10).max(0) as f32) as i32;
+        let dx = (mx + 4 - (pipe_x + 4)) as f32 / 10.0;
+        let hop = if dx.abs() < 1.0 {
+            ((1.0 - dx * dx) * 7.0) as i32
         } else {
-            // Mario body: 2-wide, 3-tall (scaled by dh).
-            let body_h = ((dh as f32 * 0.6) as usize).max(1);
-            let body_y = ground_y.saturating_sub(body_h);
-            draw::fill_rect(
-                grid,
-                mario_x,
-                body_y,
-                2.min(dw.saturating_sub(mario_x)),
-                body_h,
-            );
+            0
+        };
+        let my = ground - 10 - hop;
+        let frame = if (ctx.time * 8.0).fract() < 0.5 {
+            &MARIO_A
+        } else {
+            &MARIO_B
+        };
+        sprite(grid, mx, my, frame);
 
-            // Animated legs — alternate two dot patterns driven by time.
-            let step = ((ctx.time * 8.0) as usize) % 2;
-            if dh >= 2 {
-                let lx = mario_x + step;
-                draw::dot(grid, lx.min(dw.saturating_sub(1)), ground_y);
-                if mario_x + 1 < dw {
-                    draw::dot(grid, (mario_x + 1).saturating_sub(step), ground_y);
-                }
+        // Colour each cell by the scene element under its centre.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if (mx..mx + 8).contains(&px) && (my..my + 10).contains(&py) {
+                    if py < my + 5 {
+                        Color::rgb(228, 52, 40) // cap and face
+                    } else {
+                        Color::rgb(64, 110, 240) // overalls
+                    }
+                } else if (pipe_x..pipe_x + 8).contains(&px) && py < ground {
+                    Color::rgb(60, 200, 70)
+                } else if px >= pole_x - 6 && py < ground {
+                    Color::rgb(230, 240, 230)
+                } else {
+                    Color::rgb(196, 110, 50) // bricks
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
-
-        // Coin trail to the left of Mario (shows how far he's come).
-        let coins = (ctx.eased * (mario_x / 4).max(1) as f32) as usize;
-        for i in 0..coins {
-            let cx = i * 4;
-            if cx + 1 < mario_x && cx < dw {
-                draw::dot(grid, cx, ground_y.saturating_sub(dh / 3));
-            }
-        }
-
         Ok(())
     }
 }
@@ -447,8 +501,8 @@ impl ProgressStyle for TetrisWell {
 
 // ─── 5. Duck Hunt ─────────────────────────────────────────────────────────────
 
-/// Ducks arc across the sky using sinusoidal paths; the number of "shot" ducks
-/// equals `round(progress * total_ducks)`.  Downed ducks fall to the ground.
+/// A mallard flaps across the sky past a tree and the tall grass while the
+/// HIT counter along the bottom fills duck by duck with progress.
 struct DuckHunt;
 impl ProgressStyle for DuckHunt {
     fn name(&self) -> &str {
@@ -458,57 +512,96 @@ impl ProgressStyle for DuckHunt {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Ducks arc across the sky; progress = ducks shot, complete ducks fall"
+        "Duck Hunt: a flapping mallard crosses the sky above a tree and tall grass; the HIT counter's ten duck marks turn red as progress = ducks shot"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (cw, ch) = grid.dimensions();
+        if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
+        let grass = hi - 6;
 
-        // Ground.
-        draw::hline(grid, 0, dw.saturating_sub(1), dh.saturating_sub(1));
+        // Tree on the left: leafy crown on a trunk.
+        sprite(
+            grid,
+            1,
+            0,
+            &[
+                ".####.", "######", "######", ".####.", "..##..", "..##..", "..##..",
+            ],
+        );
 
-        let n_ducks = 5usize;
-        let shot_count = (ctx.eased * n_ducks as f32).round() as usize;
+        // Tall grass: a row of tufts with a solid base.
+        for x in 0..wi {
+            let tuft = [1, 0, 2, 0, 1, 2, 0][(x % 7) as usize];
+            for t in 0..=tuft {
+                draw::dot_i(grid, x, grass - t + 1);
+            }
+        }
+        draw::hline(grid, 0, w - 1, (grass + 1).max(0) as usize);
 
-        for i in 0..n_ducks {
-            let phase = i as f32 * 0.7 + ctx.time * 0.8;
-            let t_norm = (phase * 0.4).fract(); // 0..1 left-to-right
+        // The duck: wings flap between two frames as it zigzags right.
+        const UP: [&str; 4] = ["...##....", "....##.##", ".######.#", "..#####.."];
+        const DOWN: [&str; 4] = [".......##", ".######.#", "..####...", "...##...."];
+        let dx = (ctx.time * 22.0).rem_euclid((wi + 20) as f32) as i32 - 10;
+        let dy = 1 + (tri(ctx.time * 0.6) * (grass - 6).max(0) as f32) as i32;
+        let wings = if (ctx.time * 5.0).fract() < 0.5 {
+            &UP
+        } else {
+            &DOWN
+        };
+        sprite(grid, dx, dy, wings);
 
-            if i < shot_count {
-                // Shot duck: falls toward the bottom.
-                let fall = ((ctx.time - (i as f32 * 0.3)).max(0.0) * 12.0) as i32;
-                let dx = (t_norm * dw as f32) as i32;
-                let ground = dh as i32 - 2;
-                let dy = (fall).min(ground);
-                // Tumbling duck (just dots in a small cluster).
-                draw::dot_i(grid, dx, dy);
-                draw::dot_i(grid, dx + 1, dy);
-                draw::dot_i(grid, dx, dy + 1);
+        // HIT counter: ten duck marks along the bottom row of cells.
+        let hits = (ctx.progress * 10.0).round() as i32;
+        let slots = 10.min(cw as i32 / 2);
+        let x0 = (cw as i32 / 2 - slots) * 2;
+        for i in 0..slots {
+            let x = x0 + i * 4;
+            if i < hits {
+                block(grid, x, hi - 3, 3, 3);
             } else {
-                // Live duck: sinusoidal arc across sky.
-                let dx = (t_norm * dw as f32) as i32;
-                let dy = ((PI * t_norm).sin() * (dh.saturating_sub(3)) as f32 * 0.6 + 1.0) as i32;
-                // 2×2 body.
-                draw::dot_i(grid, dx, dy);
-                draw::dot_i(grid, dx + 1, dy);
-                draw::dot_i(grid, dx, dy - 1);
-                // Wing flap (alternate row).
-                let flap = (((ctx.time * 6.0 + i as f32) as i32) % 2) as i32;
-                draw::dot_i(grid, dx + 2, dy - flap);
+                block(grid, x + 1, hi - 2, 1, 1);
             }
         }
 
+        // Colour: green tree and grass, brown-green duck, red marks for hits.
+        grid.enable_color_support();
+        let last = ch - 1;
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if cy == last && ch > 1 {
+                    let i = (px - x0).div_euclid(4);
+                    if (0..hits).contains(&i) {
+                        Color::rgb(232, 60, 48)
+                    } else {
+                        Color::rgb(220, 220, 220)
+                    }
+                } else if px + 1 >= dx && px - 1 < dx + 9 && py + 2 >= dy && py - 2 < dy + 4 {
+                    if px >= dx + 6 {
+                        Color::rgb(40, 170, 80) // green head
+                    } else {
+                        Color::rgb(160, 110, 60)
+                    }
+                } else if py >= grass - 2 || px < 8 {
+                    Color::rgb(70, 180, 60)
+                } else {
+                    Color::rgb(110, 170, 255)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
-
 // ─── 6. Excitebike ───────────────────────────────────────────────────────────
 
-/// The bike position on row 1 tracks `eased` (progress = distance covered).
-/// Row 2 is a TURBO HEAT gauge: it oscillates — if it overheats the bike icon
-/// stutters (shows a "flame" glyph and the bar pulses red via tinting).
+/// A motocross rider (helmet, hunched body, two spoked wheels) races along the
+/// dirt track, launching off a ramp mid-course; distance covered is `eased`.
+/// The TEMP gauge top-right throbs with turbo heat and flashes near overheat.
 struct Excitebike;
 impl ProgressStyle for Excitebike {
     fn name(&self) -> &str {
@@ -518,80 +611,117 @@ impl ProgressStyle for Excitebike {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Bike races right; row 2 is a turbo-heat gauge that must not overheat"
+        "Excitebike: a motocross rider races the dirt track and jumps a ramp as progress = distance, with a turbo TEMP gauge throbbing top-right"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
         let (cw, ch) = grid.dimensions();
-        if dw == 0 || dh == 0 {
+        if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 1;
 
-        // ── Track (ground line) ──
-        draw::hline(grid, 0, dw.saturating_sub(1), dh.saturating_sub(1));
-
-        // ── Bike position ──
-        let bike_x =
-            ((ctx.eased * (dw.saturating_sub(4)) as f32) as usize).min(dw.saturating_sub(1));
-        let wheel_y = dh.saturating_sub(2);
-
-        // Front and rear wheels (single dots).
-        draw::dot(grid, bike_x, wheel_y);
-        if bike_x >= 3 {
-            draw::dot(grid, bike_x.saturating_sub(3), wheel_y);
+        // Track: ground line, dashed lane marks, and a ramp mid-course.
+        draw::hline(grid, 0, w - 1, ground.max(0) as usize);
+        for x in (0..wi).filter(|x| x % 6 < 3) {
+            draw::dot_i(grid, x - (ctx.time * 30.0) as i32 % 6, ground - 5);
         }
-
-        // Frame (diagonal line from rear-wheel to handlebars).
-        for i in 0..3usize {
-            draw::dot_i(grid, bike_x as i32 - i as i32, wheel_y as i32 - i as i32);
-        }
-        // Rider head.
-        if wheel_y >= 3 {
-            draw::dot(grid, bike_x, wheel_y.saturating_sub(3));
-        }
-
-        // ── Turbo heat gauge on row 2 (cell row 1 if height > 1) ──
-        if ch >= 2 && cw > 0 {
-            // Heat oscillates with time; at high progress it climbs.
-            let heat = (ctx.time * 1.2).sin() * 0.3 + ctx.eased * 0.7;
-            let heat = heat.clamp(0.0, 1.0);
-            let overheat = heat > 0.85;
-
-            // Use hbar in the second-to-last cell row for the gauge.
-            let gauge_row = ch.saturating_sub(2).min(ch.saturating_sub(1));
-            // Draw gauge fill via glyph calls on the heat-gauge row.
-            let heat_cells = (heat * cw as f32) as usize;
-            for cx in 0..heat_cells.min(cw) {
-                let shade = if overheat { 4usize } else { 2 };
-                draw::shade(grid, cx, gauge_row, shade);
-            }
-
-            // Tint gauge row: red if overheating, yellow otherwise.
-            if overheat {
-                let hot_color = crate::Color::rgb(255, 40, 0);
-                draw::tint_row(grid, gauge_row, 0, cw.saturating_sub(1), hot_color);
+        let ramp_x = wi / 2;
+        let ramp = |x: i32| -> i32 {
+            let d = x - (ramp_x - 12);
+            if (0..12).contains(&d) {
+                d / 2
             } else {
-                let warm_color = crate::Color::rgb(255, 200, 0);
-                draw::tint_row(
-                    grid,
-                    gauge_row,
-                    0,
-                    heat_cells.min(cw.saturating_sub(1)),
-                    warm_color,
-                );
+                0
             }
+        };
+        for x in ramp_x - 12..ramp_x {
+            draw::vline(
+                grid,
+                x.max(0) as usize,
+                (ground - ramp(x)).max(0) as usize,
+                ground.max(0) as usize,
+            );
         }
 
+        // Rider and bike; airborne in an arc for a stretch after the ramp lip.
+        const BIKE: [[&str; 8]; 2] = [
+            [
+                ".....##.....",
+                "....###.....",
+                "...####.##..",
+                "..#######...",
+                ".##.###.##..",
+                "#..#...#..#.",
+                "#.##...#.##.",
+                ".##.....##..",
+            ],
+            [
+                ".....##.....",
+                "....###.....",
+                "...####.##..",
+                "..#######...",
+                ".##.###.##..",
+                "#..#...#..#.",
+                "##.#...##.#.",
+                ".##.....##..",
+            ],
+        ];
+        let bx = (ctx.eased * (wi - 12).max(0) as f32) as i32;
+        let wheel_x = bx + 9;
+        let air = {
+            let d = (wheel_x - ramp_x) as f32 / 14.0;
+            if (0.0..1.0).contains(&d) {
+                (6.0 * (1.0 - (2.0 * d - 1.0).powi(2)) + 6.0 * (1.0 - d)) as i32
+            } else {
+                ramp(wheel_x)
+            }
+        };
+        let by = ground - 8 - air;
+        let spin = ((ctx.time * 10.0) as usize) % 2;
+        sprite(grid, bx, by, &BIKE[spin]);
+
+        // Turbo TEMP gauge: throbs with time; flashes when nearly overheated.
+        let heat = 0.55 + 0.4 * (ctx.time * 1.7).sin().abs();
+        let gw = 20.min(wi / 3).max(4);
+        let gx = (wi - gw - 1).max(0);
+        draw::rect_outline(grid, gx as usize, 0, gw as usize, 4);
+        let fill = (heat * (gw - 2) as f32) as usize;
+        if heat < 0.9 || (ctx.time * 8.0).fract() < 0.5 {
+            draw::fill_rect(grid, gx as usize + 1, 1, fill, 2);
+        }
+
+        // Colour: red bike, orange-red gauge, brown dirt.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2, cy as i32 * 4);
+                let color = if px + 1 >= bx && px <= bx + 11 && py + 3 >= by && py <= by + 7 {
+                    Color::rgb(232, 60, 52)
+                } else if py < 4 && px + 1 >= gx {
+                    Color::rgb(255, 140, 40)
+                } else {
+                    Color::rgb(190, 130, 70)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
 
 // ─── 7. Punch-Out Stars ──────────────────────────────────────────────────────
 
-/// A segmented stamina bar that depletes left-to-right as `progress` rises,
-/// then at 75%+ refills from right-to-left as a "star-power" burst (bright
-/// glyphs).  Uses `vblock` for segment columns.
+/// The classic over-the-shoulder Punch-Out view: ring ropes and corner posts,
+/// a gloves-up opponent swaying centre-ring, and Little Mac jabbing from the
+/// foreground. Star punches earned (top-left) fill with progress while the
+/// opponent's stamina bar (top-right) drains.
 struct PunchOutStars;
+
+const STAR_FULL: [&str; 5] = ["..#..", ".###.", "#####", ".###.", ".#.#."];
+const STAR_EMPTY: [&str; 5] = ["..#..", ".#.#.", "#...#", ".#.#.", ".#.#."];
+
 impl ProgressStyle for PunchOutStars {
     fn name(&self) -> &str {
         "punchout-stars"
@@ -600,54 +730,119 @@ impl ProgressStyle for PunchOutStars {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Punch-Out stamina bar depletes then surges back as star-power at 75%"
+        "Punch-Out!!: Little Mac jabs at a gloves-up opponent inside the ring ropes; star punches earned fill with progress as the opponent's stamina drains"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cw, ch) = grid.dimensions();
         if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
+        let mid = wi / 2;
 
-        // Stamina: depletes until 75%, then star-power refills.
-        let star_power = ctx.progress > 0.75;
-        let bar_frac = if star_power {
-            // Refill from 0 → 1 over the range 0.75..1.0.
-            (ctx.progress - 0.75) / 0.25
-        } else {
-            // Deplete from 1 → 0 over the range 0..0.75.
-            1.0 - ctx.progress / 0.75
-        };
-        let bar_frac = bar_frac.clamp(0.0, 1.0);
-
-        let filled_cells = (bar_frac * cw as f32).round() as usize;
-
-        for cx in 0..cw {
-            for cy in 0..ch {
-                let level = if cx < filled_cells { 8usize } else { 0 };
-                if level > 0 {
-                    if star_power {
-                        // Star-power: alternate between full and heavy-shade.
-                        let pulse = ((ctx.time * 8.0 + cx as f32 * 0.5) as usize) % 2;
-                        draw::shade(grid, cx, cy, if pulse == 0 { 4 } else { 3 });
-                    } else {
-                        draw::vblock(grid, cx, cy, level);
-                    }
-                } else {
-                    draw::shade(grid, cx, cy, 1);
+        // Ropes (kept clear of the fighters) and corner posts.
+        for y in [6, 9, 12] {
+            for x in 2..wi - 2 {
+                if (x - mid).abs() > 10 {
+                    draw::dot_i(grid, x, y);
                 }
             }
         }
+        draw::vline(grid, 1, 5, h - 1);
+        draw::vline(grid, w.saturating_sub(2), 5, h - 1);
 
-        // Tint: yellow stamina, white star-power.
-        let color = if star_power {
-            crate::Color::rgb(255, 255, 180)
+        // Opponent: head, gloves up, trunks; sways with time.
+        const FOE: [&str; 12] = [
+            "....#####....",
+            "...#######...",
+            "...#.###.#...",
+            "...#######...",
+            "##..#####..##",
+            "###.......###",
+            "###.#####.###",
+            ".#.#######.#.",
+            "...#######...",
+            "...###.###...",
+            "...##...##...",
+            "...##...##...",
+        ];
+        let sway = ((ctx.time * 2.5).sin() * 2.0) as i32;
+        let fx = mid - 6 + sway;
+        sprite(grid, fx, 0, &FOE);
+
+        // Little Mac, seen from behind, throwing alternate jabs.
+        let jab = (ctx.time * 3.0).fract() < 0.3;
+        let left = (ctx.time * 1.5).fract() < 0.5;
+        let mac: [&str; 7] = if !jab {
+            [
+                "...###...",
+                "...###...",
+                "#.#####.#",
+                "##.###.##",
+                "...###...",
+                "..#...#..",
+                "..#...#..",
+            ]
+        } else if left {
+            [
+                "##.###...",
+                ".#.###...",
+                "..#####.#",
+                "...###.##",
+                "...###...",
+                "..#...#..",
+                "..#...#..",
+            ]
         } else {
-            crate::Color::rgb(255, 220, 0)
+            [
+                "...###.##",
+                "...###.#.",
+                "#.#####..",
+                "##.###...",
+                "...###...",
+                "..#...#..",
+                "..#...#..",
+            ]
         };
-        for cy in 0..ch {
-            draw::tint_row(grid, cy, 0, filled_cells.min(cw).saturating_sub(1), color);
+        let mx = mid - 4;
+        sprite(grid, mx, hi - 7, &mac);
+
+        // Star punches earned, top-left.
+        let stars = (ctx.eased * 3.0).round() as i32;
+        for k in 0..3 {
+            let art = if k < stars { &STAR_FULL } else { &STAR_EMPTY };
+            sprite(grid, 4 + k * 7, 0, art);
         }
 
+        // Opponent stamina bar, top-right, draining with progress.
+        let bw = 22.min(wi / 4).max(4);
+        let bx = (wi - bw - 3).max(0);
+        draw::rect_outline(grid, bx as usize, 0, bw as usize, 4);
+        let left_hp = ((1.0 - ctx.eased) * (bw - 2) as f32).round() as usize;
+        if left_hp > 0 {
+            draw::fill_rect(grid, bx as usize + 1, 1, left_hp, 2);
+        }
+
+        // Colour: yellow stars, pink stamina, skin-tone foe, green Mac, red ropes.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if py < 4 && px < 26 {
+                    Color::rgb(250, 214, 60)
+                } else if py < 4 && px >= bx {
+                    Color::rgb(240, 110, 150)
+                } else if (mx..mx + 9).contains(&px) && py >= hi - 7 {
+                    Color::rgb(90, 210, 100)
+                } else if (fx..fx + 13).contains(&px) {
+                    Color::rgb(236, 176, 120)
+                } else {
+                    Color::rgb(220, 64, 64)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
@@ -714,9 +909,9 @@ impl ProgressStyle for ContraSpread {
 
 // ─── 9. Mega Man Weapon ───────────────────────────────────────────────────────
 
-/// Mega Man weapon-energy: a tall narrow bar divided into discrete segments
-/// (like the in-game weapon panel).  Segments light up from the bottom; the
-/// active segment shows sub-segment precision via `vblock`.
+/// Mega Man, arm cannon raised, fires lemon pellets to the right beside his
+/// classic tick-segmented weapon-energy meter, which charges bottom-up with
+/// `eased`.
 struct MegaManWeapon;
 impl ProgressStyle for MegaManWeapon {
     fn name(&self) -> &str {
@@ -726,71 +921,79 @@ impl ProgressStyle for MegaManWeapon {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Mega Man weapon-energy bar — segmented column charges from bottom up"
+        "Mega Man fires lemon pellets from his arm cannon beside the tick-segmented weapon-energy meter, which charges bottom-up with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cw, ch) = grid.dimensions();
         if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Number of segments = cell height; each segment is one cell row.
-        let n_segs = ch;
-        let seg_f = ctx.eased * n_segs as f32;
-        let full_segs = seg_f as usize;
-        let partial = seg_f.fract();
+        // Energy meter: a framed column of horizontal ticks, filled bottom-up.
+        draw::rect_outline(grid, 0, 0, 7, h);
+        let ticks = ((hi - 2) / 2).max(1);
+        let lit = (ctx.eased * ticks as f32).round() as i32;
+        for k in 0..lit {
+            block(grid, 2, hi - 3 - k * 2, 3, 1);
+        }
 
-        // The weapon bar occupies columns 0..=1 (or full width if narrow).
-        let bar_w = cw.min(2);
+        // Mega Man: round helmet, face, chunky body, buster arm forward.
+        const MEGAMAN: [&str; 12] = [
+            "....####...",
+            "...######..",
+            "..##..####.",
+            "..#.#.###..",
+            "..######...",
+            "...####....",
+            ".#######...",
+            "###########",
+            "#.######.##",
+            "..######...",
+            ".###..###..",
+            "####..####.",
+        ];
+        let my = hi - 12;
+        sprite(grid, 10, my, &MEGAMAN);
 
-        for seg in 0..n_segs {
-            // Segments fill bottom-up: seg 0 = bottom (ch-1 in cell coords).
-            let cell_y = n_segs.saturating_sub(1).saturating_sub(seg);
+        // Lemon pellets streaming out of the buster.
+        let lane = (wi - 22).max(1) as f32;
+        for k in 0..3 {
+            let x = 22 + (ctx.time * 46.0 + k as f32 * lane / 3.0).rem_euclid(lane) as i32;
+            sprite(grid, x, my + 6, &[".##.", "####", ".##."]);
+        }
 
-            if seg < full_segs {
-                // Full segment: solid fill.
-                for cx in 0..bar_w {
-                    draw::glyph(grid, cx, cell_y, '█');
-                }
-            } else if seg == full_segs && partial > 0.001 {
-                // Partial segment using vblock precision.
-                let level = (partial * 8.0).round() as usize;
-                for cx in 0..bar_w {
-                    draw::vblock(grid, cx, cell_y, level);
-                }
-            } else {
-                // Empty segment — light border using shade 1.
-                for cx in 0..bar_w {
-                    draw::shade(grid, cx, cell_y, 1);
-                }
+        // Colour: pale-yellow meter and pellets, Mega Man blue.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let px = cx as i32 * 2 + 1;
+                let color = if (9..21).contains(&px) {
+                    Color::rgb(64, 140, 255)
+                } else {
+                    Color::rgb(250, 226, 130)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
-
-        // Remainder columns: empty track.
-        for cx in bar_w..cw {
-            for cy in 0..ch {
-                draw::shade(grid, cx, cy, 0);
-            }
-        }
-
-        // Tint the filled column.
-        let bar_color = ctx.palette.sample(ctx.eased);
-        for seg in 0..full_segs.min(ch) {
-            let cell_y = ch.saturating_sub(1).saturating_sub(seg);
-            draw::tint_row(grid, cell_y, 0, bar_w.saturating_sub(1), bar_color);
-        }
-
         Ok(())
     }
 }
 
 // ─── 10. Ice Climber Up ───────────────────────────────────────────────────────
 
-/// Platforms scroll upward: `eased` determines how high the climber has risen.
-/// The bottom of the grid shows platforms drawn as horizontal dot-lines at
-/// staggered heights; the climber is a small dot cluster that moves up with
-/// `eased`.
+/// Popo in his hooded parka swings his mallet up, smashes the ice-brick floor
+/// overhead (chunks fly), jumps through the gap and the mountain scrolls down
+/// a floor. A mountain gauge on the right shows his altitude = `eased`, with
+/// the summit flag waiting at the peak.
 struct IceClimberUp;
+
+/// Popo, facing right: hood with face opening, parka, arms, boots.
+const POPO: [&str; 7] = [
+    ".####.", "##..##", "##..##", ".####.", "######", ".####.", ".#..#.",
+];
+
 impl ProgressStyle for IceClimberUp {
     fn name(&self) -> &str {
         "iceclimber-up"
@@ -799,71 +1002,132 @@ impl ProgressStyle for IceClimberUp {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "Ice Climber ascends upward platform by platform driven by eased progress"
+        "Popo in his parka smashes the ice-brick floor overhead with his mallet and jumps up through it; a mountain gauge shows altitude"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
+        let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (dw as i32, dh as i32);
+        let t = ctx.time;
 
-        // Platforms: spaced every dh/4 dots, alternating left-right alignment,
-        // scrolling upward with time so the world moves past the climber.
-        let scroll_offset = (ctx.time * 2.0) as usize % (dh.max(1));
-        let plat_spacing = (dh / 4).max(2);
-        let plat_count = (dh / plat_spacing) + 2;
-
-        for p in 0..plat_count {
-            let base_y = p * plat_spacing;
-            let y = (base_y + scroll_offset) % (dh + plat_spacing);
-            if y >= dh {
-                continue;
+        // Scene on the left, mountain gauge on the right.
+        let gauge_w = 26.min(wi / 3).max(0);
+        let sw = (wi - gauge_w - 2).max(8);
+        let gap = 9; // floor spacing in dots
+        let u = (t * 0.8).fract();
+        let scroll = if u > 0.85 {
+            ((u - 0.85) / 0.15 * gap as f32) as i32
+        } else {
+            0
+        };
+        let px = sw / 2 - 6;
+        let hole = (px + 6, px + 12);
+        let base = hi - 2 + scroll; // top row of the floor Popo stands on
+        let broken = u >= 0.4;
+        for k in -1..3 {
+            let fy = base - k * gap;
+            for x in 0..sw {
+                let in_hole = x >= hole.0 && x < hole.1;
+                // Floor 0 already has its hole; floor 1 breaks at u = 0.4.
+                if in_hole && (k == 0 || (k == 1 && broken)) {
+                    continue;
+                }
+                draw::dot_i(grid, x, fy);
+                if (x + k * 2).rem_euclid(4) != 0 {
+                    draw::dot_i(grid, x, fy + 1);
+                }
             }
-
-            let is_left = p % 2 == 0;
-            let pw = dw * 3 / 4;
-            let px0 = if is_left { 0 } else { dw.saturating_sub(pw) };
-            draw::hline(
-                grid,
-                px0,
-                (px0 + pw).saturating_sub(1).min(dw.saturating_sub(1)),
-                y,
-            );
-            // Small snow pillar at platform edges.
-            if y + 1 < dh {
-                draw::dot(grid, px0, y + 1);
-                let right = (px0 + pw).saturating_sub(1).min(dw.saturating_sub(1));
-                draw::dot(grid, right, y + 1);
+        }
+        // Flying ice chunks after the smash.
+        if (0.4..0.75).contains(&u) {
+            let s = (u - 0.4) / 0.35;
+            let fy = base - gap;
+            for (i, dir) in [-1.0f32, -0.4, 0.4, 1.0].iter().enumerate() {
+                let x = hole.0 + 3 + (dir * s * 10.0) as i32;
+                let y = fy - (s * (6.0 - i as f32)) as i32 + (s * s * 10.0) as i32;
+                draw::dot_i(grid, x, y);
+                draw::dot_i(grid, x + 1, y);
             }
         }
 
-        // Climber: rises from bottom (eased=0) to top (eased=1).
-        let climber_y = (dh.saturating_sub(3) as f32 * (1.0 - ctx.eased)) as usize;
-        let climber_x = dw / 2;
-        // Head.
-        draw::dot(grid, climber_x, climber_y);
-        draw::dot(grid, climber_x + 1, climber_y);
-        // Body.
-        if climber_y + 1 < dh {
-            draw::dot(grid, climber_x, climber_y + 1);
-            draw::dot(grid, climber_x + 1, climber_y + 1);
+        // Popo: stand, wind up, smash, jump up through the gap and land left.
+        let (mut ox, mut oy) = (0, 0);
+        if (0.5..=0.85).contains(&u) {
+            let s = (u - 0.5) / 0.35;
+            ox = ((s * PI).sin() * 7.0) as i32;
+            oy = -(s * gap as f32 + (s * PI).sin() * 4.0) as i32;
+        } else if u > 0.85 {
+            oy = -gap;
         }
-        // Legs alternate with time.
-        if climber_y + 2 < dh {
-            let leg_step = ((ctx.time * 6.0) as usize) % 2;
-            draw::dot(grid, climber_x + leg_step, climber_y + 2);
+        let (x, y) = (px + ox, base - 7 + oy + if u > 0.85 { scroll } else { 0 });
+        // u > 0.85 already moved with the floor via `base`, so undo double shift.
+        let y = if u > 0.85 { y - scroll } else { y };
+        sprite(grid, x, y, &POPO);
+        // Mallet: resting on the shoulder, raised overhead for the smash.
+        if (0.2..0.5).contains(&u) {
+            draw::dot_i(grid, x + 5, y + 2);
+            draw::dot_i(grid, x + 6, y + 1);
+            draw::dot_i(grid, x + 7, y);
+            block(grid, x + 7, y - 3, 3, 3);
+        } else {
+            draw::dot_i(grid, x + 6, y + 3);
+            draw::dot_i(grid, x + 7, y + 2);
+            block(grid, x + 7, y, 3, 2);
         }
 
+        // Mountain gauge: snowy peak with a climber marker and summit flag.
+        let g0 = wi - gauge_w;
+        let half = gauge_w / 2;
+        if gauge_w > 4 {
+            for i in 0..=half {
+                let yy = hi - 1 - (i * (hi - 4)) / half.max(1);
+                draw::dot_i(grid, g0 + i, yy);
+                draw::dot_i(grid, wi - 1 - i, yy);
+            }
+            let peak = (g0 + half, 3);
+            sprite(grid, peak.0, 0, &["###", "#..", "#.."]);
+            let m = ctx.eased.clamp(0.0, 1.0);
+            let mx = g0 + (m * half as f32) as i32;
+            let my = hi - 1 - (m * (hi - 4) as f32) as i32;
+            block(grid, mx - 1, my - 3, 2, 3);
+            let _ = peak;
+        }
+
+        // Colour: blue parka, wooden mallet, icy bricks, white peak, red flag.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (qx, qy) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let color = if qx >= g0 - 1 {
+                    if qy < 4 && qx > g0 + half {
+                        Color::rgb(236, 60, 60) // summit flag
+                    } else if (g0..g0 + half).contains(&qx)
+                        && (ctx.eased * half as f32) as i32 + g0 + 2 >= qx
+                        && qy < hi - 2
+                    {
+                        Color::rgb(90, 140, 255) // climber marker
+                    } else {
+                        Color::rgb(230, 240, 255)
+                    }
+                } else if (x - 1..x + 6).contains(&qx) && (y - 1..y + 8).contains(&qy) {
+                    Color::rgb(80, 120, 255) // Popo's parka
+                } else if (x + 6..x + 11).contains(&qx) && (y - 4..y + 4).contains(&qy) {
+                    Color::rgb(214, 150, 80) // mallet
+                } else {
+                    Color::rgb(130, 210, 255) // ice bricks
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }
 
 // ─── 11. Donkey Kong Barrel ───────────────────────────────────────────────────
 
-/// Donkey Kong: girders drawn as horizontal dot-lines at staggered rows; barrels
-/// are circles that roll down the girders from right to left driven by time.
-/// Mario is a small dot cluster at the bottom-left that climbs a ladder (moves
-/// up) as `eased` increases.
+/// Donkey Kong squats on the top girder hurling barrels that roll along the
+/// riveted girders while Mario climbs the ladder between them; his height on
+/// the ladder is `eased`.
 struct DonkeyBarrel;
 impl ProgressStyle for DonkeyBarrel {
     fn name(&self) -> &str {
@@ -873,75 +1137,123 @@ impl ProgressStyle for DonkeyBarrel {
         "nintendo"
     }
     fn describe(&self) -> &str {
-        "DK barrels roll down girders; Mario climbs a ladder as progress rises"
+        "Donkey Kong: DK squats on the sloped top girder throwing rolling barrels while Mario climbs the cyan ladder; his height on it = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (cw, ch) = grid.dimensions();
+        if cw == 0 || ch == 0 {
             return Ok(());
         }
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // ── Girders: horizontal bands ──
-        let n_girders = (dh / 3).clamp(1, 4);
-        let girder_gap = dh / (n_girders + 1).max(1);
-
-        for g in 0..n_girders {
-            let gy = dh.saturating_sub(1).saturating_sub((g + 1) * girder_gap);
-            draw::hline(grid, 0, dw.saturating_sub(1), gy);
+        // Riveted girders: a sloped top deck and the flat floor.
+        let deck_end = (wi - 10).max(1);
+        let top_y = |x: i32| 6 + x * 2 / wi.max(1);
+        for x in 0..deck_end {
+            draw::dot_i(grid, x, top_y(x));
+            if x % 3 == 0 {
+                draw::dot_i(grid, x, top_y(x) + 1);
+            }
         }
-
-        // ── Ladder: narrow vertical line at the far left ──
-        draw::vline(grid, 1, 0, dh.saturating_sub(1));
-        // Ladder rungs.
-        let rung_spacing = 3usize;
-        let mut ry = 0usize;
-        while ry < dh {
-            draw::dot(grid, 0, ry);
-            draw::dot(grid, 2, ry);
-            ry += rung_spacing;
-        }
-
-        // ── Barrels: roll along each girder, one per girder ──
-        for g in 0..n_girders {
-            let gy = dh.saturating_sub(1).saturating_sub((g + 1) * girder_gap);
-            // Each barrel on a different girder has offset phase.
-            let phase = g as f32 * 0.4 + ctx.time * 0.7;
-            let barrel_t = 1.0 - (phase * 0.3).fract(); // travels right→left
-            let bx = (barrel_t * (dw.saturating_sub(3)) as f32) as usize;
-
-            // Barrel is a small circle: 3 dots wide.
-            if bx < dw && gy >= 1 {
-                draw::dot(grid, bx, gy.saturating_sub(1)); // top
-                draw::dot(grid, bx.saturating_sub(1), gy); // err: was gy but actually the girder row
-                                                           // Place barrel one row above girder so it sits on top.
-                let barrel_y = gy.saturating_sub(1);
-                draw::dot(grid, bx, barrel_y);
-                if bx + 1 < dw {
-                    draw::dot(grid, bx + 1, barrel_y);
-                }
-                // Rolling indicator: alternating side dot.
-                let roll = ((ctx.time * 5.0 + g as f32) as usize) % 2;
-                let side_dot = if roll == 0 {
-                    bx.saturating_sub(1)
-                } else {
-                    (bx + 2).min(dw.saturating_sub(1))
-                };
-                if barrel_y >= 1 {
-                    draw::dot(grid, side_dot, barrel_y);
-                }
+        for x in 0..wi {
+            draw::dot_i(grid, x, hi - 2);
+            if x % 3 == 0 {
+                draw::dot_i(grid, x, hi - 1);
             }
         }
 
-        // ── Mario: climbs the ladder from bottom to top ──
-        let mario_y = (dh.saturating_sub(3) as f32 * (1.0 - ctx.eased)) as usize;
-        // Mario is at x=1 (on the ladder).
-        draw::dot(grid, 1, mario_y);
-        draw::dot(grid, 2, mario_y);
-        if mario_y + 1 < dh {
-            draw::dot(grid, 1, mario_y + 1);
-            draw::dot(grid, 2, mario_y + 1);
+        // Donkey Kong, top-left, arms out.
+        const DK: [&str; 6] = [
+            "....####....",
+            "...#.##.#...",
+            "..########..",
+            "############",
+            "##.######.##",
+            "##..#..#..##",
+        ];
+        let dk_y = top_y(0) - 6 + i32::from((ctx.time * 2.0).fract() >= 0.5);
+        sprite(grid, 0, dk_y, &DK);
+
+        // Ladder joining the girders.
+        let lx = wi * 11 / 20;
+        let (l_top, l_bot) = (top_y(lx) + 2, hi - 3);
+        draw::vline(
+            grid,
+            lx.max(0) as usize,
+            l_top.max(0) as usize,
+            l_bot.max(0) as usize,
+        );
+        draw::vline(
+            grid,
+            (lx + 5).max(0) as usize,
+            l_top.max(0) as usize,
+            l_bot.max(0) as usize,
+        );
+        for y in (l_top..=l_bot).filter(|y| y % 2 == 0) {
+            draw::hline(
+                grid,
+                lx.max(0) as usize,
+                (lx + 5).max(0) as usize,
+                y.max(0) as usize,
+            );
         }
 
+        // Barrels: rolling right along the deck, then left along the floor.
+        const BARREL: [[&str; 4]; 2] = [
+            [".##.", "#..#", "#..#", ".##."],
+            [".##.", "####", "####", ".##."],
+        ];
+        for k in 0..2 {
+            let x = 14
+                + (ctx.time * 16.0 + k as f32 * 31.0).rem_euclid((deck_end - 14).max(1) as f32)
+                    as i32;
+            sprite(grid, x, top_y(x) - 4, &BARREL[(x / 2 % 2) as usize]);
+            let fx = wi - 4 - (ctx.time * 16.0 + k as f32 * 44.0).rem_euclid(wi as f32) as i32;
+            sprite(
+                grid,
+                fx,
+                hi - 6,
+                &BARREL[(fx / 2 % 2).unsigned_abs() as usize],
+            );
+        }
+
+        // Mario on the ladder: feet climb from the floor to the top deck.
+        let feet = l_bot - (ctx.eased * (l_bot - l_top + 2) as f32) as i32;
+        let legs = if (ctx.time * 6.0).fract() < 0.5 {
+            "#...#"
+        } else {
+            ".#.#."
+        };
+        sprite(
+            grid,
+            lx,
+            feet - 5,
+            &[".###.", "#####", ".##..", "#####", ".###.", legs],
+        );
+
+        // Colour: red Mario and girders, brown DK and barrels, cyan ladder.
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (px, py) = (cx as i32 * 2, cy as i32 * 4);
+                let mario = px + 1 >= lx && px <= lx + 4 && py + 3 >= feet - 5 && py <= feet;
+                let color = if mario {
+                    Color::rgb(232, 56, 48)
+                } else if px < 12 && py + 3 < top_y(0) {
+                    Color::rgb(170, 96, 40)
+                } else if (lx..=lx + 5).contains(&px) || (lx..=lx + 5).contains(&(px + 1)) {
+                    Color::rgb(80, 210, 230)
+                } else if cy == ch - 1
+                    || py + 3 >= top_y(px) && py <= top_y(px) + 1 && px < deck_end
+                {
+                    Color::rgb(226, 70, 96)
+                } else {
+                    Color::rgb(206, 140, 60)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }

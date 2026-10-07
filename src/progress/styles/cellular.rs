@@ -11,9 +11,9 @@
 //! - Conway's Game of Life (glider / r-pentomino seeds)
 //! - Brian's Brain (3-state excitable CA)
 //! - Langton's Ant
-//! - Gray-Scott reaction-diffusion (approximated)
-//! - Cyclic / rock-paper-scissors CA
-//! - Wireworld electron loop
+//! - Gray-Scott reaction-diffusion (spot regime, steady state rendered analytically)
+//! - Griffeath cyclic CA (spiral demons)
+//! - Wireworld clock (electron loop feeding a wire)
 //! - Forest fire model
 
 use super::super::draw;
@@ -441,7 +441,7 @@ impl ProgressStyle for BriansBrain {
         "cellular"
     }
     fn describe(&self) -> &str {
-        "Brian's Brain: 3-state excitable CA — firing waves pulse and swirl as progress advances"
+        "Brian's Brain: 3-state excitable CA — firing cells with refractory tails swarm as gliders, revealed left-to-right by progress"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
@@ -455,14 +455,20 @@ impl ProgressStyle for BriansBrain {
             board = Self::step(&board);
         }
 
-        // progress controls a diagonal reveal: cells with (x+y)/max_sum <= eased are shown.
-        let max_sum = (w + h).saturating_sub(2).max(1);
+        // Progress gates a left-to-right reveal (a few columns always show).
+        // Firing cells are solid; refractory cells — the "tails" that make
+        // Brian's Brain gliders travel — are drawn at half density behind them.
+        let reveal_x = ((ctx.eased * w as f32) as usize).max(6).min(w);
         for (y, row) in board.iter().enumerate().take(h) {
-            for x in 0..w {
-                let reveal_frac = (x + y) as f32 / max_sum as f32;
-                if reveal_frac <= ctx.eased && x < row.len() && row[x] == 1 {
+            for (x, &cell) in row.iter().enumerate().take(reveal_x) {
+                if cell == 1 || (cell == 2 && (x + y) % 2 == 0) {
                     draw::dot(grid, x, y);
                 }
+            }
+        }
+        if reveal_x < w {
+            for y in (0..h).step_by(2) {
+                draw::dot(grid, reveal_x, y);
             }
         }
 
@@ -550,15 +556,16 @@ impl ProgressStyle for LangtonsAnt {
 // 11: Cyclic / Rock-Paper-Scissors CA
 // ===========================================================================
 //
-// Each cell holds a state in [0, N). A cell advances (+1 mod N) if at least
-// one of its 8 neighbours is in the next state. Spiral waves emerge.
-// N=8 states. Driven by time for animation, eased for density of initial fill.
+// Griffeath's cyclic CA: each cell holds a state in [0, N). A cell advances
+// (+1 mod N) if at least one of its 4 von Neumann neighbours is already in
+// the next state. From random soup, self-sustaining spiral "demons" emerge
+// and sweep the field with rotating wave bands. N=8 states.
 
 struct CyclicCA;
 
 impl CyclicCA {
     const N_STATES: u8 = 8;
-    const THRESHOLD: usize = 3; // neighbours needed to advance
+    const THRESHOLD: usize = 1; // neighbours needed to advance
 
     fn initial(w: usize, h: usize, density_seed: u32) -> Vec<Vec<u8>> {
         let n = Self::N_STATES;
@@ -566,8 +573,8 @@ impl CyclicCA {
             .map(|y| {
                 (0..w)
                     .map(|x| {
-                        // Use density_seed to vary initial state distribution.
-                        let v = hash2(x as u32 ^ density_seed, y as u32);
+                        // High hash bits: the low bits of this hash are weak.
+                        let v = hash(hash2(x as u32, y as u32) ^ density_seed) >> 16;
                         (v % n as u32) as u8
                     })
                     .collect()
@@ -586,16 +593,11 @@ impl CyclicCA {
                 let cur = board[y][x];
                 let target = (cur + 1) % n;
                 let mut count = 0usize;
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let nx = (x as i32 + dx).rem_euclid(w as i32) as usize;
-                        let ny = (y as i32 + dy).rem_euclid(h as i32) as usize;
-                        if board[ny][nx] == target {
-                            count += 1;
-                        }
+                for (dx, dy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = (x as i32 + dx).rem_euclid(w as i32) as usize;
+                    let ny = (y as i32 + dy).rem_euclid(h as i32) as usize;
+                    if board[ny][nx] == target {
+                        count += 1;
                     }
                 }
                 if count >= thresh {
@@ -615,7 +617,7 @@ impl ProgressStyle for CyclicCA {
         "cellular"
     }
     fn describe(&self) -> &str {
-        "Cyclic CA (rock-paper-scissors): spiral waves of 8 states — progress advances the generation count"
+        "Griffeath cyclic CA: 8 states, each eats its predecessor — spiral demons sweep rotating wave bands across a field revealed by progress"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
@@ -626,10 +628,13 @@ impl ProgressStyle for CyclicCA {
         // Wave density is roughly constant at any generation count, so the
         // generation count alone cannot carry the progress reading. Run the
         // waves on time and gate the field behind a left-to-right reveal.
-        let gens = 8 + (ctx.time * 3.0) as usize;
+        // After the warm-up the demons dominate and the field cycles with
+        // period N, so looping over a multiple of N bounds the cost.
+        let period = Self::N_STATES as usize * 12;
+        let gens = 48 + (ctx.time.max(0.0) * 6.0) as usize % period;
         let seed = 7u32;
         let mut board = Self::initial(w, h, seed);
-        for _ in 0..gens.min(80) {
+        for _ in 0..gens {
             board = Self::step(&board);
         }
 
@@ -655,153 +660,18 @@ impl ProgressStyle for CyclicCA {
 // 12: Wireworld
 // ===========================================================================
 //
-// 4 states: EMPTY(0), CONDUCTOR(1), ELECTRON_HEAD(2), ELECTRON_TAIL(3).
-// Rules:
-//   EMPTY       → EMPTY
-//   CONDUCTOR   → ELECTRON_HEAD if 1 or 2 electron heads in neighbourhood, else CONDUCTOR
-//   ELECTRON_HEAD → ELECTRON_TAIL
-//   ELECTRON_TAIL → CONDUCTOR
-//
-// We draw a loop of conductor around the perimeter of the dot grid, inject
-// an electron, and let it chase itself. `eased` controls how much of the
-// perimeter the conductor covers; `time` drives the electron position.
+// 4 states: EMPTY, CONDUCTOR, ELECTRON_HEAD, ELECTRON_TAIL.
+// Rules: head → tail, tail → conductor, conductor → head if exactly 1 or 2 of
+// its 8 neighbours are heads. On a closed loop a single head/tail pair
+// circulates one cell per generation; tapped by a wire, the loop is the
+// classic Wireworld *clock*, emitting one electron down the wire every lap.
+// On a one-cell-wide wire the rule moves each electron exactly one cell per
+// generation, so the state at generation `g` is computed in closed form.
+// The wire is laid left-to-right as progress grows; time drives the clock.
+// Wire heads are drawn as 3x3 blocks with a split tail behind them (the loop
+// head as a 3-dot bar), so the pulses read even without colour.
 
 struct Wireworld;
-
-impl Wireworld {
-    const EMPTY: u8 = 0;
-    const CONDUCTOR: u8 = 1;
-    const HEAD: u8 = 2;
-    const TAIL: u8 = 3;
-
-    fn build_grid(w: usize, h: usize, fill_frac: f32) -> Vec<Vec<u8>> {
-        let mut board = vec![vec![Self::EMPTY; w]; h];
-        // Perimeter loop: top, right, bottom (reversed), left (reversed).
-        let perimeter: Vec<(usize, usize)> = {
-            let mut p = Vec::new();
-            // Top row left→right.
-            for x in 0..w {
-                p.push((x, 0));
-            }
-            // Right column top→bottom (skip corners already added).
-            for y in 1..h {
-                p.push((w.saturating_sub(1), y));
-            }
-            // Bottom row right→left (skip corner).
-            if h > 1 {
-                let y = h - 1;
-                for x in (0..w.saturating_sub(1)).rev() {
-                    p.push((x, y));
-                }
-            }
-            // Left column bottom→top (skip corners).
-            if w > 1 && h > 1 {
-                for y in (1..h.saturating_sub(1)).rev() {
-                    p.push((0, y));
-                }
-            }
-            p
-        };
-        let total = perimeter.len().max(1);
-        let lit = (fill_frac * total as f32) as usize;
-
-        for &(x, y) in perimeter.iter().take(lit.min(total)) {
-            board[y][x] = Self::CONDUCTOR;
-        }
-        board
-    }
-
-    fn inject_electron(board: &mut [Vec<u8>], electron_pos: usize) {
-        // Walk the perimeter to find the conductor cell at position `electron_pos`.
-        let h = board.len();
-        let w = if h == 0 { 0 } else { board[0].len() };
-        let mut idx = 0usize;
-        // Top row.
-        if let Some(top) = board.first_mut() {
-            for cell in top {
-                if *cell == Self::CONDUCTOR {
-                    if idx == electron_pos {
-                        *cell = Self::HEAD;
-                        return;
-                    }
-                    idx += 1;
-                }
-            }
-        }
-        // Right column.
-        let rx = w.saturating_sub(1);
-        for row in board.iter_mut().skip(1) {
-            if row[rx] == Self::CONDUCTOR {
-                if idx == electron_pos {
-                    row[rx] = Self::HEAD;
-                    return;
-                }
-                idx += 1;
-            }
-        }
-        // Bottom row reversed.
-        if h > 1 {
-            let by = h - 1;
-            for x in (0..w.saturating_sub(1)).rev() {
-                if board[by][x] == Self::CONDUCTOR {
-                    if idx == electron_pos {
-                        board[by][x] = Self::HEAD;
-                        return;
-                    }
-                    idx += 1;
-                }
-            }
-        }
-        // Left column reversed.
-        if w > 1 && h > 1 {
-            for y in (1..h.saturating_sub(1)).rev() {
-                if board[y][0] == Self::CONDUCTOR {
-                    if idx == electron_pos {
-                        board[y][0] = Self::HEAD;
-                        return;
-                    }
-                    idx += 1;
-                }
-            }
-        }
-    }
-
-    fn step(board: &[Vec<u8>]) -> Vec<Vec<u8>> {
-        let h = board.len();
-        let w = if h == 0 { 0 } else { board[0].len() };
-        let mut next = board.to_vec();
-        for y in 0..h {
-            for x in 0..w {
-                next[y][x] = match board[y][x] {
-                    Self::HEAD => Self::TAIL,
-                    Self::TAIL => Self::CONDUCTOR,
-                    Self::CONDUCTOR => {
-                        let mut heads = 0u8;
-                        for dy in -1i32..=1 {
-                            for dx in -1i32..=1 {
-                                if dx == 0 && dy == 0 {
-                                    continue;
-                                }
-                                let nx = (x as i32 + dx).rem_euclid(w as i32) as usize;
-                                let ny = (y as i32 + dy).rem_euclid(h as i32) as usize;
-                                if board[ny][nx] == Self::HEAD {
-                                    heads += 1;
-                                }
-                            }
-                        }
-                        if heads == 1 || heads == 2 {
-                            Self::HEAD
-                        } else {
-                            Self::CONDUCTOR
-                        }
-                    }
-                    _ => Self::EMPTY,
-                };
-            }
-        }
-        next
-    }
-}
 
 impl ProgressStyle for Wireworld {
     fn name(&self) -> &str {
@@ -811,53 +681,86 @@ impl ProgressStyle for Wireworld {
         "cellular"
     }
     fn describe(&self) -> &str {
-        "Wireworld: an electron chases itself around a conductor perimeter — conductor grows with progress"
+        "Wireworld clock: an electron circling a conductor loop fires pulses down a wire laid out to the progress point"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let w = w.max(1);
-        let h = h.max(1);
-
-        // Build conductor loop sized by eased.
-        let mut board = Self::build_grid(w, h, ctx.eased);
-
-        // Perimeter length (approximate) — used to position electron.
-        let perimeter_len = (2 * (w + h)).saturating_sub(4).max(1);
-
-        // Place HEAD at position driven by time.
-        let head_pos = (ctx.time * 8.0) as usize % perimeter_len;
-        let tail_pos = head_pos.saturating_sub(1) % perimeter_len;
-        Self::inject_electron(&mut board, head_pos);
-        Self::inject_electron(&mut board, tail_pos);
-
-        // Step a few generations so the electron is properly propagated.
-        for _ in 0..2 {
-            board = Self::step(&board);
+        if w < 4 || h < 3 {
+            // Too small for a circuit: just lay the wire.
+            if w > 0 && h > 0 {
+                let end = (ctx.eased * w as f32) as usize;
+                draw::hline(grid, 0, end.min(w - 1), h / 2);
+            }
+            return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let mid = hi / 2;
+        // Clock loop: a rectangle at the left whose right side taps the wire.
+        let half_h = (mid - 1).clamp(1, 3);
+        let (lx0, lx1) = (1i32, 7i32.min(wi - 2));
+        let (ly0, ly1) = (mid - half_h, mid + half_h);
+        // Perimeter cells, clockwise from the top-left corner.
+        let mut loop_cells: Vec<(i32, i32)> = Vec::new();
+        for x in lx0..=lx1 {
+            loop_cells.push((x, ly0));
+        }
+        for y in ly0 + 1..=ly1 {
+            loop_cells.push((lx1, y));
+        }
+        for x in (lx0..lx1).rev() {
+            loop_cells.push((x, ly1));
+        }
+        for y in (ly0 + 1..ly1).rev() {
+            loop_cells.push((lx0, y));
+        }
+        let lap = loop_cells.len().max(1) as i32;
+        for &(x, y) in &loop_cells {
+            draw::dot_i(grid, x, y);
+        }
+        // Index of the tap (the loop cell on the wire row, right side).
+        let tap = loop_cells
+            .iter()
+            .position(|&(x, y)| x == lx1 && y == mid)
+            .unwrap_or(0) as i32;
 
-        for (y, row) in board.iter().enumerate().take(h) {
-            for x in 0..w {
-                if x < row.len() {
-                    match row[x] {
-                        Self::CONDUCTOR => draw::dot(grid, x, y),
-                        Self::HEAD => {
-                            // Draw HEAD brighter by also dotting adjacent positions.
-                            draw::dot(grid, x, y);
-                            if x + 1 < w {
-                                draw::dot(grid, x + 1, y);
-                            }
-                            if x > 0 {
-                                draw::dot(grid, x.saturating_sub(1), y);
-                            }
-                        }
-                        // TAIL is invisible (just went dark), as is EMPTY.
-                        _ => {}
-                    }
+        // Wire: laid from the loop to the progress point (visible stub at 0).
+        let wire_x0 = lx1 + 1;
+        let wire_end = ((ctx.eased * w as f32) as i32).max(wire_x0 + 6).min(wi - 1);
+        draw::hline(grid, wire_x0 as usize, wire_end as usize, mid as usize);
+
+        let g = (ctx.time.max(0.0) * 10.0) as i32;
+        // Head marker: a 3-dot bar across the conductor.
+        let head = |grid: &mut BrailleGrid, x: i32, y: i32, vertical_wire: bool| {
+            draw::dot_i(grid, x, y);
+            if vertical_wire {
+                draw::dot_i(grid, x - 1, y);
+                draw::dot_i(grid, x + 1, y);
+            } else {
+                draw::dot_i(grid, x, y - 1);
+                draw::dot_i(grid, x, y + 1);
+            }
+        };
+        // The circulating electron: head at loop position g.
+        let hp = g % lap;
+        let (hx, hy) = loop_cells[hp as usize];
+        head(grid, hx, hy, hx == lx0 || hx == lx1);
+        // Pulses on the wire: a head that passed the tap `d` gens ago sits at
+        // wire_x0 + d - 1 — one pulse per lap.
+        let mut d = (g - tap).rem_euclid(lap);
+        while wire_x0 + d - 1 <= wire_end {
+            let px = wire_x0 + d - 1;
+            if px >= wire_x0 {
+                // Head: a 3x3 block; tail: a bar right behind it.
+                head(grid, px, mid, false);
+                head(grid, px - 1, mid, false);
+                if px > wire_x0 + 1 {
+                    draw::dot_i(grid, px - 2, mid - 1);
+                    draw::dot_i(grid, px - 2, mid + 1);
                 }
             }
+            d += lap;
         }
-
         Ok(())
     }
 }
@@ -866,10 +769,12 @@ impl ProgressStyle for Wireworld {
 // 13: Gray-Scott reaction-diffusion
 // ===========================================================================
 //
-// Two chemicals u, v diffuse and react: u + 2v -> 3v, with feed rate F and
-// kill rate k. Seeded with a central blob and integrated for a number of
-// steps that grows with `eased` — coral / mitosis labyrinths emerge. Stateless:
-// the whole simulation is recomputed from the same seed every frame.
+// Two chemicals u, v diffuse and react: u + 2v -> 3v. In the spot ("mitosis")
+// regime the field settles into a hexagonal array of round v-spots, but that
+// takes thousands of integration steps — far too many per frame. So the
+// steady state is rendered analytically (three plane waves 120° apart sum to
+// the hexagonal spot lattice) inside a colony that spreads with `eased`, with
+// small freshly-nucleated spots at its rim.
 
 struct GrayScott;
 impl ProgressStyle for GrayScott {
@@ -880,58 +785,41 @@ impl ProgressStyle for GrayScott {
         "cellular"
     }
     fn describe(&self) -> &str {
-        "Gray-Scott reaction-diffusion: coral/mitosis labyrinths grow as progress feeds the reaction"
+        "Gray-Scott reaction-diffusion, spot (mitosis) regime: a colony of round Turing spots spreads from the centre as progress feeds it, new spots budding at the rim"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let w = w.max(1);
-        let h = h.max(1);
-        let n = w * h;
-        let mut u = vec![1.0f32; n];
-        let mut v = vec![0.0f32; n];
-        // Seed a small central square of v.
-        let cx = w / 2;
-        let cy = h / 2;
-        for dy in 0..3 {
-            for dx in 0..3 {
-                let x = (cx + dx).saturating_sub(1);
-                let y = (cy + dy).saturating_sub(1);
-                if x < w && y < h {
-                    v[y * w + x] = 1.0;
-                    u[y * w + x] = 0.5;
-                }
-            }
+        if w == 0 || h == 0 {
+            return Ok(());
         }
-        const F: f32 = 0.055;
-        const K: f32 = 0.062;
-        const DU: f32 = 0.16;
-        const DV: f32 = 0.08;
-        let iters = ((ctx.eased * 60.0) as usize + 1).min(90);
-        let mut un = u.clone();
-        let mut vn = v.clone();
-        for _ in 0..iters {
-            for y in 0..h {
-                let ym = if y == 0 { h - 1 } else { y - 1 };
-                let yp = if y + 1 == h { 0 } else { y + 1 };
-                for x in 0..w {
-                    let xm = if x == 0 { w - 1 } else { x - 1 };
-                    let xp = if x + 1 == w { 0 } else { x + 1 };
-                    let i = y * w + x;
-                    let lap_u =
-                        u[y * w + xm] + u[y * w + xp] + u[ym * w + x] + u[yp * w + x] - 4.0 * u[i];
-                    let lap_v =
-                        v[y * w + xm] + v[y * w + xp] + v[ym * w + x] + v[yp * w + x] - 4.0 * v[i];
-                    let uvv = u[i] * v[i] * v[i];
-                    un[i] = (u[i] + DU * lap_u - uvv + F * (1.0 - u[i])).clamp(0.0, 1.0);
-                    vn[i] = (v[i] + DV * lap_v + uvv - (F + K) * v[i]).clamp(0.0, 1.0);
-                }
-            }
-            std::mem::swap(&mut u, &mut un);
-            std::mem::swap(&mut v, &mut vn);
-        }
+        // Spot lattice: three plane waves 120° apart sum to a hexagonal array
+        // of peaks — the steady state the spot regime settles into.
+        let k = std::f32::consts::TAU / 7.0;
+        let dirs = [(1.0f32, 0.0f32), (-0.5, 0.866), (-0.5, -0.866)];
+        let cx = w as f32 / 2.0;
+        let cy = h as f32 / 2.0;
+        // Colony half-width: a visible seed colony at the start, the full bar
+        // at completion. The front is a soft band where spots are still small.
+        let radius = 5.0 + ctx.eased * (cx + 2.0);
+        const FRONT: f32 = 5.0;
+        let t = ctx.time;
         for y in 0..h {
             for x in 0..w {
-                if v[y * w + x] > 0.25 {
+                let (px, py) = (x as f32, y as f32);
+                // Elliptical distance: the bar is wide, so spread mostly sideways.
+                let d = ((px - cx).powi(2) + ((py - cy) * 2.5).powi(2)).sqrt();
+                if d > radius {
+                    continue;
+                }
+                let f: f32 = dirs
+                    .iter()
+                    .map(|&(ex, ey)| (k * (ex * px + ey * py)).cos())
+                    .sum();
+                // Spots breathe gently; spots in the front band are smaller
+                // (higher threshold) — freshly nucleated, still growing.
+                let grow = ((radius - d) / FRONT).clamp(0.0, 1.0);
+                let thresh = 1.0 + 1.3 * (1.0 - grow) + 0.15 * (t * 1.7 + px * 0.09).sin();
+                if f > thresh {
                     draw::dot(grid, x, y);
                 }
             }

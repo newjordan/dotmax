@@ -3,19 +3,21 @@
 //! Every style maps `ctx.eased` onto the swept parameter range of a classical
 //! curve so the shape **draws itself** as progress rises, while `ctx.time`
 //! drives continuous rotation / animation.  Eleven distinct styles, each
-//! implementing the real mathematical equations in dot space.
+//! implementing the real mathematical equations in dot space.  On a wide bar
+//! each curve is laid out as a row of square panels that draw in turn, so the
+//! figures keep their true proportions and the row itself reads as progress.
 //!
 //! Curve catalogue:
 //! - `rose`          — Rhodonea / rose curve r = cos(k·θ)
 //! - `spirograph`    — Hypotrochoid spirograph
 //! - `epitrochoid`   — Epicycloid variant spirograph
-//! - `superformula`  — Gielis superformula with animated exponents
+//! - `superformula`  — Gielis superformula morphing through star / flower / polygon sets
 //! - `phyllotaxis`   — Sunflower / golden-angle spiral
-//! - `cardioid`      — String-art cardioid (multiplication table on a circle)
+//! - `cardioid`      — Cardioid envelope traced over its string-art chords
 //! - `astroid`       — Astroid (4-cusp hypocycloid)
 //! - `lemniscate`    — Lemniscate of Bernoulli (figure-eight)
 //! - `maurer-rose`   — Maurer rose (chord-connected rose points)
-//! - `mystic-rose`   — Mystic rose (all chords of an n-gon)
+//! - `mystic-rose`   — Mystic rose (all chords of a pentagon)
 //! - `fermat-spiral` — Fermat's / parabolic spiral revealed by progress
 
 use super::super::draw;
@@ -79,6 +81,70 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
     }
 }
 
+/// Lays the inner curve out as a row of square panels across a wide bar, so
+/// each figure keeps its true proportions instead of floating alone in empty
+/// space. Panels draw in turn: panel `k` of `n` sees local progress
+/// `p·n − k`, so the row itself reads as the progress fill. Bars too narrow
+/// for two panels render the inner style directly.
+struct Gallery<S>(S);
+
+impl<S: ProgressStyle> ProgressStyle for Gallery<S> {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+    fn theme(&self) -> &str {
+        self.0.theme()
+    }
+    fn describe(&self) -> &str {
+        self.0.describe()
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (cw, ch) = grid.dimensions();
+        // A square panel is twice as many cells wide as tall (cells are 2×4 dots).
+        let pw = ch * 2;
+        let n = (cw + 1) / (pw + 1).max(1);
+        if ch == 0 || n < 2 {
+            return self.0.render(grid, ctx);
+        }
+        let left = (cw + 1 - n * (pw + 1)) / 2;
+        let mut panel = BrailleGrid::new(pw, ch)?;
+        for k in 0..n {
+            panel.clear();
+            let local = (ctx.progress * n as f32 - k as f32).clamp(0.0, 1.0);
+            let eased = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+            let mut sub = BarContext::new(local, ctx.time + k as f32 * 0.9, pw, ch);
+            sub.eased = eased;
+            sub.palette = ctx.palette;
+            self.0.render(&mut panel, &sub)?;
+            let ox = (left + k * (pw + 1)) * 2;
+            // Unicode braille bit order: (0,0) (0,1) (0,2) (1,0) (1,1) (1,2) (0,3) (1,3).
+            const BITS: [(usize, usize); 8] = [
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (1, 0),
+                (1, 1),
+                (1, 2),
+                (0, 3),
+                (1, 3),
+            ];
+            for (i, &pat) in panel.get_raw_patterns().iter().enumerate() {
+                let (px, py) = (i % pw, i / pw);
+                for (b, &(dx, dy)) in BITS.iter().enumerate() {
+                    if pat & (1 << b) != 0 {
+                        draw::dot(grid, ox + px * 2 + dx, py * 4 + dy);
+                    }
+                }
+            }
+            if local <= 0.0 {
+                // Waiting panel: a single centre dot marks its slot.
+                draw::dot(grid, ox + pw, ch * 2);
+            }
+        }
+        Ok(())
+    }
+}
+
 /// All styles in the `geometry` theme.
 ///
 /// Returns one `Box<dyn ProgressStyle>` per parametric-curve bar.  The vector
@@ -86,17 +152,17 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
 /// styles are independent and can be used in any order.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
-        Box::new(Tinted(Rose)),
-        Box::new(Tinted(Spirograph)),
-        Box::new(Tinted(Epitrochoid)),
-        Box::new(Tinted(Superformula)),
-        Box::new(Tinted(Phyllotaxis)),
-        Box::new(Tinted(Cardioid)),
-        Box::new(Tinted(Astroid)),
-        Box::new(Tinted(Lemniscate)),
-        Box::new(Tinted(MaurerRose)),
-        Box::new(Tinted(MysticRose)),
-        Box::new(Tinted(FermatSpiral)),
+        Box::new(Tinted(Gallery(Rose))),
+        Box::new(Tinted(Gallery(Spirograph))),
+        Box::new(Tinted(Gallery(Epitrochoid))),
+        Box::new(Tinted(Gallery(Superformula))),
+        Box::new(Tinted(Gallery(Phyllotaxis))),
+        Box::new(Tinted(Gallery(Cardioid))),
+        Box::new(Tinted(Gallery(Astroid))),
+        Box::new(Tinted(Gallery(Lemniscate))),
+        Box::new(Tinted(Gallery(MaurerRose))),
+        Box::new(Tinted(Gallery(MysticRose))),
+        Box::new(Tinted(Gallery(FermatSpiral))),
     ]
 }
 
@@ -280,7 +346,31 @@ impl ProgressStyle for Epitrochoid {
 //
 //   r(φ) = [ |cos(m·φ/4)/a|^n2 + |sin(m·φ/4)/b|^n3 ]^(−1/n1)
 //
-// Animate n1 with time to morph between circle, star, and amoeba shapes.
+// Time steps through classic parameter sets (star, triangle, flower, square,
+// burst, thin star, lens), blending radially from one to the next.
+
+/// Classic superformula parameter sets `(m, n1, n2, n3)` with a = b = 1.
+const SUPER_SHAPES: [(f32, f32, f32, f32); 7] = [
+    (5.0, 2.0, 7.0, 7.0),    // five-point star
+    (3.0, 4.5, 10.0, 10.0),  // rounded triangle
+    (6.0, 1.0, 7.0, 8.0),    // six-petal flower
+    (4.0, 12.0, 15.0, 15.0), // pillowed square
+    (8.0, 0.6, 1.0, 8.0),    // spiky eight-point burst
+    (7.0, 0.2, 1.7, 1.7),    // thin seven-arm star
+    (2.0, 1.0, 4.0, 8.0),    // lens / bean
+];
+
+/// Superformula radius r(φ) for one parameter set.
+fn super_r(s: (f32, f32, f32, f32), phi: f32) -> f32 {
+    let (m, n1, n2, n3) = s;
+    let t1 = (m * phi / 4.0).cos().abs().powf(n2);
+    let t2 = (m * phi / 4.0).sin().abs().powf(n3);
+    let sum = t1 + t2;
+    if sum < 1e-6 {
+        return 0.0;
+    }
+    sum.powf(-1.0 / n1).min(50.0)
+}
 
 struct Superformula;
 impl ProgressStyle for Superformula {
@@ -291,59 +381,52 @@ impl ProgressStyle for Superformula {
         "geometry"
     }
     fn describe(&self) -> &str {
-        "Gielis superformula: a single equation spanning circles, stars, flowers, \
-         and alien blobs — n-exponents morph continuously with time as the curve \
-         draws itself with progress"
+        "Gielis superformula: one equation, many shapes — each panel morphs through a star, a \
+         rounded triangle, a six-petal flower, a pillowed square, a spiky burst, a thin \
+         seven-arm star and a lens; progress traces the outline, time morphs the parameters"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
         let scale = fit_scale(dw, dh);
 
-        let m: f32 = 6.0; // symmetry order
-        let a: f32 = 1.0;
-        let b: f32 = 1.0;
-        // Animate the exponents to morph the shape.
-        let n1 = 1.5 + 2.5 * (ctx.time * 0.4).sin().abs();
-        let n2 = 2.0 + 1.5 * (ctx.time * 0.31).cos();
-        let n3 = 2.0 + 1.5 * (ctx.time * 0.27).sin();
-        let rot = ctx.time * 0.18;
+        // Hold each shape, then blend radially into the next.
+        let phase = (ctx.time.max(0.0) * 0.7).rem_euclid(SUPER_SHAPES.len() as f32);
+        let i0 = (phase as usize) % SUPER_SHAPES.len();
+        let i1 = (i0 + 1) % SUPER_SHAPES.len();
+        let f = ((phase.fract() - 0.55) / 0.45).clamp(0.0, 1.0);
+        let f = f * f * (3.0 - 2.0 * f);
+        let (s0, s1) = (SUPER_SHAPES[i0], SUPER_SHAPES[i1]);
 
-        let theta_max = ctx.eased * 2.0 * PI;
-        let steps = (512.0 * ctx.eased).max(4.0) as usize;
-
-        // Track max radius over the full sweep for normalization.
-        // We pre-compute with the current n-values.
-        let mut r_max: f32 = 0.001;
-        for i in 0..=256 {
-            let phi = i as f32 / 256.0 * 2.0 * PI;
-            let t1 = ((m * phi / 4.0).cos() / a).abs().powf(n2);
-            let t2 = ((m * phi / 4.0).sin() / b).abs().powf(n3);
-            let sum = t1 + t2;
-            if sum > 1e-6 {
-                let r = sum.powf(-1.0 / n1);
-                if r > r_max {
-                    r_max = r;
-                }
-            }
+        const STEPS: usize = 240;
+        let mut r0 = [0.0f32; STEPS + 1];
+        let mut r1 = [0.0f32; STEPS + 1];
+        let (mut m0, mut m1) = (1e-3f32, 1e-3f32);
+        for i in 0..=STEPS {
+            let phi = i as f32 / STEPS as f32 * 2.0 * PI;
+            r0[i] = super_r(s0, phi);
+            r1[i] = super_r(s1, phi);
+            m0 = m0.max(r0[i]);
+            m1 = m1.max(r1[i]);
         }
-
-        for i in 0..=steps {
-            let phi = i as f32 / steps as f32 * theta_max;
-            let t1 = ((m * phi / 4.0).cos() / a).abs().powf(n2);
-            let t2 = ((m * phi / 4.0).sin() / b).abs().powf(n3);
-            let sum = t1 + t2;
-            if sum < 1e-6 {
-                continue;
+        let rot = -PI * 0.5 + ctx.time * 0.1;
+        let shown = ((ctx.eased.clamp(0.0, 1.0) * STEPS as f32).round() as usize).max(1);
+        let mut prev: Option<(i32, i32)> = None;
+        for i in 0..=shown.min(STEPS) {
+            let phi = i as f32 / STEPS as f32 * 2.0 * PI;
+            let r = (r0[i] / m0) * (1.0 - f) + (r1[i] / m1) * f;
+            let a = phi + rot;
+            let px = (cx + r * a.cos() * scale).round() as i32;
+            let py = (cy + r * a.sin() * scale).round() as i32;
+            if let Some((qx, qy)) = prev {
+                bresenham(grid, qx, qy, px, py);
+            } else {
+                draw::dot_i(grid, px, py);
             }
-            let r = sum.powf(-1.0 / n1) / r_max;
-            let dx = r * phi.cos() * scale;
-            let dy = r * phi.sin() * scale;
-            let rx = dx * rot.cos() - dy * rot.sin();
-            let ry = dx * rot.sin() + dy * rot.cos();
-            let px = (cx + rx).round() as i32;
-            let py = (cy - ry).round() as i32;
-            draw::dot_i(grid, px, py);
+            prev = Some((px, py));
         }
         Ok(())
     }
@@ -377,7 +460,7 @@ impl ProgressStyle for Phyllotaxis {
         let scale = fit_scale(dw, dh);
 
         let golden_angle: f32 = 2.0 * PI * (1.0 - 1.0 / 1.618_033_9); // ≈ 137.508°
-        let n_max: f32 = 400.0;
+        let n_max: f32 = 90.0;
         let n_plot = (ctx.eased * n_max).round() as usize;
         // c chosen so the outermost seed lands near the grid edge.
         let c = scale / n_max.sqrt();
@@ -411,31 +494,45 @@ impl ProgressStyle for Cardioid {
         "geometry"
     }
     fn describe(&self) -> &str {
-        "Cardioid string-art: connecting point i to (2·i mod N) on a circle \
-         traces the cardioid r=a(1−cosθ) as an emergent envelope — chords appear \
-         one by one as progress rises"
+        "Cardioid: chords from point i to 2·i on a circle appear one by one while \
+         the heart-shaped envelope they converge on, (2e^{iθ}+e^{2iθ})/3, traces \
+         itself out as progress rises — a row of panels drawing in turn"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         let (cx, cy) = center(dw, dh);
         let scale = fit_scale(dw, dh) * 0.9;
 
-        let n_total: usize = 180; // total points on the circle
-        let n_chords = (ctx.eased * n_total as f32).round() as usize;
+        let n_total: f32 = 10.0; // points on the circle → 10 chords
         let rot = ctx.time * 0.2;
-
+        let at = |a: f32| {
+            (
+                (cx + a.cos() * scale).round() as i32,
+                (cy - a.sin() * scale).round() as i32,
+            )
+        };
+        // Sparse string art: chord i → 2i, drawn one by one with progress.
+        let n_chords = (ctx.eased * n_total).round() as usize;
         for i in 0..n_chords {
-            let j = (2 * i) % n_total;
-            let a_i = 2.0 * PI * i as f32 / n_total as f32 + rot;
-            let a_j = 2.0 * PI * j as f32 / n_total as f32 + rot;
-
-            let x0 = (cx + a_i.cos() * scale).round() as i32;
-            let y0 = (cy - a_i.sin() * scale).round() as i32;
-            let x1 = (cx + a_j.cos() * scale).round() as i32;
-            let y1 = (cy - a_j.sin() * scale).round() as i32;
-
-            // Bresenham line between the two circle points.
+            let a_i = 2.0 * PI * i as f32 / n_total + rot;
+            let (x0, y0) = at(a_i);
+            let (x1, y1) = at(a_i * 2.0 - rot);
             bresenham(grid, x0, y0, x1, y1);
+        }
+        // The envelope those chords converge on — the cardioid itself,
+        // z(θ) = (2·e^{iθ} + e^{2iθ}) / 3 — traced out as progress rises.
+        let steps = (ctx.eased * 90.0) as usize;
+        for k in 0..=steps {
+            let th = 2.0 * PI * k as f32 / 90.0;
+            let x = (2.0 * th.cos() + (2.0 * th).cos()) / 3.0;
+            let y = (2.0 * th.sin() + (2.0 * th).sin()) / 3.0;
+            let (c, s2) = (rot.cos(), rot.sin());
+            let (u, v) = (x * c - y * s2, x * s2 + y * c);
+            draw::dot_i(
+                grid,
+                (cx + u * scale).round() as i32,
+                (cy - v * scale).round() as i32,
+            );
         }
         Ok(())
     }
@@ -551,9 +648,9 @@ impl ProgressStyle for MaurerRose {
         "geometry"
     }
     fn describe(&self) -> &str {
-        "Maurer rose: rose curve points at d-degree integer steps connected by \
-         straight chords, producing a densely interlaced star web — d=71°, k=5 \
-         gives the canonical intricate design"
+        "Maurer rose: points of the rose r=cos(5θ) at 71° steps joined by straight \
+         chords, the first 36 chords weaving a star web in each of a row of panels \
+         as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -563,7 +660,7 @@ impl ProgressStyle for MaurerRose {
         let k: f32 = 5.0;
         let d_deg: f32 = 71.0; // step in degrees
         let d_rad = d_deg * PI / 180.0;
-        let n_total: f32 = 361.0; // one full revolution in d-degree steps
+        let n_total: f32 = 36.0; // a tenth of the full 361-step weave, legible at small size
         let n_chords = (ctx.eased * n_total).round() as usize;
         let rot = ctx.time * 0.15;
 
@@ -601,16 +698,16 @@ impl ProgressStyle for MysticRose {
         "geometry"
     }
     fn describe(&self) -> &str {
-        "Mystic rose: every pair of vertices in a regular 24-gon connected by a \
-         chord — 276 chords in total, appearing progressively to build a densely \
-         woven stained-glass wheel"
+        "Mystic rose: every pair of vertices of a regular pentagon joined by a \
+         chord — the pentagon and its inscribed pentagram, ten chords appearing \
+         one by one as progress rises, across a row of panels"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         let (cx, cy) = center(dw, dh);
         let scale = fit_scale(dw, dh);
 
-        let n: usize = 24; // 24-gon → 276 chords
+        let n: usize = 5; // pentagon + pentagram → 10 chords
         let total_chords = n * (n - 1) / 2;
         let chords_to_draw = (ctx.eased * total_chords as f32).round() as usize;
         let rot = ctx.time * 0.12;
@@ -655,9 +752,9 @@ impl ProgressStyle for FermatSpiral {
         "geometry"
     }
     fn describe(&self) -> &str {
-        "Fermat's (parabolic) spiral r=±a√θ: both symmetric arms uncoil from the \
-         origin as progress sweeps outward, the pair slowly rotating with time to \
-         reveal a balanced double helix in braille dots"
+        "Fermat's (parabolic) spiral r=±a√θ: both symmetric arms uncoil one and a \
+         half turns from the origin as progress sweeps outward, the pair slowly \
+         rotating with time, across a row of panels"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -665,11 +762,11 @@ impl ProgressStyle for FermatSpiral {
         let scale = fit_scale(dw, dh);
 
         // How many full revolutions to uncoil (6π ≈ 3 turns).
-        let theta_max = ctx.eased * 6.0 * PI;
+        let theta_max = ctx.eased * 3.0 * PI;
         let rot = ctx.time * 0.17;
         // Normalise so the outermost point lands near the grid edge.
         // At θ_max the radius = a·√θ_max; we want that ≈ 1.0 in unit coords.
-        let a = 1.0 / (6.0 * PI).sqrt(); // ensures r ≤ 1 at full sweep
+        let a = 1.0 / (3.0 * PI).sqrt(); // ensures r ≤ 1 at full sweep
 
         let steps = (600.0 * ctx.eased).max(4.0) as usize;
         for i in 0..=steps {

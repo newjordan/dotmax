@@ -2,12 +2,14 @@
 //!
 //! Each bar is a rotating 3-D wireframe of a genuine geometric solid, drawn via
 //! orthographic projection onto the dot lattice.  `ctx.time` drives the spin;
-//! `ctx.eased` (0 → 1) reveals edges one-by-one so the solid assembles itself
-//! as progress advances.
+//! `ctx.eased` (0 → 1) snaps the edges together over the first fifth of the
+//! run and then carries the whole solid along a dotted rail from left to
+//! right, so progress reads at a glance while the solid stays recognisable
+//! (the cube net instead folds itself up in place).
 //!
 //! A single `project` helper (identical signature to the topology module's) and
 //! a bounded Bresenham edge-drawer are shared by every style.  Scale is
-//! auto-fitted so the circumscribed sphere just fills `min(w/2, h)` dot-radii.
+//! auto-fitted so the circumscribed sphere fills the strip's height.
 //!
 //! # Styles
 //!
@@ -22,7 +24,7 @@
 //! | `star-octangulum`      | Stella octangula — two interlocked tetrahedra (octahedron dual) |
 //! | `cuboctahedron`        | Vector equilibrium / Metatron's core, 12 vertices 24 edges |
 //! | `nested-solids`        | Cube inside its dual octahedron, both spinning |
-//! | `stellated-dodecahedron` | Great stellated dodecahedron — spiky star |
+//! | `stellated-dodecahedron` | Great stellated dodecahedron — 30 long edges, 12 pentagrams |
 //! | `unfolding-net`        | Cube net folds up into 3-D as eased → 1 |
 
 use super::super::draw;
@@ -90,16 +92,43 @@ fn draw_edge(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
 }
 
 /// Compute grid centre in dot coords and a uniform scale so a unit-radius
-/// solid fits `min(w/2, h)` dot-radii.  The `shrink` factor lets a style
-/// reduce the scale further (e.g. 0.85 for dodecahedron which has circumradius > 1).
+/// solid fits the strip's **height** (the short side) with a one-dot margin.
+/// The `shrink` factor lets a style reduce the scale further (e.g. 0.85 for
+/// a solid whose circumradius exceeds 1).
 fn grid_centre_scale(grid: &BrailleGrid, shrink: f32) -> (i32, i32, f32) {
     let (dw, dh) = draw::dot_dims(grid);
     let cx = (dw / 2) as i32;
     let cy = (dh / 2) as i32;
-    // Fit to the smaller of half-width and full-height (dots), with margin.
-    let r = (dw / 2).min(dh) as f32;
-    let scale = (r * 0.82 * shrink).max(1.0);
+    let r = (dw / 2).min(dh / 2) as f32 - 0.5;
+    let scale = (r * shrink).max(1.0);
     (cx, cy, scale)
+}
+
+/// Stage a travelling solid: the solid rides a dotted wire from the left edge
+/// to the right as `ctx.eased` rises, so progress reads at a glance while the
+/// whole solid stays recognisable.  Draws the wire (behind the solid only) and
+/// returns the solid's `(cx, cy, scale)`.
+fn stage(grid: &mut BrailleGrid, ctx: &BarContext, shrink: f32) -> (i32, i32, f32) {
+    let (dw, dh) = draw::dot_dims(grid);
+    let (_, cy, scale) = grid_centre_scale(grid, shrink);
+    let r = scale.ceil() as i32 + 1;
+    let span = (dw as i32 - 2 * r).max(0) as f32;
+    let cx = r + (ctx.eased.clamp(0.0, 1.0) * span).round() as i32;
+    if dh > 0 {
+        let wire_end = cx - r - 1;
+        let mut x = 0;
+        while x <= wire_end {
+            draw::dot_i(grid, x, cy);
+            x += 2;
+        }
+    }
+    (cx, cy, scale)
+}
+
+/// Edges shown at this progress: the solid snaps together over the first
+/// fifth of the run, then stays whole while it travels.
+fn reveal(ctx: &BarContext, n: usize) -> usize {
+    ((0.4 + ctx.eased * 3.0).min(1.0) * n as f32).ceil() as usize
 }
 
 /// Project a slice of 3-D vertices through `view`, returning screen-space
@@ -152,7 +181,7 @@ impl ProgressStyle for Tetrahedron {
         "Tetrahedron — the fire solid: 4 vertices and 6 edges assembling as progress grows, spinning on time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
         let ax = ctx.time * 0.41;
         let ay = ctx.time * 0.63;
         let view = View {
@@ -163,7 +192,7 @@ impl ProgressStyle for Tetrahedron {
             scale,
         };
         let pts = project_verts(&TETRA_VERTS, &view);
-        let n_show = (ctx.eased * TETRA_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, TETRA_EDGES.len());
         draw_edges_partial(grid, &pts, &TETRA_EDGES, n_show);
         Ok(())
     }
@@ -216,7 +245,7 @@ impl ProgressStyle for Cube {
         "Hexahedron — the earth solid: 8-vertex cube with 12 edges revealed face-by-face as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
         let ax = ctx.time * 0.37;
         let ay = ctx.time * 0.51;
         let view = View {
@@ -227,7 +256,7 @@ impl ProgressStyle for Cube {
             scale,
         };
         let pts = project_verts(&CUBE_VERTS, &view);
-        let n_show = (ctx.eased * CUBE_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, CUBE_EDGES.len());
         draw_edges_partial(grid, &pts, &CUBE_EDGES, n_show);
         Ok(())
     }
@@ -272,7 +301,7 @@ impl ProgressStyle for Octahedron {
         "Octahedron — the air solid: 6-vertex double-pyramid with 12 equilateral-triangle edges spinning on time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
         let ax = ctx.time * 0.44;
         let ay = ctx.time * 0.59;
         let view = View {
@@ -283,7 +312,7 @@ impl ProgressStyle for Octahedron {
             scale,
         };
         let pts = project_verts(&OCTA_VERTS, &view);
-        let n_show = (ctx.eased * OCTA_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, OCTA_EDGES.len());
         draw_edges_partial(grid, &pts, &OCTA_EDGES, n_show);
         Ok(())
     }
@@ -384,7 +413,7 @@ impl ProgressStyle for Dodecahedron {
         "Dodecahedron — the aether solid: 20 golden-ratio vertices and 30 pentagonal edges spinning and assembling"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, DODECA_SCALE);
+        let (cx, cy, scale) = stage(grid, ctx, DODECA_SCALE);
         let ax = ctx.time * 0.29;
         let ay = ctx.time * 0.47;
         let view = View {
@@ -395,7 +424,7 @@ impl ProgressStyle for Dodecahedron {
             scale,
         };
         let pts = project_verts(&DODECA_VERTS, &view);
-        let n_show = (ctx.eased * DODECA_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, DODECA_EDGES.len());
         draw_edges_partial(grid, &pts, &DODECA_EDGES, n_show);
         Ok(())
     }
@@ -478,7 +507,7 @@ impl ProgressStyle for Icosahedron {
         "Icosahedron — the water solid: 12 golden-ratio vertices forming 30 equilateral-triangle edges, spinning on time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, ICOSA_SCALE);
+        let (cx, cy, scale) = stage(grid, ctx, ICOSA_SCALE);
         let ax = ctx.time * 0.33;
         let ay = ctx.time * 0.54;
         let view = View {
@@ -489,7 +518,7 @@ impl ProgressStyle for Icosahedron {
             scale,
         };
         let pts = project_verts(&ICOSA_VERTS, &view);
-        let n_show = (ctx.eased * ICOSA_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, ICOSA_EDGES.len());
         draw_edges_partial(grid, &pts, &ICOSA_EDGES, n_show);
         Ok(())
     }
@@ -514,7 +543,7 @@ impl ProgressStyle for Merkaba {
         "Merkaba (star-tetrahedron): two interlocked tetrahedra counter-rotating — the light-body vehicle of sacred geometry"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
 
         // Rotation for the upward tetrahedron.
         let ax_up = ctx.time * 0.39;
@@ -545,7 +574,7 @@ impl ProgressStyle for Merkaba {
 
         // Reveal first tetrahedron on eased 0→0.5, second on 0.5→1.
         let total_edges = TETRA_EDGES.len() * 2;
-        let n_show = (ctx.eased * total_edges as f32).ceil() as usize;
+        let n_show = reveal(ctx, total_edges);
         let n_up = n_show.min(TETRA_EDGES.len());
         let n_dn = n_show.saturating_sub(TETRA_EDGES.len());
 
@@ -574,7 +603,7 @@ impl ProgressStyle for StarOctangulum {
         "Stella octangula: two tetrahedra dual to each other inscribed in an octahedron — eight triangular spikes, one rotation axis"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
         // Both tetrahedra share the same rotation (co-rotating, not counter-rotating).
         let ax = ctx.time * 0.35;
         let ay = ctx.time * 0.52;
@@ -601,7 +630,7 @@ impl ProgressStyle for StarOctangulum {
         let pts_oct = project_verts(&OCTA_VERTS, &view_oct);
 
         let total = TETRA_EDGES.len() * 2 + OCTA_EDGES.len();
-        let n_show = (ctx.eased * total as f32).ceil() as usize;
+        let n_show = reveal(ctx, total);
         let n_up = n_show.min(TETRA_EDGES.len());
         let n_dn = n_show
             .saturating_sub(TETRA_EDGES.len())
@@ -687,7 +716,7 @@ impl ProgressStyle for Cuboctahedron {
         "Cuboctahedron — vector equilibrium / Metatron's core: 12 vertices at edge-midpoints of a cube, 8 triangles and 6 squares"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, CUBOCTA_SCALE);
+        let (cx, cy, scale) = stage(grid, ctx, CUBOCTA_SCALE);
         let ax = ctx.time * 0.31;
         let ay = ctx.time * 0.49;
         let view = View {
@@ -698,7 +727,7 @@ impl ProgressStyle for Cuboctahedron {
             scale,
         };
         let pts = project_verts(&CUBOCTA_VERTS, &view);
-        let n_show = (ctx.eased * CUBOCTA_EDGES.len() as f32).ceil() as usize;
+        let n_show = reveal(ctx, CUBOCTA_EDGES.len());
         draw_edges_partial(grid, &pts, &CUBOCTA_EDGES, n_show);
         Ok(())
     }
@@ -722,7 +751,7 @@ impl ProgressStyle for NestedSolids {
         "Nested duals: a cube spinning inside its dual octahedron — both rotating at different rates, revealed in two waves"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 1.0);
+        let (cx, cy, scale) = stage(grid, ctx, 1.0);
 
         // Outer octahedron — slower rotation, revealed in first half of eased.
         let ax_oct = ctx.time * 0.27;
@@ -750,7 +779,7 @@ impl ProgressStyle for NestedSolids {
         };
         let pts_cube = project_verts(&CUBE_VERTS, &view_cube);
 
-        let n_show = (ctx.eased * (OCTA_EDGES.len() + CUBE_EDGES.len()) as f32).ceil() as usize;
+        let n_show = reveal(ctx, OCTA_EDGES.len() + CUBE_EDGES.len());
         let n_oct = n_show.min(OCTA_EDGES.len());
         let n_cube = n_show.saturating_sub(OCTA_EDGES.len());
 
@@ -780,10 +809,11 @@ impl ProgressStyle for StellatedDodecahedron {
         "platonic"
     }
     fn describe(&self) -> &str {
-        "Great stellated dodecahedron: dodecahedron with 12 pentagonal star-pyramids erupting from each face — a cosmic sea-urchin"
+        "Great stellated dodecahedron {5/2, 3}: the dodecahedron's 20 vertices joined \
+         by 30 long edges into twelve interlocking pentagrams — a spinning star"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, DODECA_SCALE * 0.72);
+        let (cx, cy, scale) = stage(grid, ctx, DODECA_SCALE);
         let ax = ctx.time * 0.25;
         let ay = ctx.time * 0.43;
         let view = View {
@@ -793,61 +823,31 @@ impl ProgressStyle for StellatedDodecahedron {
             cy,
             scale,
         };
+        let pts = project_verts(&DODECA_VERTS, &view);
 
-        // Draw the dodecahedron base skeleton first.
-        let pts_dodeca = project_verts(&DODECA_VERTS, &view);
-
-        // The 12 spike tips — icosahedron vertices scaled outward by φ.
-        let spike_scale = scale * PHI * ICOSA_SCALE;
-        let view_spikes = View {
-            scale: spike_scale,
-            ..view
+        // The great stellated dodecahedron shares the dodecahedron's vertices;
+        // its edges join vertex pairs φ² dodecahedron-edges apart (three per
+        // vertex, thirty in all), tracing a pentagram on every face plane.
+        let dist = |a: [f32; 3], b: [f32; 3]| {
+            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
         };
-        let pts_spikes = project_verts(&ICOSA_VERTS, &view_spikes);
-
-        // Each spike tip connects to the 5 nearest dodecahedron vertices.
-        // For simplicity: each icosahedron vertex (face centre) connects to the
-        // 5 dodecahedron vertices closest to it.  We store these as a fixed table.
-        // (Derived from geometry: each face of the dodecahedron is a pentagon with 5 vertices.)
-        let spike_fans: [(usize, [usize; 5]); 12] = [
-            (0, [0, 8, 10, 4, 2]),   // +z face centre → vertices around top face
-            (1, [1, 9, 11, 5, 3]),   // -z face
-            (2, [0, 12, 14, 4, 16]), // +y-adjacent face
-            (3, [1, 12, 14, 5, 17]), // another
-            (4, [0, 8, 12, 16, 2]),
-            (5, [6, 10, 15, 7, 18]),
-            (6, [3, 11, 13, 15, 7]),
-            (7, [3, 13, 17, 11, 19]),
-            (8, [4, 14, 5, 19, 18]),
-            (9, [2, 16, 17, 3, 13]),
-            (10, [6, 18, 19, 7, 15]),
-            (11, [1, 9, 11, 19, 5]),
-        ];
-
-        let n_base = DODECA_EDGES.len();
-        let n_spokes = 12 * 5; // 60 spoke edges
-        let total = n_base + n_spokes;
-        let n_show = (ctx.eased * total as f32).ceil() as usize;
-        let n_d = n_show.min(n_base);
-        let n_s = n_show.saturating_sub(n_base);
-
-        draw_edges_partial(grid, &pts_dodeca, &DODECA_EDGES, n_d);
-
-        // Draw spokes (spike tip → dodecahedron vertex).
-        let mut spoke_drawn = 0usize;
-        'outer: for &(si, verts_around) in &spike_fans {
-            for &di in &verts_around {
-                if spoke_drawn >= n_s {
-                    break 'outer;
-                }
-                if si < pts_spikes.len() && di < pts_dodeca.len() {
-                    let (x0, y0) = pts_spikes[si];
-                    let (x1, y1) = pts_dodeca[di];
-                    draw_edge(grid, x0, y0, x1, y1);
-                }
-                spoke_drawn += 1;
+        let mut edge = f32::MAX;
+        for (i, &va) in DODECA_VERTS.iter().enumerate() {
+            for &vb in &DODECA_VERTS[i + 1..] {
+                edge = edge.min(dist(va, vb));
             }
         }
+        let long = edge * PHI * PHI;
+        let mut star_edges: Vec<(usize, usize)> = Vec::with_capacity(30);
+        for (i, &va) in DODECA_VERTS.iter().enumerate() {
+            for (j, &vb) in DODECA_VERTS.iter().enumerate().skip(i + 1) {
+                if (dist(va, vb) - long).abs() < long * 0.02 {
+                    star_edges.push((i, j));
+                }
+            }
+        }
+        let n_show = reveal(ctx, star_edges.len());
+        draw_edges_partial(grid, &pts, &star_edges, n_show);
         Ok(())
     }
 }
@@ -872,7 +872,10 @@ impl ProgressStyle for UnfoldingNet {
         "Cube net: a cross-shaped flat net folds progressively into a 3-D cube as progress advances — geometry becoming solid"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cx, cy, scale) = grid_centre_scale(grid, 0.9);
+        let (cx, cy, scale) = grid_centre_scale(grid, 0.68);
+        // The flat cross is three faces tall; the folded cube only one, so the
+        // camera closes in as the net folds to keep the cube filling the strip.
+        let scale = scale * (1.0 + ctx.eased.clamp(0.0, 1.0) * 0.9);
         let ax = ctx.time * 0.30;
         let ay = ctx.time * 0.48;
         let t = ctx.eased; // 0 = flat net, 1 = cube

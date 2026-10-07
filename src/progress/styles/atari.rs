@@ -1,13 +1,11 @@
 //! ATARI 2600 / early-arcade themed progress bars.
 //!
-//! Each style evokes a specific game's mechanic: Pong's bouncing rally,
-//! Breakout's brick demolition, Asteroids' vector-wireframe explosions,
-//! Missile Command's interceptor arcs, Centipede's segmented crawl,
-//! Adventure's hero walk, Pitfall's vine pendulum, Combat's tank shells,
-//! Kaboom's falling bombs, Yars' Revenge shield erosion, and Lunar Lander's
-//! vector descent. Visual form is as distinct as the mechanics: braille dot
-//! arcs, block-glyph bricks, line-art polygons, discrete segments, shade
-//! walls, and smooth hbar fills all appear exactly once.
+//! Each style draws the game's own iconic screen in braille dot-art: Pong's
+//! paddles, net and blocky score, Breakout's rainbow brick wall, Asteroids'
+//! vector rocks, Missile Command's cities under falling warheads, Centipede's
+//! segmented bug in a mushroom field, Adventure's castle, hero and dragon,
+//! Pitfall Harry on his vine, Combat's treaded tanks, Kaboom's Mad Bomber and
+//! buckets, the Yar and the Qotile's shield, and Lunar Lander's descent.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -66,6 +64,82 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sprite helpers — tiny dot-art stamps shared by the pictorial styles.
+// ---------------------------------------------------------------------------
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+/// Off-grid dots are dropped, so sprites may hang off any edge.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// [`sprite`] mirrored left-to-right (for the facing-left twin of a sprite).
+fn sprite_flip(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        let n = line.len() as i32;
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + n - 1 - c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// Solid block of dots from signed coordinates (clipped to the grid).
+fn block(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            draw::dot_i(grid, xx, yy);
+        }
+    }
+}
+
+/// Blocky 3×5 score digits, as the 2600 drew them with playfield pixels.
+const DIGITS: [[&str; 5]; 10] = [
+    ["###", "#.#", "#.#", "#.#", "###"],
+    [".#.", "##.", ".#.", ".#.", "###"],
+    ["###", "..#", "###", "#..", "###"],
+    ["###", "..#", "###", "..#", "###"],
+    ["#.#", "#.#", "###", "..#", "..#"],
+    ["###", "#..", "###", "..#", "###"],
+    ["###", "#..", "###", "#.#", "###"],
+    ["###", "..#", "..#", "..#", "..#"],
+    ["###", "#.#", "###", "#.#", "###"],
+    ["###", "#.#", "###", "..#", "###"],
+];
+
+/// Draw digit `d` at `(x, y)`; each font pixel is `sx` dots wide.
+fn digit(grid: &mut BrailleGrid, x: i32, y: i32, d: usize, sx: i32) {
+    for (r, line) in DIGITS[d % 10].iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                block(grid, x + c as i32 * sx, y + r as i32, sx, 1);
+            }
+        }
+    }
+}
+
+/// Triangle wave `0 → 1 → 0` with period 1 — a ball bouncing between walls.
+fn tri(t: f32) -> f32 {
+    1.0 - (2.0 * t.rem_euclid(1.0) - 1.0).abs()
+}
+
+/// Deterministic hash of `i` into `0.0..1.0` (stable scatter, no RNG state).
+fn hash01(i: u32) -> f32 {
+    let mut x = i.wrapping_mul(0x9E37_79B9) ^ 0x85EB_CA6B;
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x2C1B_3C6D);
+    x ^= x >> 12;
+    (x & 0xFFFF) as f32 / 65536.0
+}
+
 /// All styles in the `atari` theme.
 ///
 /// Returns eleven structurally distinct bars, each referencing a different
@@ -74,7 +148,7 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
         Box::new(Tinted(Pong)),
-        Box::new(Tinted(Breakout)),
+        Box::new(Breakout),
         Box::new(Tinted(Asteroids)),
         Box::new(Tinted(MissileCommand)),
         Box::new(Tinted(Centipede)),
@@ -88,7 +162,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Pong — two paddles rally a ball; rally count fills left→right with score
+// 1. Pong — two paddles rally a square ball over a dashed net; score = progress
 // ---------------------------------------------------------------------------
 struct Pong;
 impl ProgressStyle for Pong {
@@ -99,67 +173,55 @@ impl ProgressStyle for Pong {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Pong: paddles rally a ball across the screen; progress = score"
+        "Pong: two paddles rally a square ball over a dashed net; blocky score digits count up with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Score bar — a filled strip whose width encodes progress.
-        let score_w = (ctx.eased * w as f32) as usize;
-        let bar_y = h.saturating_sub(1);
-        draw::hline(grid, 0, score_w.min(w.saturating_sub(1)), bar_y);
-
-        // Centre net: dotted vertical line at mid-width.
-        let net_x = w / 2;
-        let mut y = 0;
-        while y < h {
-            draw::dot(grid, net_x, y);
-            y += 3;
+        // Dashed centre net.
+        let mid = wi / 2;
+        for y in (0..hi).filter(|y| y % 4 < 2) {
+            draw::dot_i(grid, mid, y);
         }
 
-        // Ball: bounces across width using time, and vertically using sine.
-        let ball_period = 2.0_f32;
-        let ball_phase = (ctx.time / ball_period).fract();
-        // Ping-pong: go 0→1→0
-        let ping_pong = if ball_phase < 0.5 {
-            ball_phase * 2.0
-        } else {
-            (1.0 - ball_phase) * 2.0
-        };
-        let bx = (ping_pong * w.saturating_sub(1) as f32) as usize;
-        let by = ((((ctx.time * 1.3).sin() + 1.0) * 0.5) * h.saturating_sub(2) as f32) as usize;
-        draw::dot(grid, bx, by);
+        // Scoreboard: player score climbs 0→9 with progress, CPU lags behind.
+        let score = ((ctx.progress * 9.0).round() as usize).min(9);
+        digit(grid, mid - 12, 0, score, 2);
+        digit(grid, mid + 6, 0, score / 3, 2);
 
-        // Left paddle: tracks ball vertically on left edge.
-        let pad_h = (h / 3).max(1);
-        let pad_top_left = by.saturating_sub(pad_h / 2).min(h.saturating_sub(pad_h));
-        draw::vline(
-            grid,
-            0,
-            pad_top_left,
-            (pad_top_left + pad_h).min(h).saturating_sub(1),
-        );
+        // Square ball crosses paddle-to-paddle and bounces off top/bottom.
+        let span_y = (hi - 2).max(0) as f32;
+        let ball_y = |t: f32| (tri(t / 1.9 + 0.3) * span_y) as i32;
+        let bx = 3 + (tri(ctx.time / 2.8) * (wi - 8).max(0) as f32) as i32;
+        let by = ball_y(ctx.time);
+        block(grid, bx, by, 2, 2);
 
-        // Right paddle: fixed mid-height (the "computer" side).
-        let pad_top_right = (h / 2).saturating_sub(pad_h / 2);
-        draw::vline(
-            grid,
-            w.saturating_sub(1),
-            pad_top_right,
-            (pad_top_right + pad_h).min(h).saturating_sub(1),
-        );
-
+        // Paddles (2 dots wide) track the ball; the CPU side reacts late.
+        let ph = (hi / 3 + 1).clamp(1, 6);
+        let paddle = |lag: f32| (ball_y(ctx.time - lag) + 1 - ph / 2).clamp(0, (hi - ph).max(0));
+        block(grid, 1, paddle(0.0), 2, ph);
+        block(grid, wi - 3, paddle(0.2), 2, ph);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. Breakout — a ball smashes a brick wall; bricks cleared = eased progress
+// 2. Breakout — rainbow brick rows, a paddle and a ball; bricks cleared = eased
 // ---------------------------------------------------------------------------
 struct Breakout;
+
+/// Classic Breakout row colours, top row first.
+const BRICK_ROWS: [Color; 4] = [
+    Color::rgb(222, 64, 52),
+    Color::rgb(240, 140, 40),
+    Color::rgb(230, 206, 60),
+    Color::rgb(80, 190, 90),
+];
+
 impl ProgressStyle for Breakout {
     fn name(&self) -> &str {
         "breakout"
@@ -168,58 +230,52 @@ impl ProgressStyle for Breakout {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Breakout: a ball demolishes brick rows; cleared bricks = progress"
+        "Breakout: red/orange brick rows above a paddle and bouncing ball; bricks knocked out = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (cw, ch) = grid.dimensions();
         if cw == 0 || ch == 0 {
             return Ok(());
         }
-        let (dw, dh) = draw::dot_dims(grid);
+        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Brick rows occupy the top half of cells.
-        let brick_rows = ((ch / 2).max(1)).min(ch.saturating_sub(2).max(1));
-        let total_bricks = cw * brick_rows;
-        let cleared = (ctx.eased * total_bricks as f32) as usize;
-
-        // Draw remaining bricks using shade glyph (solid █ for intact brick).
-        let mut count = 0usize;
-        'outer: for row in 0..brick_rows {
-            for col in 0..cw {
-                if count < cleared {
-                    // Brick cleared — leave blank.
-                } else {
-                    draw::shade(grid, col, row, 4); // '█'
-                }
-                count += 1;
-                if count > total_bricks {
-                    break 'outer;
+        // One brick row per cell row (3 dots + mortar) over the top half.
+        // Lower rows break first, with a hashed scatter so holes look punched.
+        let rows = (ch / 2).max(1);
+        let pitch = 8;
+        let cols = (wi / pitch).max(1);
+        let span = rows.saturating_sub(1).max(1) as f32;
+        for r in 0..rows {
+            for c in 0..cols {
+                let i = (r as i32 * cols + c) as u32;
+                let order = 0.98 * (0.65 * hash01(i) + 0.35 * (1.0 - r as f32 / span));
+                if order >= ctx.eased {
+                    block(grid, c * pitch, r as i32 * 4, pitch - 1, 3);
                 }
             }
         }
 
-        // Paddle at bottom row, centred with width=cw/4.
-        let pad_w = (cw / 4).max(1);
-        let pad_x = (cw / 2).saturating_sub(pad_w / 2);
-        let pad_y = ch.saturating_sub(1);
-        for px in pad_x..(pad_x + pad_w).min(cw) {
-            draw::glyph(grid, px, pad_y, '▬');
+        // Ball bounces around the open court below the wall.
+        let top = rows as i32 * 4 + 1;
+        let bx = (tri(ctx.time / 1.6) * (wi - 2).max(0) as f32) as i32;
+        let by = top + (tri(ctx.time / 1.1) * (hi - top - 3).max(0) as f32) as i32;
+        block(grid, bx, by, 2, 2);
+
+        // Paddle on the bottom row follows the ball.
+        let pw = 10.min(wi);
+        let px = (bx - pw / 2 + 1).clamp(0, (wi - pw).max(0));
+        block(grid, px, hi - 1, pw, 1);
+
+        // Colour: rainbow brick rows, phosphor tint for the court.
+        for r in 0..ch {
+            let color = if r < rows {
+                BRICK_ROWS[r % BRICK_ROWS.len()]
+            } else {
+                sample_tint(0.8)
+            };
+            draw::tint_row(grid, r, 0, cw - 1, color);
         }
-
-        // Ball: bounces horizontally; sine drives vertical within lower area.
-        let period = 1.8_f32;
-        let phase = (ctx.time / period).fract();
-        let ping = if phase < 0.5 {
-            phase * 2.0
-        } else {
-            (1.0 - phase) * 2.0
-        };
-        let bx = (ping * dw.saturating_sub(1) as f32) as usize;
-        let by_min = brick_rows * 4;
-        let by_range = dh.saturating_sub(by_min + 1).max(1);
-        let by = by_min + (((ctx.time * 2.1).sin() + 1.0) * 0.5 * by_range as f32) as usize;
-        draw::dot(grid, bx, by.min(dh.saturating_sub(1)));
-
         Ok(())
     }
 }
@@ -366,9 +422,23 @@ impl ProgressStyle for Asteroids {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Missile Command — arcing interceptor parabolas rise; count = eased
+// 4. Missile Command — warheads fall on six cities; counter-missile fireballs
 // ---------------------------------------------------------------------------
 struct MissileCommand;
+
+/// Dotted straight trail from `(x0, y0)` to `(x1, y1)`; `every` = dot spacing.
+fn trail(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, every: i32) {
+    let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
+    for i in (0..=steps).filter(|i| i % every.max(1) == 0) {
+        let t = i as f32 / steps as f32;
+        draw::dot_i(
+            grid,
+            x0 + ((x1 - x0) as f32 * t).round() as i32,
+            y0 + ((y1 - y0) as f32 * t).round() as i32,
+        );
+    }
+}
+
 impl ProgressStyle for MissileCommand {
     fn name(&self) -> &str {
         "missile-command"
@@ -377,67 +447,61 @@ impl ProgressStyle for MissileCommand {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Missile Command: interceptor arcs rise to meet incoming threats; arcs = progress"
+        "Missile Command: enemy warheads streak down toward six cities while the central base's counter-missiles burst into fireballs; incoming missiles destroyed = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Ground line at the bottom.
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
+        // Ground, six cities and the central missile base.
+        draw::hline(grid, 0, w - 1, h - 1);
+        let city_x = [0.06, 0.18, 0.30, 0.62, 0.74, 0.86].map(|f: f32| (f * wi as f32) as i32);
+        for &cx in &city_x {
+            sprite(grid, cx, hi - 4, &[".#..#..", "##.###.", "#######"]);
+        }
+        let base = (wi / 2, hi - 4);
+        sprite(
+            grid,
+            base.0 - 5,
+            base.1,
+            &["...###....", ".#######..", "##########"],
+        );
 
-        // Draw a parabolic arc from (x0,base) up to apex (mx, top), back down to (x1,base).
-        let draw_arc =
-            |grid: &mut BrailleGrid, x0: i32, x1: i32, base: i32, top: i32, fill: f32| {
-                let steps = (x1 - x0).abs().max(1).min(w as i32);
-                let drawn_steps = (fill * steps as f32) as i32;
-                for i in 0..drawn_steps.min(steps) {
-                    let t = i as f32 / steps as f32;
-                    let x = x0 + ((x1 - x0) as f32 * t) as i32;
-                    // Parabola: y = base - (base-top)*4*t*(1-t)
-                    let arc = 4.0 * t * (1.0 - t);
-                    let y = base - ((base - top) as f32 * arc) as i32;
-                    draw::dot_i(grid, x, y);
+        // Six incoming warheads; each one destroyed becomes a fireball,
+        // linked to the base by its counter-missile's trail.
+        let killed = ctx.eased * 6.0;
+        for (k, &city) in city_x.iter().enumerate() {
+            let sx = (hash01(k as u32 * 3 + 5) * wi as f32) as i32;
+            let (tx, ty) = (city + 3, hi - 5);
+            if (k as f32) < killed {
+                let fx = sx + (tx - sx) * (2 + (k as i32 % 3)) / 8;
+                let fy = 2 + (k as i32 % 3) * 2;
+                trail(grid, base.0, base.1, fx, fy, 3);
+                let r = 1.0 + 2.5 * tri(ctx.time * 0.9 + k as f32 * 0.37);
+                for s in 0..12 {
+                    let a = s as f32 * PI / 6.0;
+                    draw::dot_i(
+                        grid,
+                        fx + (a.cos() * r * 1.2).round() as i32,
+                        fy + (a.sin() * r).round() as i32,
+                    );
                 }
-            };
-
-        // Six interceptor arcs at fixed x-positions, launched at staggered progress thresholds.
-        let arc_defs: [(f32, f32, f32); 6] = [
-            (0.1, 0.35, 0.0),
-            (0.2, 0.55, 0.15),
-            (0.3, 0.7, 0.3),
-            (0.5, 0.85, 0.45),
-            (0.65, 0.9, 0.6),
-            (0.8, 0.95, 0.75),
-        ];
-        let base_y = h.saturating_sub(2) as i32;
-        let apex_y = (h / 4) as i32;
-        for &(x_frac, x_end_frac, threshold) in &arc_defs {
-            if ctx.eased < threshold {
-                break;
+            } else {
+                let u = (ctx.time * 0.3 + k as f32 * 0.21).fract();
+                let hx = sx + ((tx - sx) as f32 * u) as i32;
+                let hy = (ty as f32 * u) as i32;
+                trail(grid, sx, 0, hx, hy, 1);
+                block(grid, hx, hy, 2, 2);
             }
-            let local_fill = ((ctx.eased - threshold) / 0.25).min(1.0);
-            let x0 = (x_frac * w as f32) as i32;
-            let x1 = (x_end_frac * w as f32) as i32;
-            draw_arc(grid, x0, x1, base_y, apex_y, local_fill);
         }
-
-        // Incoming threat dots: a few dots falling from the top, animated by time.
-        let threat_xs = [w / 5, w / 2, 3 * w / 4];
-        for (i, &tx) in threat_xs.iter().enumerate() {
-            let phase = ((ctx.time * 0.7 + i as f32 * 0.4) % 2.0) as f32;
-            let ty = (phase * h as f32 * 0.5) as usize;
-            draw::dot(grid, tx, ty.min(h.saturating_sub(1)));
-        }
-
         Ok(())
     }
 }
-
 // ---------------------------------------------------------------------------
-// 5. Centipede — segmented centipede winds down; segments cleared = progress
+// 5. Centipede — a segmented bug snakes through a mushroom field; shot = eased
 // ---------------------------------------------------------------------------
 struct Centipede;
 impl ProgressStyle for Centipede {
@@ -448,46 +512,57 @@ impl ProgressStyle for Centipede {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Centipede: a segmented worm winds through the field; cleared segments = progress"
+        "Centipede: a segmented bug with antennae wiggles through a mushroom field while the gnome shoots it down; segments shot = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Centipede winds in a boustrophedon (serpentine) pattern across cells.
-        // Each cell = one segment. Total segments = cw * ch.
-        let total_seg = cw * ch;
-        let cleared = (ctx.eased * total_seg as f32) as usize;
-
-        // Draw the remaining (uncleared) segments as shade blocks.
-        // Segments are laid out: row 0 left→right, row 1 right→left, etc.
-        let head_seg = cleared; // the head is at the cleared boundary.
-        for seg in cleared..total_seg {
-            let row = seg / cw;
-            let col_idx = seg % cw;
-            let col = if row % 2 == 0 {
-                col_idx
-            } else {
-                cw.saturating_sub(1).saturating_sub(col_idx)
-            };
-            let col = col.min(cw.saturating_sub(1));
-            let row = row.min(ch.saturating_sub(1));
-            // Segments: body = dense shade, head = full block.
-            if seg == head_seg && head_seg < total_seg {
-                draw::shade(grid, col, row, 4); // head = '█'
-            } else {
-                draw::shade(grid, col, row, 2); // body = '▒'
-            }
+        // Mushroom field: a fixed scatter of caps on stems.
+        const MUSHROOM: [&str; 3] = ["###", "###", ".#."];
+        let field = (hi - 8).max(1) as f32;
+        for k in 0..(wi / 11).max(1) as u32 {
+            let mx = (hash01(k * 2 + 1) * (wi - 4).max(1) as f32) as i32;
+            let my = 1 + (hash01(k * 2 + 2) * field) as i32;
+            sprite(grid, mx, my, &MUSHROOM);
         }
 
+        // The centipede: round segments trailing a head along a wiggling path.
+        // Ten segments to start; each 10% of progress shoots one off the tail.
+        const SEGMENT: [&str; 4] = [".##.", "####", "####", ".##."];
+        const HEAD: [&str; 5] = ["#..#", ".##.", "####", "####", ".##."];
+        let alive = ((1.0 - ctx.eased) * 10.0).ceil() as i32;
+        let lane = (hi / 3).max(1) as f32;
+        let path = |s: f32| {
+            let x = s.rem_euclid((wi + 48) as f32) as i32 - 8;
+            let y = (lane + (s * 0.35).sin() * lane * 0.8) as i32;
+            (x, y)
+        };
+        let head_s = ctx.time * 14.0;
+        for i in (1..alive).rev() {
+            let (x, y) = path(head_s - i as f32 * 5.0);
+            sprite(grid, x, y, &SEGMENT);
+        }
+        if alive > 0 {
+            let (x, y) = path(head_s);
+            sprite(grid, x, y - 1, &HEAD);
+        }
+
+        // The gnome shooter at the bottom, firing a dashed laser upward.
+        let gx = (wi / 2) + ((ctx.time * 1.3).sin() * wi as f32 * 0.3) as i32;
+        sprite(grid, gx - 1, hi - 3, &[".#.", "###", "#.#"]);
+        let shot = hi - 5 - ((ctx.time * 40.0) as i32).rem_euclid((hi - 4).max(1));
+        draw::dot_i(grid, gx, shot);
+        draw::dot_i(grid, gx, shot + 1);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 6. Adventure — dot hero walks a corridor toward a goal; distance = eased
+// 6. Adventure — the square hero carries the sword to the castle; dragon chases
 // ---------------------------------------------------------------------------
 struct Adventure;
 impl ProgressStyle for Adventure {
@@ -498,44 +573,67 @@ impl ProgressStyle for Adventure {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Adventure: a square hero traverses a corridor toward a goal; distance = progress"
+        "Adventure: the square hero carries the arrow-sword toward a crenellated castle, a duck-like dragon on his heels; the portcullis rises with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Corridor walls: top and bottom horizontal lines.
-        draw::hline(grid, 0, w.saturating_sub(1), 0);
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
+        // The castle: two crenellated towers, a battlemented wall, a gate.
+        const CASTLE: [&str; 12] = [
+            "#.#.#.....#.#.#",
+            "#####.....#####",
+            "#####.....#####",
+            "#####.#.#.#####",
+            "###############",
+            "###############",
+            "###############",
+            "#####.....#####",
+            "#####.....#####",
+            "#####.....#####",
+            "#####.....#####",
+            "#####.....#####",
+        ];
+        let cx = wi - 16;
+        let cy = hi - CASTLE.len() as i32;
+        sprite(grid, cx, cy, &CASTLE);
 
-        // Floor trail — a dotted base line to show the hero's path.
-        let mid_y = h / 2;
-        for x in (0..w).step_by(3) {
-            draw::dot(grid, x, mid_y);
+        // Portcullis bars, lifting as the hero nears the gate.
+        let gate_rows = 5;
+        let lowered = gate_rows - (ctx.eased * gate_rows as f32).round() as i32;
+        for r in 0..lowered {
+            for gx in [cx + 6, cx + 8] {
+                draw::dot_i(grid, gx, hi - gate_rows + r);
+            }
         }
 
-        // Goal: a cross / chalice shape at the right end.
-        let gx = w.saturating_sub(2) as i32;
-        let gy = mid_y as i32;
-        draw::dot_i(grid, gx, gy);
-        draw::dot_i(grid, gx - 1, gy);
-        draw::dot_i(grid, gx + 1, gy);
-        draw::dot_i(grid, gx, gy - 1);
-        draw::dot_i(grid, gx, gy + 1);
+        // The hero (a square) carrying the arrow-shaped sword.
+        let ground = hi - 4;
+        let travel = (cx - 12).max(0) as f32;
+        let hx = 2 + (ctx.eased * travel) as i32;
+        block(grid, hx, ground, 3, 3);
+        sprite(grid, hx + 4, ground, &["..#.", "####", "..#."]);
 
-        // Hero: a small filled square (2×2 dots) advancing with progress.
-        let hero_x = (ctx.eased * w.saturating_sub(4) as f32) as usize;
-        let hero_y = mid_y.saturating_sub(1);
-        draw::fill_rect(grid, hero_x, hero_y, 2, 2.min(h.saturating_sub(hero_y)));
-
+        // Yorgle the dragon waddles behind, jaw snapping with time.
+        let jaw = if (ctx.time * 3.0).fract() < 0.5 {
+            "##...."
+        } else {
+            "####.."
+        };
+        let dragon = [
+            ".##...", "###...", jaw, ".##...", ".###..", "#####.", "######", ".####.", ".#..#.",
+        ];
+        let bob = ((ctx.time * 6.0).sin() * 1.5) as i32;
+        sprite_flip(grid, hx - 14 + bob, hi - 10, &dragon);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 7. Pitfall — Harry swings a vine (pendulum arc) over pits; screens = eased
+// 7. Pitfall — Harry swings a vine over a tar pit; jungle scrolls with eased
 // ---------------------------------------------------------------------------
 struct Pitfall;
 impl ProgressStyle for Pitfall {
@@ -546,79 +644,77 @@ impl ProgressStyle for Pitfall {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Pitfall: Harry swings a vine pendulum over pits; screens advanced = progress"
+        "Pitfall!: Harry swings on a vine over a tar pit under the jungle canopy; trees scroll by and the underground tunnel fills with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 4;
 
-        // Ground line.
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
-
-        // Tree/anchor at left edge, centred vertically in top third.
-        let anchor_x = (w / 5) as i32;
-        let anchor_y = (h / 4) as i32;
-        draw::vline(grid, anchor_x as usize, 0, anchor_y as usize);
-
-        // Progress bar: ground changes from pits (gaps) to solid path.
-        // Left portion (eased) = solid ground, right = pits.
-        let solid_end = (ctx.eased * w as f32) as usize;
-        // Draw pits as two-dot-wide gaps in the remaining ground area.
-        let ground_y = h.saturating_sub(1);
-        draw::hline(grid, 0, solid_end.min(w.saturating_sub(1)), ground_y);
-        // Right side: pitted — place single dots every 4 to show pit edges.
-        let mut px = solid_end;
-        while px < w {
-            draw::dot(grid, px, ground_y);
-            if px + 3 < w {
-                px += 4;
-            } else {
-                break;
+        // Leafy canopy along the top.
+        for x in 0..wi {
+            if hash01(x as u32 + 7) > 0.25 {
+                draw::dot_i(grid, x, 0);
+            }
+            if hash01(x as u32 + 301) > 0.55 {
+                draw::dot_i(grid, x, 1);
             }
         }
 
-        // Vine: line from anchor to Harry.
-        let vine_len = (h as f32 * 0.55).max(2.0);
-        // Pendulum angle: oscillates with time.
-        let angle = (ctx.time * 2.5).sin() * (PI / 4.0);
-        let vine_dx = (vine_len * angle.sin()) as i32;
-        let vine_dy = (vine_len * angle.cos()) as i32;
-        let harry_x = anchor_x + vine_dx;
-        let harry_y = anchor_y + vine_dy;
-        // Draw vine as a Bresenham line.
-        let mut lx = anchor_x;
-        let mut ly = anchor_y;
-        let dx = (harry_x - anchor_x).abs();
-        let dy = (harry_y - anchor_y).abs();
-        let step_x: i32 = if harry_x > anchor_x { 1 } else { -1 };
-        let step_y: i32 = if harry_y > anchor_y { 1 } else { -1 };
-        let mut err = dx - dy;
-        for _ in 0..(dx + dy + 1).min(256) {
-            draw::dot_i(grid, lx, ly);
-            if lx == harry_x && ly == harry_y {
-                break;
-            }
-            let e2 = 2 * err;
-            if e2 > -dy {
-                err -= dy;
-                lx += step_x;
-            }
-            if e2 < dx {
-                err += dx;
-                ly += step_y;
+        // Tree trunks drifting past as Harry advances screen by screen.
+        let pit = (wi / 2 - 13, wi / 2 + 13);
+        let scroll = (ctx.eased * 64.0) as i32;
+        let pitch = 22;
+        for k in 0..=(wi / pitch + 1) {
+            let tx = (k * pitch - scroll).rem_euclid(wi.max(1) + pitch) - 4;
+            if tx + 2 < pit.0 || tx > pit.1 {
+                block(grid, tx, 2, 2, (ground - 2).max(0));
             }
         }
-        // Harry: 2×2 block at vine end.
-        draw::fill_rect(grid, harry_x.max(0) as usize, harry_y.max(0) as usize, 2, 2);
 
+        // Jungle floor (two dots thick) broken by the tar pit.
+        for x in 0..wi {
+            if x < pit.0 || x > pit.1 {
+                draw::dot_i(grid, x, ground);
+                draw::dot_i(grid, x, ground + 1);
+            } else if (x + (ctx.time * 6.0) as i32) % 3 != 0 {
+                // Tar shimmer.
+                draw::dot_i(grid, x, ground + 1);
+            }
+        }
+
+        // Underground tunnel: the progress fill along the bottom row.
+        let fill = (ctx.eased * w as f32) as i32;
+        if fill > 0 {
+            block(grid, 0, hi - 1, fill, 1);
+        }
+
+        // The vine, pivoting from above the canopy.
+        let pivot = (wi / 2, -6);
+        let len = (ground - 5 - pivot.1).max(1);
+        let theta = 0.6 * (ctx.time * 2.2).sin();
+        let (s, c) = theta.sin_cos();
+        for k in 0..=len {
+            draw::dot_i(
+                grid,
+                pivot.0 + (k as f32 * s).round() as i32,
+                pivot.1 + (k as f32 * c).round() as i32,
+            );
+        }
+
+        // Harry hangs from the end: arms up, hat, torso, running legs.
+        let end_x = pivot.0 + (len as f32 * s).round() as i32;
+        let end_y = pivot.1 + (len as f32 * c).round() as i32;
+        sprite(grid, end_x - 1, end_y, &["#.#", "###", ".#.", "###", "#.#"]);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 8. Combat — two tanks; shells fly; hits fill a score meter
+// 8. Combat — two top-down tanks duel past barrier walls; hits = progress
 // ---------------------------------------------------------------------------
 struct Combat;
 impl ProgressStyle for Combat {
@@ -629,59 +725,64 @@ impl ProgressStyle for Combat {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Combat: two tanks exchange shells; hits scored = progress"
+        "Combat: two treaded tanks face off across barrier walls trading shells; the score digits count hits as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-        let (dw, dh) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Score bar at the top row using hbar (smooth eighth-block fill).
-        draw::hbar(grid, 0, ctx.eased);
+        // Top-down tank: treads, hull and a long barrel pointing right.
+        const TANK: [&str; 5] = [
+            "#####....",
+            ".###.....",
+            ".#########",
+            ".###.....",
+            "#####....",
+        ];
+        let ty = (hi - 5) / 2 + 2;
+        let roll = ((ctx.time * 1.7).sin() * 1.2) as i32;
+        let lx = 2 + roll;
+        let rx = wi - 12 - roll;
+        sprite(grid, lx, ty, &TANK);
+        sprite_flip(grid, rx, ty, &TANK);
 
-        if ch < 2 {
-            return Ok(());
+        // Barrier walls above and below the firing lane.
+        let mid = wi / 2;
+        block(grid, mid - 1, 6, 3, (ty - 6).max(0));
+        block(grid, mid - 1, ty + 5, 3, (hi - ty - 5).max(0));
+
+        // Shell: flies muzzle to muzzle, bursting on the far tank.
+        let phase = (ctx.time / 1.2).fract();
+        let (from, to) = (lx + 10, rx - 1);
+        let shell_y = ty + 2;
+        if phase < 0.75 {
+            let sx = from + ((phase / 0.75) * (to - from) as f32) as i32;
+            block(grid, sx, shell_y, 2, 1);
+        } else {
+            let r = 1 + ((phase - 0.75) * 12.0) as i32;
+            for k in 0..8 {
+                let a = k as f32 * PI / 4.0;
+                draw::dot_i(
+                    grid,
+                    rx + 4 + (a.cos() * r as f32 * 1.5) as i32,
+                    shell_y + (a.sin() * r as f32) as i32,
+                );
+            }
         }
 
-        // Tanks: left tank at ~15% width, right tank at ~85%.
-        // Each tank is a shade glyph: '▓' for body.
-        let left_col = (cw / 8).min(cw.saturating_sub(1));
-        let right_col = cw
-            .saturating_sub(cw / 8 + 1)
-            .max(left_col + 1)
-            .min(cw.saturating_sub(1));
-        let tank_row = ch / 2;
-        draw::shade(grid, left_col, tank_row, 3); // left tank
-        draw::shade(grid, right_col, tank_row, 3); // right tank
-
-        // Shells: multiple projectiles travel between tanks.
-        // Each shell animates with a phase offset.
-        let shell_count = 3usize;
-        for i in 0..shell_count {
-            let phase = ((ctx.time * 1.2 + i as f32 * 0.33) % 1.0) as f32;
-            // Alternate left→right and right→left.
-            let (fx, tx) = if i % 2 == 0 {
-                (left_col as f32 * 2.0 + 2.0, right_col as f32 * 2.0 - 1.0)
-            } else {
-                (right_col as f32 * 2.0 - 1.0, left_col as f32 * 2.0 + 2.0)
-            };
-            let sx = (fx + (tx - fx) * phase) as usize;
-            let sy = tank_row * 4 + 1; // mid-cell dot row
-            draw::dot(
-                grid,
-                sx.min(dw.saturating_sub(1)),
-                sy.min(dh.saturating_sub(1)),
-            );
-        }
-
+        // Scores along the top: hits landed climb with progress.
+        let hits = ((ctx.progress * 9.0).round() as usize).min(9);
+        digit(grid, wi / 4, 0, hits, 2);
+        digit(grid, wi * 3 / 4 - 6, 0, hits / 4, 2);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 9. Kaboom — bombs fall; a bucket catches them; catches = eased
+// 9. Kaboom — the Mad Bomber drops lit bombs; stacked buckets catch them
 // ---------------------------------------------------------------------------
 struct Kaboom;
 impl ProgressStyle for Kaboom {
@@ -692,52 +793,62 @@ impl ProgressStyle for Kaboom {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Kaboom: bombs drop from a mad bomber; bucket catches = progress"
+        "Kaboom!: the grinning Mad Bomber paces the wall dropping lit bombs into two stacked water buckets; the catch counter = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-        let (dw, dh) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // Mad bomber at top-centre.
-        let bomber_cx = cw / 2;
-        draw::shade(grid, bomber_cx.min(cw.saturating_sub(1)), 0, 3);
+        // The Mad Bomber paces along the top wall.
+        let bomber_x = |t: f32| wi / 2 + 6 + ((t * 1.4).sin() * wi as f32 * 0.28) as i32;
+        const BOMBER: [&str; 5] = [".###.", "#####", "#.#.#", ".###.", "#####"];
+        let bx = bomber_x(ctx.time);
+        sprite(grid, bx - 2, 0, &BOMBER);
+        draw::hline(grid, 0, w - 1, 5);
 
-        // Bucket at the bottom, following a sine sweep.
-        let bucket_col =
-            ((((ctx.time * 1.5).sin() + 1.0) * 0.5) * (cw.saturating_sub(2)) as f32) as usize;
-        let bucket_row = ch.saturating_sub(1);
-        draw::glyph(grid, bucket_col.min(cw.saturating_sub(1)), bucket_row, '▂');
-
-        // Falling bombs: staggered phases.
-        let bomb_count = 4usize;
-        for i in 0..bomb_count {
-            let phase = ((ctx.time * 0.8 + i as f32 * 0.25) % 1.0) as f32;
-            // Bombs fan out from bomber position.
-            let bx =
-                ((bomber_cx as f32 + (i as f32 - bomb_count as f32 / 2.0) * 2.0) * 2.0) as usize;
-            let by = (phase * dh as f32) as usize;
-            draw::dot(
-                grid,
-                bx.min(dw.saturating_sub(1)),
-                by.min(dh.saturating_sub(1)),
-            );
+        // Lit bombs, one released every 0.45 s from wherever he stood.
+        let drop = 0.3;
+        let speed = 11.0;
+        let now = (ctx.time / drop).floor() as i32;
+        let mut lowest: Option<(i32, i32)> = None;
+        for k in 0..4 {
+            let released = (now - k) as f32 * drop;
+            let y = 6 + ((ctx.time - released) * speed) as i32;
+            if y > hi - 5 {
+                continue;
+            }
+            let x = bomber_x(released);
+            sprite(grid, x - 1, y, &[".#.", "###", ".#."]);
+            if (ctx.time * 8.0 + k as f32).fract() < 0.5 {
+                draw::dot_i(grid, x + 1, y - 1); // fuse spark
+            }
+            match lowest {
+                Some((_, ly)) if ly >= y => {}
+                _ => lowest = Some((x, y)),
+            }
         }
 
-        // Progress: a catch-score strip on the right edge (vertical fill).
-        let score_h = (ctx.eased * dh as f32) as usize;
-        for sy in (dh.saturating_sub(score_h))..dh {
-            draw::dot(grid, dw.saturating_sub(1), sy);
+        // Two stacked water buckets slide under the lowest bomb.
+        let target = lowest.map_or_else(|| bomber_x(ctx.time), |(x, _)| x);
+        let ux = (target - 4).clamp(0, (wi - 8).max(0));
+        for b in 0..2 {
+            let y = hi - 4 + b * 2;
+            sprite(grid, ux, y, &["#......#", ".######."]);
         }
 
+        // Catch counter, top-left: 00 → 99 with progress.
+        let caught = ((ctx.progress * 99.0).round() as usize).min(99);
+        digit(grid, 0, 0, caught / 10, 1);
+        digit(grid, 4, 0, caught % 10, 1);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 10. Yars' Revenge — a shield wall erodes cell by cell from left to right
+// 10. Yars' Revenge — the Yar nibbles the Qotile's shield; erosion = progress
 // ---------------------------------------------------------------------------
 struct YarsRevenge;
 impl ProgressStyle for YarsRevenge {
@@ -748,58 +859,58 @@ impl ProgressStyle for YarsRevenge {
         "atari"
     }
     fn describe(&self) -> &str {
-        "Yars' Revenge: the Qotile shield wall erodes cell by cell; erosion = progress"
+        "Yars' Revenge: the winged Yar hovers by the flickering neutral zone while the Qotile's cell shield erodes; erosion = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-        let (dw, _dh) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
 
-        // The shield wall: a column of shade blocks occupying the left 1/3 of cells.
-        let wall_cols = ((cw / 3).max(1)).min(cw);
-        let total_blocks = wall_cols * ch;
-        let eroded = (ctx.eased * total_blocks as f32) as usize;
-
-        // Blocks erode column by column left-to-right (like the original game).
-        let eroded_cols = eroded / ch.max(1);
-        let eroded_partial = eroded % ch.max(1);
-
-        for col in 0..wall_cols {
-            for row in 0..ch {
-                let block_idx = col * ch + row;
-                if block_idx < eroded {
-                    // Eroded: leave blank.
-                } else if col == eroded_cols && row < eroded_partial {
-                    // Partially eroded column.
-                } else {
-                    // Intact: dense shade block.
-                    draw::shade(
-                        grid,
-                        col.min(cw.saturating_sub(1)),
-                        row.min(ch.saturating_sub(1)),
-                        3,
-                    );
+        // Shield: a bulging wall of 2×2 cells, eroded in a hashed order.
+        let right = wi - 6;
+        for row in 0..(hi / 2) {
+            let bulge = 7 - ((row * 2 + 1 - hi / 2).abs() / 2).min(6);
+            for col in 0..bulge {
+                let i = (row * 16 + col) as u32;
+                if hash01(i + 911) >= ctx.eased {
+                    block(grid, right - col * 3, row * 2, 2, 2);
                 }
             }
         }
 
-        // Yar (the fly): a dot hero moving horizontally, animated by time.
-        let yar_x = (((ctx.time * 3.0).sin() + 1.0) * 0.5 * (wall_cols + 2) as f32) as usize;
-        let yar_y = (ch / 2) * 4; // mid-cell in dot space
-        draw::dot(grid, yar_x.min(dw.saturating_sub(1)), yar_y);
-        draw::dot(
-            grid,
-            yar_x.min(dw.saturating_sub(1)),
-            yar_y.saturating_sub(1),
-        );
+        // The Qotile: a pulsing diamond behind the shield.
+        let qy = hi / 2 - 2;
+        let pulse = (ctx.time * 4.0).fract() < 0.5;
+        let core: [&str; 4] = if pulse {
+            [".#.", "###", "###", ".#."]
+        } else {
+            ["...", ".#.", ".#.", "..."]
+        };
+        sprite(grid, wi - 3, qy, &core);
 
-        // Qotile (the enemy): a vertical stripe on the right edge.
-        let q_col = cw.saturating_sub(1);
-        let q_row = (((ctx.time * 0.5).sin() + 1.0) * 0.5 * ch.saturating_sub(1) as f32) as usize;
-        draw::shade(grid, q_col, q_row.min(ch.saturating_sub(1)), 4);
+        // Neutral zone: a flickering band of static.
+        let frame = (ctx.time * 12.0) as u32;
+        let zx = wi * 2 / 5;
+        for y in 0..hi {
+            for x in zx..zx + 6 {
+                if hash01((y * 64 + x) as u32 ^ frame.wrapping_mul(7919)) > 0.62 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
 
+        // The Yar: a fly with flapping wings, drifting toward the shield.
+        let wings: [&str; 2] = if (ctx.time * 6.0).fract() < 0.5 {
+            ["#...#", "##.##"]
+        } else {
+            ["....#", ".#.##"]
+        };
+        let yx = 4 + (ctx.eased * (zx - 12).max(0) as f32) as i32;
+        let yy = (hi / 2 - 3) + ((ctx.time * 2.0).sin() * (hi as f32 / 4.0)) as i32;
+        sprite(grid, yx, yy, &wings);
+        sprite(grid, yx, yy + 2, &[".###.", "#####", ".###.", "..#.."]);
         Ok(())
     }
 }

@@ -1,27 +1,25 @@
 //! World-cultures / ornament-themed progress bars.
 //!
-//! Ten structurally distinct styles, each drawing itself as `ctx.eased` rises
-//! and animating via `ctx.time`.  Every style encodes a real cultural ornament
-//! pattern in braille dot-space:
+//! Eleven structurally distinct styles, each drawing itself as `ctx.eased` rises
+//! and animating via `ctx.time`.  Every style draws a recognisable cultural
+//! motif or ornament in braille dot-space:
 //!
-//! - `mandala`        — radial symmetry: petals and concentric rings unfurl
-//! - `celtic-knot`    — interlaced over/under woven bands fill the bar
-//! - `aztec-fret`     — stepped-fret meander tiles from left to right
-//! - `islamic-star`   — 8-fold star tessellation tiles revealed by progress
-//! - `greek-key`      — meander border scrolls in from the left
-//! - `seigaiha`       — Japanese overlapping wave-scale arcs fill row by row
-//! - `totem-pole`     — carved segments stack upward as progress rises
-//! - `runes`          — Norse rune glyphs carved in one by one
-//! - `paisley-swirl`  — henna swirl spirals unfurl from multiple seeds
-//! - `kente-weave`    — kente / tartan warp-and-weft interlacing
+//! - `mandala`        — turning lotus mandala; rosette border unrolls outward
+//! - `celtic-knot`    — two outlined ribbons twisting with over/under breaks
+//! - `aztec-fret`     — xicalcoliuhqui staircase-and-spiral units, left to right
+//! - `islamic-star`   — chain of eight-pointed {8/3} stars blooming in turn
+//! - `greek-key`      — one unbroken squared meander line drawn in from the left
+//! - `seigaiha`       — Japanese overlapping fans of concentric wave arcs
+//! - `totem-pole`     — carved poles with thunderbird / bear crests raised in turn
+//! - `runes`          — Elder Futhark runes chiselled stroke by stroke into stone
+//! - `paisley-swirl`  — boteh teardrops with curled tips traced one by one
+//! - `kente-weave`    — gold / green / red kente strips woven one by one
+//! - `paper-lanterns` — string of red paper lanterns lit one after another
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
-
-// ── optional easing import ────────────────────────────────────────────────────
-use super::super::{ease, Easing};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public registry
@@ -43,6 +41,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(Runes),
         Box::new(PaisleySwirl),
         Box::new(KenteWeave),
+        Box::new(PaperLanterns),
     ]
 }
 
@@ -108,8 +107,47 @@ fn palette_tint(grid: &mut BrailleGrid, ctx: &BarContext) {
     }
 }
 
+/// Blend colour `a` toward `b` by `t` in `[0, 1]`.
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let f = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t) as u8;
+    Color::rgb(f(a.r, b.r), f(a.g, b.g), f(a.b, b.b))
+}
+
+/// Stamp a `#`-art sprite: every `#` becomes a `block × block` square of dots
+/// whose top-left is `origin + (col, row) * block`. `flip_v` mirrors the rows.
+/// Only dots with `x < clip.0` and `y >= clip.1` are set, so sprites can be
+/// revealed left-to-right or bottom-up.
+fn stamp(
+    grid: &mut BrailleGrid,
+    rows: &[&str],
+    origin: (i32, i32),
+    block: i32,
+    flip_v: bool,
+    clip: (i32, i32),
+) {
+    let n = rows.len();
+    for (r, line) in rows.iter().enumerate() {
+        let r = if flip_v { n - 1 - r } else { r } as i32;
+        for (c, ch) in line.bytes().enumerate() {
+            if ch != b'#' {
+                continue;
+            }
+            for dy in 0..block {
+                for dx in 0..block {
+                    let x = origin.0 + c as i32 * block + dx;
+                    let y = origin.1 + r * block + dy;
+                    if x < clip.0 && y >= clip.1 {
+                        draw::dot_i(grid, x, y);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Mandala — radial symmetry: concentric rings + petal spokes unfurl
+// 1. Mandala — a rotating lotus mandala with a rosette border unrolling outward
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Mandala;
@@ -121,8 +159,8 @@ impl ProgressStyle for Mandala {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Radial mandala: concentric rings and petal spokes bloom outward as progress \
-         rises; the whole mandala rotates slowly with time."
+        "Lotus mandala: a ringed six-petal lotus turns slowly at the centre while \
+         a border of rosettes and diamonds unrolls symmetrically outward as progress rises."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -130,70 +168,76 @@ impl ProgressStyle for Mandala {
             return Ok(());
         }
 
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let max_r = (dw.min(dh * 2) as f32 / 2.0 - 1.0).max(1.0);
-        let rot = ctx.time * 0.25;
+        let cx = (dw as f32 - 1.0) / 2.0;
+        let cy = (dh as f32 - 1.0) / 2.0;
+        let r = cy.min(cx).max(1.0);
+        let rot = ctx.time * 0.6;
 
-        // How many rings and petals are revealed.
-        let n_rings = 4usize;
-        let n_petals = 8usize;
-
-        for ring in 0..n_rings {
-            let ring_frac = (ring + 1) as f32 / n_rings as f32;
-            // Each ring appears when eased > its threshold.
-            if ctx.eased < ring_frac * 0.6 {
-                continue;
-            }
-            let r = ring_frac * max_r;
-            // Full ring circle.
-            arc(grid, cx, cy, r, 0.0, 2.0 * PI);
-        }
-
-        // Petal spokes — Bézier-approximated with two symmetric arc pairs.
-        let petal_reveal = (ctx.eased * 3.0 - 0.5).clamp(0.0, 1.0);
-        for p in 0..n_petals {
-            let base_angle = p as f32 * 2.0 * PI / n_petals as f32 + rot;
-            let tip_r = max_r * petal_reveal;
-            // Draw spoke line.
-            let x1 = (cx + tip_r * base_angle.cos()).round() as i32;
-            let y1 = (cy + tip_r * base_angle.sin()).round() as i32;
-            bres(grid, cx as i32, cy as i32, x1, y1);
-            // Petal arc: small bulge to either side.
-            if tip_r > 3.0 {
-                let bulge_r = tip_r * 0.35;
-                let mid_r = tip_r * 0.55;
-                let mid_x = cx + mid_r * base_angle.cos();
-                let mid_y = cy + mid_r * base_angle.sin();
-                let perp = base_angle + PI / 2.0;
-                let side_x = mid_x + bulge_r * perp.cos();
-                let side_y = mid_y + bulge_r * perp.sin();
-                arc(
-                    grid,
-                    side_x,
-                    side_y,
-                    bulge_r,
-                    base_angle + PI,
-                    base_angle + 2.0 * PI,
-                );
-                let side2_x = mid_x - bulge_r * perp.cos();
-                let side2_y = mid_y - bulge_r * perp.sin();
-                arc(grid, side2_x, side2_y, bulge_r, base_angle, base_angle + PI);
+        // Core: outer ring, six lens-shaped petals around an inner ring, and a seed.
+        arc(grid, cx, cy, r, 0.0, 2.0 * PI);
+        let n_petals = 6usize;
+        let steps = (r * 2.0) as usize + 4;
+        for k in 0..n_petals {
+            let a = k as f32 * 2.0 * PI / n_petals as f32 + rot;
+            let (ca, sa) = (a.cos(), a.sin());
+            for s in 0..=steps {
+                let u = s as f32 / steps as f32;
+                let rr = r * (0.42 + 0.58 * u);
+                let half = (PI * u).sin() * r * 0.22;
+                for side in [-1.0f32, 1.0] {
+                    let px = cx + rr * ca - side * half * sa;
+                    let py = cy + rr * sa + side * half * ca;
+                    draw::dot_i(grid, px.round() as i32, py.round() as i32);
+                }
             }
         }
+        arc(grid, cx, cy, r * 0.3, 0.0, 2.0 * PI);
+        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
 
-        // Radial tint from center outward.
+        // Border: rosettes (ring + seed + four turning spokes) alternating with
+        // small diamonds, mirrored left and right, revealed out to `reach`.
+        let reach = ctx.eased * (cx - r - 1.0).max(0.0);
+        let rose_r = (r * 0.4).max(1.0);
+        let pitch = (rose_r * 3.4).max(4.0);
+        let mut d = r + 2.0 + rose_r;
+        while d + rose_r <= r + 1.0 + reach + 0.5 && d < cx + pitch {
+            for side in [-1.0f32, 1.0] {
+                let rx = cx + side * d;
+                arc(grid, rx, cy, rose_r, 0.0, 2.0 * PI);
+                draw::dot_i(grid, rx.round() as i32, cy.round() as i32);
+                for q in 0..4 {
+                    let a = q as f32 * PI / 2.0 - side * rot;
+                    let px = rx + (rose_r + 2.0) * a.cos();
+                    let py = cy + (rose_r + 2.0) * a.sin();
+                    draw::dot_i(grid, px.round() as i32, py.round() as i32);
+                }
+                // Diamond halfway to the next rosette, once it is reached too.
+                let dd = d + pitch / 2.0;
+                if dd + 2.0 <= r + 1.0 + reach + 0.5 {
+                    let (mx, my) = ((cx + side * dd).round() as i32, cy.round() as i32);
+                    bres(grid, mx - 2, my, mx, my - 2);
+                    bres(grid, mx, my - 2, mx + 2, my);
+                    bres(grid, mx + 2, my, mx, my + 2);
+                    bres(grid, mx, my + 2, mx - 2, my);
+                }
+            }
+            d += pitch;
+        }
+
+        // Colour radiates from the centre: start hue at the core, end at the rim.
         let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.max(1) as f32;
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), ctx.palette.sample(t));
+        for cx_c in 0..cw {
+            let t = ((cx_c as f32 * 2.0 + 1.0) - cx).abs() / cx.max(1.0);
+            for cy_c in 0..ch {
+                draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(t));
+            }
         }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Celtic Knot — interlaced over/under woven bands
+// 2. Celtic Knot — two outlined ribbons twisting with over/under breaks
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct CelticKnot;
@@ -205,8 +249,9 @@ impl ProgressStyle for CelticKnot {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Celtic interlace: two sinusoidal bands weave over and under each other; \
-         the knot expands rightward as progress rises, undulating with time."
+        "Celtic interlace: two outlined ribbons twist between border rules, each \
+         passing over then under the other — the lower ribbon breaks at every crossing; \
+         the knotwork extends rightward as progress rises and slowly flows with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -219,56 +264,61 @@ impl ProgressStyle for CelticKnot {
             return Ok(());
         }
 
-        let cy = dh as f32 / 2.0;
-        // Amplitude of each strand — scale to half the grid height minus border.
-        let amp = (dh as f32 / 2.0 - 1.0).max(0.5);
-        // Wave period: 1 full cycle per ~20 dots.
-        let period = (dw as f32 / 3.0).max(8.0);
-        let phase = ctx.time * 1.5;
-        // Band thickness in dots (1 or 2).
-        let thick = (dh / 8).max(1);
+        // Border rules frame the band.
+        let last = filled_w.min(dw) - 1;
+        draw::hline(grid, 0, last, 0);
+        draw::hline(grid, 0, last, dh - 1);
 
-        for x in 0..filled_w.min(dw) {
-            let t = x as f32 / period;
-            // Two strands: 180° apart, giving the over/under illusion via
-            // a gap wherever they cross.
-            let y_a = cy + amp * (2.0 * PI * t + phase).sin();
-            let y_b = cy + amp * (2.0 * PI * t + phase + PI).sin();
+        let cy = (dh as f32 - 1.0) / 2.0;
+        // Strand amplitude leaves room above and below for the rules.
+        let amp = (dh as f32 / 2.0 - 4.0).max(0.5);
+        let period = (dh as f32 * 2.5).max(8.0);
+        let phase = ctx.time * 1.2;
+        // Ribbon half-width, and the separation below which the under-strand
+        // is cut away so the over-strand reads as passing on top.
+        let half = if dh >= 12 { 2 } else { 1 };
+        let gap = (dh as f32 * 0.3).max(1.5);
+        let strand = |x: i32, sign: f32| {
+            let theta = 2.0 * PI * x as f32 / period + phase;
+            (cy + sign * amp * theta.sin()).round() as i32
+        };
 
-            // Detect crossing region — suppress one strand near crossings.
-            let dist = (y_a - y_b).abs();
-            let crossing = dist < amp * 0.5;
-
-            for dy in 0..thick {
-                // Strand A (always drawn).
-                let ya = y_a as i32 + dy as i32;
-                draw::dot_i(grid, x as i32, ya);
-                draw::dot_i(grid, x as i32, ya - 1);
-                // Strand B suppressed near crossing for the "under" effect.
-                if !crossing || (x / (thick + 1)) % 2 == 0 {
-                    let yb = y_b as i32 + dy as i32;
-                    draw::dot_i(grid, x as i32, yb);
-                    draw::dot_i(grid, x as i32, yb - 1);
+        for x in 0..filled_w.min(dw) as i32 {
+            let theta = 2.0 * PI * x as f32 / period + phase;
+            let sep = (2.0 * amp * theta.sin()).abs();
+            // Crossings sit at multiples of π; alternate which strand is on top.
+            let a_on_top = ((theta / PI).round() as i64).rem_euclid(2) == 0;
+            for (sign, top) in [(1.0f32, a_on_top), (-1.0, !a_on_top)] {
+                if sep < gap && !top {
+                    continue;
+                }
+                // Outlined ribbon: both edges, joined to the previous column.
+                let (y0, y1) = (strand(x - 1, sign), strand(x, sign));
+                for e in [-half, half] {
+                    bres(grid, x - 1, y0 + e, x, y1 + e);
                 }
             }
         }
 
-        // Tint: gradient across the bar.
-        let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cy_c in 0..ch {
-            let hi = filled_cells.saturating_sub(1).min(cw.saturating_sub(1));
-            if filled_cells > 0 {
-                draw::tint_row(grid, cy_c, 0, hi, ctx.palette.sample(0.6));
-            }
-        }
+        palette_tint(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Aztec Fret — stepped-T meander pattern tiles left to right
+// 3. Aztec Fret — xicalcoliuhqui: staircase + spiral hook, tiled left to right
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// One xicalcoliuhqui unit (2×2-dot blocks): a staircase climbing into a
+/// squared spiral hook.
+const FRET_UNIT: [&str; 6] = [
+    "....######",
+    "....#....#",
+    "...##.##.#",
+    "..##..#..#",
+    ".##...####",
+    "##........",
+];
 
 struct AztecFret;
 impl ProgressStyle for AztecFret {
@@ -279,8 +329,9 @@ impl ProgressStyle for AztecFret {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Aztec/Maya stepped-fret meander: interlocking T-shaped spirals tile the \
-         bar from left to right as progress rises."
+        "Aztec/Maya stepped fret (xicalcoliuhqui): bold staircase-and-spiral units, \
+         alternately mirrored, are laid between border bands from left to right as \
+         progress rises; a glint of light sweeps across the finished stone."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -288,71 +339,50 @@ impl ProgressStyle for AztecFret {
             return Ok(());
         }
 
-        // Each fret tile is `tile_w` dots wide and fills the full height.
-        let tile_w = ((dw / 6).max(3)).min(dw);
-        let filled_w = (ctx.eased * dw as f32).round() as usize;
-        if filled_w == 0 {
+        let fill_x = (ctx.eased * dw as f32).round() as i32;
+        if fill_x <= 0 {
             return Ok(());
         }
 
-        // Outer border line.
-        draw::hline(grid, 0, filled_w.min(dw).saturating_sub(1), 0);
-        draw::hline(
-            grid,
-            0,
-            filled_w.min(dw).saturating_sub(1),
-            dh.saturating_sub(1),
-        );
+        // Border bands top and bottom.
+        let last = (fill_x as usize).min(dw) - 1;
+        draw::hline(grid, 0, last, 0);
+        draw::hline(grid, 0, last, dh - 1);
 
-        let n_tiles = (filled_w + tile_w - 1) / tile_w;
-
-        for tile in 0..n_tiles {
-            let x0 = tile * tile_w;
-            let x1 = (x0 + tile_w).min(filled_w).min(dw);
-            if x0 >= x1 {
-                continue;
-            }
-
-            // Even tiles: stepped fret going right-then-down.
-            // Odd tiles: mirror image going left-then-up.
-            let flip = tile % 2 == 1;
-
-            // Vertical stem at the start of the tile.
-            let stem_x = if flip { x1.saturating_sub(1) } else { x0 };
-            draw::vline(
+        // Units are 20×12 dots, centred vertically, alternately flipped so the
+        // staircases interlock into a zigzag.
+        let y0 = (dh as i32 - 12) / 2;
+        let pitch = 20i32;
+        let n_units = dw as i32 / pitch + 1;
+        for u in 0..n_units {
+            stamp(
                 grid,
-                stem_x.min(dw.saturating_sub(1)),
-                0,
-                dh.saturating_sub(1),
+                &FRET_UNIT,
+                (u * pitch, y0),
+                2,
+                u % 2 == 1,
+                (fill_x, i32::MIN),
             );
-
-            // Stepped rungs: 3 horizontal bars at equal y-intervals.
-            let n_steps = 3usize;
-            for s in 1..=n_steps {
-                let y = s * dh / (n_steps + 1);
-                let rung_x0 = if flip {
-                    stem_x.saturating_sub(tile_w / 2)
-                } else {
-                    stem_x
-                };
-                let rung_x1 = if flip { stem_x } else { stem_x + tile_w / 2 };
-                let rx0 = rung_x0.min(dw.saturating_sub(1));
-                let rx1 = rung_x1.min(dw.saturating_sub(1));
-                draw::hline(grid, rx0, rx1, y.min(dh.saturating_sub(1)));
-                // Short vertical drop at the rung end.
-                let drop_x = if flip { rx0 } else { rx1 };
-                let drop_top = y.saturating_sub(dh / (n_steps * 2 + 1) + 1);
-                draw::vline(grid, drop_x, drop_top, y.min(dh.saturating_sub(1)));
-            }
         }
 
-        palette_tint(grid, ctx);
+        // Stone colour with a moving glint over the laid section.
+        let (cw, ch) = grid.dimensions();
+        let glint = (ctx.time * 0.35).fract() * (cw as f32 + 8.0) - 4.0;
+        let white = Color::rgb(255, 255, 255);
+        for cx_c in 0..cw {
+            let base = ctx.palette.sample(cx_c as f32 / cw.max(1) as f32);
+            let near = 1.0 - ((cx_c as f32 - glint).abs() / 2.5).min(1.0);
+            let col = mix(base, white, near * 0.6);
+            for cy_c in 0..ch {
+                draw::tint_row(grid, cy_c, cx_c, cx_c, col);
+            }
+        }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Islamic Star — 8-fold star tessellation
+// 4. Islamic Star — a chain of eight-pointed stars (two interlaced squares)
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct IslamicStar;
@@ -364,8 +394,9 @@ impl ProgressStyle for IslamicStar {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Islamic geometric: 8-fold star tiles tesselate the bar, each star's points \
-         appearing as progress rises; the grid shimmers in slow rotation with time."
+        "Islamic geometric: eight-pointed interlaced stars ({8/3} star polygons \
+         around a ring) bloom into place one after another along a linked chain as progress \
+         rises; the rings breathe and the stars glimmer with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -373,66 +404,75 @@ impl ProgressStyle for IslamicStar {
             return Ok(());
         }
 
-        // Tile the grid with 8-pointed stars (octagram).
-        // Each star is centred on a regular grid, radius scales to cell size.
-        let star_r = ((dh as f32 / 2.0).min(dw as f32 / 2.0) - 1.0).max(2.0);
-        let cell_x = (star_r * 2.2).max(4.0);
-        let cell_y = (star_r * 2.2).max(4.0);
+        // Star circumradius fills the height; stars are linked across a gap.
+        let s = ((dh as f32 - 1.0) / 2.0).max(1.0);
+        let link = 3.0f32;
+        let pitch = 2.0 * s + link;
+        let n = (((dw as f32 + link) / pitch) as usize).max(1);
+        let margin = (dw as f32 - n as f32 * pitch + link) / 2.0;
+        let cy = (dh as f32 - 1.0) / 2.0;
+        let shown = ctx.eased * n as f32;
 
-        let n_cols = ((dw as f32 / cell_x).ceil() as usize + 1).max(1);
-        let n_rows = ((dh as f32 / cell_y).ceil() as usize + 1).max(1);
-
-        // Animation: slow rotation of star orientation.
-        let rot = ctx.time * 0.18;
-
-        // Draw each star up to the progress-gated total.
-        let total_stars = n_cols * n_rows;
-        let reveal = (ctx.eased * total_stars as f32).ceil() as usize;
-
-        for idx in 0..reveal.min(total_stars) {
-            let row = idx / n_cols;
-            let col = idx % n_cols;
-
-            // Hex-offset: odd rows shifted by half a cell.
-            let off_x = if row % 2 == 1 { cell_x / 2.0 } else { 0.0 };
-            let cx = col as f32 * cell_x + star_r + off_x;
-            let cy = row as f32 * cell_y + star_r;
-
-            // Draw an 8-pointed star: outer 8 points + inner 8 points.
-            let n_pts = 8usize;
-            let inner_r = star_r * 0.42;
-            let mut outer: Vec<(i32, i32)> = Vec::with_capacity(n_pts);
-            let mut inner: Vec<(i32, i32)> = Vec::with_capacity(n_pts);
-
-            for i in 0..n_pts {
-                let angle = i as f32 * 2.0 * PI / n_pts as f32 + rot;
-                let half_angle = angle + PI / n_pts as f32;
-                outer.push((
-                    (cx + star_r * angle.cos()).round() as i32,
-                    (cy + star_r * angle.sin()).round() as i32,
-                ));
-                inner.push((
-                    (cx + inner_r * half_angle.cos()).round() as i32,
-                    (cy + inner_r * half_angle.sin()).round() as i32,
-                ));
+        for i in 0..n {
+            let f = (shown - i as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
             }
-
-            // Connect outer[i] → inner[i] → outer[i+1] forming the star outline.
-            for i in 0..n_pts {
-                let next = (i + 1) % n_pts;
-                bres(grid, outer[i].0, outer[i].1, inner[i].0, inner[i].1);
-                bres(grid, inner[i].0, inner[i].1, outer[next].0, outer[next].1);
+            // The newest star blooms outward from its centre.
+            let k = 1.0 - (1.0 - f) * (1.0 - f);
+            let cx = margin + i as f32 * pitch + s;
+            let r = s * k;
+            let p = |x: f32, y: f32| ((cx + x).round() as i32, (cy + y).round() as i32);
+            // {8/3} star polygon: eight points, each joined to the third along.
+            let pts: Vec<(i32, i32)> = (0..8)
+                .map(|j| {
+                    let a = j as f32 * PI / 4.0 + PI / 8.0;
+                    p(r * a.cos(), r * a.sin())
+                })
+                .collect();
+            for j in 0..8 {
+                let (a, b) = (pts[j], pts[(j + 3) % 8]);
+                bres(grid, a.0, a.1, b.0, b.1);
+            }
+            // Breathing inner ring.
+            let ring_r = s * 0.32 * k * (0.85 + 0.15 * (ctx.time * 3.0 + i as f32).sin());
+            arc(grid, cx, cy, ring_r, 0.0, 2.0 * PI);
+            // Link to the previous star.
+            if i > 0 && f >= 1.0 {
+                let (lx0, ly) = p(-s - link, 0.0);
+                let (lx1, _) = p(-s, 0.0);
+                if lx0 >= 0 && ly >= 0 {
+                    draw::hline(grid, lx0 as usize, lx1.max(0) as usize, ly as usize);
+                }
             }
         }
 
-        palette_tint(grid, ctx);
+        // Gradient with a glimmer wandering from star to star.
+        let (cw, ch) = grid.dimensions();
+        let white = Color::rgb(255, 255, 255);
+        for cx_c in 0..cw {
+            let star = ((cx_c as f32 * 2.0 - margin) / pitch).floor();
+            let glow = ((ctx.time * 2.0 - star * 0.9).sin() * 0.5 + 0.5).powi(4);
+            let col = mix(
+                ctx.palette.sample(cx_c as f32 / cw.max(1) as f32),
+                white,
+                glow * 0.5,
+            );
+            for cy_c in 0..ch {
+                draw::tint_row(grid, cy_c, cx_c, cx_c, col);
+            }
+        }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Greek Key — meander border scrolling from the left
+// 5. Greek Key — a continuous single-line meander drawn in from the left
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// One meander period (2×2-dot blocks). Tiled edge to edge, the bottom rows
+/// join into one unbroken line that climbs and spirals in every period.
+const MEANDER_UNIT: [&str; 6] = ["#####.", "#...#.", "#.#.#.", "#.###.", "#.....", "######"];
 
 struct GreekKey;
 impl ProgressStyle for GreekKey {
@@ -443,8 +483,9 @@ impl ProgressStyle for GreekKey {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Greek key / meander border: interlocking rectangular spirals scroll in \
-         from the left edge as progress rises, one complete meander unit at a time."
+        "Greek key / meander: one unbroken squared line climbs and spirals inward \
+         again and again between two border rules; it is drawn in from the left as \
+         progress rises and slowly travels along the band with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -452,50 +493,30 @@ impl ProgressStyle for GreekKey {
             return Ok(());
         }
 
-        // One meander unit is a rectangular spiral: right, down, left, up, right.
-        // Unit width in dots.
-        let unit_w = ((dh * 2).max(6)).min(dw / 2 + 1);
-        let unit_h = dh.saturating_sub(2).max(2);
-        let step = (unit_w / 4).max(1);
-
-        let filled_w = (ctx.eased * dw as f32).round() as usize;
-        if filled_w == 0 {
+        let fill_x = (ctx.eased * dw as f32).round() as i32;
+        if fill_x <= 0 {
             return Ok(());
         }
 
-        let n_units = (filled_w + unit_w - 1) / unit_w;
+        // Border rules.
+        let last = (fill_x as usize).min(dw) - 1;
+        draw::hline(grid, 0, last, 0);
+        draw::hline(grid, 0, last, dh - 1);
 
-        for u in 0..n_units {
-            let x0 = u * unit_w;
-            if x0 >= dw {
-                break;
-            }
-            let x1 = (x0 + unit_w).min(filled_w).min(dw);
-            let y0 = 0usize;
-            let y1 = unit_h.min(dh.saturating_sub(1));
-
-            // Outer border of the unit.
-            draw::hline(grid, x0, x1.saturating_sub(1), y0);
-            draw::hline(grid, x0, x1.saturating_sub(1), y1);
-            draw::vline(grid, x0, y0, y1);
-            draw::vline(grid, x1.saturating_sub(1).min(dw.saturating_sub(1)), y0, y1);
-
-            // Inner key: a hook shape entering from the top.
-            if step >= 1 && unit_w >= 4 && unit_h >= 4 {
-                let ix = (x0 + step).min(dw.saturating_sub(1));
-                let iy0 = y0 + step;
-                let iy1 = y1.saturating_sub(step);
-                // Vertical down segment.
-                draw::vline(grid, ix, iy0, iy1);
-                // Horizontal right at the bottom of the inner key.
-                let inner_right = (ix + step + step)
-                    .min(x1.saturating_sub(1))
-                    .min(dw.saturating_sub(1));
-                draw::hline(grid, ix, inner_right, iy1);
-                // Short vertical up.
-                let rise = (iy1.saturating_sub(step)).max(iy0);
-                draw::vline(grid, inner_right, rise, iy1);
-            }
+        // Meander band, 12 dots tall, travelling one period every few seconds.
+        let period = 12i32;
+        let y0 = (dh as i32 - 12) / 2;
+        let shift = ((ctx.time * 3.0) as i32).rem_euclid(period);
+        let n_units = dw as i32 / period + 2;
+        for u in -1..n_units {
+            stamp(
+                grid,
+                &MEANDER_UNIT,
+                (u * period + shift, y0),
+                2,
+                false,
+                (fill_x, i32::MIN),
+            );
         }
 
         palette_tint(grid, ctx);
@@ -504,7 +525,7 @@ impl ProgressStyle for GreekKey {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Seigaiha — Japanese overlapping wave scales filling row by row
+// 6. Seigaiha — Japanese overlapping wave-scales of concentric arcs
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Seigaiha;
@@ -516,8 +537,9 @@ impl ProgressStyle for Seigaiha {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Japanese seigaiha (blue ocean waves): overlapping semicircular scales tile \
-         the bar bottom-up as progress rises; time ripples a subtle phase shift."
+        "Japanese seigaiha (blue ocean waves): fans of concentric arcs overlap like \
+         fish scales, each row tucked behind the one below; scales are laid in from \
+         the left as progress rises and the sea drifts gently with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -525,57 +547,34 @@ impl ProgressStyle for Seigaiha {
             return Ok(());
         }
 
-        // Each scale is a semicircle.  Scales tile in a brick offset pattern.
-        let scale_r = (dh as f32 / 2.0).max(2.0).min(dw as f32 / 2.0);
-        let scale_w = (scale_r * 2.0) as usize;
-        let scale_h = scale_r as usize + 1;
+        // Scale radius, horizontal pitch (one diameter) and row spacing.
+        let r = (dh as f32 / 2.0).clamp(2.0, 8.0);
+        let sx = 2.0 * r;
+        let vy = r * 0.7;
+        let drift = (ctx.time * 2.5).rem_euclid(sx);
+        let reveal_x = ctx.eased * (dw as f32 + r);
 
-        // Reveal from bottom to top.
-        let eased_e = ease(Easing::CubicInOut, ctx.eased);
-        let revealed_h = (eased_e * dh as f32).round() as usize;
-        let y_threshold = dh.saturating_sub(revealed_h);
-
-        // Phase animation — gentle horizontal drift.
-        let phase_offset = (ctx.time * 0.4).sin() * scale_r * 0.1;
-
-        let n_rows = (dh / scale_h.max(1) + 2).max(1);
-        let n_cols = (dw / scale_w.max(1) + 2).max(1);
-
-        for row in 0..n_rows {
-            let cy = (dh as i32 - row as i32 * scale_h as i32) as f32;
-            if cy < -(scale_r) {
-                break;
-            }
-
-            for col in 0..n_cols {
-                // Brick offset: odd rows shift by half a scale width.
-                let offset = if row % 2 == 1 {
-                    scale_w as f32 / 2.0
-                } else {
-                    0.0
-                };
-                let cx = col as f32 * scale_w as f32 + offset + phase_offset;
-
-                // Draw semicircle (upper half only — flat edge down).
-                let r = scale_r;
-                let steps = (PI * r).ceil() as usize + 4;
-                for i in 0..=steps {
-                    let t = i as f32 / steps as f32;
-                    let angle = PI + t * PI; // from π to 2π (top half of unit circle)
-                    let px = (cx + r * angle.cos()).round() as i32;
-                    let py = (cy + r * angle.sin()).round() as i32;
-                    if py >= 0 && (py as usize) >= y_threshold {
-                        draw::dot_i(grid, px, py);
+        for y in 0..dh {
+            let yf = y as f32;
+            // Rows whose circles can reach this dot, front (lowest) first.
+            let k_hi = ((yf + r) / vy).floor() as i32;
+            let k_lo = ((yf - r) / vy).ceil() as i32;
+            for x in 0..dw {
+                let xf = x as f32;
+                let mut k = k_hi;
+                while k >= k_lo {
+                    let ccy = k as f32 * vy;
+                    let off = if k.rem_euclid(2) == 1 { r } else { 0.0 } + drift;
+                    let ccx = ((xf - off) / sx).round() * sx + off;
+                    let d = ((xf - ccx).powi(2) + (yf - ccy).powi(2)).sqrt();
+                    if ccx <= reveal_x && d < r {
+                        // The front-most scale owns this dot: concentric rings.
+                        if (r - d).rem_euclid(r / 3.0) < 1.0 && d > 1.5 {
+                            draw::dot(grid, x, y);
+                        }
+                        break;
                     }
-                }
-                // Flat baseline of the scale.
-                let py_base = cy.round() as i32;
-                let x_left = (cx - r).round() as i32;
-                let x_right = (cx + r).round() as i32;
-                if py_base >= 0 && (py_base as usize) >= y_threshold {
-                    for px in x_left..=x_right {
-                        draw::dot_i(grid, px, py_base);
-                    }
+                    k -= 1;
                 }
             }
         }
@@ -586,8 +585,31 @@ impl ProgressStyle for Seigaiha {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. Totem Pole — carved segments stacking upward with progress
+// 7. Totem Pole — a row of carved poles raised one by one
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Thunderbird crest, wings raised (11 dots wide, 4 tall).
+const BIRD_UP: [&str; 4] = ["#...###...#", "##..#.#..##", ".#########.", "...#####..."];
+/// Thunderbird crest, wings lowered.
+const BIRD_DOWN: [&str; 4] = ["....###....", "....#.#....", ".#########.", "##.#####.##"];
+/// Bear-head crest with rounded ears.
+const BEAR_HEAD: [&str; 4] = ["..##...##..", "..#######..", "..#.###.#..", "..#######.."];
+/// The carved shaft below the crest: two stacked faces with hollow eyes and
+/// mouths (12 dots tall).
+const POLE_BODY: [&str; 12] = [
+    "..#######..",
+    "..#..#..#..",
+    "..#..#..#..",
+    "..#######..",
+    "..##...##..",
+    "..#######..",
+    ".#########.",
+    "..#.###.#..",
+    "..#######..",
+    "..###.###..",
+    "..#.....#..",
+    "..#######..",
+];
 
 struct TotemPole;
 impl ProgressStyle for TotemPole {
@@ -598,8 +620,9 @@ impl ProgressStyle for TotemPole {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Totem pole: vertically stacked carved segments (eyes, beak, wings) build \
-         upward cell by cell as progress rises; columns shimmer with time."
+        "Totem poles: a row of carved poles — stacked faces with hollow eyes, crowned \
+         by a thunderbird or a bear — rises one by one from the ground as progress \
+         climbs; the thunderbirds beat their wings with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -607,138 +630,74 @@ impl ProgressStyle for TotemPole {
             return Ok(());
         }
 
-        // Each totem column is `seg_w` dots wide; they stand side by side.
-        let seg_w = (dw / 5).max(2).min(dw);
-        let n_cols = (dw / seg_w).max(1);
+        // Poles are 11×16 dots on a 12-dot pitch, centred, standing on the floor.
+        let pitch = 12i32;
+        let n = ((dw as i32 + 1) / pitch).max(1);
+        let margin = (dw as i32 - n * pitch + 1) / 2;
+        let y0 = dh as i32 - 16;
+        let built = ctx.eased * n as f32;
 
-        // How many dot rows are revealed (growing from the bottom).
-        let revealed = (ctx.eased * dh as f32).round() as usize;
-        let y0_visible = dh.saturating_sub(revealed);
-
-        for col in 0..n_cols {
-            let x0 = col * seg_w;
-            let x1 = (x0 + seg_w).min(dw);
-            let cx = (x0 + x1) / 2;
-            let cw_col = x1.saturating_sub(x0);
-
-            // Outer column border.
-            draw::vline(grid, x0, y0_visible, dh.saturating_sub(1));
-            draw::vline(
-                grid,
-                x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                y0_visible,
-                dh.saturating_sub(1),
-            );
-
-            // Segment height: divide the column into 4 face segments.
-            let n_segs = 4usize;
-            let seg_h = (dh / n_segs).max(1);
-
-            for seg in 0..n_segs {
-                let sy0 = seg * seg_h;
-                let sy1 = ((seg + 1) * seg_h).min(dh);
-                if sy0 < y0_visible {
-                    continue;
-                }
-                let scy = (sy0 + sy1) / 2;
-
-                // Each segment gets a different carved motif.
-                match seg % 4 {
-                    0 => {
-                        // Eyes: two dots side by side.
-                        let eye_y = scy.min(dh.saturating_sub(1));
-                        let eye_lx = cx.saturating_sub(cw_col / 4).min(dw.saturating_sub(1));
-                        let eye_rx = (cx + cw_col / 4).min(dw.saturating_sub(1));
-                        draw::dot(grid, eye_lx, eye_y);
-                        draw::dot(grid, eye_rx, eye_y);
-                        // Eyebrow lines.
-                        let brow_y = scy.saturating_sub(1).min(dh.saturating_sub(1));
-                        draw::hline(
-                            grid,
-                            x0,
-                            x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                            brow_y,
-                        );
-                    }
-                    1 => {
-                        // Beak: V-shape pointing downward.
-                        let beak_top_y = sy0.max(y0_visible);
-                        let beak_bot_y = scy.min(dh.saturating_sub(1));
-                        bres(
-                            grid,
-                            x0 as i32,
-                            beak_top_y as i32,
-                            cx as i32,
-                            beak_bot_y as i32,
-                        );
-                        bres(
-                            grid,
-                            x1.saturating_sub(1) as i32,
-                            beak_top_y as i32,
-                            cx as i32,
-                            beak_bot_y as i32,
-                        );
-                    }
-                    2 => {
-                        // Wings: horizontal bars spreading from centre.
-                        let wing_y = scy.min(dh.saturating_sub(1));
-                        draw::hline(
-                            grid,
-                            x0,
-                            x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                            wing_y,
-                        );
-                        // Wing tips — vlines up and down.
-                        let tip_h = (seg_h / 3).max(1);
-                        draw::vline(
-                            grid,
-                            x0,
-                            wing_y.saturating_sub(tip_h),
-                            (wing_y + tip_h).min(dh.saturating_sub(1)),
-                        );
-                        draw::vline(
-                            grid,
-                            x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                            wing_y.saturating_sub(tip_h),
-                            (wing_y + tip_h).min(dh.saturating_sub(1)),
-                        );
-                    }
-                    _ => {
-                        // Base plaque: full width filled rectangle.
-                        let plaque_y = sy1.saturating_sub(2).max(sy0).min(dh.saturating_sub(1));
-                        draw::hline(
-                            grid,
-                            x0,
-                            x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                            plaque_y,
-                        );
-                        draw::hline(
-                            grid,
-                            x0,
-                            x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                            sy1.saturating_sub(1).min(dh.saturating_sub(1)),
-                        );
-                    }
-                }
-
-                // Segment divider.
-                draw::hline(
-                    grid,
-                    x0,
-                    x1.saturating_sub(1).min(dw.saturating_sub(1)),
-                    sy0.min(dh.saturating_sub(1)),
-                );
+        for i in 0..n {
+            let f = (built - i as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
             }
+            // The pole being raised is revealed from its base upward.
+            let rows = (f * 16.0).ceil() as i32;
+            let clip = (i32::MAX, y0 + 16 - rows);
+            let x0 = margin + i * pitch;
+            let flap = ((ctx.time * 4.0) as i64 + i64::from(i)).rem_euclid(2) == 0;
+            let crest: &[&str] = match (i % 2, flap) {
+                (0, true) => &BIRD_UP,
+                (0, false) => &BIRD_DOWN,
+                _ => &BEAR_HEAD,
+            };
+            stamp(grid, crest, (x0, y0), 1, false, clip);
+            stamp(grid, &POLE_BODY, (x0, y0 + 4), 1, false, clip);
         }
 
+        // Shaft in the palette gradient; crests picked out in a brighter accent.
         palette_tint(grid, ctx);
+        let (cw, _) = grid.dimensions();
+        if y0 >= 0 {
+            let crest = mix(ctx.palette.end, Color::rgb(255, 255, 255), 0.35);
+            draw::tint_row(grid, y0 as usize / 4, 0, cw.saturating_sub(1), crest);
+        }
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. Runes — Norse rune glyphs carved in one by one via draw::glyph
+// 8. Runes — Elder Futhark runes chiselled stroke by stroke into a stone band
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Elder Futhark runes as stroke lists `(x0, y0, x1, y1)` in a 7×12 box,
+/// in futhark order: fehu, uruz, thurisaz, ansuz, raidho, kaunan, gebo,
+/// hagalaz, naudiz, isa, algiz, sowilo, tiwaz, berkanan, mannaz, othala.
+const RUNE_STROKES: [&[(i32, i32, i32, i32)]; 16] = [
+    &[(1, 0, 1, 11), (1, 4, 5, 0), (1, 7, 5, 3)],
+    &[(1, 0, 1, 11), (1, 0, 5, 4), (5, 4, 5, 11)],
+    &[(1, 0, 1, 11), (1, 3, 5, 6), (5, 6, 1, 9)],
+    &[(1, 0, 1, 11), (1, 0, 5, 4), (1, 4, 5, 8)],
+    &[(1, 0, 1, 11), (1, 0, 5, 3), (5, 3, 1, 6), (1, 6, 5, 11)],
+    &[(5, 2, 1, 6), (1, 6, 5, 10)],
+    &[(0, 1, 6, 10), (6, 1, 0, 10)],
+    &[(0, 0, 0, 11), (5, 0, 5, 11), (0, 3, 5, 7)],
+    &[(3, 0, 3, 11), (0, 4, 6, 8)],
+    &[(3, 0, 3, 11)],
+    &[(3, 0, 3, 11), (3, 5, 0, 1), (3, 5, 6, 1)],
+    &[(5, 0, 1, 4), (1, 4, 5, 7), (5, 7, 1, 11)],
+    &[(3, 0, 3, 11), (3, 0, 0, 4), (3, 0, 6, 4)],
+    &[
+        (1, 0, 1, 11),
+        (1, 0, 5, 3),
+        (5, 3, 1, 5),
+        (1, 5, 5, 8),
+        (5, 8, 1, 11),
+    ],
+    &[(0, 0, 0, 11), (5, 0, 5, 11), (0, 0, 5, 6), (5, 0, 0, 6)],
+    &[(3, 0, 6, 3), (3, 0, 0, 3), (6, 3, 0, 10), (0, 3, 6, 10)],
+];
 
 struct Runes;
 impl ProgressStyle for Runes {
@@ -749,54 +708,69 @@ impl ProgressStyle for Runes {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Norse elder futhark runes: glyphs are carved into stone cells one by one \
-         as progress rises; a flicker-shimmer via shade density pulses with time."
+        "Norse Elder Futhark runes: angular rune-staves are chiselled stroke by stroke \
+         into a stone band, in futhark order, as progress rises; sparks flicker at \
+         the chisel point."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-        if cw == 0 || ch == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
             return Ok(());
         }
 
-        // Elder Futhark runes (Unicode block U+16A0...).
-        let runes: &[char] = &[
-            'ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᛃ', 'ᛇ', 'ᛈ', 'ᛉ', 'ᛊ', 'ᛏ',
-            'ᛒ', 'ᛖ', 'ᛗ', 'ᛚ', 'ᛜ', 'ᛞ', 'ᛟ',
-        ];
+        // Stone band rules top and bottom.
+        draw::hline(grid, 0, dw - 1, 0);
+        draw::hline(grid, 0, dw - 1, dh - 1);
 
-        let total_cells = cw * ch;
-        let revealed = (ctx.eased * total_cells as f32).round() as usize;
+        // Rune slots on a 10-dot pitch; strokes are two dots thick.
+        let pitch = 10i32;
+        let n = ((dw as i32 - 2) / pitch).max(1);
+        let margin = (dw as i32 - n * pitch + 2) / 2;
+        let oy = if dh >= 8 { 2 } else { 0 };
+        let sy = ((dh as f32 - 1.0 - 2.0 * oy as f32) / 11.0).max(0.0);
+        let carved = ctx.eased * n as f32;
+        let spark_on = ((ctx.time * 10.0) as i64).rem_euclid(2) == 0;
 
-        // Time-driven flicker: a shimmer wave travels left to right.
-        let shimmer_x = ((ctx.time * 0.7).fract() * cw as f32) as usize;
-
-        for idx in 0..revealed.min(total_cells) {
-            let cx = idx % cw;
-            let cy = idx / cw;
-            let rune = runes[idx % runes.len()];
-
-            // Near the shimmer wave: show a lighter shade character instead,
-            // giving the impression of light reflecting off carved stone.
-            let dist = (cx as i32 - shimmer_x as i32).unsigned_abs() as usize;
-            if dist <= 1 {
-                draw::shade(grid, cx, cy, 2); // ▒ — lit stone
-            } else {
-                draw::glyph(grid, cx, cy, rune);
+        for i in 0..n {
+            let f = (carved - i as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
+            }
+            let strokes = RUNE_STROKES[i as usize % RUNE_STROKES.len()];
+            let x0 = margin + i * pitch;
+            let map = |x: i32, y: i32| (x0 + x, oy + (y as f32 * sy).round() as i32);
+            for (s, &(ax, ay, bx, by)) in strokes.iter().enumerate() {
+                let g = (f * strokes.len() as f32 - s as f32).clamp(0.0, 1.0);
+                if g <= 0.0 {
+                    break;
+                }
+                let (px0, py0) = map(ax, ay);
+                let (px1, py1) = map(bx, by);
+                let ex = (px0 as f32 + (px1 - px0) as f32 * g).round() as i32;
+                let ey = (py0 as f32 + (py1 - py0) as f32 * g).round() as i32;
+                bres(grid, px0, py0, ex, ey);
+                bres(grid, px0 + 1, py0, ex + 1, ey);
+                // Chisel sparks at the stroke being cut.
+                if g < 1.0 && spark_on {
+                    for (dx, dy) in [(-2, -2), (3, -2), (-2, 2), (3, 2)] {
+                        draw::dot_i(grid, ex + dx, ey + dy);
+                    }
+                }
             }
         }
 
-        // Unfilled cells: bare stone background (light shade).
-        for idx in revealed..total_cells {
-            let cx = idx % cw;
-            let cy = idx / cw;
-            draw::shade(grid, cx, cy, 1); // ░
-        }
-
-        // Tint by column.
-        for cy in 0..ch {
-            for cx_c in 0..cw {
-                let t = cx_c as f32 / cw.max(1) as f32;
-                draw::tint_row(grid, cy, cx_c, cx_c, ctx.palette.sample(t));
+        // Carved section in the palette gradient; uncut stone stays dim.
+        let (cw, ch) = grid.dimensions();
+        let cut_cell = ((margin as f32 + carved * pitch as f32) / 2.0).max(0.0) as usize;
+        let stone = mix(ctx.palette.track, ctx.palette.start, 0.3);
+        for cx_c in 0..cw {
+            let col = if cx_c <= cut_cell {
+                ctx.palette.sample(cx_c as f32 / cw.max(1) as f32)
+            } else {
+                stone
+            };
+            for cy_c in 0..ch {
+                draw::tint_row(grid, cy_c, cx_c, cx_c, col);
             }
         }
         Ok(())
@@ -804,8 +778,48 @@ impl ProgressStyle for Runes {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Paisley Swirl — henna spirals unfurling from multiple seeds
+// 9. Paisley Swirl — boteh teardrops traced one after another
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Append a quadratic Bézier `p0 → p2` (control `c`) to `pts`.
+fn quad(pts: &mut Vec<(f32, f32)>, p0: (f32, f32), c: (f32, f32), p2: (f32, f32)) {
+    let len = ((c.0 - p0.0).hypot(c.1 - p0.1) + (p2.0 - c.0).hypot(p2.1 - c.1)).max(1.0);
+    let n = (len * 2.0).ceil() as usize;
+    for i in 0..=n {
+        let t = i as f32 / n as f32;
+        let u = 1.0 - t;
+        pts.push((
+            u * u * p0.0 + 2.0 * u * t * c.0 + t * t * p2.0,
+            u * u * p0.1 + 2.0 * u * t * c.1 + t * t * p2.1,
+        ));
+    }
+}
+
+/// Append a circular arc around `c` from angle `a0` to `a1` to `pts`.
+fn ring(pts: &mut Vec<(f32, f32)>, c: (f32, f32), r: f32, a0: f32, a1: f32) {
+    let n = ((a1 - a0).abs() * r * 2.0).ceil().max(4.0) as usize;
+    for i in 0..=n {
+        let a = a0 + (a1 - a0) * i as f32 / n as f32;
+        pts.push((c.0 + r * a.cos(), c.1 + r * a.sin()));
+    }
+}
+
+/// Trace order of one paisley (boteh) of bowl radius `r`, in y-up local
+/// coordinates centred on the bowl: rounded bowl, left flank up to the tip,
+/// the curled hook, the right flank back down, then the inner eye.
+fn paisley_points(r: f32) -> Vec<(f32, f32)> {
+    let mut pts = Vec::new();
+    ring(&mut pts, (0.0, 0.0), r, 0.0, -PI);
+    let tip = (0.9 * r, 2.0 * r);
+    quad(&mut pts, (-r, 0.0), (-r, 1.8 * r), tip);
+    let cr = 0.4 * r;
+    let cc = (tip.0, tip.1 - cr);
+    ring(&mut pts, cc, cr, PI / 2.0, -PI);
+    quad(&mut pts, (cc.0 + cr, cc.1), (1.25 * r, 0.7 * r), (r, 0.0));
+    ring(&mut pts, (0.0, 0.15 * r), 0.4 * r, 0.0, 2.0 * PI);
+    pts.push((0.0, 0.15 * r));
+    pts
+}
 
 struct PaisleySwirl;
 impl ProgressStyle for PaisleySwirl {
@@ -816,8 +830,9 @@ impl ProgressStyle for PaisleySwirl {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Henna / paisley: teardrop spiral seeds unfurl across the bar as progress \
-         rises; each swirl grows its own tight logarithmic coil, animated with time."
+        "Paisley (boteh): teardrop motifs with a curled tip and an inner eye are \
+         traced one after another, alternately mirrored, as progress rises; each \
+         sways gently on its base with time."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -825,65 +840,47 @@ impl ProgressStyle for PaisleySwirl {
             return Ok(());
         }
 
-        // Number of paisley seeds tiling the bar.
-        let n_seeds: usize = (dw / (dh.max(1) * 2)).clamp(1, 12);
-        let seed_w = dw / n_seeds.max(1);
+        // Bowl radius from the height: the motif stands 3r tall, 2.3r wide.
+        let r = ((dh as f32 - 1.0) / 3.0).clamp(0.5, 8.0);
+        let pitch = (r * 3.2).max(2.0);
+        let n = ((dw as f32 / pitch) as usize).max(1);
+        let margin = (dw as f32 - n as f32 * pitch) / 2.0 + 0.2 * pitch;
+        let pts = paisley_points(r);
+        let traced = ctx.eased * n as f32;
 
-        let eased_e = ease(Easing::QuadOut, ctx.eased);
-        let max_turns = 2.5f32; // spiral coil turns at full progress.
-
-        for s in 0..n_seeds {
-            // Seed centre.
-            let cx = s as f32 * seed_w as f32 + seed_w as f32 / 2.0;
-            let cy = dh as f32 / 2.0;
-            // Orientation alternates + time drift.
-            let base_angle = if s % 2 == 0 { 0.0f32 } else { PI } + ctx.time * 0.3;
-
-            // Max radius of this swirl — limited by seed cell height.
-            let max_r = (dh as f32 / 2.0 - 1.0).max(1.0).min(seed_w as f32 / 2.0);
-
-            // Teardrop outline: draw a small circle offset from the spiral tip.
-            let tip_r = max_r * 0.25 * eased_e;
-            let tip_cx = cx + (max_r * 0.6 * eased_e) * base_angle.cos();
-            let tip_cy = cy + (max_r * 0.6 * eased_e) * base_angle.sin();
-            if tip_r >= 1.0 {
-                arc(grid, tip_cx, tip_cy, tip_r, 0.0, 2.0 * PI);
+        for i in 0..n {
+            let f = (traced - i as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
             }
-
-            // Logarithmic spiral: r = a * e^(b*theta).
-            // We parameterise so r goes from 0 to max_r over max_turns*2π.
-            let theta_max = eased_e * max_turns * 2.0 * PI;
-            let steps = (theta_max * max_r).ceil() as usize + 4;
-            let a = max_r / (max_turns * 2.0 * PI).exp();
-            let b = 1.0f32;
-
-            for i in 0..=steps {
-                let t = i as f32 / steps.max(1) as f32;
-                let theta = t * theta_max;
-                let r = a * (b * theta).exp();
-                if r > max_r {
-                    break;
-                }
-                let angle = theta + base_angle;
-                let px = (cx + r * angle.cos()).round() as i32;
-                let py = (cy + r * angle.sin()).round() as i32;
-                draw::dot_i(grid, px, py);
+            let shown = ((f * pts.len() as f32).ceil() as usize).min(pts.len());
+            let bx = margin + i as f32 * pitch + r;
+            let by = dh as f32 - 1.0 - r;
+            let mirror = i % 2 == 1;
+            let sway = 0.12 * (ctx.time * 1.8 + i as f32).sin();
+            let (cs, sn) = (sway.cos(), sway.sin());
+            for &(x, y) in &pts[..shown] {
+                let x = if mirror { 0.3 * r - x } else { x };
+                let px = bx + x * cs - y * sn;
+                let py = by - (x * sn + y * cs);
+                draw::dot_i(grid, px.round() as i32, py.round() as i32);
             }
         }
 
-        // Radial tint from the grid centre.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.max(1) as f32;
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), ctx.palette.sample(t));
-        }
+        palette_tint(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Kente Weave — warp-and-weft interlacing strips
+// 10. Kente Weave — narrow kente strips woven one by one, side by side
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Kente gold, green and red — the cloth's signature colours (black is the
+/// unlit gaps between strips).
+const KENTE_GOLD: Color = Color::rgb(240, 180, 30);
+const KENTE_GREEN: Color = Color::rgb(30, 160, 70);
+const KENTE_RED: Color = Color::rgb(210, 45, 40);
 
 struct KenteWeave;
 impl ProgressStyle for KenteWeave {
@@ -894,9 +891,9 @@ impl ProgressStyle for KenteWeave {
         "cultures"
     }
     fn describe(&self) -> &str {
-        "Kente / tartan weave: vertical warp strips and horizontal weft strips \
-         interlace in a floating-weave pattern; strips appear as progress rises and \
-         the crossing pattern is animated by time."
+        "Kente cloth: narrow strips of gold, green and red blocks — weft bars, warp \
+         stripes, checks and solid panels — are woven one by one and laid side by \
+         side as progress rises; a shuttle darts across the strip on the loom."
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -904,64 +901,184 @@ impl ProgressStyle for KenteWeave {
             return Ok(());
         }
 
-        // Strip width in dots (both warp and weft).
-        let strip = (dh / 4).clamp(1, 6).min(dw);
-        let n_warp = (dw / (strip * 2).max(1)).max(1);
-        let n_weft = (dh / (strip * 2).max(1)).max(1);
-
-        let filled_w = (ctx.eased * dw as f32).round() as usize;
-        let filled_h = (ctx.eased * dh as f32).round() as usize;
-
-        // Time-driven phase shifts which strips appear to float over or under.
-        let phase = (ctx.time * 0.5) as usize;
-
-        // Draw warp (vertical) strips across the progress-filled width.
-        for warp in 0..n_warp {
-            let x0 = warp * strip * 2;
-            if x0 >= filled_w {
-                break;
-            }
-            let x1 = (x0 + strip).min(filled_w).min(dw);
-            // Draw this vertical strip for its full height.
-            for x in x0..x1 {
-                for y in 0..dh {
-                    // Leave gaps where weft floats over (cross-check with weft stripe).
-                    let weft_idx = y / (strip * 2);
-                    let in_weft = (y % (strip * 2)) < strip;
-                    // Alternate which crosses on top using the phase.
-                    let warp_on_top = (warp + weft_idx + phase) % 2 == 0;
-                    if !in_weft || warp_on_top {
-                        draw::dot(grid, x, y);
-                    }
-                }
-            }
-        }
-
-        // Draw weft (horizontal) strips across the progress-filled height.
-        for weft in 0..n_weft {
-            let y0 = weft * strip * 2;
-            if y0 >= filled_h {
-                break;
-            }
-            let y1 = (y0 + strip).min(filled_h).min(dh);
-            for y in y0..y1 {
-                for x in 0..dw {
-                    let warp_idx = x / (strip * 2);
-                    let in_warp = (x % (strip * 2)) < strip;
-                    let warp_on_top = (warp_idx + weft + phase) % 2 == 0;
-                    // Weft draws only where it floats over warp, or in the gap.
-                    if !in_warp || !warp_on_top {
-                        draw::dot(grid, x, y);
-                    }
-                }
-            }
-        }
-
-        // Tint warp and weft rows with contrasting palette samples.
+        // Strips are 7 dots of cloth plus a 1-dot seam, one cell-row per block.
+        let strip = 8usize;
+        let n = (dw / strip).max(1);
+        let woven = ctx.eased * n as f32;
         let (cw, ch) = grid.dimensions();
+
+        for i in 0..n {
+            let f = (woven - i as f32).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                break;
+            }
+            let x0 = i * strip;
+            // The strip on the loom is woven top-down.
+            let rows = ((f * dh as f32).ceil() as usize).min(dh);
+            for y in 0..rows {
+                let block = y / 4;
+                let motif = (i * 3 + block) % 4;
+                for dx in 0..strip - 1 {
+                    let (lx, ly) = (dx, y % 4);
+                    let on = match motif {
+                        0 => ly % 2 == 0,                // weft bars
+                        1 => true,                       // solid panel
+                        2 => lx % 2 == 0,                // warp stripes
+                        _ => (lx / 2 + ly / 2) % 2 == 0, // checks
+                    };
+                    if on {
+                        draw::dot(grid, x0 + dx, y);
+                    }
+                }
+            }
+
+            // Colour each block cell: gold dominates, green / red accents.
+            for block in 0..ch {
+                let col = match (i + block) % 4 {
+                    0 | 2 => KENTE_GOLD,
+                    1 => KENTE_GREEN,
+                    _ => KENTE_RED,
+                };
+                let c0 = x0 / 2;
+                draw::tint_row(
+                    grid,
+                    block,
+                    c0,
+                    (c0 + strip / 2 - 1).min(cw.saturating_sub(1)),
+                    col,
+                );
+            }
+
+            // Shuttle darting across the weaving line.
+            if f < 1.0 {
+                let sx = x0 as f32 + (0.5 + 0.5 * (ctx.time * 9.0).sin()) * (strip - 2) as f32;
+                let sy = rows.min(dh - 1);
+                draw::fill_rect(grid, sx as usize, sy, 2, 1);
+                draw::tint_row(
+                    grid,
+                    sy / 4,
+                    sx as usize / 2,
+                    sx as usize / 2,
+                    Color::rgb(255, 255, 255),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. Paper Lanterns — a string of round lanterns lit one after another
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Unlit lantern: paper outline, caps and tassel cord (9×12 dots).
+const LANTERN_DARK: [&str; 12] = [
+    "...###...",
+    ".##...##.",
+    "#.......#",
+    "#.......#",
+    "#.......#",
+    "#.......#",
+    "#.......#",
+    ".##...##.",
+    "...###...",
+    "....#....",
+    "....#....",
+    ".........",
+];
+/// Lit lantern: glowing body with two dark ribs, caps and a full tassel.
+const LANTERN_LIT: [&str; 12] = [
+    "...###...",
+    ".#######.",
+    "##.###.##",
+    "##.###.##",
+    "##.###.##",
+    "##.###.##",
+    "##.###.##",
+    ".#######.",
+    "...###...",
+    "....#....",
+    "...###...",
+    "...###...",
+];
+
+struct PaperLanterns;
+impl ProgressStyle for PaperLanterns {
+    fn name(&self) -> &str {
+        "paper-lanterns"
+    }
+    fn theme(&self) -> &str {
+        "cultures"
+    }
+    fn describe(&self) -> &str {
+        "Paper lanterns: round red lanterns with gold caps and tassels hang from a \
+         sagging festival string; each glows alight from the bottom up in turn as \
+         progress rises, and they sway and flicker with time."
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
+
+        // Festival string: a shallow sag across the full width.
+        let sag = |x: f32| {
+            let u = x / dw.max(1) as f32 * 2.0 - 1.0;
+            (1.5 * (1.0 - u * u)).round() as i32
+        };
+        for x in 0..dw {
+            draw::dot_i(grid, x as i32, sag(x as f32));
+        }
+
+        // Lanterns: 9 dots wide on a 12-dot pitch, hung 2 dots below the string.
+        let pitch = 12i32;
+        let n = ((dw as i32 + 3) / pitch).max(1);
+        let margin = (dw as i32 - n * pitch + 3) / 2;
+        let lit = ctx.eased * n as f32;
+        let (cw, ch) = grid.dimensions();
+        let red = Color::rgb(225, 40, 35);
+        let gold = Color::rgb(245, 185, 45);
+        let dim = mix(ctx.palette.track, Color::rgb(160, 160, 170), 0.35);
         for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.max(1) as f32;
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), ctx.palette.sample(t));
+            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), mix(gold, dim, 0.4));
+        }
+
+        for i in 0..n {
+            let sway = (1.2 * (ctx.time * 2.0 + i as f32 * 0.7).sin()).round() as i32;
+            let x0 = margin + i * pitch + sway;
+            let mid = x0 + 4;
+            let y0 = 3;
+            for y in sag(mid as f32)..y0 {
+                draw::dot_i(grid, mid, y);
+            }
+            // Fraction of this lantern alight, glowing from the bottom up.
+            let f = (lit - i as f32).clamp(0.0, 1.0);
+            let glow_y = y0 + 12 - (f * 12.0).ceil() as i32;
+            stamp(
+                grid,
+                &LANTERN_DARK,
+                (x0, y0),
+                1,
+                false,
+                (i32::MAX, i32::MIN),
+            );
+            stamp(grid, &LANTERN_LIT, (x0, y0), 1, false, (i32::MAX, glow_y));
+
+            // Lit cells are red with gold cap / tassel rows; the rest stay dim.
+            let flicker = 0.12 * (ctx.time * 7.0 + i as f32 * 1.7).sin().max(0.0);
+            let c0 = (x0.max(0) / 2) as usize;
+            let c1 = ((x0 + 8).max(0) / 2) as usize;
+            for cy_c in 0..ch {
+                let lit_cell = f > 0.0 && (cy_c as i32 * 4 + 3) >= glow_y;
+                let col = if !lit_cell {
+                    dim
+                } else if cy_c == 0 || cy_c * 4 >= (y0 + 8) as usize {
+                    gold
+                } else {
+                    mix(red, gold, flicker)
+                };
+                draw::tint_row(grid, cy_c, c0, c1.min(cw.saturating_sub(1)), col);
+            }
         }
         Ok(())
     }

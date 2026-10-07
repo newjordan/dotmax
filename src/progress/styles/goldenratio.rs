@@ -9,15 +9,15 @@
 //! Style catalogue:
 //! - `golden-spiral`        — quarter-circle arcs in Fibonacci squares forming the logarithmic spiral
 //! - `golden-rectangle`     — recursive whirling-rectangles φ-subdivision
-//! - `fibonacci-squares`    — outward tiling of Fibonacci-sized squares
-//! - `pentagram`            — nested pentagram-in-pentagon revealing φ self-similarity
+//! - `fibonacci-squares`    — Fibonacci squares growing outward, the view zooming to frame them
+//! - `pentagram`            — upright {5/2} star in its pentagon, the next star nested by 1/φ²
 //! - `pentagon-nest`        — concentric pentagons scaled by 1/φ², rotating
-//! - `golden-gnomon`        — 36-72-72 golden triangle recursive subdivision
+//! - `golden-gnomon`        — golden triangles cut into gnomons, whirling inward in a spiral
 //! - `phi-phyllotaxis-pent` — five-fold seed arrangement at golden angle
-//! - `nautilus`             — chambered logarithmic spiral r=a·φ^(θ·2/π) with cross-walls
+//! - `nautilus`             — chambered φ-logarithmic shell traced from the lip inward, septa every 45°
 //! - `golden-angle-rays`    — rays at successive 137.5° increments, length growing
-//! - `dodecagram`           — 12-pointed φ-star (string-art on a 12-gon)
-//! - `kepler-triangle`      — right triangle with sides 1, √φ, φ (recursive fan)
+//! - `dodecagram`           — frieze of {12/5} twelve-pointed stars traced chord by chord
+//! - `kepler-triangle`      — right triangle 1 : √φ : φ with the squares on its sides
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -201,9 +201,80 @@ fn ngon_outline(grid: &mut BrailleGrid, n: usize, cx: f32, cy: f32, r: f32, rot:
 // 1. Golden Spiral — quarter-circle arcs inscribed in Fibonacci squares
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Each Fibonacci square hosts a quarter-circle arc whose radius equals the
-// square's side length.  The squares tile outward in the canonical F1,F1,F2,
-// F3,F5,F8… pattern; `ctx.eased` gates how many squares are revealed.
+// The canonical 21×13 Fibonacci rectangle: squares 13, 8, 5, 3, 2, 1, 1 cut
+// off in the whirling order left → top → right → bottom, each hosting a
+// quarter-circle arc of its own side length.  The arcs join into the true
+// golden spiral.  `ctx.eased` traces the spiral inward from the big square
+// (each square's outline appears as the arc enters it) while the figure rides
+// a dotted rail across the strip; a bead runs the spiral on `ctx.time`.
+
+/// Fibonacci side lengths, outermost first; the bounding box is 21 × 13.
+const FIB_SIDES: [f32; 7] = [13.0, 8.0, 5.0, 3.0, 2.0, 1.0, 1.0];
+
+/// One square of the whirling layout: top-left `(x, y)`, side `s`, and the arc
+/// centre `(acx, acy)` with start angle `a0` (the arc sweeps −90° from `a0`).
+#[derive(Clone, Copy)]
+struct FibSquare {
+    x: f32,
+    y: f32,
+    s: f32,
+    acx: f32,
+    acy: f32,
+    a0: f32,
+}
+
+/// Lay out the seven squares in unit space (y down), outermost first.
+fn fib_layout() -> [FibSquare; 7] {
+    let mut out = [FibSquare {
+        x: 0.0,
+        y: 0.0,
+        s: 0.0,
+        acx: 0.0,
+        acy: 0.0,
+        a0: 0.0,
+    }; 7];
+    // Remaining rectangle (x, y, w, h).
+    let (mut rx, mut ry, mut rw, mut rh) = (0.0_f32, 0.0_f32, 21.0_f32, 13.0_f32);
+    for (i, &s) in FIB_SIDES.iter().enumerate() {
+        let sq = match i % 4 {
+            // Left: arc centred bottom-right, sweeping 180° → 90°.
+            0 => {
+                let q = (rx, ry);
+                rx += s;
+                rw -= s;
+                (q.0, q.1, q.0 + s, q.1 + s, PI)
+            }
+            // Top: arc centred bottom-left, 90° → 0°.
+            1 => {
+                let q = (rx, ry);
+                ry += s;
+                rh -= s;
+                (q.0, q.1, q.0, q.1 + s, PI / 2.0)
+            }
+            // Right: arc centred top-left, 0° → −90°.
+            2 => {
+                let q = (rx + rw - s, ry);
+                rw -= s;
+                (q.0, q.1, q.0, q.1, 0.0)
+            }
+            // Bottom: arc centred top-right, −90° → −180°.
+            _ => {
+                let q = (rx, ry + rh - s);
+                rh -= s;
+                (q.0, q.1, q.0 + s, q.1, -PI / 2.0)
+            }
+        };
+        out[i] = FibSquare {
+            x: sq.0,
+            y: sq.1,
+            s,
+            acx: sq.2,
+            acy: sq.3,
+            a0: sq.4,
+        };
+    }
+    out
+}
 
 struct GoldenSpiral;
 impl ProgressStyle for GoldenSpiral {
@@ -214,113 +285,75 @@ impl ProgressStyle for GoldenSpiral {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Fibonacci-square tiling with quarter-circle arcs forming the golden logarithmic \
-         spiral; squares and arcs revealed one step per eased progress"
+        "The true golden spiral: quarter-circle arcs through the 13-8-5-3-2-1-1 \
+         Fibonacci squares, traced inward with progress as the rectangle rides \
+         a rail and a bead runs the curve"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let scale = fit_scale(dw, dh);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
+        // 13 units span the full height; the 21-unit width follows at φ.
+        let k = (dh as f32 - 1.0) / 13.0;
+        let fw = 21.0 * k;
+        let travel = (dw as f32 - 1.0 - fw).max(0.0);
+        let ox = (ctx.eased.clamp(0.0, 1.0) * travel).round();
+        let oy = 0.0;
 
-        // Pre-compute up to 9 Fibonacci numbers (normalised so the two seeds = 1).
-        // We store the relative sizes: 1,1,2,3,5,8,13,21,34.
-        // The total rectangle after N squares has dimensions F[N] × F[N+1].
-        // We normalise by the largest F so the whole thing fits in `scale` dots.
-        let fibs: [f32; 9] = [1.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0];
-        let n_total: usize = 9;
-        let n_show = ((ctx.eased * n_total as f32).round() as usize).min(n_total);
-
-        // The bounding rectangle after n_total squares has long side = fibs[n_total-1].
-        let long = fibs[n_total - 1];
-        // Dot-space unit = scale / long * 2 (×2 for comfortable fit).
-        let unit = (scale * 1.8 / long).max(0.5);
-
-        // We build the tiling by tracking the current "pivot corner" in
-        // normalised Fibonacci units, then convert to dot-space.
-        // The spiral grows: right, up, left, down, right, ... starting from
-        // the two unit squares sharing the top-left corner.
-        //
-        // Pivot meaning: the arc sweeps from the corner diagonally opposite
-        // the previous square. We track in (u, v) normalised coords, then
-        // map to dot-space centered on the grid.
-
-        // Center of the first 1×1 square in normalised units (left square).
-        // We'll accumulate the pivot in normalised space, offset to center later.
-        // Row,col offsets in normalised Fibonacci units relative to origin.
-
-        // Direction cycle: right, up, left, down.
-        // After placing square of side s in direction d, arc sweeps from the
-        // far corner of the previous square.
-        //
-        // Track the "arc pivot" (normalised) and the arc start angle.
-        // We start at origin, facing right.
-        // Direction cycle: right, down, left, up (norm-space: y positive = down).
-        let dirs: [(f32, f32); 4] = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)];
-        // Arc start angles — one quarter-circle sweep per square, clockwise.
-        let arc_starts: [f32; 4] = [PI, 3.0 * PI / 2.0, 0.0, PI / 2.0];
-
-        // Pivot = arc center in normalised units (starts at origin = grid center).
-        let mut px_n: f32 = 0.0;
-        let mut py_n: f32 = 0.0;
-        let (dcx, dcy) = center(dw, dh);
-
-        for (i, &side) in fibs.iter().take(n_show).enumerate() {
-            let a_start = arc_starts[i % 4];
-            let a_end = a_start - PI / 2.0; // quarter circle, clockwise in screen
-
-            // Convert normalised pivot to dot-space.
-            let arc_cx = dcx + px_n * unit;
-            let arc_cy = dcy + py_n * unit; // norm y positive = down = dot-space y positive
-
-            // Draw the outline of the square.
-            let (ddx, ddy) = dirs[i % 4];
-            // The square occupies from (px_n, py_n) extending in the direction
-            // perpendicular to current movement.  Just draw the arc; suppress
-            // the square outline for cleaner look (arc alone reads well).
-            // But on first reveal draw the square too.
-            {
-                // Square corners relative to pivot in norm units depend on dir.
-                // For direction 0 (right): square is to the right, corners at
-                // (px_n, py_n), (px_n+s, py_n), (px_n+s, py_n-s), (px_n, py_n-s).
-                // For simplicity, derive from dir and perp.
-                let perp = match i % 4 {
-                    0 => (0.0, -1.0), // right-moving: square extends up (norm)
-                    1 => (1.0, 0.0),  // down-moving:  square extends right
-                    2 => (0.0, 1.0),  // left-moving:  square extends down
-                    _ => (-1.0, 0.0), // up-moving:    square extends left
-                };
-                let s = side;
-                let c0 = (px_n, py_n);
-                let c1 = (px_n + ddx * s, py_n + ddy * s);
-                let c2 = (px_n + ddx * s + perp.0 * s, py_n + ddy * s + perp.1 * s);
-                let c3 = (px_n + perp.0 * s, py_n + perp.1 * s);
-                let corners = [c0, c1, c2, c3];
-                for k in 0..4 {
-                    let (ax, ay) = corners[k];
-                    let (bx, by) = corners[(k + 1) % 4];
-                    let p0x = (dcx + ax * unit).round() as i32;
-                    let p0y = (dcy + ay * unit).round() as i32;
-                    let p1x = (dcx + bx * unit).round() as i32;
-                    let p1y = (dcy + by * unit).round() as i32;
-                    bresenham(grid, p0x, p0y, p1x, p1y);
-                }
-            }
-
-            // Draw the arc: radius = side * unit dots.
-            arc(grid, arc_cx, arc_cy, side * unit, a_start, a_end);
-
-            // Advance pivot.
-            let (adx, ady) = match i % 4 {
-                0 => (side, 0.0),  // moved right → pivot goes right by side
-                1 => (0.0, side),  // moved down  → pivot goes down by side
-                2 => (-side, 0.0), // moved left  → pivot goes left by side
-                _ => (0.0, -side), // moved up    → pivot goes up by side
-            };
-            // Arc pivot for the NEXT step is at the far corner of the square just drawn.
-            // That corner is pivot + current_dir*side (the arc center was at start pivot).
-            px_n += adx;
-            py_n += ady;
+        // Dotted rail behind the figure, through the spiral's eye.
+        let rail_y = (oy + 9.0 * k).round() as i32;
+        let mut x = 0;
+        let rail_end = (ox - 1.0).ceil() as i32;
+        while x < rail_end {
+            draw::dot_i(grid, x, rail_y);
+            x += 2;
         }
 
+        // Fraction of total arc length traced (outermost first).
+        let total: f32 = FIB_SIDES.iter().sum();
+        let traced = (0.3 + ctx.eased * 1.4).min(1.0) * total;
+        let squares = fib_layout();
+        let mut acc = 0.0;
+        for sq in &squares {
+            if traced <= acc {
+                break;
+            }
+            let x0 = (ox + sq.x * k).round() as i32;
+            let y0 = (oy + sq.y * k).round() as i32;
+            let x1 = (ox + (sq.x + sq.s) * k).round() as i32;
+            let y1 = (oy + (sq.y + sq.s) * k).round() as i32;
+            bresenham(grid, x0, y0, x1, y0);
+            bresenham(grid, x1, y0, x1, y1);
+            bresenham(grid, x1, y1, x0, y1);
+            bresenham(grid, x0, y1, x0, y0);
+            let frac = ((traced - acc) / sq.s).min(1.0);
+            arc(
+                grid,
+                ox + sq.acx * k,
+                oy + sq.acy * k,
+                sq.s * k,
+                sq.a0,
+                sq.a0 - frac * PI / 2.0,
+            );
+            acc += sq.s;
+        }
+
+        // Bead running the drawn spiral inward, looping every ~2.5 s.
+        let run = (ctx.time * 0.4).fract() * traced;
+        let mut acc = 0.0;
+        for sq in &squares {
+            if run < acc + sq.s {
+                let a = sq.a0 - (run - acc) / sq.s * PI / 2.0;
+                let bx = (ox + sq.acx * k + sq.s * k * a.cos()).round() as i32;
+                let by = (oy + sq.acy * k - sq.s * k * a.sin()).round() as i32;
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 0), (0, -1)] {
+                    draw::dot_i(grid, bx + dx, by + dy);
+                }
+                break;
+            }
+            acc += sq.s;
+        }
         Ok(())
     }
 }
@@ -459,56 +492,70 @@ impl ProgressStyle for FibonacciSquares {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Outward Fibonacci-square tiling (1,1,2,3,5,8,13,21,34…): each square \
-         outline appears as progress advances, building the canonical φ-rectangle mosaic"
+        "Fibonacci squares 1, 1, 2, 3, 5, 8, 13 growing outward in the whirling \
+         layout, the view zooming out to frame each new square as it is inked"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (dcx, dcy) = center(dw, dh);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
+        let squares = fib_layout();
+        let n = squares.len();
+        // Squares shown innermost first; the newest is still being inked.
+        let steps = ctx.eased.clamp(0.0, 1.0) * (n as f32 - 1.0) + 1.0;
+        let shown = (steps.floor() as usize).clamp(1, n);
+        let ink = if shown == n { 1.0 } else { steps.fract() };
+        let first = n - shown;
+        let newest = first.saturating_sub(1);
+        let lo = if ink > 0.0 { newest } else { first };
 
-        let fibs: [f32; 10] = [1.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0];
-        let n_total: usize = 10;
-        let n_show = ((ctx.eased * n_total as f32).round() as usize).min(n_total);
-
-        // Scale: the long side of the 10-square rectangle = 55 units.
-        let long = fibs[n_total - 1];
-        let unit = ((dw.min(dh) as f32 - 2.0) / long * 1.6).max(0.5);
-
-        // Pivot tracking: same as golden-spiral but only rectangles.
-        let dirs: [(f32, f32); 4] = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)];
-        let perps: [(f32, f32); 4] = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)];
-
-        let mut px_n: f32 = 0.0;
-        let mut py_n: f32 = 0.0;
-
-        for (i, &side) in fibs.iter().take(n_show).enumerate() {
-            let (ddx, ddy) = dirs[i % 4];
-            let (ppx, ppy) = perps[i % 4];
-            let s = side;
-            // Four corners in norm units.
-            let c0 = (px_n, py_n);
-            let c1 = (px_n + ddx * s, py_n + ddy * s);
-            let c2 = (px_n + ddx * s + ppx * s, py_n + ddy * s + ppy * s);
-            let c3 = (px_n + ppx * s, py_n + ppy * s);
-            let corners = [c0, c1, c2, c3];
-            for k in 0..4 {
-                let (ax, ay) = corners[k];
-                let (bx, by) = corners[(k + 1) % 4];
-                let p0x = (dcx + ax * unit).round() as i32;
-                let p0y = (dcy + ay * unit).round() as i32;
-                let p1x = (dcx + bx * unit).round() as i32;
-                let p1y = (dcy + by * unit).round() as i32;
-                bresenham(grid, p0x, p0y, p1x, p1y);
+        // Zoom so the squares on show fill the height (and fit the width).
+        let (mut bx0, mut by0, mut bx1, mut by1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for sq in &squares[lo..] {
+            bx0 = bx0.min(sq.x);
+            by0 = by0.min(sq.y);
+            bx1 = bx1.max(sq.x + sq.s);
+            by1 = by1.max(sq.y + sq.s);
+        }
+        let k = ((dh as f32 - 1.0) / (by1 - by0))
+            .min((dw as f32 - 1.0) / (bx1 - bx0))
+            .max(0.1);
+        let ox = dw as f32 / 2.0 - (bx0 + bx1) / 2.0 * k;
+        let oy = (dh as f32 - 1.0) / 2.0 - (by0 + by1) / 2.0 * k;
+        let corners = |sq: &FibSquare| {
+            let x0 = (ox + sq.x * k).round() as i32;
+            let y0 = (oy + sq.y * k).round() as i32;
+            let x1 = (ox + (sq.x + sq.s) * k).round() as i32;
+            let y1 = (oy + (sq.y + sq.s) * k).round() as i32;
+            [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        };
+        for sq in &squares[first..] {
+            let c = corners(sq);
+            for e in 0..4 {
+                bresenham(grid, c[e].0, c[e].1, c[(e + 1) % 4].0, c[(e + 1) % 4].1);
             }
-            // Advance pivot.
-            let step = match i % 4 {
-                0 => (side, 0.0),
-                1 => (0.0, side),
-                2 => (-side, 0.0),
-                _ => (0.0, -side),
-            };
-            px_n += step.0;
-            py_n += step.1;
+        }
+        // The newest square is inked side by side, its pen point marching.
+        if ink > 0.0 && first > 0 {
+            let c = corners(&squares[newest]);
+            let sides = ink * 4.0;
+            for e in 0..4 {
+                let f = (sides - e as f32).clamp(0.0, 1.0);
+                if f <= 0.0 {
+                    break;
+                }
+                let (ax, ay) = c[e];
+                let (bx, by) = c[(e + 1) % 4];
+                let ex = ax + ((bx - ax) as f32 * f).round() as i32;
+                let ey = ay + ((by - ay) as f32 * f).round() as i32;
+                bresenham(grid, ax, ay, ex, ey);
+                if f < 1.0 && (ctx.time * 6.0).sin() > 0.0 {
+                    draw::dot_i(grid, ex + 1, ey);
+                    draw::dot_i(grid, ex, ey + 1);
+                    draw::dot_i(grid, ex + 1, ey + 1);
+                }
+            }
         }
         Ok(())
     }
@@ -532,43 +579,58 @@ impl ProgressStyle for Pentagram {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Nested pentagram-in-pentagon: each star's inner pentagon contains a smaller \
-         pentagram scaled by 1/φ², revealing infinite φ self-similarity as progress deepens"
+        "Upright pentagram {5/2} in its pentagon (the next star nests in the inner \
+         pentagon, scaled 1/φ², once there is room), riding a rail with progress while a glint \
+         runs the star's single stroke"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let base_r = fit_scale(dw, dh) * 0.95;
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
+        // Full-height star; the pentagon's bottom edge sits at r·cos 36°.
+        let r = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let cy = r + 0.5;
+        let span = (dw as f32 - 2.0 * r - 2.0).max(0.0);
+        let cx = r + 1.0 + ctx.eased.clamp(0.0, 1.0) * span;
+        let rail_y = (cy + r * 0.3).round() as i32;
+        let mut x = 0;
+        let rail_end = (cx - r - 1.0).ceil() as i32;
+        while x < rail_end {
+            draw::dot_i(grid, x, rail_y);
+            x += 2;
+        }
 
-        let max_depth: usize = 6;
-        let depth = ((ctx.eased * max_depth as f32).ceil() as usize)
-            .min(max_depth)
-            .max(1);
-        let rot0 = ctx.time * 0.2 - PI / 2.0; // point upward, rotate with time
-
-        // Draw from outermost to innermost.
-        let inner_scale = 1.0 / (PHI * PHI); // each level shrinks by 1/φ²
-
-        let mut r = base_r;
-        let mut rot = rot0;
-
-        for _ in 0..depth {
-            if r < 1.0 {
-                break;
-            }
-            // Draw pentagram: connect vertices 0-2-4-1-3-0.
-            let verts = ngon_vertices(5, cx, cy, r, rot);
-            let star_order = [0usize, 2, 4, 1, 3, 0];
+        let up = PI / 2.0;
+        let verts = ngon_vertices(5, cx, cy, r, up);
+        let star_order = [0usize, 2, 4, 1, 3, 0];
+        for k in 0..5 {
+            let (x0, y0) = verts[star_order[k]];
+            let (x1, y1) = verts[star_order[k + 1]];
+            bresenham(grid, x0, y0, x1, y1);
+        }
+        ngon_outline(grid, 5, cx, cy, r, up);
+        // The star's inner pentagon points down; the next star nests in it.
+        let inner = r / (PHI * PHI);
+        if inner >= 4.0 {
+            let iv = ngon_vertices(5, cx, cy, inner, -up);
             for k in 0..5 {
-                let (x0, y0) = verts[star_order[k]];
-                let (x1, y1) = verts[star_order[k + 1]];
+                let (x0, y0) = iv[star_order[k]];
+                let (x1, y1) = iv[star_order[k + 1]];
                 bresenham(grid, x0, y0, x1, y1);
             }
-            // Draw the enclosing pentagon.
-            ngon_outline(grid, 5, cx, cy, r, rot);
+        }
 
-            r *= inner_scale;
-            rot += PI / 5.0; // each inner pentagon is rotated by 36°
+        // Glint running the single unbroken stroke of the outer star.
+        let run = (ctx.time * 0.5).fract() * 5.0;
+        let k = (run as usize).min(4);
+        let f = run - k as f32;
+        let (x0, y0) = verts[star_order[k]];
+        let (x1, y1) = verts[star_order[k + 1]];
+        let gx = x0 + ((x1 - x0) as f32 * f).round() as i32;
+        let gy = y0 + ((y1 - y0) as f32 * f).round() as i32;
+        for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+            draw::dot_i(grid, gx + dx, gy + dy);
         }
         Ok(())
     }
@@ -637,8 +699,9 @@ impl ProgressStyle for GoldenGnomon {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "36-72-72 golden gnomon recursively bisected into smaller golden triangles — \
-         the geometric basis of Penrose tilings, depth revealed with progress"
+        "Golden triangle and gnomon: a frieze of 36-72-72 golden triangles, each cut \
+         into a 36-36-108 gnomon and a smaller golden triangle, which is cut again \
+         and again so the pieces whirl inward in a spiral; turns added with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -661,8 +724,9 @@ impl ProgressStyle for GoldenGnomon {
         let pulse = 1.0 + 0.035 * (ctx.time * PI * 0.5).sin();
         let (mx, my) = (dw as f32 / 2.0, dh as f32 / 2.0);
 
-        let max_depth: usize = 4;
-        let depth = ((ctx.eased * max_depth as f32).ceil() as usize).clamp(1, max_depth);
+        let max_depth: usize = 5;
+        let depth = (2 + (ctx.eased.clamp(0.0, 1.0) * (max_depth - 2) as f32).round() as usize)
+            .min(max_depth);
 
         type Pt = (f32, f32);
         fn lerp_pt(a: Pt, b: Pt, t: f32) -> Pt {
@@ -710,21 +774,27 @@ impl ProgressStyle for GoldenGnomon {
         //     → gnomon(P, A, C) [rotated/reflected] + golden-tri(B, P, C).
         //   Golden-tri (A=apex 108°, B, C base): place P on AB at AP = 1/PHI.
         //     → gnomon(C, P, A) + golden-tri(B, P, C).
+        // Only the upright triangles carry a spiral (the inverted ones stay
+        // whole so neighbouring whirls don't run together).
+        let mut tris: Vec<(Pt, Pt, Pt, bool)> = tris
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| i % 2 == 1)
+            .map(|(_, t)| t)
+            .collect();
+        // Only the newest 36-72-72 piece is cut again at each step, so each
+        // upright triangle fills with a whirl of ever-smaller triangles
+        // spiralling in towards its pole instead of a uniform mesh.
         for _d in 0..depth.saturating_sub(1) {
             let mut next: Vec<(Pt, Pt, Pt, bool)> = Vec::new();
-            for &(a, b, c, is_gnomon) in &tris {
-                // P on AB s.t. AP = 1/PHI * |AB|, for both subdivisions.
+            for &(a, b, c, _) in &tris {
+                // P on AB with AP = |AB|/φ = |BC|: triangle A-P-C is the
+                // 36-36-108 gnomon (left whole) and C-B-P is a smaller
+                // 36-72-72 golden triangle with its apex at C, cut next.
                 let p = lerp_pt(a, b, 1.0 / PHI);
-                if is_gnomon {
-                    next.push((p, a, c, true)); // smaller gnomon
-                } else {
-                    next.push((c, p, a, true)); // gnomon
-                }
-                next.push((b, p, c, false)); // golden triangle
-            }
-            // Draw all triangles at this depth.
-            for &(a, b, c, _) in &next {
-                draw_tri(grid, a, b, c);
+                draw_tri(grid, a, p, c);
+                draw_tri(grid, c, b, p);
+                next.push((c, b, p, true));
             }
             tris = next;
             if tris.len() > 512 {
@@ -764,7 +834,8 @@ impl ProgressStyle for PhiPhyllotaxisPent {
 
         // Golden angle in radians.
         let golden_angle = 2.0 * PI / (PHI * PHI); // ≈ 137.508°
-        let n_max: usize = 300;
+                                                   // ~55 seeds keeps each one a distinct dot at 16 dots tall.
+        let n_max: usize = 55;
         let n_plot = ((ctx.eased * n_max as f32).round() as usize).min(n_max);
         let c = scale / (n_max as f32).sqrt();
         let rot = ctx.time * 0.12;
@@ -810,60 +881,52 @@ impl ProgressStyle for Nautilus {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "φ-logarithmic nautilus spiral r=a·φ^(θ·2/π) with chambered septa every \
-         quarter turn — the classic cephalopod shell built from pure golden-ratio growth"
+        "φ-logarithmic nautilus shell: three whorls, each ~2× the last, traced from the \
+         outer lip inward with progress, chamber walls every 45° behind the open body chamber"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        // The 0.55 vertical squash below means height limits the shell at
-        // dh/2/0.55, not dh/2 — use the larger budget so the shell fills.
-        let scale = (dh as f32 / 2.0 / 0.55 - 1.0)
-            .min(dw as f32 / 2.0 - 1.0)
-            .max(2.0);
+        let cy = cy - 0.5;
+        // Braille dots are square: no squash, the outer whorl fills the height.
+        let scale = (dh as f32 / 2.0 - 0.5).max(2.0);
 
-        // Spiral: r(θ) = φ^(k·(θ−θ_total)) — three turns, exponent compressed
-        // so the innermost whorl is still ~a tenth of the outer radius.
-        // (The raw φ^(θ·2/π) over four turns spans a 2000:1 radius range and
-        // renders sub-dot for three of the four turns.)
+        // Spiral: r(θ) = φ^(k·(θ−θ_total)) — three turns, each whorl ~2× the
+        // last.  The shell is traced from the outer lip inward as progress
+        // rises, so even early on the big body chamber reads as a shell.
         let theta_total = 6.0 * PI;
-        let theta_max = ctx.eased * theta_total;
+        let theta_min = theta_total * (1.0 - (0.3 + 0.7 * ctx.eased.clamp(0.0, 1.0)));
         let rot = ctx.time * 0.15;
         let k = 0.75 / PI;
-
-        let steps = ((theta_max / (2.0 * PI) * 140.0).round() as usize).max(2);
-
-        for i in 0..=steps {
-            let theta = i as f32 / steps as f32 * theta_max;
+        let at = |theta: f32| -> (i32, i32) {
             let r = PHI.powf(k * (theta - theta_total)) * scale;
             let angle = theta + rot;
-            let px = (cx + r * angle.cos()).round() as i32;
-            let py = (cy - r * angle.sin() * 0.55).round() as i32;
+            (
+                (cx + r * angle.cos()).round() as i32,
+                (cy - r * angle.sin()).round() as i32,
+            )
+        };
+
+        let steps = (((theta_total - theta_min) / (2.0 * PI) * 90.0).round() as usize).max(2);
+        for i in 0..=steps {
+            let theta = theta_min + i as f32 / steps as f32 * (theta_total - theta_min);
+            let (px, py) = at(theta);
             draw::dot_i(grid, px, py);
-            draw::dot_i(grid, px + 1, py);
         }
 
-        // Draw septa (cross-walls) every π/2 radians, from inner to outer wall.
-        let n_septa = (theta_max / (PI / 2.0)).floor() as usize;
-        for s in 0..=n_septa {
-            let theta_wall = s as f32 * PI / 2.0;
-            if theta_wall > theta_max {
-                break;
+        // Septa (chamber walls) every 45°, from each whorl to the one inside
+        // it; the newest chamber (the body chamber at the lip) stays open.
+        for s in 0..24 {
+            let theta_wall = s as f32 * PI / 4.0;
+            if theta_wall < theta_min.max(2.0 * PI) || theta_wall > theta_total - PI / 2.0 {
+                continue;
             }
-            // Inner radius: one turn back (θ - 2π), or 0 if s < 4.
-            let r_outer = PHI.powf(k * (theta_wall - theta_total)) * scale;
-            let theta_inner = theta_wall - 2.0 * PI;
-            let r_inner = if theta_inner > 0.0 {
-                PHI.powf(k * (theta_inner - theta_total)) * scale
-            } else {
-                0.0
-            };
-            let angle = theta_wall + rot;
-            let x_outer = (cx + r_outer * angle.cos()).round() as i32;
-            let y_outer = (cy - r_outer * angle.sin() * 0.55).round() as i32;
-            let x_inner = (cx + r_inner * angle.cos()).round() as i32;
-            let y_inner = (cy - r_inner * angle.sin() * 0.55).round() as i32;
-            bresenham(grid, x_inner, y_inner, x_outer, y_outer);
+            let (xo, yo) = at(theta_wall);
+            let (xi, yi) = at(theta_wall - 2.0 * PI);
+            bresenham(grid, xi, yi, xo, yo);
         }
         Ok(())
     }
@@ -886,7 +949,7 @@ impl ProgressStyle for GoldenAngleRays {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Rays at successive 137.5° golden-angle increments from the center, each \
+        "21 rays at successive 137.5° golden-angle increments around a hub, each \
          growing longer — the irrational spacing that prevents clustering and produces \
          optimal coverage of the disk"
     }
@@ -896,7 +959,8 @@ impl ProgressStyle for GoldenAngleRays {
         let scale = fit_scale(dw, dh);
 
         let golden_angle = 2.0 * PI / (PHI * PHI); // ≈ 137.508°
-        let n_max: usize = 55; // 55 = F₁₀, natural Fibonacci count
+                                                   // 21 = F₈: at 16 dots tall more rays merge into a solid disc.
+        let n_max: usize = 21;
         let n_rays = ((ctx.eased * n_max as f32).round() as usize).min(n_max);
         let rot = ctx.time * 0.1;
 
@@ -907,9 +971,11 @@ impl ProgressStyle for GoldenAngleRays {
             let len = scale * t; // linear growth for clarity
             let x_end = (cx + len * angle.cos()).round() as i32;
             let y_end = (cy - len * angle.sin()).round() as i32;
-            let cx_i = cx.round() as i32;
-            let cy_i = cy.round() as i32;
-            bresenham(grid, cx_i, cy_i, x_end, y_end);
+            // Rays start off a small hub so the centre stays open.
+            let hub = scale * 0.18;
+            let x0 = (cx + hub * angle.cos()).round() as i32;
+            let y0 = (cy - hub * angle.sin()).round() as i32;
+            bresenham(grid, x0, y0, x_end, y_end);
         }
         Ok(())
     }
@@ -932,29 +998,53 @@ impl ProgressStyle for Dodecagram {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Dodecagram {12/5}: connecting every 5th vertex of a regular 12-gon produces \
-         a twelve-pointed φ-star; chords materialise progressively while the star rotates"
+        "Dodecagram {12/5}: a frieze of twelve-pointed stars (every 5th vertex of a \
+         12-gon joined, drawn as the star's silhouette); each star is traced point by \
+         point along the strip with progress and turns slowly, alternate stars \
+         counter-rotating"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh) * 0.92;
-
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
         let n: usize = 12;
         let step: usize = 5; // {12/5} star polygon
-        let rot = ctx.time * 0.14;
-        let n_chords = ((ctx.eased * n as f32).round() as usize).min(n);
-
-        // Draw the outer 12-gon outline always.
-        ngon_outline(grid, n, cx, cy, scale, rot);
-
-        // Draw the star chords.
-        let verts = ngon_vertices(n, cx, cy, scale, rot);
-        for i in 0..n_chords {
-            let j = (i + step) % n;
-            let (x0, y0) = verts[i];
-            let (x1, y1) = verts[j];
-            bresenham(grid, x0, y0, x1, y1);
+        let panels = (dw / 18).max(1);
+        let pw = dw as f32 / panels as f32;
+        let r = (dh as f32 * 0.5 - 0.5).min(pw * 0.5 - 0.5).max(1.0);
+        let cy = (dh as f32 - 1.0) * 0.5;
+        // Always show a little of the first star.
+        let total = (0.3 + ctx.eased.clamp(0.0, 1.0) * (panels as f32 - 0.3)).min(panels as f32);
+        for k in 0..panels {
+            let cx = pw * (k as f32 + 0.5) - 0.5;
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                // Unbuilt star: its twelve vertices only.
+                for (x, y) in ngon_vertices(n, cx, cy, r, PI / 2.0) {
+                    draw::dot_i(grid, x, y);
+                }
+                continue;
+            }
+            let dir = if k % 2 == 0 { 1.0 } else { -1.0 };
+            let rot = PI / 2.0 + dir * ctx.time * 0.25;
+            // Silhouette of {12/5}: tips on the circumcircle, notches where
+            // neighbouring chords cross, at r·cos(75°)/cos(60°) ≈ 0.518 r.
+            let nf = n as f32;
+            let inner = r * (step as f32 * PI / nf).cos() / ((step - 1) as f32 * PI / nf).cos();
+            let outline: Vec<(f32, f32)> = (0..2 * n)
+                .map(|i| {
+                    let t = rot + i as f32 * PI / n as f32;
+                    let rr = if i % 2 == 0 { r } else { inner };
+                    (cx + rr * t.cos(), cy - rr * t.sin())
+                })
+                .collect();
+            partial_poly(grid, &outline, local);
+            // Inner ring of the star: the 12-gon the notches sit on.
+            if local >= 1.0 {
+                let core = inner * 0.55 * (1.0 + 0.15 * (ctx.time * 2.0 + k as f32).sin());
+                ngon_outline(grid, n, cx, cy, core, rot);
+            }
         }
         Ok(())
     }
@@ -964,10 +1054,50 @@ impl ProgressStyle for Dodecagram {
 // 11. Kepler Triangle — right triangle with sides 1 : √φ : φ
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// The Kepler triangle has the unique property that its sides form a geometric
-// progression 1, √φ, φ, so the hypotenuse-to-leg ratio embeds φ.
-// We render a fan of Kepler triangles tiled around the center, each rotated by
-// the golden angle, revealing more triangles as progress rises.
+// The Kepler triangle has sides in geometric progression 1, √φ, φ, so the
+// squares erected on its sides have areas 1, φ and φ² — and Pythagoras'
+// a² + b² = c² becomes φ² = φ + 1.  Each panel draws the triangle with the
+// three squares on its sides (the classic Pythagoras windmill figure); panels
+// are built left to right with progress, each one drawing the triangle, then
+// the squares on the short leg, the long leg and finally the hypotenuse.  A
+// bead runs round each finished triangle on `ctx.time`.
+
+/// Draw a fraction `f` (0..=1) of the closed polygon `pts` (dot-space floats).
+fn partial_poly(grid: &mut BrailleGrid, pts: &[(f32, f32)], f: f32) {
+    let n = pts.len();
+    if n < 2 || f <= 0.0 {
+        return;
+    }
+    let f = f.min(1.0);
+    let lens: Vec<f32> = (0..n)
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt()
+        })
+        .collect();
+    let total: f32 = lens.iter().sum();
+    let mut left = total * f;
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        let g = if lens[i] <= 0.0 {
+            1.0
+        } else {
+            (left / lens[i]).min(1.0)
+        };
+        let e = (a.0 + (b.0 - a.0) * g, a.1 + (b.1 - a.1) * g);
+        bresenham(
+            grid,
+            a.0.round() as i32,
+            a.1.round() as i32,
+            e.0.round() as i32,
+            e.1.round() as i32,
+        );
+        left -= lens[i];
+        if left <= 0.0 {
+            break;
+        }
+    }
+}
 
 struct KeplerTriangle;
 impl ProgressStyle for KeplerTriangle {
@@ -978,42 +1108,60 @@ impl ProgressStyle for KeplerTriangle {
         "goldenratio"
     }
     fn describe(&self) -> &str {
-        "Kepler triangle fan: right triangles with sides 1:√φ:φ tiled around the \
-         center, each rotated by the golden angle — where Pythagoras meets φ"
+        "Kepler triangle: the right triangle with sides 1:√φ:φ and the squares on its \
+         sides (areas 1, φ, φ² — Pythagoras becomes φ² = φ + 1), built panel by panel \
+         along the strip"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-
-        // Kepler triangle sides in proportion: a=1, b=√φ, c=φ.
-        // We scale so the hypotenuse (φ) = scale.
-        let a = scale / PHI; // short leg
-        let b = scale / PHI.sqrt(); // long leg (= √φ * a/1 * scale/φ simplified)
-                                    // Verify: a² + b² = (scale/PHI)² + (scale/PHI.sqrt())²
-                                    //       = scale²(1/φ² + 1/φ) = scale²((1+φ)/φ²) = scale²(φ²/φ²) = scale² ✓
-
-        let golden_angle = 2.0 * PI / (PHI * PHI);
-        let n_max: usize = 34; // F₉
-        let n_tris = ((ctx.eased * n_max as f32).round() as usize).min(n_max);
-        let rot_base = ctx.time * 0.1;
-
-        for i in 0..n_tris {
-            let rot = i as f32 * golden_angle + rot_base;
-            // Right-angle vertex at center.
-            // Leg a along rot direction, leg b perpendicular (rot + π/2).
-            let tip_a = (cx + a * rot.cos(), cy - a * rot.sin());
-            let tip_b = (
-                cx + b * (rot + PI / 2.0).cos(),
-                cy - b * (rot + PI / 2.0).sin(),
-            );
-            let origin = (cx.round() as i32, cy.round() as i32);
-            let (ax, ay) = (tip_a.0.round() as i32, tip_a.1.round() as i32);
-            let (bx, by) = (tip_b.0.round() as i32, tip_b.1.round() as i32);
-            // Draw the three sides of the Kepler triangle.
-            bresenham(grid, origin.0, origin.1, ax, ay); // short leg
-            bresenham(grid, origin.0, origin.1, bx, by); // long leg
-            bresenham(grid, ax, ay, bx, by); // hypotenuse
+        if dw == 0 || dh == 0 {
+            return Ok(());
+        }
+        let a = 1.0f32; // short leg (vertical)
+        let b = PHI.sqrt(); // long leg (horizontal)
+        let panels = (dw / 20).max(1);
+        let pw = dw as f32 / panels as f32;
+        // Figure extents in units: x ∈ [-a, a+b], y ∈ [-b, a+b].
+        let u = ((dh as f32 - 1.0) / (a + 2.0 * b))
+            .min((pw - 2.0) / (2.0 * a + b))
+            .max(0.5);
+        let oy = (dh as f32 - 1.0) * 0.5 + (a * 0.5) * u;
+        let total = (0.3 + ctx.eased.clamp(0.0, 1.0) * (panels as f32 - 0.3)).min(panels as f32);
+        for k in 0..panels {
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                continue;
+            }
+            let ox = pw * (k as f32 + 0.5) - 0.5 - (b * 0.5) * u;
+            let m = |x: f32, y: f32| (ox + x * u, oy - y * u);
+            let tri = [m(0.0, 0.0), m(b, 0.0), m(0.0, a)];
+            let sq_a = [m(0.0, 0.0), m(0.0, a), m(-a, a), m(-a, 0.0)];
+            let sq_b = [m(0.0, 0.0), m(0.0, -b), m(b, -b), m(b, 0.0)];
+            let sq_c = [m(b, 0.0), m(b + a, b), m(a, a + b), m(0.0, a)];
+            let seg = |i: usize| ((local * 4.0) - i as f32).clamp(0.0, 1.0);
+            partial_poly(grid, &tri, seg(0));
+            partial_poly(grid, &sq_a, seg(1));
+            partial_poly(grid, &sq_b, seg(2));
+            partial_poly(grid, &sq_c, seg(3));
+            if local >= 1.0 {
+                // Bead circling the triangle.
+                let s = (ctx.time * 0.5 + k as f32 * 0.37).fract();
+                let lens = [b, PHI, a];
+                let mut d = s * (a + b + PHI);
+                for i in 0..3 {
+                    if d <= lens[i] || i == 2 {
+                        let (p, q) = (tri[i], tri[(i + 1) % 3]);
+                        let g = (d / lens[i]).clamp(0.0, 1.0);
+                        let x = (p.0 + (q.0 - p.0) * g).round() as i32;
+                        let y = (p.1 + (q.1 - p.1) * g).round() as i32;
+                        for (ddx, ddy) in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)] {
+                            draw::dot_i(grid, x + ddx, y + ddy);
+                        }
+                        break;
+                    }
+                    d -= lens[i];
+                }
+            }
         }
         Ok(())
     }

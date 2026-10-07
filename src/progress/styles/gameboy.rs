@@ -5,15 +5,16 @@
 //! Tamagotchi, Game & Watch, Link's Awakening hearts, Mole Whack, Wario
 //! treasure, and LCD Pinball.
 //!
-//! Every style leans into the `░▒▓` shade ramp to simulate the ghosting and
-//! segment-dimming of a genuine reflective-LCD panel. Animation is a pure
-//! function of `ctx.time`; fill extent is `ctx.eased`. All writes go through
-//! `draw::` helpers — out-of-bounds coordinates are silently discarded.
+//! Each style draws its game's recognisable objects as monochrome dot-art,
+//! like a reflective-LCD panel: a Poké Ball, bevelled tetrominoes, a pill
+//! bottle, an egg-shaped Tamagotchi, heart containers, a treasure chest, an
+//! LCD juggler and a pinball table. Animation is a pure function of
+//! `ctx.time`; fill extent is `ctx.eased`. All writes go through `draw::`
+//! helpers — out-of-bounds coordinates are silently discarded.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
-use std::cmp::Ordering;
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 /// All styles in the `gameboy` theme.
@@ -36,9 +37,41 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     ]
 }
 
+// ---------------------------------------------------------------------------
+// Sprite helpers — dot-art stamps for the pictorial styles.
+// ---------------------------------------------------------------------------
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+/// Off-grid dots are dropped, so sprites may hang off any edge.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// Triangle wave `0 → 1 → 0` with period 1.
+fn tri(t: f32) -> f32 {
+    1.0 - (2.0 * t.rem_euclid(1.0) - 1.0).abs()
+}
+
+/// Solid block of dots from signed coordinates (clipped to the grid).
+fn block(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            draw::dot_i(grid, xx, yy);
+        }
+    }
+}
+
 // ─── 1. Pokémon HP Bar ───────────────────────────────────────────────────────
 
-/// HP bar drains/fills with a Poké Ball that wobbles mid-capture, settling at 100%.
+/// A Poké Ball (solid top shell, centre band, ringed button) wobbles mid-
+/// capture beside the battle HUD's `HP` bar; the wobble dies away as the bar
+/// fills and the ball sits still at 100%.
 struct PokemonHp;
 impl ProgressStyle for PokemonHp {
     fn name(&self) -> &str {
@@ -48,75 +81,72 @@ impl ProgressStyle for PokemonHp {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Pokémon-style HP bar with a Poké Ball that wobbles during capture and settles at full"
+        "Pokémon battle HUD: a Poké Ball wobbles mid-capture beside an `HP` bar that fills with progress; the ball settles at 100%"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (_w, _h) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // ── LCD panel background (shade 1 = ░) ──────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
+        // Poké Ball: rotate the sample point to wobble, then classify it.
+        let r = ((hi - 1) as f32 / 2.0).min(7.5);
+        let (cx, cy) = (r + 1.0, (hi - 1) as f32 / 2.0);
+        let wobble = 0.45 * (ctx.time * 7.0).sin() * (1.0 - ctx.eased).max(0.0);
+        let (s, c) = wobble.sin_cos();
+        for y in 0..hi {
+            for x in 0..(2.0 * r + 3.0) as i32 {
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                let (u, v) = (dx * c + dy * s, -dx * s + dy * c);
+                let d = (u * u + v * v).sqrt();
+                let on = if d > r + 0.3 {
+                    false
+                } else if d < 1.2 {
+                    true // button
+                } else if d < 2.3 {
+                    false // button gap
+                } else if d < 3.3 {
+                    true // button ring
+                } else {
+                    d > r - 0.8 || v < -0.5 || v.abs() < 0.5
+                };
+                if on {
+                    draw::dot_i(grid, x, y);
+                }
             }
         }
 
-        // ── HP label "HP" in the leftmost 2 cells (shade 4 = █) ─────────────
-        // Represented as thin vertical bars to mimic dot-matrix lettering.
-        if cw >= 2 {
-            draw::shade(grid, 0, 0, 4);
-            if ch > 1 {
-                draw::shade(grid, 0, 1, 4);
-            }
-        }
-
-        // ── HP track — the green segmented bar ──────────────────────────────
-        let bar_start_cell = if cw > 3 { 2 } else { 0 };
-        let bar_w = cw.saturating_sub(bar_start_cell + 1).max(1);
-        // Background of HP track (shade 2 = ▒)
-        for cx in bar_start_cell..bar_start_cell + bar_w {
-            for cy in 0..ch {
-                draw::shade(grid, cx, cy, 2);
-            }
-        }
-        // Filled HP (shade 4)
-        let filled = (ctx.eased * bar_w as f32).round() as usize;
-        for cx in bar_start_cell..bar_start_cell + filled.min(bar_w) {
-            for cy in 0..ch {
-                draw::shade(grid, cx, cy, 4);
-            }
-        }
-
-        // ── Poké Ball in the last cell ───────────────────────────────────────
-        if cw > 0 {
-            let ball_cx = cw.saturating_sub(1);
-            // Wobble angle — dampens to zero as progress → 1.0
-            let settle = 1.0 - ctx.eased;
-            let wobble = (ctx.time * 8.0).sin() * settle * 0.5;
-            // Express wobble as a shade level: rocking between ▒ and █
-            let shade_lvl = if wobble.abs() > 0.25 { 3usize } else { 4 };
-            for cy in 0..ch {
-                draw::shade(grid, ball_cx, cy, shade_lvl);
-            }
-            // Central equator line on the ball — always shade 2
-            if ch >= 2 {
-                draw::shade(grid, ball_cx, ch / 2, 2);
-            }
-        }
-
-        // ── Palette tint — green HP, red when low ───────────────────────────
-        let health_t = ctx.eased; // 0=red, 1=green via palette
-        let filled_cells = bar_start_cell + filled.min(bar_w);
-        for cy in 0..ch {
-            if filled_cells > bar_start_cell {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    bar_start_cell,
-                    filled_cells.saturating_sub(1),
-                    ctx.palette.sample(health_t),
-                );
+        // "HP" label and the rounded bar outline.
+        let lx = (2.0 * r + 5.0) as i32;
+        let ly = hi / 2 - 3;
+        sprite(
+            grid,
+            lx,
+            ly,
+            &["#.#.##.", "#.#.#.#", "###.##.", "#.#.#..", "#.#.#.."],
+        );
+        let bx = lx + 9;
+        let bw = (wi - bx - 1).max(0);
+        if bw > 4 {
+            draw::hline(grid, (bx + 1) as usize, (bx + bw - 2) as usize, ly as usize);
+            draw::hline(
+                grid,
+                (bx + 1) as usize,
+                (bx + bw - 2) as usize,
+                (ly + 4) as usize,
+            );
+            draw::vline(grid, bx as usize, (ly + 1) as usize, (ly + 3) as usize);
+            draw::vline(
+                grid,
+                (bx + bw - 1) as usize,
+                (ly + 1) as usize,
+                (ly + 3) as usize,
+            );
+            let fill = (ctx.eased * (bw - 4) as f32).round() as i32;
+            block(grid, bx + 2, ly + 2, fill, 1);
+            if fill > 0 {
+                block(grid, bx + 2, ly + 1, fill, 3);
             }
         }
         Ok(())
@@ -224,8 +254,23 @@ impl ProgressStyle for NokiaSnake {
 
 // ─── 3. Tetris GB ────────────────────────────────────────────────────────────
 
-/// Shaded blocks stack in a well from the bottom; height = progress.
+/// Bevelled GB minos lock into a four-row strip one tetromino at a time —
+/// I, O, O, L, J repeating so the strip tiles solid — while the next piece
+/// drops in from the top.
 struct TetrisGb;
+
+/// One tetromino: mino cells as `(col, row)` within the 4-row strip.
+type Piece = [(i32, i32); 4];
+
+/// The repeating 5-column tiling, in lock order (bottom pieces first).
+const TILING: [Piece; 5] = [
+    [(0, 0), (0, 1), (0, 2), (0, 3)], // I
+    [(1, 2), (2, 2), (1, 3), (2, 3)], // O (bottom)
+    [(1, 0), (2, 0), (1, 1), (2, 1)], // O (top)
+    [(4, 1), (4, 2), (4, 3), (3, 3)], // J
+    [(3, 0), (3, 1), (3, 2), (4, 0)], // L
+];
+
 impl ProgressStyle for TetrisGb {
     fn name(&self) -> &str {
         "tetris-gb"
@@ -234,82 +279,45 @@ impl ProgressStyle for TetrisGb {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Shaded Tetris blocks stack in a GB-style well; block density = progress"
+        "Game Boy Tetris: I, O, L and J tetrominoes, each with its own block texture, lock into a solid stack left-to-right while the next piece drops in; stack length = progress"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-
-        // ── Well background (shade 1) ─────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let cols = (wi / 4).max(1);
+        let units = (cols + 4) / 5;
+        let total = units * TILING.len() as i32;
+        let placed = (ctx.eased * total as f32) as i32;
 
-        // ── Stacked blocks — each cell gets a shade based on depth ────────────
-        // Blocks fill from the bottom. Stack height = eased fraction of rows.
-        let stack_rows = (ctx.eased * ch as f32).round() as usize;
-        let base_row = ch.saturating_sub(stack_rows);
-
-        // Tetromino columns vary phase slightly for the ragged skyline.
-        let col_w = 2usize; // 2 cells per "block column"
-        let block_cols = (cw / col_w).max(1);
-
-        for bc in 0..block_cols {
-            // Each block column has a small phase offset in its height.
-            let phase = (bc as f32 / block_cols as f32) * PI;
-            let col_extra = (phase.sin() * 1.0).round() as i32;
-            let col_base = (base_row as i32 - col_extra).max(0) as usize;
-
-            for row in col_base..ch {
-                // Shade deepens toward the bottom — deeper = denser.
-                let depth = ch.saturating_sub(row);
-                let shade_lvl = match depth {
-                    d if d >= stack_rows => 4,
-                    d if d * 4 >= stack_rows * 3 => 3,
-                    d if d * 2 >= stack_rows => 2,
-                    _ => 1,
-                };
-                for col_off in 0..col_w {
-                    let cx = bc * col_w + col_off;
-                    if cx < cw {
-                        draw::shade(grid, cx, row, shade_lvl);
-                    }
+        // A mino: 3×3 on a 4-dot pitch, centred vertically. Like the GB game,
+        // each piece type has its own block texture so pieces read apart.
+        let top = (hi - 16).max(0) / 2;
+        let mino = |grid: &mut BrailleGrid, kind: usize, col: i32, row: i32, dy: i32| {
+            let art: [&str; 3] = match kind {
+                0 => ["###", "###", "###"],     // I: solid
+                1 | 2 => ["###", "#.#", "###"], // O: framed
+                3 => ["#.#", ".#.", "#.#"],     // J: crossed
+                _ => [".#.", "###", ".#."],     // L: studded
+            };
+            sprite(grid, col * 4, top + row * 4 + dy, &art);
+        };
+        for k in 0..total.min(placed + 1) {
+            let piece = TILING[(k % 5) as usize];
+            let base = (k / 5) * 5;
+            // The next piece is still falling: it lifts off the top as time runs.
+            let dy = if k == placed {
+                -(((1.0 - (ctx.time * 1.5).fract()) * 16.0) as i32)
+            } else {
+                0
+            };
+            for (c, r) in piece {
+                if base + c < cols {
+                    mino(grid, (k % 5) as usize, base + c, r, dy);
                 }
             }
-
-            // Block dividers: a shade-1 gap row every 2 rows from the bottom.
-            // (Makes the stack look like individual pieces.)
-            let mut div_row = ch.saturating_sub(2);
-            while div_row > col_base {
-                for col_off in 0..col_w {
-                    let cx = bc * col_w + col_off;
-                    if cx < cw && div_row < ch {
-                        draw::shade(grid, cx, div_row, 1);
-                    }
-                }
-                div_row = div_row.saturating_sub(2);
-            }
-        }
-
-        // ── Currently falling piece — a single 2×2 block that drops with time ─
-        let fall_period = 0.8f32;
-        let fall_t = (ctx.time % fall_period) / fall_period;
-        let fall_row = (fall_t * base_row.max(1) as f32) as usize;
-        let piece_col = ((ctx.time * 0.3) as usize % block_cols.max(1)) * col_w;
-        for col_off in 0..col_w {
-            let cx = piece_col + col_off;
-            if cx < cw && fall_row < base_row {
-                draw::shade(grid, cx, fall_row, 4);
-            }
-        }
-
-        // ── Palette tint on filled stack ─────────────────────────────────────
-        for cy in base_row..ch {
-            let t = (cy.saturating_sub(base_row)) as f32 / stack_rows.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
         }
         Ok(())
     }
@@ -317,8 +325,14 @@ impl ProgressStyle for TetrisGb {
 
 // ─── 4. Dr. Mario ────────────────────────────────────────────────────────────
 
-/// Pills appear and stack; each cleared row is progress.
+/// The Dr. Mario bottle (neck, shoulders, glass body) full of wriggling
+/// viruses that vanish as progress rises, with a two-tone capsule dropping in
+/// through the neck; a row of capsules alongside fills with progress.
 struct DrMario;
+
+/// A capsule: two rounded halves with a seam.
+const CAPSULE: [&str; 3] = [".##.##.", "###.###", ".##.##."];
+
 impl ProgressStyle for DrMario {
     fn name(&self) -> &str {
         "dr-mario"
@@ -327,83 +341,54 @@ impl ProgressStyle for DrMario {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Dr. Mario pills stack in a bottle; rows cleared = progress; cleared rows flash"
+        "Dr. Mario: wriggling viruses vanish from the medicine bottle as a capsule drops through its neck; the capsule row beside it fills with progress"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // ── Bottle background (shade 1) ───────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
+        // Bottle: neck on top, shoulders, then the glass body.
+        let bw = 24.min(wi);
+        draw::vline(grid, 8, 0, 3);
+        draw::vline(grid, 15, 0, 3);
+        draw::hline(grid, 0, 8, 3);
+        draw::hline(grid, 15, (bw - 1).max(0) as usize, 3);
+        draw::vline(grid, 0, 3, h - 1);
+        draw::vline(grid, (bw - 1).max(0) as usize, 3, h - 1);
+        draw::hline(grid, 0, (bw - 1).max(0) as usize, h - 1);
+
+        // Viruses: a 5×2 grid of critters, cleared in a scattered order.
+        let wiggle = (ctx.time * 4.0).fract() < 0.5;
+        let virus: [&str; 3] = if wiggle {
+            ["#.#", ".#.", "#.#"]
+        } else {
+            [".#.", "###", "#.#"]
+        };
+        for i in 0..10 {
+            let (col, row) = (i % 5, i / 5);
+            let order = ((i * 3 + 1) % 10) as f32 / 10.0;
+            if order >= ctx.eased {
+                sprite(grid, 2 + col * 4, hi - 9 + row * 4, &virus);
             }
         }
 
-        // ── Bottle walls (shade 4 left + right column) ────────────────────────
-        for cy in 0..ch {
-            draw::shade(grid, 0, cy, 4);
-            if cw > 1 {
-                draw::shade(grid, cw.saturating_sub(1), cy, 4);
+        // A capsule tumbling down the neck into the bottle.
+        let fall = ((ctx.time * 0.8).fract() * (hi - 9).max(1) as f32) as i32;
+        sprite(grid, 9, fall - 2, &[".##.", "####", "####", ".##."]);
+
+        // Capsule row: one more capsule per step of progress.
+        let slots = ((wi - bw - 4) / 8).max(0);
+        let filled = (ctx.eased * slots as f32).round() as i32;
+        for k in 0..slots {
+            let x = bw + 4 + k * 8;
+            if k < filled {
+                sprite(grid, x, hi / 2 - 1, &CAPSULE);
+            } else {
+                draw::dot_i(grid, x + 3, hi / 2);
             }
-        }
-
-        // Usable interior width.
-        let inner_cw = cw.saturating_sub(2).max(1);
-        let inner_start = 1usize;
-
-        // ── Pills fill from the bottom, alternating two-cell pill pairs ────────
-        let pill_cells = (ctx.eased * (inner_cw * ch) as f32) as usize;
-        let pill_rows_filled = (pill_cells / inner_cw.max(1)).min(ch);
-
-        let base_row = ch.saturating_sub(pill_rows_filled);
-
-        for row in base_row..ch {
-            let is_cleared = row % 3 == 0; // every 3rd row is a "cleared" row
-                                           // Cleared rows flash with time.
-            let flash = is_cleared && ((ctx.time * 6.0) as usize % 2 == 0);
-            let shade_lvl: usize = if flash { 1 } else { 3 };
-
-            // Pills: alternating pairs of shade 3 / shade 4 within the row.
-            let mut cx = inner_start;
-            let mut pill_idx = 0usize;
-            while cx < inner_start + inner_cw {
-                let lvl = if pill_idx % 2 == 0 {
-                    shade_lvl
-                } else {
-                    shade_lvl.saturating_sub(1).max(2)
-                };
-                draw::shade(grid, cx, row, lvl);
-                if cx + 1 < inner_start + inner_cw {
-                    draw::shade(grid, cx + 1, row, lvl.min(4));
-                }
-                cx += 2;
-                pill_idx += 1;
-            }
-        }
-
-        // ── Falling pill at the top ────────────────────────────────────────────
-        let drop_t = (ctx.time * 1.5).fract();
-        let drop_row = (drop_t * base_row.max(1) as f32) as usize;
-        let drop_col = inner_start + ((ctx.time * 0.5) as usize % inner_cw.max(1));
-        if drop_row < base_row && drop_col < inner_start + inner_cw {
-            draw::shade(grid, drop_col, drop_row, 4);
-            if drop_col + 1 < inner_start + inner_cw {
-                draw::shade(grid, drop_col + 1, drop_row, 3);
-            }
-        }
-
-        // ── Palette tint on pill rows ─────────────────────────────────────────
-        for row in base_row..ch {
-            let t = (row.saturating_sub(base_row)) as f32 / pill_rows_filled.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(
-                grid,
-                row,
-                inner_start,
-                inner_start + inner_cw.saturating_sub(1),
-                color,
-            );
         }
         Ok(())
     }
@@ -411,8 +396,16 @@ impl ProgressStyle for DrMario {
 
 // ─── 5. Kirby Inhale ─────────────────────────────────────────────────────────
 
-/// Kirby "inhale" meter — cheeks puff with eased, stars inhaled with time.
+/// Pink round Kirby (red feet, rosy cheek, stubby arm) walks right with
+/// progress, mouth gaping, inhaling a whirling stream of stars and Waddle
+/// Dees along wind lines; the ground behind him is the track covered.
 struct KirbyInhale;
+
+/// Waddle Dee: round body, face patch with two eyes, little feet.
+const WADDLE: [&str; 5] = [".###.", "#####", "#.#.#", "#####", "##.##"];
+/// Five-point star.
+const STAR5: [&str; 5] = ["..#..", "..#..", "#####", ".###.", "##.##"];
+
 impl ProgressStyle for KirbyInhale {
     fn name(&self) -> &str {
         "kirby-inhale"
@@ -421,102 +414,111 @@ impl ProgressStyle for KirbyInhale {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Kirby puffs up as the meter fills; stars streak toward his mouth with time"
+        "Pink Kirby with red feet and rosy cheeks walks right with progress, mouth wide, inhaling a stream of stars and Waddle Dees"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
 
-        // ── Dim LCD background ────────────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
+        // Kirby: body radius 6, feet on the bottom rows.
+        let top = hi - 16;
+        let travel = (wi - 34).max(0) as f32;
+        let kx = 8 + (ctx.eased * travel).round() as i32;
+        let bob = i32::from((t * 4.0).fract() >= 0.5);
+        let cy = top + 6 + bob;
+        let (mx, my) = (kx + 5, cy + 1); // mouth centre
+        for dy in -6..=6 {
+            for dx in -7..=6 {
+                let inside = dx * dx + dy * dy <= 42;
+                let arm = dx <= -6 && (0..=1).contains(&dy);
+                if !(inside || arm) {
+                    continue;
+                }
+                let (x, y) = (kx + dx, cy + dy);
+                // Gaping mouth: an oval hole on the right side, with a lip.
+                let (ox, oy) = (x - mx, y - my);
+                let d = ox * ox + oy * oy;
+                if d <= 10 && ox > -3 {
+                    if d >= 7 && ox <= 0 {
+                        draw::dot_i(grid, x, y);
+                    }
+                    continue;
+                }
+                // Eyes: tall ovals.
+                if (dx == 0 || dx == 2) && (-4..=-2).contains(&dy) {
+                    continue;
+                }
+                draw::dot_i(grid, x, y);
+            }
+        }
+        // Red feet.
+        sprite(grid, kx - 7, cy + 6, &[".#####.", "#######"]);
+        sprite(grid, kx, cy + 6, &[".#####.", "#######"]);
+
+        // Ground: solid behind Kirby, dashed ahead.
+        let gy = hi - 1;
+        for x in 0..wi {
+            if x < kx - 7 || (x > kx + 7 && x % 4 == 0) {
+                draw::dot_i(grid, x, gy);
             }
         }
 
-        // ── Inhale power bar across the bottom rows ───────────────────────────
-        // A meter of shade glyphs showing current inhale strength.
-        let meter_row = ch.saturating_sub(1);
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..cw {
-            let lvl = if cx < filled_cells { 4 } else { 2 };
-            draw::shade(grid, cx, meter_row, lvl);
-        }
-
-        // ── Kirby body in dot space — circle that expands with eased ──────────
-        // Kirby is in the right third of the bar.
-        let kirby_cx = (w * 3 / 4) as i32;
-        let kirby_cy = (h / 2) as i32;
-        // Base radius + puff proportional to eased.
-        let min_r = (h / 4).max(2) as i32;
-        let max_r = (h / 2).max(3) as i32;
-        let r = min_r + ((ctx.eased * (max_r - min_r) as f32).round() as i32);
-
-        // Draw Kirby's body circle.
-        let steps = (2.0 * PI * r as f32 * 1.5) as usize + 8;
-        for s in 0..steps {
-            let a = s as f32 / steps as f32 * 2.0 * PI;
-            let dx = (a.cos() * r as f32).round() as i32;
-            let dy = (a.sin() * r as f32 * 0.7).round() as i32; // slightly squished
-            draw::dot_i(grid, kirby_cx + dx, kirby_cy + dy);
-        }
-        // Filled interior dots.
-        for dy in -r..=r {
-            for dx in -r..=r {
-                if dx * dx * 100 + dy * dy * 100 * 100 / 49 <= r * r * 100 {
-                    draw::dot_i(grid, kirby_cx + dx, kirby_cy + dy);
+        // Wind lines funnelling into the mouth.
+        let far = wi - 1;
+        let span = (far - mx).max(1) as f32;
+        for i in 0..4 {
+            let s = (t * 1.4 + i as f32 * 0.25).fract();
+            let x = far - (s * span) as i32;
+            let off = ((i % 2) * 2 - 1) as f32 * (1.0 - s) * 6.0;
+            let y = my + off.round() as i32;
+            for k in 0..4 {
+                if x + k > mx + 2 {
+                    draw::dot_i(grid, x + k, y);
                 }
             }
         }
-
-        // Eyes — two dots above center.
-        let eye_y = kirby_cy - r / 3;
-        draw::dot_i(grid, kirby_cx - r / 3, eye_y);
-        draw::dot_i(grid, kirby_cx + r / 3, eye_y);
-
-        // Mouth — a small open "O" when inhaling (progress < 1.0).
-        if ctx.eased < 0.95 {
-            let mouth_y = kirby_cy + r / 3;
-            draw::dot_i(grid, kirby_cx - 1, mouth_y);
-            draw::dot_i(grid, kirby_cx + 1, mouth_y);
-            draw::dot_i(grid, kirby_cx, mouth_y + 1);
-        }
-
-        // ── Inhaled stars streaking toward Kirby ──────────────────────────────
-        let star_count = 5usize;
-        for i in 0..star_count {
-            let phase = i as f32 / star_count as f32;
-            let t = (ctx.time * 1.5 + phase).fract(); // 0→1 travel
-                                                      // Stars come from the left.
-            let sx = ((1.0 - t) * kirby_cx as f32) as i32;
-            let sy = kirby_cy + ((phase * 2.0 - 1.0) * (h / 4) as f32) as i32;
-            draw::dot_i(grid, sx, sy);
-            draw::dot_i(grid, sx + 1, sy);
-        }
-
-        // ── Palette tint — bluer when empty, fuller when puffed ──────────────
-        let body_cell_x = (kirby_cx as usize / 2).saturating_sub(r as usize / 2);
-        let body_cell_w = (r as usize).min(cw.saturating_sub(body_cell_x));
-        for cy in 0..ch.saturating_sub(1) {
-            if body_cell_w > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    body_cell_x,
-                    body_cell_x + body_cell_w.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
+        // Stars and a Waddle Dee swirl in and vanish into the mouth.
+        let mut dee_x = i32::MIN;
+        for i in 0..3 {
+            let s = (t * 0.6 + i as f32 / 3.0).fract();
+            let x = far - (s * span) as i32;
+            if x <= mx + 2 {
+                continue;
             }
-            // Star trail region tinted at lower intensity.
-            if body_cell_x > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    body_cell_x.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased * 0.4),
-                );
+            let wob = ((t * 5.0 + i as f32 * 2.0).sin() * (1.0 - s) * 4.0).round() as i32;
+            let y = my - 2 + wob;
+            if i == 1 {
+                sprite(grid, x, y, &WADDLE);
+                dee_x = x;
+            } else {
+                sprite(grid, x, y, &STAR5);
+            }
+        }
+
+        // Colour: pink body, rosy cheek, red feet, yellow stars, orange Dee.
+        grid.enable_color_support();
+        for cyy in 0..ch {
+            for cxx in 0..cw {
+                let (px, py) = (cxx as i32 * 2 + 1, cyy as i32 * 4 + 2);
+                let color = if (kx - 8..=kx + 7).contains(&px) && py >= cy + 6 {
+                    Color::rgb(232, 40, 70) // feet
+                } else if (kx - 8..=kx + 7).contains(&px) {
+                    if (kx - 3..=kx).contains(&px) && (cy..=cy + 3).contains(&py) {
+                        Color::rgb(255, 80, 140) // blush
+                    } else {
+                        Color::rgb(255, 160, 205)
+                    }
+                } else if px < kx {
+                    Color::rgb(120, 200, 110) // grass track
+                } else if (dee_x - 1..=dee_x + 5).contains(&px) {
+                    Color::rgb(255, 150, 60) // Waddle Dee
+                } else {
+                    Color::rgb(255, 230, 100) // stars and wind
+                };
+                let _ = grid.set_cell_color(cxx, cyy, color);
             }
         }
         Ok(())
@@ -525,7 +527,9 @@ impl ProgressStyle for KirbyInhale {
 
 // ─── 6. Tamagotchi ───────────────────────────────────────────────────────────
 
-/// Tamagotchi pet hunger/growth meter; pet animates (toddles) with time.
+/// The egg-shaped Tamagotchi with its LCD window and three buttons; the pet
+/// inside grows from baby to adult with progress and toddles about, blinking,
+/// while the hunger hearts beside it fill.
 struct Tamagotchi;
 impl ProgressStyle for Tamagotchi {
     fn name(&self) -> &str {
@@ -535,114 +539,79 @@ impl ProgressStyle for Tamagotchi {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Tamagotchi hunger/growth bar; the pixel-art pet toddles and blinks with time"
+        "Tamagotchi: an egg-shaped toy with LCD window and three buttons; the pet grows baby→adult and toddles about while the hunger hearts fill with progress"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, _h) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
-
-        // ── LCD background (shade 1) ───────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
         }
+        let hi = h as i32;
 
-        // ── Hunger bar: shade segments across the top row ─────────────────────
-        let bar_cells = cw.saturating_sub(4).max(1); // leave right side for pet
-        let bar_filled = (ctx.eased * bar_cells as f32).round() as usize;
-        for cx in 0..bar_cells {
-            let lvl = if cx < bar_filled { 4usize } else { 2 };
-            draw::shade(grid, cx, 0, lvl);
-        }
-        // Meter ticks: shade-1 every 2 cells.
-        let mut tick = 2usize;
-        while tick < bar_cells {
-            draw::shade(grid, tick, 0, 1);
-            tick += 3;
-        }
-
-        // ── Pet sprite in dot space (right 8 dots of the bar) ─────────────────
-        // Pet is a simple 5×7 pixel-art egg-blob.
-        let pet_x = (w.saturating_sub(10)) as i32;
-        let pet_y = 1i32;
-        // Walk animation: bobble up/down with time.
-        let walk_frame = ((ctx.time * 4.0) as usize) % 2;
-        let bob = i32::from(walk_frame != 0);
-
-        // Body: oval.
-        let bx = pet_x;
-        let by = pet_y + bob;
-        // 5×5 body (filled dots).
-        for dy in 0..5i32 {
-            for dx in 0..5i32 {
-                // Rounded corners: skip (0,0),(4,0),(0,4),(4,4)
-                if (dx == 0 || dx == 4) && (dy == 0 || dy == 4) {
-                    continue;
-                }
-                draw::dot_i(grid, bx + dx, by + dy);
-            }
-        }
-        // Eyes: two gaps in the body at row 1.
-        // (draw inverse: no-op — the eye is absence of dots. Represent with shade.)
-        // Feet: two dots at the bottom.
-        draw::dot_i(grid, bx + 1, by + 5);
-        draw::dot_i(grid, bx + 3, by + 5);
-
-        // Blink: at blink moment erase the eye-row dots.
-        let blink = (ctx.time * 2.5).fract() > 0.85;
-        if !blink {
-            // Eyes open: leave body dots as-is, mark eye positions with a shade glyph.
-            // (We can't erase dots, so we use shade glyphs in cell space.)
-            let eye_cell_x = (bx as usize) / 2;
-            let eye_cell_y = (by as usize) / 4;
-            if eye_cell_x + 1 < cw && eye_cell_y < ch {
-                // Use shade-2 to simulate lighter "white of eye" in those cells.
-                draw::shade(grid, eye_cell_x, eye_cell_y, 2);
-                if eye_cell_x + 2 < cw {
-                    draw::shade(grid, eye_cell_x + 2, eye_cell_y, 2);
+        // Egg shell: an ellipse that narrows toward the top.
+        let (cx, cy) = (11.0_f32, (hi - 1) as f32 / 2.0 + 0.5);
+        let ry = (hi as f32 / 2.0).max(1.0);
+        for y in 0..hi {
+            for x in 0..23 {
+                let v = (y as f32 - cy) / ry;
+                let rx = 10.5 * (1.0 + 0.12 * v);
+                let u = (x as f32 - cx) / rx;
+                let d = (u * u + v * v).sqrt();
+                if (0.86..1.0).contains(&d) {
+                    draw::dot_i(grid, x, y);
                 }
             }
         }
 
-        // Growth: pet cell shaded by hunger/growth level.
-        let pet_shade = match ctx.eased {
-            e if e >= 0.8 => 4,
-            e if e >= 0.5 => 3,
-            e if e >= 0.2 => 2,
-            _ => 1,
+        // LCD window and the three buttons below it.
+        draw::rect_outline(grid, 5, 3, 13, 8);
+        for bx in [7, 11, 15] {
+            draw::dot_i(grid, bx, 13);
+        }
+
+        // The pet: baby, child, then adult, toddling across the LCD.
+        let stage: &[&str] = if ctx.eased < 0.34 {
+            &[".##.", "#..#", ".##."]
+        } else if ctx.eased < 0.67 {
+            &[".###.", "#.#.#", "#####", ".#.#."]
+        } else {
+            &["#...#", ".###.", "#.#.#", "#####", ".#.#."]
         };
-        let pet_cell_x = (pet_x.max(0) as usize) / 2;
-        let pet_cell_w = 3usize;
-        for cy in 1..ch {
-            for px in 0..pet_cell_w {
-                let cx = pet_cell_x + px;
-                if cx < cw {
-                    draw::shade(grid, cx, cy, pet_shade.min(4));
-                }
-            }
+        let pw = stage[0].len() as i32;
+        let px = 6 + (tri(ctx.time * 0.35) * (11 - pw).max(0) as f32) as i32;
+        let py = 10 - stage.len() as i32;
+        sprite(grid, px, py, stage);
+        if (ctx.time * 0.7).fract() < 0.1 {
+            // Blink: fill the eye row closed.
+            draw::hline(
+                grid,
+                px.max(0) as usize,
+                (px + pw - 1).max(0) as usize,
+                (py + 1).max(0) as usize,
+            );
         }
 
-        // ── Palette tint ──────────────────────────────────────────────────────
-        for cy in 0..ch {
-            if bar_filled > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    bar_filled.min(cw).saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
-            }
+        // Hunger hearts: four of them, filling in half-heart steps.
+        let halves = (ctx.eased * 8.0).round() as i32;
+        for i in 0..4 {
+            let left = halves - i * 2;
+            let art = if left >= 2 {
+                &HEART_FULL
+            } else if left == 1 {
+                &HEART_HALF
+            } else {
+                &HEART_EMPTY
+            };
+            sprite(grid, 28 + i * 10, hi / 2 - 3, art);
         }
         Ok(())
     }
 }
-
 // ─── 7. Game & Watch ─────────────────────────────────────────────────────────
 
-/// Flat LCD segment figure juggles; ball position cycles through discrete segment states.
+/// Game & Watch *Ball*: the LCD juggler stands centre-stage with three nested
+/// arcs of fixed ball segments overhead (unlit ones ghost faintly); balls hop
+/// segment to segment and progress adds balls and lights the score ticks.
 struct GameWatch;
 impl ProgressStyle for GameWatch {
     fn name(&self) -> &str {
@@ -652,110 +621,61 @@ impl ProgressStyle for GameWatch {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Game & Watch segment LCD: a juggler tosses balls; active count = progress"
+        "Game & Watch Ball: an LCD juggler under three arcs of ghosted ball segments; balls hop segment to segment, more join and score ticks light as progress rises"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-
-        // ── LCD panel — ALL cells start at shade 1 (the "ghosted" segment look) ─
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let cx = wi / 2;
 
-        // ── Juggler figure: fixed LCD segments in a 3-column region ──────────
-        // Figures are discrete: head, body, hands, feet.
-        // Position figure in the left quarter.
-        let fig_col = cw / 4;
-
-        // Head (shade 4 at top).
-        if fig_col < cw {
-            draw::shade(grid, fig_col, 0, 4);
-        }
-        // Body (shade 3 for 1..ch-2).
-        for cy in 1..ch.saturating_sub(1) {
-            if fig_col < cw {
-                draw::shade(grid, fig_col, cy, 3);
-            }
-        }
-        // Arms: the frame toggles which arm is raised.
-        let arm_frame = ((ctx.time * 3.0) as usize) % 2;
-        if arm_frame == 0 {
-            // Left arm up.
-            if fig_col > 0 {
-                draw::shade(grid, fig_col.saturating_sub(1), 0, 4);
-            }
-            if fig_col + 1 < cw && ch > 1 {
-                draw::shade(grid, fig_col + 1, 1, 3);
-            }
-        } else {
-            // Right arm up.
-            if fig_col + 1 < cw {
-                draw::shade(grid, fig_col + 1, 0, 4);
-            }
-            if fig_col > 0 && ch > 1 {
-                draw::shade(grid, fig_col.saturating_sub(1), 1, 3);
-            }
-        }
-        // Feet.
-        if ch > 1 {
-            if fig_col > 0 {
-                draw::shade(grid, fig_col.saturating_sub(1), ch.saturating_sub(1), 3);
-            }
-            if fig_col + 1 < cw {
-                draw::shade(grid, fig_col + 1, ch.saturating_sub(1), 3);
-            }
-        }
-
-        // ── Balls: discrete arc positions cycling with time ───────────────────
-        // Number of active balls = progress * max_balls.
-        let max_balls = ((cw.saturating_sub(fig_col + 2)) / 3).max(1);
-        let active_balls = (ctx.eased * max_balls as f32).round() as usize;
-
-        // Arc has 4 discrete positions (game & watch style).
-        let arc_positions: [(i32, i32); 4] = [
-            (0, 0),  // hand level
-            (1, -1), // going up
-            (2, -2), // apex
-            (3, -1), // coming down
+        // The juggler; his hands swap high/low with the throw rhythm.
+        let beat = (ctx.time * 3.0).fract() < 0.5;
+        let arms = if beat { "#..###...." } else { "....###..#" };
+        let body = [
+            "....###...",
+            "....#.#...",
+            "....###...",
+            arms,
+            ".#######..",
+            "....###...",
+            "....###...",
+            "...#...#..",
+            "..#.....#.",
         ];
+        sprite(grid, cx - 5, hi - 9, &body);
 
-        for b in 0..active_balls.min(max_balls) {
-            let phase_offset = b as f32 / active_balls.max(1) as f32;
-            let arc_idx = ((ctx.time * 2.0 + phase_offset * 4.0) as usize) % 4;
-            let (arc_dx, arc_dy) = arc_positions[arc_idx];
-            let ball_col =
-                (fig_col as i32 + fig_col as i32 / 2 + arc_dx + b as i32 * 2).max(0) as usize;
-            let ball_row = (ch as i32 / 2 + arc_dy).clamp(0, ch as i32 - 1) as usize;
-            if ball_col < cw {
-                draw::shade(grid, ball_col, ball_row, 4);
+        // Three nested arcs of LCD ball segments; lit balls are 2×2 blocks.
+        let balls = 1 + (ctx.eased * 2.99) as i32;
+        let slots = 7;
+        for k in 0..3 {
+            let (rx, ry) = (12.0 + k as f32 * 9.0, 5.0 + k as f32 * 1.5);
+            let base = hi as f32 - 7.0;
+            let tick = (ctx.time * 5.0) as i32 + k * 3;
+            let span = (slots - 1) * 2;
+            let pos = tick.rem_euclid(span);
+            let lit = if pos < slots { pos } else { span - pos };
+            for s in 0..slots {
+                let a = PI * s as f32 / (slots - 1) as f32;
+                let x = cx + (a.cos() * rx) as i32;
+                let y = (base - a.sin() * ry) as i32;
+                if k < balls && s == lit {
+                    block(grid, x - 1, y - 1, 2, 2);
+                } else {
+                    draw::dot_i(grid, x, y); // ghost segment
+                }
             }
         }
 
-        // ── Score track: shade segments across the right portion ──────────────
-        let score_start = cw * 3 / 4;
-        let score_w = cw.saturating_sub(score_start);
-        for cx in score_start..score_start + score_w {
-            if cx < cw {
-                let seg_active =
-                    cx.saturating_sub(score_start) < active_balls * score_w / max_balls.max(1);
-                draw::shade(grid, cx, ch / 2, if seg_active { 4 } else { 2 });
-            }
-        }
-
-        // ── Palette tint on active regions ────────────────────────────────────
-        for cy in 0..ch {
-            let active_w = (ctx.eased * cw as f32) as usize;
-            if active_w > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    active_w.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
+        // Score ticks along the top-left: ten LCD dashes.
+        let ticks = (ctx.eased * 10.0).round() as i32;
+        for i in 0..10 {
+            if i < ticks {
+                block(grid, i * 3, 0, 2, 1);
+            } else {
+                draw::dot_i(grid, i * 3, 0);
             }
         }
         Ok(())
@@ -764,8 +684,21 @@ impl ProgressStyle for GameWatch {
 
 // ─── 8. Link's Awakening Hearts ──────────────────────────────────────────────
 
-/// Heart containers fill one at a time, like Link's Awakening health display.
+/// The Link's Awakening HUD: B/A item boxes (shield, sword) beside two rows
+/// of seven heart containers that fill half a heart at a time; the next empty
+/// heart blinks.
 struct HeartContainers;
+
+const HEART_FULL: [&str; 6] = [
+    ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
+];
+const HEART_HALF: [&str; 6] = [
+    ".##.##.", "####..#", "####..#", ".###.#.", "..##...", "...#...",
+];
+const HEART_EMPTY: [&str; 6] = [
+    ".##.##.", "#..#..#", "#.....#", ".#...#.", "..#.#..", "...#...",
+];
+
 impl ProgressStyle for HeartContainers {
     fn name(&self) -> &str {
         "hearts"
@@ -774,110 +707,54 @@ impl ProgressStyle for HeartContainers {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Link's Awakening heart containers: each fills one at a time; last pulses"
+        "Link's Awakening HUD: B/A item boxes with shield and sword beside two rows of seven heart containers filling half a heart at a time; the next heart blinks"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cw, ch) = grid.dimensions();
-
-        // ── LCD background ────────────────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
         }
+        let hi = h as i32;
 
-        // ── Hearts: each heart = 2 cells wide, displayed in the center rows ───
-        let heart_w = 2usize; // cells per heart
-        let max_hearts = (cw / heart_w).max(1);
-        let full_hearts = (ctx.eased * max_hearts as f32) as usize;
-        let partial_frac = (ctx.eased * max_hearts as f32).fract();
+        // Item boxes: B (shield) and A (sword).
+        if hi >= 14 && w >= 40 {
+            draw::rect_outline(grid, 0, 1, 12, 14);
+            draw::rect_outline(grid, 14, 1, 12, 14);
+            sprite(
+                grid,
+                3,
+                4,
+                &["######", "#.##.#", "#.##.#", "######", ".####.", "..##.."],
+            );
+            sprite(
+                grid,
+                17,
+                3,
+                &[
+                    "......#", ".....#.", "....#..", "#..#...", ".##....", ".##....", "#..#...",
+                ],
+            );
+        }
+        let x0 = if w >= 40 { 30 } else { 0 };
 
-        // Pulse animation on the leading (currently-filling) heart.
-        let pulse = (ctx.time * 6.0).sin() * 0.5 + 0.5; // 0..1
-
-        for h_idx in 0..max_hearts {
-            let cx_start = h_idx * heart_w;
-            let heart_shade = match h_idx.cmp(&full_hearts) {
-                Ordering::Less => {
-                    // Fully filled heart.
-                    4usize
-                }
-                Ordering::Equal => {
-                    // Partially filled — shade by partial fraction + pulse.
-                    let lvl = (partial_frac * 3.0 + pulse * 0.5) as usize;
-                    (lvl + 1).min(4)
-                }
-                Ordering::Greater => {
-                    // Empty heart container.
-                    2
-                }
+        // Fourteen containers, two rows of seven, in half-heart steps.
+        let halves = (ctx.eased * 28.0).round() as i32;
+        let blink = (ctx.time * 3.0).fract() < 0.5;
+        for i in 0..14 {
+            let (col, row) = (i % 7, i / 7);
+            let x = x0 + col * 8;
+            let y = if hi >= 14 { 1 + row * 8 } else { row * 8 };
+            let left = halves - i * 2;
+            let art = if left >= 2 {
+                &HEART_FULL
+            } else if left == 1 {
+                &HEART_HALF
+            } else if left == 0 && blink {
+                continue; // the next heart to fill blinks out
+            } else {
+                &HEART_EMPTY
             };
-
-            // Each heart: top row is 2 bumps (shade 4 at edges, 3 in middle),
-            // bottom row is a V-shape (shade 4).
-            // We use cell rows from top to bottom.
-            let top_row = ch / 4;
-            let bot_row = ch / 2;
-
-            // Top bumps.
-            for cy in top_row..=top_row {
-                if cy < ch {
-                    for off in 0..heart_w {
-                        let cx = cx_start + off;
-                        if cx < cw {
-                            draw::shade(grid, cx, cy, heart_shade);
-                        }
-                    }
-                }
-            }
-            // Bottom V.
-            for cy in bot_row..=bot_row {
-                if cy < ch {
-                    // Middle cell shade (V tip).
-                    let mid_cx = cx_start + heart_w / 2;
-                    if mid_cx < cw {
-                        draw::shade(grid, mid_cx, cy, heart_shade);
-                    }
-                    // Flanks slightly dimmer.
-                    if cx_start < cw {
-                        draw::shade(grid, cx_start, cy, heart_shade.saturating_sub(1).max(1));
-                    }
-                    if cx_start + heart_w.saturating_sub(1) < cw {
-                        draw::shade(
-                            grid,
-                            cx_start + heart_w.saturating_sub(1),
-                            cy,
-                            heart_shade.saturating_sub(1).max(1),
-                        );
-                    }
-                }
-            }
-            // Body fill between rows.
-            if bot_row > top_row + 1 {
-                for cy in top_row + 1..bot_row {
-                    for off in 0..heart_w {
-                        let cx = cx_start + off;
-                        if cx < cw && cy < ch {
-                            draw::shade(grid, cx, cy, heart_shade.saturating_sub(1).max(1));
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Palette tint: filled hearts ───────────────────────────────────────
-        let filled_cells = (full_hearts * heart_w).min(cw);
-        for cy in 0..ch {
-            if filled_cells > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    filled_cells.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
-            }
+            sprite(grid, x, y, art);
         }
         Ok(())
     }
@@ -885,8 +762,24 @@ impl ProgressStyle for HeartContainers {
 
 // ─── 9. Mole Whack ───────────────────────────────────────────────────────────
 
-/// Moles pop up in parabolic arcs; bonked moles = progress.
+/// A row of dirt holes; moles (round heads, beady eyes, snout) bob up and
+/// down, and a red mallet winds up and slams the next one. Whacked moles stay
+/// half-sunk with dizzy stars circling — the whacked count is the progress.
 struct MoleWhack;
+
+/// Mole head, top to bottom: crown, eyes, snout, shoulders.
+const MOLE: [&str; 7] = [
+    "..####..", ".######.", "##.##.##", "########", "###..###", "########", "########",
+];
+/// Mallet: barrel head with a handle sticking out to the right.
+const MALLET: [&str; 5] = [
+    ".######.........",
+    "########........",
+    "################",
+    "########........",
+    ".######.........",
+];
+
 impl ProgressStyle for MoleWhack {
     fn name(&self) -> &str {
         "mole-whack"
@@ -895,107 +788,120 @@ impl ProgressStyle for MoleWhack {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Whack-a-Mole: moles pop from holes in parabolic arcs; bonked count = progress"
+        "Whack-a-Mole: moles bob from a row of holes, a red mallet slams the next one; whacked moles see stars — whacked count = progress"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
 
-        // ── Ground line ───────────────────────────────────────────────────────
-        let ground_y = h.saturating_sub(3);
-        draw::hline(grid, 0, w.saturating_sub(1), ground_y);
-        draw::hline(grid, 0, w.saturating_sub(1), ground_y + 1);
+        let n = ((wi - 4) / 14).max(1);
+        let spacing = (wi / n).max(1);
+        let whacked = ((ctx.eased * n as f32) as i32).min(n);
+        let rim = hi - 3;
+        // Swing cycle for the mallet on the current target mole.
+        let u = (t * 1.1).fract();
+        let mut mallet = (i32::MIN / 2, i32::MIN / 2);
 
-        // ── Holes: shade-2 ovals at fixed x positions below the ground ────────
-        let hole_count = (cw / 4).max(1);
-        let hole_spacing = cw / hole_count;
+        for i in 0..n {
+            let hx = i * spacing + spacing / 2;
+            // Hole: a dirt lip arc the mole pops out of.
+            sprite(
+                grid,
+                hx - 6,
+                rim,
+                &["##........##", ".##........##.", "..##########.."],
+            );
+            // Grass tufts between holes.
+            sprite(grid, hx + spacing / 2 - 1, hi - 2, &["#.#", ".#."]);
 
-        for h_idx in 0..hole_count {
-            let hole_cx = h_idx * hole_spacing + hole_spacing / 2;
-            if hole_cx < cw && ch > 0 {
-                draw::shade(grid, hole_cx, ch.saturating_sub(1), 2);
-                if hole_cx + 1 < cw {
-                    draw::shade(grid, hole_cx + 1, ch.saturating_sub(1), 2);
-                }
-            }
-        }
-
-        // ── Moles: bonked_count rise from their holes ─────────────────────────
-        let bonked = (ctx.eased * hole_count as f32) as usize;
-
-        for h_idx in 0..hole_count {
-            let hole_cx_cell = h_idx * hole_spacing + hole_spacing / 2;
-            let hole_x = hole_cx_cell * 2;
-
-            let is_bonked = h_idx < bonked;
-
-            if is_bonked {
-                // Bonked mole — stays peeking at the rim as a shade-3 stub.
-                let mole_y = ground_y.saturating_sub(1);
-                draw::dot(grid, hole_x.min(w.saturating_sub(1)), mole_y);
-                draw::dot(grid, (hole_x + 1).min(w.saturating_sub(1)), mole_y);
-                // Stars above (bonk effect, animated with time).
-                let star_anim = ((ctx.time * 5.0 + h_idx as f32) as usize) % 3;
-                if star_anim < 2 && mole_y >= 2 {
-                    draw::dot(
-                        grid,
-                        hole_x.min(w.saturating_sub(1)),
-                        mole_y.saturating_sub(2),
-                    );
-                    draw::dot(
-                        grid,
-                        (hole_x + 2).min(w.saturating_sub(1)),
-                        mole_y.saturating_sub(2),
-                    );
-                }
-            } else {
-                // Un-bonked mole — parabolic pop animation.
-                let phase = h_idx as f32 * 0.7;
-                let t = (ctx.time * 1.8 + phase).fract(); // 0→1
-                                                          // Parabola: up on first half, down on second.
-                let arc = 1.0 - (t * 2.0 - 1.0).powi(2);
-                let mole_dot_y = (ground_y as f32 - arc * (ground_y as f32 * 0.8)).round() as usize;
-
-                // Mole body: 2×3 block.
-                for dy in 0..3usize {
-                    for dx in 0..2usize {
-                        let mx = (hole_x + dx).min(w.saturating_sub(1));
-                        let my = mole_dot_y + dy;
-                        if my < ground_y {
-                            draw::dot(grid, mx, my);
-                        }
+            let rise = match i.cmp(&whacked) {
+                std::cmp::Ordering::Less => 3,
+                std::cmp::Ordering::Equal => {
+                    if u < 0.45 {
+                        (u / 0.45 * 7.0) as i32
+                    } else if u < 0.6 {
+                        7
+                    } else {
+                        (7.0 - (u - 0.6) / 0.4 * 7.0) as i32
                     }
                 }
-                // Mole eyes (2 dots).
-                if mole_dot_y + 1 < ground_y {
-                    draw::dot(grid, hole_x.min(w.saturating_sub(1)), mole_dot_y);
-                    draw::dot(grid, (hole_x + 1).min(w.saturating_sub(1)), mole_dot_y);
+                std::cmp::Ordering::Greater => {
+                    (tri(t * 0.7 + i as f32 * 0.37) * 10.0 - 3.0).clamp(0.0, 6.0) as i32
+                }
+            };
+            // Mole, clipped so it emerges from inside the hole.
+            let top = rim + 1 - rise;
+            for (r, row) in MOLE.iter().enumerate() {
+                let y = top + r as i32;
+                if y > rim {
+                    break;
+                }
+                for (c, b) in row.bytes().enumerate() {
+                    if b == b'#' {
+                        draw::dot_i(grid, hx - 4 + c as i32, y);
+                    }
+                }
+            }
+            if i < whacked {
+                // Dizzy stars orbiting the bonked mole.
+                for k in 0..2 {
+                    let a = t * 6.0 + k as f32 * PI + i as f32;
+                    let sx = hx + (a.cos() * 5.0).round() as i32;
+                    let sy = top - 3 + (a.sin() * 1.5).round() as i32;
+                    sprite(grid, sx - 1, sy - 1, &[".#.", "###", ".#."]);
+                }
+            } else if i == whacked {
+                // Mallet: wound up high and right, slams down at u = 0.6.
+                let swing = if u < 0.5 {
+                    1.0
+                } else if u < 0.6 {
+                    1.0 - (u - 0.5) / 0.1
+                } else {
+                    0.0
+                };
+                let my = rim - 11 - (swing * 2.0) as i32;
+                let mx = hx - 4 + (swing * 7.0) as i32;
+                sprite(grid, mx, my, &MALLET);
+                mallet = (mx, my);
+                if (0.6..0.75).contains(&u) {
+                    // Impact burst.
+                    for (dx, dy) in [(-7, -2), (-6, 1), (6, -2), (7, 1)] {
+                        draw::dot_i(grid, hx + dx, my + 5 + dy);
+                        draw::dot_i(grid, hx + dx + dx.signum(), my + 5 + dy);
+                    }
                 }
             }
         }
 
-        // ── Dim LCD background: only cells left blank by the scene ───────────
-        // (a shade glyph overrides braille dots, so it must come last)
+        // Colour: red mallet head, tan handle, brown moles, yellow stars,
+        // green grass.
+        grid.enable_color_support();
         for cy in 0..ch {
             for cx in 0..cw {
-                if grid.get_char(cx, cy) == '\u{2800}' {
-                    draw::shade(grid, cx, cy, 1);
-                }
-            }
-        }
-
-        // ── Palette tint ──────────────────────────────────────────────────────
-        for cy in 0..ch {
-            let bonked_cells = (bonked * cw / hole_count.max(1)).min(cw);
-            if bonked_cells > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    bonked_cells.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
+                let (px, py) = (cx as i32 * 2 + 1, cy as i32 * 4 + 2);
+                let local = (px + spacing * 4) % spacing - spacing / 2;
+                let hole = (px / spacing).min(n - 1);
+                let color = if (mallet.0 - 1..mallet.0 + 8).contains(&px)
+                    && (mallet.1 - 1..mallet.1 + 6).contains(&py)
+                {
+                    Color::rgb(236, 52, 48)
+                } else if (mallet.0 + 8..mallet.0 + 17).contains(&px)
+                    && (mallet.1 - 1..mallet.1 + 6).contains(&py)
+                {
+                    Color::rgb(222, 176, 110)
+                } else if local.abs() > 5 {
+                    Color::rgb(110, 200, 90) // grass
+                } else if hole < whacked && py < rim - 3 {
+                    Color::rgb(255, 226, 80) // dizzy stars
+                } else if py >= rim {
+                    Color::rgb(126, 86, 48) // dirt rim
+                } else {
+                    Color::rgb(214, 168, 140) // mole
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
         Ok(())
@@ -1004,8 +910,17 @@ impl ProgressStyle for MoleWhack {
 
 // ─── 10. Wario Treasure ──────────────────────────────────────────────────────
 
-/// Coin counter / treasure meter — coins flip and stack as progress rises.
+/// Spinning gold coins arc into an open treasure chest on the right; the
+/// coin stack beside it grows with progress and the chest overflows at 100%.
 struct WarioTreasure;
+
+/// Coin spin frames: face-on, three-quarter, edge-on.
+const COIN: [[&str; 5]; 3] = [
+    [".###.", "#...#", "#.#.#", "#...#", ".###."],
+    ["..#..", ".#.#.", ".#.#.", ".#.#.", "..#.."],
+    ["..#..", "..#..", "..#..", "..#..", "..#.."],
+];
+
 impl ProgressStyle for WarioTreasure {
     fn name(&self) -> &str {
         "wario-treasure"
@@ -1014,115 +929,54 @@ impl ProgressStyle for WarioTreasure {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "Wario coin meter: coins flip and land in a chest; treasure fraction = progress"
+        "Wario Land treasure: spinning gold coins arc into an open treasure chest while the coin stacks beside it grow with progress"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // ── LCD background ────────────────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        // Treasure chest: a banded box with its lid thrown open behind.
+        let chx = wi - 18;
+        sprite(
+            grid,
+            chx + 1,
+            hi - 13,
+            &[".##############", "#..............#", "################"],
+        );
+        draw::rect_outline(grid, chx.max(0) as usize, (hi - 9).max(0) as usize, 18, 9);
+        draw::hline(
+            grid,
+            chx.max(0) as usize,
+            (chx + 17).max(0) as usize,
+            (hi - 6).max(0) as usize,
+        );
+        block(grid, chx + 8, hi - 7, 2, 3); // lock
+
+        // Coin stacks to the left, one coin per step of progress.
+        let stacks = ((chx - 4) / 6).max(0);
+        let coins = (ctx.eased * (stacks * 3) as f32).round() as i32;
+        for i in 0..coins {
+            let (col, lvl) = (i / 3, i % 3);
+            sprite(grid, col * 6, hi - 3 - lvl * 3, &["####", "#..#", "####"]);
         }
 
-        // ── Chest / treasure box — right half of the bar ──────────────────────
-        // Chest outline in cell space.
-        let chest_start = cw / 2;
-        let chest_w = cw.saturating_sub(chest_start).max(1);
-        // Lid (top row).
-        for cx in chest_start..chest_start + chest_w {
-            if cx < cw {
-                draw::shade(grid, cx, 0, 4);
-            }
-        }
-        // Sides.
-        for cy in 1..ch {
-            if chest_start < cw {
-                draw::shade(grid, chest_start, cy, 4);
-            }
-            if chest_start + chest_w.saturating_sub(1) < cw {
-                draw::shade(grid, chest_start + chest_w.saturating_sub(1), cy, 4);
-            }
-        }
-        // Bottom.
-        if ch > 0 {
-            for cx in chest_start..chest_start + chest_w {
-                if cx < cw {
-                    draw::shade(grid, cx, ch.saturating_sub(1), 4);
-                }
-            }
+        // Coins in flight, spinning as they arc into the chest.
+        for k in 0..2 {
+            let t = (ctx.time * 0.8 + k as f32 * 0.5).fract();
+            let x0 = (stacks * 6).min(chx - 6) as f32;
+            let x = x0 + t * (chx as f32 + 6.0 - x0);
+            let y = (hi - 9) as f32 - (t * PI).sin() * (hi as f32 - 6.0);
+            let frame = ((ctx.time * 8.0) as i32 + k).rem_euclid(4);
+            let art = &COIN[[0, 1, 2, 1][frame as usize]];
+            sprite(grid, x as i32 - 2, y as i32 - 2, art);
         }
 
-        // Chest fill: shade 3/4 from the bottom up proportional to eased.
-        let fill_rows = (ctx.eased * (ch.saturating_sub(2)) as f32).round() as usize;
-        let fill_start = ch.saturating_sub(1 + fill_rows).max(1);
-        for cy in fill_start..ch.saturating_sub(1) {
-            for cx in chest_start + 1..chest_start + chest_w.saturating_sub(1) {
-                if cx < cw && cy < ch {
-                    let t = (cy.saturating_sub(fill_start)) as f32 / fill_rows.max(1) as f32;
-                    let shade_lvl = if t < 0.5 { 3usize } else { 4 };
-                    draw::shade(grid, cx, cy, shade_lvl);
-                }
-            }
-        }
-
-        // ── Coins: stacked shade circles in the left half ─────────────────────
-        let coin_area_w = chest_start.max(1);
-        let total_coin_cells = coin_area_w * ch;
-        let filled_coins = (ctx.eased * total_coin_cells as f32) as usize;
-
-        // Fill coins column by column, bottom-up.
-        let cols = coin_area_w;
-        let rows = ch;
-        for idx in 0..filled_coins.min(total_coin_cells) {
-            let col = idx % cols;
-            let row_from_bottom = idx / cols;
-            let row = rows.saturating_sub(1 + row_from_bottom);
-            if col < cw && row < ch {
-                draw::shade(grid, col, row, 3);
-            }
-        }
-
-        // ── Flying coin animation ─────────────────────────────────────────────
-        // A coin arcs from left pile to the chest.
-        let coin_t = (ctx.time * 1.2).fract();
-        let coin_x = (coin_t * (w.saturating_sub(2)) as f32) as i32;
-        let arc_h = (h / 2) as f32;
-        let coin_y = (arc_h * (1.0 - (coin_t * PI).sin())).round() as i32;
-        draw::dot_i(grid, coin_x, coin_y);
-        draw::dot_i(grid, coin_x + 1, coin_y);
-        // Coin flip: squeeze horizontally at 0/1 of arc, full at peak.
-        let flip = (ctx.time * 6.0).sin();
-        if flip.abs() > 0.3 {
-            draw::dot_i(grid, coin_x, coin_y + 1);
-            draw::dot_i(grid, coin_x + 1, coin_y + 1);
-        }
-
-        // ── Palette tint ──────────────────────────────────────────────────────
-        // Gold on coins, green/blue on chest fill.
-        let coin_cells = (ctx.eased * coin_area_w as f32) as usize;
-        for cy in 0..ch {
-            if coin_cells > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    coin_cells.min(cw).saturating_sub(1),
-                    ctx.palette.sample(0.9),
-                );
-            }
-            if fill_rows > 0 && fill_start <= cy && cy < ch.saturating_sub(1) && chest_start < cw {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    chest_start + 1,
-                    (chest_start + chest_w.saturating_sub(2)).min(cw.saturating_sub(1)),
-                    ctx.palette.sample(ctx.eased),
-                );
-            }
+        // At 100% the chest overflows with gold.
+        if ctx.eased >= 1.0 {
+            sprite(grid, chx + 3, hi - 11, &["#.#.#.#.#.#", ".#.#.#.#.#."]);
         }
         Ok(())
     }
@@ -1130,7 +984,9 @@ impl ProgressStyle for WarioTreasure {
 
 // ─── 11. LCD Pinball ─────────────────────────────────────────────────────────
 
-/// LCD segment pinball: flippers, bumpers, and a ball; lit bumpers = progress.
+/// A sideways LCD pinball table: rails top and bottom, a coiled plunger on
+/// the left, six round pop bumpers (lit ones solid) and a pair of flippers
+/// guarding the drain on the right, with the ball ricocheting across.
 struct LcdPinball;
 impl ProgressStyle for LcdPinball {
     fn name(&self) -> &str {
@@ -1140,125 +996,49 @@ impl ProgressStyle for LcdPinball {
         "gameboy"
     }
     fn describe(&self) -> &str {
-        "LCD pinball: segment flippers and bumpers; lit bumpers = progress, ball bounces with time"
+        "LCD pinball table: plunger, six round pop bumpers and twin flippers; bumpers light up solid as progress rises while the ball ricochets with time"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let (cw, ch) = grid.dimensions();
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
 
-        // ── Pinball table background ───────────────────────────────────────────
-        for cy in 0..ch {
-            for cx in 0..cw {
-                draw::shade(grid, cx, cy, 1);
-            }
+        // Rails and the plunger spring.
+        draw::hline(grid, 0, w - 1, 0);
+        draw::hline(grid, 0, w - 1, h - 1);
+        for y in 3..hi - 3 {
+            draw::dot_i(grid, 1 + (y % 2), y);
         }
 
-        // ── Side walls ────────────────────────────────────────────────────────
-        draw::vline(grid, 0, 0, h.saturating_sub(1));
-        draw::vline(grid, w.saturating_sub(1), 0, h.saturating_sub(1));
-
-        // ── Bumpers: shade ovals in a row near the top ────────────────────────
-        let bumper_count = (cw / 3).clamp(1, 5);
-        let bumper_spacing = cw / (bumper_count + 1);
-        let lit_bumpers = (ctx.eased * bumper_count as f32).round() as usize;
-
-        for b in 0..bumper_count {
-            let bx = (b + 1) * bumper_spacing;
-            let by = ch / 3;
-            if bx < cw && by < ch {
-                let shade_lvl = if b < lit_bumpers { 4usize } else { 2 };
-                draw::shade(grid, bx, by, shade_lvl);
-                // Bumper halo.
-                if bx + 1 < cw {
-                    draw::shade(grid, bx + 1, by, (shade_lvl.saturating_sub(1)).max(1));
-                }
-                if bx > 0 {
-                    draw::shade(
-                        grid,
-                        bx.saturating_sub(1),
-                        by,
-                        (shade_lvl.saturating_sub(1)).max(1),
-                    );
-                }
-                if by > 0 {
-                    draw::shade(
-                        grid,
-                        bx,
-                        by.saturating_sub(1),
-                        (shade_lvl.saturating_sub(1)).max(1),
-                    );
-                }
-                if by + 1 < ch {
-                    draw::shade(grid, bx, by + 1, (shade_lvl.saturating_sub(1)).max(1));
-                }
-            }
+        // Pop bumpers in two staggered rows; lit ones are solid discs.
+        const RING: [&str; 5] = [".###.", "#...#", "#...#", "#...#", ".###."];
+        const LIT: [&str; 5] = [".###.", "#####", "#####", "#####", ".###."];
+        let lit = (ctx.eased * 6.0).round() as i32;
+        let span = (wi - 26).max(6);
+        for k in 0..6 {
+            let x = 8 + k * span / 6;
+            let y = if k % 2 == 0 { 2 } else { hi - 7 };
+            sprite(grid, x, y, if k < lit { &LIT } else { &RING });
         }
 
-        // ── Flippers at the bottom ────────────────────────────────────────────
-        // Two flipper segments that angle up/down with time.
-        let flip_row = ch.saturating_sub(2);
-        let mid_cell = cw / 2;
-        let flipper_len = (cw / 4).max(1);
-
-        // Left flipper — angles based on time.
-        let left_raised = (ctx.time * 3.0).sin() > 0.3;
-        let left_shade = if left_raised { 4usize } else { 3 };
-        for i in 0..flipper_len {
-            let cx = mid_cell.saturating_sub(flipper_len).saturating_sub(1) + i;
-            let cy = if left_raised && i < flipper_len / 2 {
-                flip_row.saturating_sub(1)
-            } else {
-                flip_row
-            };
-            if cx < cw && cy < ch {
-                draw::shade(grid, cx, cy, left_shade);
-            }
+        // Flippers: angled bats either side of the drain, flicking up.
+        let flick = (ctx.time * 1.3).fract() < 0.18;
+        let (fx0, fx1) = (wi - 2, wi - 10);
+        let mid = hi / 2;
+        let lift = if flick { 3 } else { 0 };
+        for i in 0..=8 {
+            let t = i as f32 / 8.0;
+            let x = fx0 + ((fx1 - fx0) as f32 * t) as i32;
+            draw::dot_i(grid, x, 1 + ((mid - 2 + lift - 1) as f32 * t) as i32);
+            draw::dot_i(grid, x, hi - 2 - ((mid - 2 + lift - 1) as f32 * t) as i32);
         }
 
-        // Right flipper.
-        let right_raised = !left_raised;
-        let right_shade = if right_raised { 4usize } else { 3 };
-        for i in 0..flipper_len {
-            let cx = mid_cell + 1 + i;
-            let cy = if right_raised && i >= flipper_len / 2 {
-                flip_row.saturating_sub(1)
-            } else {
-                flip_row
-            };
-            if cx < cw && cy < ch {
-                draw::shade(grid, cx, cy, right_shade);
-            }
-        }
-
-        // ── Ball trajectory ────────────────────────────────────────────────────
-        // Ball bounces in an elliptical path around the playfield.
-        let ball_t = ctx.time * 1.5;
-        let ball_cx = w / 2;
-        let ball_cy_center = h / 2;
-        let rx = (w.saturating_sub(4) / 2) as f32;
-        let ry = (h.saturating_sub(4) / 2).max(1) as f32;
-        let bx = (ball_cx as f32 + ball_t.cos() * rx).round() as i32;
-        let by = (ball_cy_center as f32 + (ball_t * 0.7).sin() * ry).round() as i32;
-        // 2×2 ball.
-        draw::dot_i(grid, bx, by);
-        draw::dot_i(grid, bx + 1, by);
-        draw::dot_i(grid, bx, by + 1);
-        draw::dot_i(grid, bx + 1, by + 1);
-
-        // ── Palette tint on lit bumper region ─────────────────────────────────
-        for cy in 0..ch {
-            let active_w = (ctx.eased * cw as f32) as usize;
-            if active_w > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    active_w.saturating_sub(1),
-                    ctx.palette.sample(ctx.eased),
-                );
-            }
-        }
+        // The ball ricochets around the table.
+        let bx = 5 + (tri(ctx.time * 0.45) * (wi - 18).max(0) as f32) as i32;
+        let by = 2 + (tri(ctx.time * 0.83 + 0.2) * (hi - 6).max(0) as f32) as i32;
+        block(grid, bx, by, 2, 2);
         Ok(())
     }
 }

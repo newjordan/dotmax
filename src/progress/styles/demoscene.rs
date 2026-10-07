@@ -365,14 +365,16 @@ impl ProgressStyle for Twister {
         "demoscene"
     }
     fn describe(&self) -> &str {
-        "Twisting ribbon column growing with progress"
+        "Twister: a square-section column twisting along the bar, its four faces \
+         shaded by how squarely they face you, growing with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
         let mid = h as f32 / 2.0;
         let amp = mid - 1.5;
-        let filled = (ctx.eased * w as f32).round() as usize;
+        // A short stub is always shown so the effect reads from the start.
+        let filled = ((ctx.eased * w as f32).round() as usize).max(w.min(8));
         // Dim center track for the remainder.
         for x in (filled..w).step_by(3) {
             draw::dot(grid, x, mid as usize);
@@ -381,8 +383,13 @@ impl ProgressStyle for Twister {
             draw::tint_row(grid, cy, 0, ctx.width - 1, DS_TRACK);
         }
         for x in 0..filled {
-            let twist = x as f32 * 0.085 + TAU * 0.5 * ctx.time;
-            // Four ribbon edges; consecutive pairs that face us get filled.
+            // Classic twister: the twist rate itself wobbles along the bar, so
+            // the column winds tight, unwinds and winds back as it spins.
+            let xf = x as f32;
+            let twist =
+                xf * 0.15 + 1.4 * (xf * 0.045 - TAU * 0.25 * ctx.time).sin() + TAU * 0.5 * ctx.time;
+            // Four edges of the square cross-section; a face is visible when
+            // its leading edge lies above its trailing edge.
             let mut edges = [0f32; 4];
             for (k, e) in edges.iter_mut().enumerate() {
                 *e = mid + amp * (twist + k as f32 * TAU / 4.0).sin();
@@ -390,25 +397,35 @@ impl ProgressStyle for Twister {
             for k in 0..4 {
                 let (a, b) = (edges[k], edges[(k + 1) % 4]);
                 if a < b {
-                    // Front face: fill between edges, hue by face index.
-                    for y in (a as i32)..=(b as i32) {
-                        draw::dot_i(grid, x as i32, y);
+                    let shade = ((b - a) / (amp * std::f32::consts::SQRT_2)).clamp(0.0, 1.0);
+                    // Face texture by facing: square-on faces solid, oblique
+                    // faces hatched, so the faces read as turning planes.
+                    let (y0, y1) = (a.round() as i32, b.round() as i32);
+                    for y in (y0 + 1)..y1 {
+                        let on = if shade > 0.75 {
+                            true
+                        } else if shade > 0.4 {
+                            (x as i32 + y) % 2 == 0
+                        } else {
+                            (x as i32 + y) % 3 == 0
+                        };
+                        if on {
+                            draw::dot_i(grid, x as i32, y);
+                        }
                     }
+                    // Face edges: the twisting seams of the column.
+                    draw::dot_i(grid, x as i32, y0);
+                    draw::dot_i(grid, x as i32, y1);
                     let hue = k as f32 / 4.0 + 0.1;
-                    let shade = ((b - a) / (2.0 * amp)).clamp(0.15, 1.0);
-                    let cell_y = (((a + b) / 2.0) as usize / 4).min(ctx.height - 1);
-                    let _ = grid.set_cell_color(
-                        x / 2,
-                        cell_y,
-                        mix(Color::rgb(20, 20, 30), spectrum(hue), 0.35 + 0.65 * shade),
-                    );
+                    // Colour every cell row the face spans, not just its middle.
+                    let c = mix(Color::rgb(20, 20, 30), spectrum(hue), 0.35 + 0.65 * shade);
+                    let r0 = (y0.max(0) as usize / 4).min(ctx.height - 1);
+                    let r1 = (y1.max(0) as usize / 4).min(ctx.height - 1);
+                    for cell_y in r0..=r1 {
+                        let _ = grid.set_cell_color(x / 2, cell_y, c);
+                    }
                 }
             }
-            // Crisp rims top and bottom of the silhouette.
-            let lo = edges.iter().fold(f32::MAX, |m, &v| m.min(v));
-            let hi = edges.iter().fold(f32::MIN, |m, &v| m.max(v));
-            draw::dot_i(grid, x as i32, lo as i32);
-            draw::dot_i(grid, x as i32, hi as i32);
         }
         Ok(())
     }
@@ -569,12 +586,14 @@ impl ProgressStyle for Moire {
         "demoscene"
     }
     fn describe(&self) -> &str {
-        "Interference rings crawling in from the left"
+        "Moiré: two sets of thin concentric rings, their centres drifting apart and \
+         together, overlap into crawling interference fringes, revealed from the left"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         grid.enable_color_support();
-        let filled = (ctx.eased * w as f32).round() as usize;
+        // A short stub is always shown so the effect reads from the start.
+        let filled = ((ctx.eased * w as f32).round() as usize).max(w.min(8));
         let mid = h as f32 / 2.0;
         let sep = 12.0 + 7.0 * (TAU * 0.25 * ctx.time).sin();
         let (ax, ay) = (w as f32 / 2.0 - sep, mid);
@@ -584,16 +603,19 @@ impl ProgressStyle for Moire {
             for x in 0..filled {
                 let d1 = {
                     let dx = x as f32 - ax;
-                    let dy = (y as f32 - ay) * 2.0;
+                    let dy = y as f32 - ay;
                     (dx * dx + dy * dy).sqrt()
                 };
                 let d2 = {
                     let dx = x as f32 - bx;
-                    let dy = (y as f32 - by) * 2.0;
+                    let dy = y as f32 - by;
                     (dx * dx + dy * dy).sqrt()
                 };
-                let ring = ((d1 - grow) / 4.0).floor() as i32 + ((d2 - grow) / 4.0).floor() as i32;
-                if ring.rem_euclid(2) == 0 {
+                // Two sets of thin concentric rings; where they overlap the
+                // eye sees the broad moiré fringes rather than the rings.
+                let on1 = ((d1 - grow) / 4.0).rem_euclid(1.0) < 0.3;
+                let on2 = ((d2 - grow) / 4.0).rem_euclid(1.0) < 0.3;
+                if on1 || on2 {
                     draw::dot(grid, x, y);
                 }
                 if x % 2 == 0 && y % 4 == 0 {
