@@ -401,9 +401,10 @@ fn extract_struct_names(theme_src: &str) -> Vec<String> {
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
             .collect();
-        // Unwrap one decorator level, e.g. `Box::new(Tinted(Rose))`.
-        if body[start + name.len()..].starts_with('(') {
-            let inner_start = start + name.len() + 1;
+        // Unwrap decorators, e.g. `Box::new(Tinted(Gallery(Rose)))`.
+        let mut inner_start = start;
+        while body[inner_start + name.len()..].starts_with('(') {
+            inner_start += name.len() + 1;
             name = body[inner_start..]
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -570,6 +571,41 @@ impl BrailleGrid {
             return None;
         }
         self.colors[y * self.width + x]
+    }
+
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
     }
 
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
