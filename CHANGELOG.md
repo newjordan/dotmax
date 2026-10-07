@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-10-07
+
+### Changed
+
+- Progress styles: a name-fidelity pass over the whole catalog. Every style
+  whose picture did not look like its name at the site's 44×4-cell size was
+  redrawn or reworked — 396 styles across 53 themes, among them all three
+  rockets (`classic/rocket`, `space/rocket-launch`, `transit/rocket-gantry`),
+  which are now real finned rockets: one flying the track on its exhaust
+  trail, one lifting off and pitching over in a gravity turn, one fuelling
+  beside its gantry before liftoff. Pictorial styles now carry their own per-cell
+  colours, and styles that drew block glyphs (blank on the site preview) are
+  drawn in braille dots. Style names and themes are unchanged.
+
+### Added
+
+- 16 new styles: space-shuttle, lunar-lander, battery, cat-prowl, bat-swoop,
+  whale-spout, surf-van, electron-buildup, anvil-forge, banner-unfurl,
+  trojan-horse, mjolnir-strike, paper-lanterns, colosseum, acoustic-guitar
+  and trumpet. 692 styles across 60 themes.
+- `examples/qa_sheet.rs`: rasterizes styles to a PPM contact sheet so they
+  can be reviewed as pictures rather than as braille text.
+
+### Fixed
+
+- Catalog export: unwrap nested style decorators, and give the standalone
+  runtime `clear`, `clear_region` and `get_raw_patterns`.
+
 ## [0.1.10] - 2026-09-05
 
 ### Added

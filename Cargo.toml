@@ -1,6 +1,6 @@
 [package]
 name = "dotmax"
-version = "0.1.10"
+version = "0.1.11"
 authors = ["Frosty", "Claude Fable 5.1 (Anthropic) <noreply@anthropic.com>"]
 edition = "2021"
 rust-version = "1.70"
@@ -42,6 +42,7 @@ exclude = [
     "site/",
     # Local scratch assets and WIP examples (not part of the crate)
     "*.log",
+    "*.mp4",
     "docs/examples/",
     "src/image/",
     "dotamax_pets/",
