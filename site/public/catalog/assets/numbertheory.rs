@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -1031,9 +1066,11 @@ impl ProgressStyle for Sieve {
 // 2. Ulam Spiral
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Ulam spiral: integers spiral outward from the centre of the grid; primes
-/// glow along diagonals. `eased` reveals integers 1..N; `time` pulses the
-/// prime dots.
+/// Ulam spiral, stretched to the bar: the integers wind outward from a short
+/// central run in a rectangular spiral that exactly tiles the bar, and only
+/// the primes are lit, so the diagonal streaks of prime-rich quadratics show
+/// up in every corner. `eased` reveals integers 1..N; `time` blinks the
+/// spiral's growing head.
 struct UlamSpiral;
 impl ProgressStyle for UlamSpiral {
     fn name(&self) -> &str {
@@ -1043,57 +1080,55 @@ impl ProgressStyle for UlamSpiral {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Ulam spiral: integers coil outward from centre, primes cluster on diagonals"
+        "Ulam spiral: integers wind outward from the centre in a rectangular spiral that tiles \
+         the bar, only primes lit — the tell-tale diagonal streaks appear as progress unwinds \
+         it, with a blinking head marking the newest integer"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        // Rectangular spiral: horizontal legs a+1, a+2, …; vertical legs 1, 2, …
+        // After k full rings it spans (a + 2k) × 2k, so pick a = w − h.
+        let a = w.saturating_sub(h) as i32;
+        let x0 = (h / 2) as i32 - 1;
+        let y0 = (h / 2) as i32;
+        let n = (w * h).clamp(1, 6000);
+        let revealed = ((ctx.eased.clamp(0.0, 1.0) * n as f32).round() as usize).min(n);
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-
-        // Cap N to avoid spiraling off into unreachable cells.
-        let n = (w * h).clamp(1, 4000);
-        let revealed = ((ctx.eased * n as f32).round() as usize).min(n);
-
-        // Generate Ulam spiral coords for 1..=revealed.
-        // Direction order: right, up, left, down.
-        let dx = [1i32, 0, -1, 0];
-        let dy = [0i32, -1, 0, 1];
-
-        let mut x = 0i32;
-        let mut y = 0i32;
-        let mut dir = 0usize;
-        let mut steps_in_leg = 1usize;
-        let mut steps_taken = 0usize;
-        let mut leg_count = 0usize;
-
-        // Pulse phase from time.
-        let pulse = (ctx.time * 2.0 * PI * 0.5).sin() * 0.5 + 0.5;
-        let _ = pulse; // used conceptually; we draw or skip based on phase parity.
-
-        for n_i in 1..=revealed {
-            let px = cx + x;
-            let py = cy + y;
-
-            if is_prime(n_i as u64) {
-                draw::dot_i(grid, px, py);
+        let (mut x, mut y) = (x0, y0);
+        let mut leg = 0i32; // leg index: even = horizontal, odd = vertical
+        let mut left = a + 1;
+        let mut head = (x, y);
+        for i in 1..=revealed {
+            if is_prime(i as u64) {
+                draw::dot_i(grid, x, y);
             }
-
-            // Advance spiral.
-            x += dx[dir];
-            y += dy[dir];
-            steps_taken += 1;
-            if steps_taken == steps_in_leg {
-                steps_taken = 0;
-                dir = (dir + 1) % 4;
-                leg_count += 1;
-                if leg_count % 2 == 0 {
-                    steps_in_leg += 1;
-                }
+            head = (x, y);
+            // Advance along the current leg; directions: right, up, left, down.
+            let dir = leg % 4;
+            match dir {
+                0 => x += 1,
+                1 => y -= 1,
+                2 => x -= 1,
+                _ => y += 1,
             }
+            left -= 1;
+            if left <= 0 {
+                leg += 1;
+                let k = leg / 2 + 1;
+                left = if leg % 2 == 0 { a + k } else { k };
+            }
+        }
+        if revealed > 0 && revealed < n && (ctx.time * 4.0).sin() > -0.2 {
+            draw::fill_rect(
+                grid,
+                (head.0 - 1).max(0) as usize,
+                (head.1 - 1).max(0) as usize,
+                2,
+                2,
+            );
         }
         Ok(())
     }
@@ -1219,11 +1254,27 @@ impl ProgressStyle for Collatz {
 // 5. Fibonacci / Golden spiral
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Fibonacci golden spiral: draws successive quarter-circle arcs in squares
-/// whose side lengths are Fibonacci numbers. `eased` controls how many arcs
-/// are drawn; `time` rotates a glowing cursor along the outermost arc. The
-/// golden ratio φ = (1+√5)/2 governs growth.
+/// Fibonacci golden spiral: squares whose sides are Fibonacci numbers, each
+/// crossed by a quarter-circle arc. `eased` builds the tiling square by square;
+/// `time` runs a bead along finished spirals.
 struct FibonacciSpiral;
+
+/// A point in Fibonacci-tiling units.
+type Pt = (f32, f32);
+
+/// The Fibonacci tiling used by [`FibonacciSpiral`]: squares of side
+/// 1, 1, 2, 3, 5, 8 (top-left corner, side) filling a 13×8 golden-ish
+/// rectangle spanning x ∈ [-3, 10], y ∈ [-5, 3] (y down), and for each square
+/// the quarter arc of the spiral through it as (centre, start corner).
+const FIB_SQUARES: [(Pt, f32, Pt, Pt); 6] = [
+    ((0.0, 0.0), 1.0, (1.0, 1.0), (0.0, 1.0)),
+    ((1.0, 0.0), 1.0, (1.0, 1.0), (1.0, 0.0)),
+    ((0.0, 1.0), 2.0, (0.0, 1.0), (2.0, 1.0)),
+    ((-3.0, 0.0), 3.0, (0.0, 0.0), (0.0, 3.0)),
+    ((-3.0, -5.0), 5.0, (2.0, 0.0), (-3.0, 0.0)),
+    ((2.0, -5.0), 8.0, (2.0, 3.0), (2.0, -5.0)),
+];
+
 impl ProgressStyle for FibonacciSpiral {
     fn name(&self) -> &str {
         "fibonacci-spiral"
@@ -1232,82 +1283,73 @@ impl ProgressStyle for FibonacciSpiral {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Golden spiral: Fibonacci quarter-circle arcs converging on φ"
+        "Fibonacci spiral: squares of side 1, 1, 2, 3, 5, 8 tile a 13×8 rectangle and a \
+         quarter arc sweeps through each; three tilings build square by square as progress \
+         rises, and a bead rides the finished spirals with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
             return Ok(());
         }
-
-        // Generate Fibonacci numbers scaled to fit the grid.
-        let max_dim = w.min(h).max(1);
-        let mut fibs = vec![1usize, 1usize];
-        while *fibs.last().unwrap() < max_dim {
-            let n = fibs.len();
-            let next = fibs[n - 1] + fibs[n - 2];
-            fibs.push(next);
-            if fibs.len() > 20 {
-                break;
-            }
-        }
-
-        let max_arcs = fibs.len().min(12);
-        let revealed = ((ctx.eased * max_arcs as f32).round() as usize).min(max_arcs);
-
-        // Centre of the spiral.
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-
-        // Arc start angles follow the spiral: 0°, 90°, 180°, 270°, repeating.
-        let start_angles = [0.0f32, PI / 2.0, PI, 3.0 * PI / 2.0];
-
-        let mut rx = cx;
-        let mut ry = cy;
-
-        for (arc_idx, &fib) in fibs.iter().enumerate().take(revealed) {
-            let r = fib as f32;
-            let angle_start = start_angles[arc_idx % 4];
-            let steps = ((r * PI / 2.0) as usize).clamp(4, 256);
-
-            for s in 0..=steps {
-                let theta = angle_start + (s as f32 / steps as f32) * (PI / 2.0);
-                let px = rx + (theta.cos() * r) as i32;
-                let py = ry + (theta.sin() * r) as i32;
-                draw::dot_i(grid, px, py);
-            }
-
-            // Advance centre for next arc.
-            match arc_idx % 4 {
-                0 => ry -= fib as i32,
-                1 => rx -= fib as i32,
-                2 => ry += fib as i32,
-                _ => rx += fib as i32,
-            }
-        }
-
-        // Animated cursor on outermost arc.
-        if revealed > 0 && revealed <= fibs.len() {
-            let last_idx = revealed.saturating_sub(1);
-            let r = fibs[last_idx] as f32;
-            let angle_start = start_angles[last_idx % 4];
-            let theta = angle_start + (ctx.time * 0.5).fract() * (PI / 2.0);
-            // cursor centre — approximate; recompute centre for last arc.
-            let mut cxl = cx;
-            let mut cyl = cy;
-            for (i, &fib) in fibs.iter().enumerate().take(last_idx) {
-                match i % 4 {
-                    0 => cyl -= fib as i32,
-                    1 => cxl -= fib as i32,
-                    2 => cyl += fib as i32,
-                    _ => cxl += fib as i32,
+        let n = if dw >= dh * 4 { 3 } else { 1 };
+        let pw = dw as f32 / n as f32;
+        let s = ((dh as f32 - 1.0) / 8.0).min((pw - 2.0) / 13.0).max(0.1);
+        for k in 0..n {
+            let local = (ctx.eased * n as f32 - k as f32).clamp(0.0, 1.0);
+            // Panel origin so the 13×8 rectangle is centred in its slot.
+            let ox = pw * (k as f32 + 0.5) - 6.5 * s + 3.0 * s;
+            let oy = (dh as f32 - 1.0 - 8.0 * s) * 0.5 + 5.0 * s;
+            let at = |x: f32, y: f32| ((ox + x * s).round() as i32, (oy + y * s).round() as i32);
+            let span = local * 6.0;
+            let bead = if local >= 1.0 {
+                Some((ctx.time * 0.8 + k as f32).rem_euclid(6.0))
+            } else {
+                None
+            };
+            for (i, &((x, y), side, (cx, cy), (px, py))) in FIB_SQUARES.iter().enumerate() {
+                let part = (span - i as f32).clamp(0.0, 1.0);
+                if part <= 0.0 {
+                    break;
+                }
+                // Square outline.
+                let (x0, y0) = at(x, y);
+                let (x1, y1) = at(x + side, y + side);
+                for xx in x0..=x1 {
+                    draw::dot_i(grid, xx, y0);
+                    draw::dot_i(grid, xx, y1);
+                }
+                for yy in y0..=y1 {
+                    draw::dot_i(grid, x0, yy);
+                    draw::dot_i(grid, x1, yy);
+                }
+                // Quarter arc from the start corner, swept by `part`.
+                let a0 = (py - cy).atan2(px - cx);
+                // The end corner is diagonally opposite the start corner.
+                let (qx, qy) = (2.0 * x + side - px, 2.0 * y + side - py);
+                let mut da = (qy - cy).atan2(qx - cx) - a0;
+                if da > PI {
+                    da -= 2.0 * PI;
+                } else if da < -PI {
+                    da += 2.0 * PI;
+                }
+                let steps = (side * s * 2.0).ceil().max(4.0) as u32;
+                for j in 0..=steps {
+                    let a = a0 + da * part * j as f32 / steps as f32;
+                    let (dx, dy) = at(cx + side * a.cos(), cy + side * a.sin());
+                    draw::dot_i(grid, dx, dy);
+                }
+                if let Some(b) = bead {
+                    if (b - i as f32) >= 0.0 && (b - i as f32) < 1.0 {
+                        let a = a0 + da * (b - i as f32);
+                        let (dx, dy) = at(cx + side * a.cos(), cy + side * a.sin());
+                        draw::dot_i(grid, dx + 1, dy);
+                        draw::dot_i(grid, dx, dy + 1);
+                        draw::dot_i(grid, dx - 1, dy);
+                        draw::dot_i(grid, dx, dy - 1);
+                    }
                 }
             }
-            let px = cxl + (theta.cos() * r) as i32;
-            let py = cyl + (theta.sin() * r) as i32;
-            draw::dot_i(grid, px, py);
-            draw::dot_i(grid, px + 1, py);
-            draw::dot_i(grid, px, py + 1);
         }
         Ok(())
     }
@@ -1317,10 +1359,27 @@ impl ProgressStyle for FibonacciSpiral {
 // 6. Pascal's triangle mod p
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Pascal's triangle mod p: rows revealed = `eased × height`. Mod 2 yields
-/// Sierpinski's gasket; `time` cycles through mod 2, 3, 5 to show different
-/// self-similar patterns.
+/// Pascal's triangle mod p, on its side: rows revealed = `eased × width`.
+/// Mod 2 yields Sierpinski's gasket; `time` cycles through mod 2, 3, 5 to
+/// show different self-similar patterns.
 struct PascalMod;
+
+/// `C(n, k) mod p != 0`, by Lucas' theorem: true iff every base-`p` digit of
+/// `k` is ≤ the matching digit of `n`.
+fn binom_nonzero_mod(mut n: u32, mut k: u32, p: u32) -> bool {
+    if k > n {
+        return false;
+    }
+    while k > 0 {
+        if k % p > n % p {
+            return false;
+        }
+        n /= p;
+        k /= p;
+    }
+    true
+}
+
 impl ProgressStyle for PascalMod {
     fn name(&self) -> &str {
         "pascal-mod"
@@ -1329,49 +1388,26 @@ impl ProgressStyle for PascalMod {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Pascal's triangle mod p: Sierpinski (p=2), mod-3, mod-5 patterns cycling with time"
+        "Pascal's triangle mod p laid on its side: row n runs along the bar, the middle \
+         binomials C(n, k) stack up the height, and every entry not divisible by p is lit — \
+         nested triangular holes open up as progress adds rows; p cycles 2, 3, 5 with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        let (dw, dh) = draw::dot_dims(grid);
+        if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // Pick modulus from time: cycles 2→3→5→2 every 3 s.
-        let mods = [2u64, 3, 5];
-        let mod_idx = ((ctx.time / 3.0) as usize) % mods.len();
-        let modulus = mods[mod_idx];
-
-        let revealed_rows = ((ctx.eased * h as f32).round() as usize).min(h);
-
-        // We compute Pascal's triangle row by row (mod p) using a 1-D buffer.
-        let row_len = w.min(512);
-        let mut row = vec![0u64; row_len];
-        if row_len > 0 {
-            row[0] = 1;
-        }
-
-        for r in 0..revealed_rows {
-            // Map row to y-coordinate (top = row 0).
-            let py = r;
-            // Map column within the row to x-coordinate, centred.
-            // The Pascal triangle at row r has r+1 non-trivial entries; we
-            // spread them symmetrically across the width.
-            let entries = (r + 1).min(row_len);
-            for (c, &val) in row.iter().enumerate().take(entries) {
-                if val % modulus != 0 {
-                    // Map entry position to x.
-                    let x = if entries <= 1 {
-                        w / 2
-                    } else {
-                        c * (w.saturating_sub(1)) / (entries.saturating_sub(1))
-                    };
-                    draw::dot(grid, x, py);
+        let p = [2u32, 3, 5][((ctx.time.max(0.0) / 6.0) as usize) % 3];
+        let rows = (ctx.eased * dw as f32).ceil() as usize;
+        let mid = dh as i32 / 2;
+        for n in 0..rows.min(dw) {
+            let nn = n as u32;
+            for y in 0..dh as i32 {
+                // Middle of row n sits on the bar's centre line.
+                let k = (nn as i32 + 1) / 2 + (y - mid);
+                if k >= 0 && binom_nonzero_mod(nn, k as u32, p) {
+                    draw::dot(grid, n, y as usize);
                 }
-            }
-            // Advance row: compute next Pascal row (mod p), right-to-left.
-            for c in (1..row_len).rev() {
-                row[c] = (row[c] + row[c - 1]) % modulus;
             }
         }
         Ok(())
@@ -1442,12 +1478,14 @@ impl ProgressStyle for TotientHistogram {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 8. Stern-Brocot tree / Farey sequence
+// 8. Stern–Brocot tree (mediant binary tree)
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Stern-Brocot tree: fractions from the Farey sequence F_n plotted as
-/// vertical spikes whose height is the denominator. `eased` controls the
-/// order n of the Farey sequence; `time` pulses a cursor scanning fractions.
+/// Stern–Brocot tree: every positive rational appears exactly once as the
+/// mediant (a+c)/(b+d) of its two neighbours. Nodes sit at their value
+/// in order along their row (the tree is a binary search tree) on rows by depth, joined to their
+/// parents. `eased` grows the tree level by level, left to right; `time`
+/// walks a blinking path down the tree towards the golden ratio.
 struct SternBrocot;
 impl ProgressStyle for SternBrocot {
     fn name(&self) -> &str {
@@ -1457,60 +1495,93 @@ impl ProgressStyle for SternBrocot {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Stern-Brocot / Farey F_n: every rational in [0,1] placed by value, height = denominator"
+        "Stern–Brocot tree: 1/1 at the top, each node's children the mediants with its \
+         neighbours (1/2, 2/1, 1/3, 2/3, 3/2, 3/1…), in sorted order — the binary tree of all \
+         positive rationals grows level by level with progress while a walker blinks down \
+         the path that converges on the golden ratio"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-
-        // Farey sequence F_n: all p/q with 0 ≤ p ≤ q ≤ n, gcd(p,q)=1, in order.
-        // Cap n to keep term count manageable.
-        let n = ((ctx.eased * 20.0).round() as usize).clamp(1, 20);
-
-        fn gcd(mut a: usize, mut b: usize) -> usize {
-            while b != 0 {
-                let t = b;
-                b = a % b;
-                a = t;
+        let levels = (h / 3).clamp(1, 7);
+        let row = |d: usize| -> i32 {
+            if levels <= 1 {
+                0
+            } else {
+                (d as f32 * (h as f32 - 1.0) / (levels - 1) as f32).round() as i32
             }
-            a
-        }
+        };
+        // The tree is a binary search tree on value, so laying level d out
+        // in order (slot i of 2^d) keeps every fraction sorted left to right.
+        let col = |d: usize, i: usize| -> i32 {
+            let f = (2 * i + 1) as f32 / (1u32 << (d + 1)) as f32;
+            (f * (w as f32 - 1.0)).round() as i32
+        };
+        let line = |grid: &mut BrailleGrid, a: (i32, i32), b: (i32, i32)| {
+            let n = (b.0 - a.0).abs().max((b.1 - a.1).abs()).clamp(1, 512);
+            for i in 0..=n {
+                draw::dot_i(grid, a.0 + (b.0 - a.0) * i / n, a.1 + (b.1 - a.1) * i / n);
+            }
+        };
 
-        // Collect Farey fractions as (numerator, denominator).
-        let mut fracs: Vec<(usize, usize)> = Vec::new();
-        for q in 1..=n {
-            for p in 0..=q {
-                if gcd(p, q) == 1 || (p == 0 && q == 1) {
-                    fracs.push((p, q));
+        let stage = ctx.eased.clamp(0.0, 1.0) * levels as f32;
+        // Breadth-first: each node carries its bounding fractions (a/b, c/d).
+        let mut frontier: Vec<(u32, u32, u32, u32)> = vec![(0, 1, 1, 0)];
+        for d in 0..levels {
+            let frac = (stage - d as f32).clamp(0.0, 1.0);
+            if frac <= 0.0 {
+                break;
+            }
+            let count = frontier.len();
+            let shown = ((frac * count as f32).ceil() as usize).min(count);
+            let mut next = Vec::with_capacity(count * 2);
+            for (i, &(a, b, c, dd)) in frontier.iter().enumerate() {
+                let (p, q) = (a + c, b + dd);
+                let me = (col(d, i), row(d));
+                if i < shown {
+                    draw::hline(
+                        grid,
+                        (me.0 - 1).max(0) as usize,
+                        (me.0 + 1).max(0) as usize,
+                        me.1.max(0) as usize,
+                    );
+                    if d > 0 {
+                        line(grid, (col(d - 1, i / 2), row(d - 1)), me);
+                    }
                 }
+                next.push((a, b, p, q));
+                next.push((p, q, c, dd));
             }
+            frontier = next;
         }
-        // Sort by value.
-        fracs.sort_by(|a, b| {
-            let va = a.0 * b.1;
-            let vb = b.0 * a.1;
-            va.cmp(&vb)
-        });
-        fracs.dedup_by(|a, b| a.0 * b.1 == b.0 * a.1);
 
-        let max_q = n.max(1);
-
-        // Animated scan cursor.
-        let cursor_frac = (ctx.time * 0.2).fract();
-
-        for (p, q) in &fracs {
-            let value = *p as f32 / *q as f32;
-            let x = (value * (w.saturating_sub(1)) as f32).round() as usize;
-            let bar_h = ((*q as f32 / max_q as f32) * h as f32).round() as usize;
-            let y0 = h.saturating_sub(bar_h);
-            draw::vline(grid, x, y0, h.saturating_sub(1));
-
-            // Highlight the fraction closest to the cursor.
-            let dist = (value - cursor_frac).abs();
-            if dist < 0.03 {
-                draw::dot(grid, x, y0.saturating_sub(1));
+        // Walker: descends towards φ = [1;1,1,…] (alternating R, L, R, L…).
+        let depth_shown = (stage.floor() as usize).min(levels);
+        if depth_shown > 0 {
+            let step = ((ctx.time.max(0.0) * 2.0) as usize) % depth_shown;
+            let (mut a, mut b, mut c, mut dd) = (0u32, 1u32, 1u32, 0u32);
+            let mut slot = 0usize;
+            for d in 0..=step {
+                let (p, q) = (a + c, b + dd);
+                if d == step {
+                    let (x, y) = (col(d, slot), row(d));
+                    for (ox, oy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                        draw::dot_i(grid, x + ox, y + oy);
+                    }
+                }
+                // φ > p/q ⇔ go right (towards larger values).
+                let phi = 1.618_034f32;
+                if (p as f32) < phi * q as f32 {
+                    a = p;
+                    b = q;
+                    slot = slot * 2 + 1;
+                } else {
+                    c = p;
+                    dd = q;
+                    slot *= 2;
+                }
             }
         }
         Ok(())
@@ -1522,8 +1593,8 @@ impl ProgressStyle for SternBrocot {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Continued fraction convergents of φ = [1;1,1,1,…]: each convergent p_k/q_k
-/// is a best rational approximation. `eased` reveals convergents; each is
-/// drawn as a dot at (x=value×width, y=row k). Convergents alternate above /
+/// is a best rational approximation. `eased` reveals convergents left to
+/// right, each plotted by its signed log-error from φ; they alternate above /
 /// below the true value — the zig-zag visualises the approximation theorem.
 struct ContinuedFraction;
 impl ProgressStyle for ContinuedFraction {
@@ -1534,76 +1605,45 @@ impl ProgressStyle for ContinuedFraction {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Continued fraction convergents of φ: zig-zagging best rationals approaching the golden ratio"
+        "Convergents of φ = [1;1,1,…] — 1/1, 2/1, 3/2, 5/3, 8/5… — plotted left to right as \
+         a zig-zag that alternates above and below the dotted golden-ratio line and closes in \
+         on it (error on a log scale); progress adds convergents, a marker rides the newest"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-
-        // φ convergents: p_k/q_k where p_k = F_{k+1}, q_k = F_k (Fibonacci).
-        // Compute up to h convergents (one per dot-row).
-        let max_k = h.min(40);
-        let revealed = ((ctx.eased * max_k as f32).round() as usize).min(max_k);
-
-        let mut p_prev = 0u64;
-        let mut p_curr = 1u64;
-        let mut q_prev = 1u64;
-        let mut q_curr = 1u64;
-
-        let phi = (1.0 + 5.0f32.sqrt()) / 2.0; // 1.6180…
-                                               // We map value/phi into [0,1] range (phi ≈ 1.618, so p/q ≤ phi).
-        let scale = phi;
-
-        let mut prev_x: Option<usize> = None;
-        let mut prev_y: Option<usize> = None;
-
-        for k in 0..revealed {
-            let value = p_curr as f32 / q_curr as f32;
-            let x =
-                ((value / scale).clamp(0.0, 1.0) * (w.saturating_sub(1)) as f32).round() as usize;
-            let y = if h <= 1 {
-                0
-            } else {
-                k * (h.saturating_sub(1)) / (max_k.saturating_sub(1).max(1))
-            };
-            let y = y.min(h.saturating_sub(1));
-
-            draw::dot(grid, x, y);
-
-            // Connect successive convergents with a line to show zig-zag.
-            if let (Some(px), Some(py)) = (prev_x, prev_y) {
-                // Simple Bresenham-lite: interpolate between the two points.
-                let steps = ((x as i32 - px as i32)
-                    .abs()
-                    .max((y as i32 - py as i32).abs()))
-                .max(1) as usize;
-                for s in 1..steps {
-                    let t = s as f32 / steps as f32;
-                    let ix = (px as f32 + t * (x as i32 - px as i32) as f32).round() as usize;
-                    let iy = (py as f32 + t * (y as i32 - py as i32) as f32).round() as usize;
-                    draw::dot(
-                        grid,
-                        ix.min(w.saturating_sub(1)),
-                        iy.min(h.saturating_sub(1)),
-                    );
+        let phi = (1.0 + 5f64.sqrt()) / 2.0;
+        let mid = (h as f32 - 1.0) * 0.5;
+        // Dotted reference line at φ.
+        for x in (0..w).step_by(2) {
+            draw::dot(grid, x, mid.round() as usize);
+        }
+        let total = 16usize;
+        let pitch = (w as f32 - 1.0) / (total - 1) as f32;
+        let shown = ((ctx.eased * total as f32).ceil() as usize).clamp(1, total);
+        // Signed log-error: convergent k misses φ by ≈ φ^(−2k), alternating sign.
+        let (mut p, mut q) = (1u64, 1u64);
+        let mut prev: Option<(i32, i32)> = None;
+        for k in 0..shown {
+            let err = p as f64 / q as f64 - phi;
+            let mag = ((err.abs().max(1e-12).ln() + 12.0) / 12.0).clamp(0.0, 1.0) as f32;
+            let y = (mid - err.signum() as f32 * mag * mid).round() as i32;
+            let x = (k as f32 * pitch).round() as i32;
+            if let Some((px, py)) = prev {
+                let n = (x - px).abs().max((y - py).abs()).max(1);
+                for i in 0..=n {
+                    draw::dot_i(grid, px + (x - px) * i / n, py + (y - py) * i / n);
                 }
             }
-            prev_x = Some(x);
-            prev_y = Some(y);
-
-            // Advance convergents: [1;1,1,1,…] so a_k = 1 always.
-            let p_new = p_curr + p_prev;
-            let q_new = q_curr + q_prev;
-            p_prev = p_curr;
-            p_curr = p_new;
-            q_prev = q_curr;
-            q_curr = q_new;
-
-            // Guard against overflow for deep k.
-            if p_curr > 1_000_000 || q_curr > 1_000_000 {
-                break;
+            prev = Some((x, y));
+            (p, q) = (p + q, p);
+        }
+        if let Some((x, y)) = prev {
+            // Pulsing marker on the newest convergent.
+            if (ctx.time * 3.0).sin() > -0.3 {
+                draw::fill_rect(grid, (x - 1).max(0) as usize, (y - 1).max(0) as usize, 3, 3);
             }
         }
         Ok(())
@@ -1611,12 +1651,15 @@ impl ProgressStyle for ContinuedFraction {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 10. Modular multiplication circle (cardioid string art)
+// 10. Times-table circles (cardioid / nephroid string art)
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Modular multiplication circle: N points around a circle; connect point i to
-/// (k·i) mod N for each i. k=2 draws a cardioid; k=3 a nephroid; k swept by
-/// `eased` reveals new curves. `time` rotates the whole figure slowly.
+/// Times-table chord diagram: N points around a circle, point k joined to
+/// point m·k mod N. m=2 traces a cardioid, m=3 a nephroid, m=4 a three-cusped
+/// epicycloid and so on. A wide bar becomes a row of small circles, one
+/// multiplier each, whose chords (dotted) are strung in turn as progress
+/// advances while their envelope — the epicycloid with m−1 cusps — is traced
+/// solid; `time` turns the figures slowly.
 struct ModularCircle;
 impl ProgressStyle for ModularCircle {
     fn name(&self) -> &str {
@@ -1626,44 +1669,65 @@ impl ProgressStyle for ModularCircle {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Modular multiplication circle: string art i→k·i mod N, k swept by progress (cardioid at k=2)"
+        "Times-table chord diagrams: points round a circle, chord k→m·k mod N — a row of \
+         circles for m = 2, 3, 4, … strung chord by chord as progress advances, each \
+         chord envelope (cardioid, nephroid, three-cusp epicycloid…) traced solid, the \
+         figures turning slowly with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 3 || h < 3 {
             return Ok(());
         }
-
-        let n_points = 100usize; // Fixed number of points on circle.
-        let k = (ctx.eased * 10.0).floor() as usize + 2; // k in 2..=12.
-        let k = k.min(50);
-
-        let cx = (w / 2) as f32;
-        let cy = (h / 2) as f32;
-        let rx = (w / 2).saturating_sub(1) as f32;
-        let ry = (h / 2).saturating_sub(1) as f32;
-
-        // Slow rotation from time.
-        let rot = ctx.time * 0.1;
-
-        for i in 0..n_points {
-            let j = (k * i) % n_points;
-            let angle_i = (i as f32 / n_points as f32) * 2.0 * PI + rot;
-            let angle_j = (j as f32 / n_points as f32) * 2.0 * PI + rot;
-
-            let x0 = (cx + rx * angle_i.cos()).round() as i32;
-            let y0 = (cy + ry * angle_i.sin()).round() as i32;
-            let x1 = (cx + rx * angle_j.cos()).round() as i32;
-            let y1 = (cy + ry * angle_j.sin()).round() as i32;
-
-            // Bresenham line between the two points.
-            let steps = ((x1 - x0).abs().max((y1 - y0).abs())).max(1) as usize;
-            let steps = steps.min(512);
-            for s in 0..=steps {
-                let t = s as f32 / steps as f32;
-                let px = (x0 as f32 + t * (x1 - x0) as f32).round() as i32;
-                let py = (y0 as f32 + t * (y1 - y0) as f32).round() as i32;
-                draw::dot_i(grid, px, py);
+        // Square panels, as many as fit (at least one).
+        let side = h.min(w);
+        let gap = 2usize;
+        let panels = ((w + gap) / (side + gap)).clamp(1, 12);
+        let left = (w + gap).saturating_sub(panels * (side + gap)) / 2;
+        let n_pts = 18usize;
+        let r = (side as f32 - 1.0) * 0.5;
+        let rot = ctx.time * 0.25;
+        let total = ctx.eased.clamp(0.0, 1.0) * panels as f32;
+        for k in 0..panels {
+            let m = k + 2;
+            let cx = (left + k * (side + gap)) as f32 + r;
+            let cy = r;
+            let pt = |i: usize| -> (i32, i32) {
+                let a = i as f32 / n_pts as f32 * 2.0 * PI + rot - PI * 0.5;
+                (
+                    (cx + r * a.cos()).round() as i32,
+                    (cy + r * a.sin()).round() as i32,
+                )
+            };
+            // Dotted rim marks every panel, filled or waiting.
+            for i in (0..n_pts).step_by(2) {
+                let (x, y) = pt(i);
+                draw::dot_i(grid, x, y);
+            }
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            let shown = (local * n_pts as f32).round() as usize;
+            // Chords as dotted threads so the strings stay distinct.
+            for i in 1..shown.min(n_pts) {
+                let (x0, y0) = pt(i);
+                let (x1, y1) = pt((m * i) % n_pts);
+                let steps = (x1 - x0).abs().max((y1 - y0).abs()).clamp(1, 256);
+                for s in (0..=steps).step_by(3) {
+                    draw::dot_i(grid, x0 + (x1 - x0) * s / steps, y0 + (y1 - y0) * s / steps);
+                }
+            }
+            // The chords' envelope, drawn solid: the epicycloid
+            // z(θ) = (m·e^{iθ} + e^{imθ}) / (m+1) with m−1 cusps.
+            let env_steps = (local * 96.0) as usize;
+            let mf = m as f32;
+            let base = rot - PI * 0.5;
+            for s in 0..=env_steps.min(96) {
+                let th = s as f32 / 96.0 * 2.0 * PI;
+                let ex = (mf * th.cos() + (mf * th).cos()) / (mf + 1.0);
+                let ey = (mf * th.sin() + (mf * th).sin()) / (mf + 1.0);
+                let (bc, bs) = (base.cos(), base.sin());
+                let x = cx + r * (ex * bc - ey * bs);
+                let y = cy + r * (ex * bs + ey * bc);
+                draw::dot_i(grid, x.round() as i32, y.round() as i32);
             }
         }
         Ok(())
@@ -1674,10 +1738,11 @@ impl ProgressStyle for ModularCircle {
 // 11. Recamán's sequence
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Recamán's sequence: a(0)=0; a(n) = a(n-1)−n if positive and not already
-/// in the sequence, else a(n-1)+n. Plotted as arcs (half-circles) on a
-/// number line, alternating above/below. `eased` reveals terms; `time`
-/// pulses the leading arc.
+/// Recamán's sequence: a(0)=0; a(n) = a(n−1)−n if that is positive and new,
+/// else a(n−1)+n. Each jump is drawn as a half-arc over a number line,
+/// alternating above and below — the classic Recamán picture. `eased`
+/// reveals terms (the newest arc grows as it is drawn); `time` runs a bead
+/// along the newest arc.
 struct Recaman;
 impl ProgressStyle for Recaman {
     fn name(&self) -> &str {
@@ -1687,71 +1752,74 @@ impl ProgressStyle for Recaman {
         "numbertheory"
     }
     fn describe(&self) -> &str {
-        "Recamán's sequence: arcs above/below a number line, each term a backward or forward jump"
+        "Recamán's sequence 0, 1, 3, 6, 2, 7, 13, 20, 12, 21, 11, … drawn the classic way: each \
+         jump a half-arc over the number line, alternating above and below, nesting into \
+         rainbows as progress adds terms; a bead runs along the newest arc"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let max_terms = w.clamp(2, 60);
-        let revealed = ((ctx.eased * max_terms as f32).round() as usize).clamp(1, max_terms);
-
-        // Build Recamán sequence.
-        let mut seq = vec![0usize];
-        let mut seen = std::collections::HashSet::new();
-        seen.insert(0usize);
-        for n in 1..max_terms {
+        const TERMS: usize = 26;
+        let mut seq = [0usize; TERMS];
+        for n in 1..TERMS {
             let prev = seq[n - 1];
-            let candidate = prev.saturating_sub(n);
-            let next = if candidate > 0 && !seen.contains(&candidate) {
-                candidate
+            let back = prev.wrapping_sub(n);
+            seq[n] = if prev > n && !seq[..n].contains(&back) {
+                back
             } else {
                 prev + n
             };
-            seq.push(next);
-            seen.insert(next);
         }
+        let max_val = seq.iter().copied().max().unwrap_or(1).max(1) as f32;
+        let max_jump = (TERMS - 1) as f32;
+        let sx = (w as f32 - 1.0) / max_val;
+        let mid = (h as f32 - 1.0) * 0.5;
+        let reach = mid.max(0.5);
 
-        // Normalise to fit in width.
-        let max_val = seq.iter().copied().max().unwrap_or(1).max(1);
-        let baseline = h / 2;
+        // Number line.
+        draw::hline(grid, 0, w - 1, mid.round() as usize);
 
-        // Draw number-line baseline.
-        draw::hline(grid, 0, w.saturating_sub(1), baseline);
-
-        // Draw arcs as semicircles, alternating above/below.
-        for n in 1..revealed {
-            let a = seq[n - 1];
-            let b = seq[n];
-            let forward = b > a;
-
-            let x_a = (a * (w.saturating_sub(1)) / max_val).min(w.saturating_sub(1));
-            let x_b = (b * (w.saturating_sub(1)) / max_val).min(w.saturating_sub(1));
-            let arc_cx = (x_a + x_b) / 2;
-            let arc_r = ((x_b as i32 - x_a as i32).abs() / 2).max(1) as f32;
-
-            // Above baseline for backward jumps (a→b where b<a), below for forward.
-            let above = !forward;
-
-            let steps = ((arc_r * PI) as usize).clamp(4, 256);
-            for s in 0..=steps {
-                let theta = s as f32 / steps as f32 * PI;
-                let dx = (theta.cos() * arc_r).round() as i32;
-                let dy = (theta.sin() * arc_r).round() as i32;
-                let px = arc_cx as i32 + dx;
-                let py = if above {
-                    baseline as i32 - dy
-                } else {
-                    baseline as i32 + dy
-                };
-                draw::dot_i(grid, px, py);
+        let stage = ctx.eased.clamp(0.0, 1.0) * (TERMS - 1) as f32;
+        let full = stage as usize;
+        for n in 1..TERMS {
+            let part = if n <= full {
+                1.0
+            } else if n == full + 1 {
+                stage.fract()
+            } else {
+                break;
+            };
+            if part <= 0.0 {
+                break;
+            }
+            let (a, b) = (seq[n - 1] as f32, seq[n] as f32);
+            let cx = (a + b) * 0.5 * sx;
+            let rx = (b - a).abs() * 0.5 * sx;
+            // Every arc keeps the same squashed aspect (height ∝ jump), so the
+            // nested arcs stay distinct and the biggest just fills the half-height.
+            let ry = reach * (n as f32 / max_jump);
+            let sign = if n % 2 == 1 { -1.0 } else { 1.0 };
+            let steps = ((rx + ry) * 2.0).clamp(6.0, 200.0) as usize;
+            let upto = ((steps as f32) * part).round() as usize;
+            // Travel from a to b: θ = π at a's side when b > a.
+            let dir = if b > a { 1.0 } else { -1.0 };
+            for s in 0..=upto {
+                let th = s as f32 / steps as f32 * PI;
+                let x = cx - dir * rx * th.cos();
+                let y = mid + sign * ry * th.sin();
+                draw::dot_i(grid, x.round() as i32, y.round() as i32);
+            }
+            if n == full.max(1) && part >= 1.0 {
+                let th = (ctx.time.max(0.0) * 0.6).fract() * PI;
+                let x = (cx - dir * rx * th.cos()).round() as i32;
+                let y = (mid + sign * ry * th.sin()).round() as i32;
+                for (ox, oy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    draw::dot_i(grid, x + ox, y + oy);
+                }
             }
         }
-
-        // Animate: pulse on the leading arc.
-        let _ = ctx.time;
         Ok(())
     }
 }

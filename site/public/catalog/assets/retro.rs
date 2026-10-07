@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -874,6 +909,22 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     ]
 }
 
+// ---------------------------------------------------------------------------
+// Sprite helper — dot-art stamps for the pictorial styles.
+// ---------------------------------------------------------------------------
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+/// Off-grid dots are dropped, so sprites may hang off any edge.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
 // ─── 1. Pac-Man ──────────────────────────────────────────────────────────────
 
 struct PacMan;
@@ -955,7 +1006,35 @@ impl ProgressStyle for PacMan {
 
 // ─── 2. Space Invaders ───────────────────────────────────────────────────────
 
+/// A rank of crab invaders marches side to side, legs snapping between two
+/// frames each step, over the player's laser cannon. Invaders are shot down
+/// (popping into an explosion burst) as progress rises.
 struct SpaceInvaders;
+
+/// The crab invader's two march frames.
+const CRAB: [[&str; 8]; 2] = [
+    [
+        "..#.....#..",
+        "...#...#...",
+        "..#######..",
+        ".##.###.##.",
+        "###########",
+        "#.#######.#",
+        "#.#.....#.#",
+        "...##.##...",
+    ],
+    [
+        "..#.....#..",
+        "#..#...#..#",
+        "#.#######.#",
+        "###.###.###",
+        "###########",
+        ".#########.",
+        "..#.....#..",
+        ".#.......#.",
+    ],
+];
+
 impl ProgressStyle for SpaceInvaders {
     fn name(&self) -> &str {
         "space-invaders"
@@ -964,89 +1043,58 @@ impl ProgressStyle for SpaceInvaders {
         "retro"
     }
     fn describe(&self) -> &str {
-        "A row of descending invaders; fill = alive count; legs toggle with time"
+        "Space Invaders: a rank of crab invaders marches in two-frame steps above the laser cannon; invaders shot down = progress"
     }
-
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
 
-        let inv_w = 6usize; // dots wide per invader
-        let inv_count = (w / inv_w).max(1);
-        let alive = (ctx.eased * inv_count as f32).ceil() as usize;
-        let leg_frame = ((ctx.time * 4.0) as usize) % 2; // 0 or 1
+        // The rank steps 2 dots at a time, legs toggling every step.
+        let pitch = 14;
+        let n = (wi / pitch).max(1);
+        let swing = ((wi - n * pitch + 3).max(0) / 2).max(1);
+        let step = (ctx.time * 4.0) as i32;
+        let phase = step.rem_euclid(swing * 2);
+        let offset = if phase <= swing {
+            phase
+        } else {
+            swing * 2 - phase
+        } * 2;
+        let frame = &CRAB[(step % 2) as usize];
 
-        for i in 0..alive.min(inv_count) {
-            let base_x = i * inv_w;
-            let cx = base_x + inv_w / 2; // center x
-            let top_y = 0usize;
-
-            // Body: 3-wide block in the upper rows.
-            draw::hline(
-                grid,
-                cx.saturating_sub(1),
-                (cx + 1).min(w.saturating_sub(1)),
-                top_y + 1,
-            );
-            draw::hline(
-                grid,
-                cx.saturating_sub(2),
-                (cx + 2).min(w.saturating_sub(1)),
-                top_y + 2,
-            );
-            draw::hline(
-                grid,
-                cx.saturating_sub(1),
-                (cx + 1).min(w.saturating_sub(1)),
-                top_y + 3,
-            );
-
-            // Eyes: two dots.
-            draw::dot(grid, cx.saturating_sub(1), top_y + 2);
-            draw::dot(grid, (cx + 1).min(w.saturating_sub(1)), top_y + 2);
-
-            // Antennae.
-            if cx >= 2 {
-                draw::dot(grid, cx - 2, top_y);
+        // Shoot-down order is scattered; the latest kill shows a burst.
+        let kills = ctx.eased * n as f32;
+        for i in 0..n {
+            let rank = ((i * 7 + 3) % n) as f32;
+            let x = offset.min((wi - n * pitch + 3).max(0)) + i * pitch;
+            if rank + 1.0 <= kills {
+                continue;
             }
-            if cx + 2 < w {
-                draw::dot(grid, cx + 2, top_y);
-            }
-
-            // Legs: alternate between two frames.
-            let leg_y = top_y + 4;
-            if leg_y < h {
-                if leg_frame == 0 {
-                    if cx >= 2 {
-                        draw::dot(grid, cx - 2, leg_y);
-                    }
-                    if cx + 2 < w {
-                        draw::dot(grid, cx + 2, leg_y);
-                    }
-                } else {
-                    if cx >= 1 {
-                        draw::dot(grid, cx - 1, leg_y);
-                    }
-                    if cx + 1 < w {
-                        draw::dot(grid, cx + 1, leg_y);
-                    }
-                }
+            if rank < kills {
+                sprite(
+                    grid,
+                    x + 2,
+                    1,
+                    &["#...#..", ".#.#..#", "..#.#..", ".#.#.#.", "#...#.."],
+                );
+            } else {
+                sprite(grid, x, 0, frame);
             }
         }
 
-        // Tint alive invaders green.
-        let (cells_w, cells_h) = grid.dimensions();
-        let alive_cells = (ctx.eased * cells_w as f32).ceil() as usize;
-        for cy in 0..cells_h {
-            if alive_cells > 0 {
-                let end = alive_cells.min(cells_w).saturating_sub(1);
-                draw::tint_row(grid, cy, 0, end, ctx.palette.sample(0.4));
-            }
-        }
-
+        // The laser cannon patrols the ground, firing a dashed shot upward.
+        let cx = wi / 2 + ((ctx.time * 0.9).sin() * wi as f32 * 0.35) as i32;
+        sprite(grid, cx - 3, hi - 4, &["...#...", ".#####.", "#######"]);
+        draw::hline(grid, 0, w - 1, h - 1);
+        let shot = hi - 6 - ((ctx.time * 30.0) as i32).rem_euclid((hi - 6).max(1));
+        draw::dot_i(grid, cx, shot);
+        draw::dot_i(grid, cx, shot + 1);
         Ok(())
     }
 }
-
 // ─── 3. Tetris Stack ─────────────────────────────────────────────────────────
 
 struct TetrisStack;
@@ -1274,7 +1322,7 @@ impl ProgressStyle for EightBitBlocks {
         "retro"
     }
     fn describe(&self) -> &str {
-        "Coarse pixel blocks fill in left-to-right, snapping to a chunky grid"
+        "Coarse 8-bit pixel blocks fill a chunky slot grid left-to-right, the next block blinking like a cursor"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
@@ -1289,33 +1337,43 @@ impl ProgressStyle for EightBitBlocks {
         // Fill order: column by column, bottom row first (arcade-screen bottom-up).
         let filled = (ctx.eased * total as f32) as usize;
 
-        for idx in 0..filled.min(total) {
+        // The blinking block at the fill head is drawn even at 0%.
+        let blink = (ctx.time * 3.0).fract() < 0.6;
+        for idx in 0..total {
             let col = idx / rows;
             let row_from_bottom = idx % rows;
             let row = rows.saturating_sub(1).saturating_sub(row_from_bottom);
             let x0 = col * px_w;
             let y0 = row * px_h;
-            // 1-dot inset on each block to show the grid.
-            draw::fill_rect(
-                grid,
-                x0,
-                y0,
-                px_w.saturating_sub(1).max(1),
-                px_h.saturating_sub(1).max(1),
-            );
+            if idx < filled || (idx == filled && blink) {
+                // 1-dot inset on each block to show the grid.
+                draw::fill_rect(
+                    grid,
+                    x0,
+                    y0,
+                    px_w.saturating_sub(1).max(1),
+                    px_h.saturating_sub(1).max(1),
+                );
+            } else {
+                // Empty pixel slot: just its top-left corner dot.
+                draw::dot(grid, x0, y0);
+            }
         }
 
-        // Tint with a slow color cycle (time-based hue shift via palette).
+        // Tint filled columns with a slow colour cycle; empty slots dim.
         let (cells_w, cells_h) = grid.dimensions();
+        let head_col = filled / rows;
+        grid.enable_color_support();
         for cy in 0..cells_h {
             for cx in 0..cells_w {
                 let t = (cx as f32 / cells_w.max(1) as f32 + ctx.time * 0.1).fract();
-                let color = ctx.palette.sample(t);
-                // Only tint cells within the filled region.
-                let block_col = cx / 2; // 2 cells per px_w/2 block approx
-                if block_col < (ctx.eased * (cells_w / 2) as f32) as usize {
-                    draw::tint_row(grid, cy, cx, cx, color);
-                }
+                let block_col = cx * 2 / px_w;
+                let color = if block_col <= head_col {
+                    ctx.palette.sample(t)
+                } else {
+                    crate::Color::rgb(70, 74, 96)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
 
@@ -1569,74 +1627,88 @@ impl ProgressStyle for ComboPower {
         "retro"
     }
     fn describe(&self) -> &str {
-        "Combo/power-up meter with a pulsing plasma core and charging arcs"
+        "Fighting-game super meter: a framed, segmented gauge charges with shimmering energy while a lightning bolt crackles at the fill head; it flashes at MAX"
     }
 
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let mid_y = (h / 2) as i32;
-        let mid_x = (w / 2) as i32;
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
 
-        // Fill: a segmented bar along the bottom half.
-        let seg_count = 8usize;
-        let seg_w = (w / seg_count).max(2);
-        let lit = (ctx.eased * seg_count as f32).round() as usize;
-        for s in 0..lit.min(seg_count) {
-            let x0 = s * seg_w;
-            let bw = seg_w.saturating_sub(1).max(1);
-            let by = h / 2 + 1;
-            let bh = h.saturating_sub(by + 1).max(1);
-            draw::fill_rect(grid, x0, by, bw, bh);
-        }
-
-        // Plasma core: expanding ring that pulses with time.
-        let pulse = (ctx.time * 4.0).sin() * 0.5 + 0.5; // 0..1
-        let core_r = (pulse * ctx.eased * (h / 2) as f32).round() as i32;
-        if core_r > 0 {
-            let steps = (2.0 * PI * core_r as f32 * 2.0) as usize + 4;
-            for s in 0..steps {
-                let a = s as f32 / steps as f32 * 2.0 * PI;
-                let dx = (a.cos() * core_r as f32).round() as i32;
-                let dy = (a.sin() * core_r as f32 * 0.5).round() as i32; // squash vertically
-                draw::dot_i(grid, mid_x + dx, mid_y + dy);
+        // Gauge frame across the lower half, with segment dividers.
+        let gy0 = hi / 2;
+        let gy1 = hi - 1;
+        let seg_count = 8;
+        let inner = (wi - 2).max(1);
+        let full = ctx.eased >= 0.999;
+        if !full || (t * 6.0).fract() < 0.5 {
+            for x in 0..wi {
+                draw::dot_i(grid, x, gy0);
+                draw::dot_i(grid, x, gy1);
+            }
+            for y in gy0..=gy1 {
+                draw::dot_i(grid, 0, y);
+                draw::dot_i(grid, wi - 1, y);
             }
         }
-
-        // Charging arcs: lightning-bolt-style zigzag lines converging on the core.
-        let arc_count = lit.min(4);
-        for arc in 0..arc_count {
-            let base_angle = arc as f32 * PI / 2.0 + ctx.time * 3.0;
-            let arc_len = (w / 4).max(2) as i32;
-            for step in 0..arc_len {
-                let frac = step as f32 / arc_len as f32;
-                let angle = base_angle + (frac * PI * 2.0).sin() * 0.4; // zigzag
-                let r = (arc_len as f32 * (1.0 - frac)).round() as i32;
-                let ax = mid_x + (angle.cos() * r as f32).round() as i32;
-                let ay = mid_y + (angle.sin() * r as f32 * 0.4).round() as i32;
-                draw::dot_i(grid, ax, ay);
-            }
-        }
-
-        // Center dot.
-        draw::dot_i(grid, mid_x, mid_y);
-
-        // Tint: full-spectrum cycle that speeds up as power charges.
-        let (cells_w, cells_h) = grid.dimensions();
-        let speed = 0.2 + ctx.eased * 1.0;
-        for cy in 0..cells_h {
-            for cx in 0..cells_w {
-                let t = (cx as f32 / cells_w.max(1) as f32 + ctx.time * speed).fract();
-                let color = ctx.palette.sample(t);
-                // Only tint cells within lit segments + core area.
-                let in_bar = cx < (ctx.eased * cells_w as f32) as usize;
-                let in_core = (cx as i32 - cells_w as i32 / 2).abs()
-                    < (ctx.eased * cells_w as f32 * 0.15) as i32 + 1;
-                if in_bar || in_core {
-                    draw::tint_row(grid, cy, cx, cx, color);
+        for s in 1..seg_count {
+            let x = 1 + inner * s / seg_count;
+            for y in gy0..gy1 {
+                if y % 2 == 0 {
+                    draw::dot_i(grid, x, y);
                 }
             }
         }
+        // Shimmering energy fill: diagonal stripes scrolling right.
+        let head = 1 + (ctx.eased * inner as f32) as i32;
+        let off = (t * 20.0) as i32;
+        for x in 1..head {
+            for y in gy0 + 1..gy1 {
+                if (x - off + y).rem_euclid(4) != 0 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        // Lightning bolt crackling up from the fill head.
+        let flick = (t * 15.0) as i32;
+        let mut bx = head;
+        for y in (0..gy0).rev() {
+            draw::dot_i(grid, bx, y);
+            let step = (flick + y * 7).rem_euclid(3) - 1;
+            bx += step;
+        }
+        // Sparks either side of the head.
+        for k in 0..3 {
+            let a = t * 9.0 + k as f32 * 2.1;
+            draw::dot_i(
+                grid,
+                head + (a.cos() * 4.0).round() as i32,
+                gy0 - 2 + (a.sin() * 2.0).round() as i32,
+            );
+        }
 
+        // Colour: energy ramps blue → magenta → gold; frame white; bolt gold.
+        grid.enable_color_support();
+        let (cw, ch) = grid.dimensions();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let px = cx as i32 * 2 + 1;
+                let py = cy as i32 * 4 + 2;
+                let color = if py < gy0 {
+                    crate::Color::rgb(255, 226, 90)
+                } else if px < head {
+                    let f = px as f32 / wi.max(1) as f32;
+                    if f < 0.5 {
+                        crate::Color::rgb(60 + (f * 360.0) as u8, 120, 255)
+                    } else {
+                        crate::Color::rgb(255, 80 + ((f - 0.5) * 300.0) as u8, 200)
+                    }
+                } else {
+                    crate::Color::rgb(170, 176, 200)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
+        }
         Ok(())
     }
 }

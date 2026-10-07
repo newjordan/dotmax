@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -850,15 +885,15 @@ pub mod styles {
 //! | Name | Physics | Key equation |
 //! |------|---------|-------------|
 //! | `projectile` | Projectile motion | y = v·sinθ·t − ½g·t²,  x = v·cosθ·t |
-//! | `pendulum` | Simple pendulum SHM | θ(t) = θ₀·cos(√(g/L)·t) |
+//! | `pendulum` | Simple pendulum SHM | θ(t) = θ₀·cos(ωt), pivot rides the beam |
 //! | `mass-spring` | Mass-spring SHM | x = A·cos(ωt),  spring coil drawn |
-//! | `newtons-cradle` | Newton's cradle | elastic collision, momentum swap |
-//! | `orbital` | Kepler orbit | ellipse, equal-area sweeping |
+//! | `newtons-cradle` | Newton's cradle | touching balls, end-ball momentum swap |
+//! | `orbital` | Kepler orbit | E − e·sin E = M, star at a focus |
 //! | `terminal-velocity` | Drag / terminal vel. | v = v_t·(1 − e^(−t/τ)) |
 //! | `elastic-collision` | 1D elastic collision | two carts exchange momentum |
-//! | `gravity-well` | 1/r potential well | funnel lines, spiral in-fall |
-//! | `light-cone` | Special relativity | 45° worldlines, light cone |
-//! | `double-slit` | Wave-particle duality | fringe pattern accumulates |
+//! | `gravity-well` | 1/r potential well | grid-sheet funnel, spiral in-fall |
+//! | `light-cone` | Special relativity | past/future cones, timelike worldline |
+//! | `double-slit` | Wave interference | I(y) ∝ cos²(πy/Δ), fringes accumulate |
 //! | `doppler` | Doppler effect | compressed / expanded wavefronts |
 
 use super::super::draw;
@@ -905,6 +940,26 @@ fn line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
     }
 }
 
+/// Filled round blob of radius `r` dots centred on `(cx, cy)`.
+fn disc(grid: &mut BrailleGrid, cx: i32, cy: i32, r: i32) {
+    for dy in -r..=r {
+        for dx in -r..=r {
+            if dx * dx + dy * dy <= r * r + r {
+                draw::dot_i(grid, cx + dx, cy + dy);
+            }
+        }
+    }
+}
+
+/// Tint every cell touched by the square of radius `r` dots around `(x, y)`.
+fn tint_around(grid: &mut BrailleGrid, x: i32, y: i32, r: i32, col: crate::Color) {
+    let lo = (x - r).max(0) as usize / 2;
+    let hi = (x + r).max(0) as usize / 2;
+    for yy in (y - r).max(0)..=(y + r).max(0) {
+        draw::tint_row(grid, yy as usize / 4, lo, hi, col);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 1. Projectile motion
 //    x = v·cosθ·τ,  y = v·sinθ·τ − ½g·τ²
@@ -920,7 +975,7 @@ impl ProgressStyle for Projectile {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Projectile motion: parabolic arc y=v·sinθ·t−½g·t² draws out as progress rises"
+        "Projectile motion: a cannonball fired from a cannon traces its parabola toward a target flag as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -941,9 +996,11 @@ impl ProgressStyle for Projectile {
         let arc_steps = ((w * 4).max(32)) as usize;
         let t_now = ctx.eased * t_flight; // current simulation time
 
-        // Draw the ground baseline
+        // Ground baseline: dotted ahead of the range already covered.
         let ground = h.saturating_sub(1);
-        draw::hline(grid, 0, w.saturating_sub(1), ground);
+        for x in (0..w).step_by(3) {
+            draw::dot(grid, x, ground);
+        }
 
         // Draw the arc up to t_now
         let mut prev: Option<(i32, i32)> = None;
@@ -968,8 +1025,35 @@ impl ProgressStyle for Projectile {
         let fill_x = (ctx.eased * wf) as usize;
         draw::hline(grid, 0, fill_x.min(w.saturating_sub(1)), ground);
 
-        // Mark launch point
-        draw::dot_i(grid, 0, ground as i32);
+        // Cannonball at the head of the arc (spins a notch with time).
+        if let Some((bx, by)) = prev {
+            disc(grid, bx, by.min(ground as i32 - 2), 1);
+            if (ctx.time * 8.0) as i32 % 2 == 0 {
+                draw::dot_i(grid, bx + 2, by.min(ground as i32 - 2));
+            }
+        }
+
+        // Cannon at the launch point: wheel plus a 45° barrel.
+        let gi = ground as i32;
+        if h >= 8 {
+            disc(grid, 2, gi - 2, 1);
+            for k in 0..5 {
+                draw::dot_i(grid, 2 + k, gi - 3 - k);
+                draw::dot_i(grid, 3 + k, gi - 3 - k);
+            }
+        }
+
+        // Target flag at the landing point.
+        let fx = w.saturating_sub(2);
+        draw::vline(grid, fx, ground.saturating_sub(7), ground);
+        for k in 0..3usize {
+            draw::hline(
+                grid,
+                fx.saturating_sub(4 - k),
+                fx,
+                ground.saturating_sub(7) + k,
+            );
+        }
 
         // Tint the filled arc region
         let (cw, ch) = grid.dimensions();
@@ -1001,78 +1085,75 @@ impl ProgressStyle for Pendulum {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Pendulum SHM: θ(t)=θ₀·cos(√(g/L)·t) — amplitude grows with progress, bob swings with time"
+        "Pendulum: pivot rides a ceiling beam to progress; rod and solid bob swing θ₀·cos(ωt) beneath"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let wf = w as f32;
-        let hf = h as f32;
+        let wi = w as i32;
+        let hi = h as i32;
 
-        // Pivot at top-centre
-        let pivot_x = (wf / 2.0) as i32;
-        let pivot_y = 0_i32;
+        // Rod length leaves room for the bob radius below it.
+        let bob_r = if hi >= 12 { 2 } else { 1 };
+        let rod_len = (hi - bob_r - 2).max(1) as f32;
 
-        // Rod length spans ~80% of height
-        let rod_len = (hf * 0.80).max(2.0);
-
-        // Amplitude and angular frequency
-        let theta0 = ctx.eased * (PI / 3.0); // max swing 0..60°
-        let omega = (9.8_f32 / rod_len).sqrt() * 4.0; // visual speed-up
-
-        // Current angle (oscillates with time)
+        // Fixed visual amplitude θ₀ = 35°; ω scaled up so it reads as motion.
+        let theta0 = 0.61_f32;
+        let omega = 2.6_f32;
         let theta = theta0 * (omega * ctx.time).cos();
 
-        // Bob position
-        let bob_x = pivot_x + (rod_len * theta.sin()) as i32;
-        let bob_y = pivot_y + (rod_len * theta.cos()) as i32;
+        // Pivot carriage travels along the beam with progress, kept far
+        // enough from the walls that the full swing stays on screen.
+        let margin = (rod_len * theta0.sin()) as i32 + bob_r + 1;
+        let span = (wi - 2 * margin).max(0) as f32;
+        let pivot_x = margin.min(wi - 1) + (ctx.eased * span) as i32;
+        let pivot_y = 0_i32;
 
-        // Draw rod
-        line(grid, pivot_x, pivot_y, bob_x, bob_y);
-
-        // Draw pivot dot
-        draw::dot_i(grid, pivot_x, pivot_y);
-
-        // Draw bob (small filled square 2×2 dots)
-        for dy in -1_i32..=1 {
-            for dx in -1_i32..=1 {
-                draw::dot_i(grid, bob_x + dx, bob_y + dy);
+        // Ceiling beam: solid behind the carriage, dotted ahead.
+        for x in 0..wi {
+            if x <= pivot_x || x % 3 == 0 {
+                draw::dot_i(grid, x, pivot_y);
             }
         }
+        // Carriage block on the beam.
+        for dx in -2_i32..=2 {
+            draw::dot_i(grid, pivot_x + dx, pivot_y + 1);
+        }
 
-        // Draw the arc the bob traces: positions at many theta values
-        let arc_steps = w.max(2);
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=arc_steps {
-            let th = if arc_steps == 0 {
-                0.0
-            } else {
-                theta0 * ((s as f32 / arc_steps as f32) * 2.0 - 1.0)
-            };
-            let ax = pivot_x + (rod_len * th.sin()) as i32;
-            let ay = pivot_y + (rod_len * th.cos()) as i32;
+        // Faint swing arc traced by the bob.
+        let steps = ((2.0 * rod_len * theta0) as i32).max(2);
+        for s in 0..=steps {
+            if s % 2 == 1 {
+                continue;
+            }
+            let th = theta0 * ((s as f32 / steps as f32) * 2.0 - 1.0);
+            let ax = pivot_x + (rod_len * th.sin()).round() as i32;
+            let ay = pivot_y + (rod_len * th.cos()).round() as i32;
             draw::dot_i(grid, ax, ay);
-            if let Some((lx, ly)) = prev {
-                line(grid, lx, ly, ax, ay);
-            }
-            prev = Some((ax, ay));
         }
 
-        // Draw horizontal equilibrium line at rod bottom
-        let eq_y = (pivot_y + rod_len as i32).min(h as i32 - 1);
-        draw::hline(grid, 0, w.saturating_sub(1), eq_y as usize);
+        // Rod and solid round bob.
+        let bob_x = pivot_x + (rod_len * theta.sin()).round() as i32;
+        let bob_y = pivot_y + (rod_len * theta.cos()).round() as i32;
+        line(grid, pivot_x, pivot_y + 1, bob_x, bob_y);
+        disc(grid, bob_x, bob_y, bob_r);
 
-        // Tint: colour spread across the swing width
+        // Tint: beam gradient up to the carriage, bob/rod in the leading colour.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled_cells.min(cw) {
-            let t = cx as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
-            }
+        let pivot_cell = (pivot_x.max(0) as usize) / 2;
+        for cx in 0..=pivot_cell.min(cw.saturating_sub(1)) {
+            let t = cx as f32 / cw.max(1) as f32;
+            draw::tint_row(grid, 0, cx, cx, ctx.palette.sample(t));
+        }
+        let lead = ctx.palette.sample(ctx.eased);
+        let (bx0, bx1) = (
+            (bob_x - bob_r).min(pivot_x).max(0) as usize / 2,
+            (bob_x + bob_r).max(pivot_x).max(0) as usize / 2,
+        );
+        for cy in 1..ch {
+            draw::tint_row(grid, cy, bx0, bx1, lead);
         }
         Ok(())
     }
@@ -1191,7 +1272,7 @@ impl ProgressStyle for NewtonsCradle {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Newton's cradle: elastic momentum transfer — end balls trade arcs every half-period"
+        "Newton's cradle: five touching balls in a frame; the end balls trade swings, base fills with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1201,70 +1282,78 @@ impl ProgressStyle for NewtonsCradle {
         let wf = w as f32;
         let hf = h as f32;
 
-        let n_balls: usize = 5;
-        let ball_r = (wf / (n_balls as f32 * 3.0)).max(1.0) as i32;
-        let spacing = wf / (n_balls as f32 + 1.0);
-        let rod_top = (hf * 0.05) as i32;
-        let rod_len = (hf * 0.65).max(4.0);
-        // Equilibrium bob y (at rest)
-        let bob_y_eq = rod_top + rod_len as i32;
+        let wi = w as i32;
+        let hi = h as i32;
+        let n_balls: i32 = 5;
 
-        // Angular frequency from pendulum physics (visual scale)
+        // Five touching steel balls hung from a frame: ball size from height.
+        let ball_r = ((hf * 0.16) as i32).max(1);
+        let pitch = 2 * ball_r + 2;
+        let rod_top = 0_i32;
+        let rod_len = (hf - ball_r as f32 - 3.0).max(2.0);
+        let row_w = pitch * (n_balls - 1);
+        let x_first = (wf / 2.0) as i32 - row_w / 2;
+
+        // Swing amplitude: always visible, grows with progress.
         let omega = 3.5_f32;
-        let theta0 = ctx.eased * (PI / 5.0); // max swing angle
-
-        // Phase of the cradle: cos(ω·t) drives the END balls
+        let theta0 = 0.35 + ctx.eased * 0.35;
+        // Only the end balls move: the left one swings in, strikes, and the
+        // momentum pops the right one out, then back again.
         let phase = (omega * ctx.time).cos();
-        // When phase > 0: left ball is out, right ball is at rest
-        // When phase < 0: right ball is out, left ball is at rest
-        let left_theta = if phase >= 0.0 { theta0 * phase } else { 0.0 };
+        let left_theta = if phase >= 0.0 { -theta0 * phase } else { 0.0 };
         let right_theta = if phase < 0.0 { -theta0 * phase } else { 0.0 };
 
-        // Draw horizontal support bar
-        let bar_y = rod_top;
-        draw::hline(grid, 0, w.saturating_sub(1), bar_y as usize);
+        // Frame: top bar, two posts and a base.
+        let reach = (rod_len * theta0.sin()) as i32 + ball_r + 4;
+        let post_l = (x_first - reach).max(0);
+        let post_r = (x_first + row_w + reach).min(wi - 1);
+        let base_y = hi - 1;
+        for x in post_l..=post_r {
+            draw::dot_i(grid, x, rod_top);
+        }
+        line(grid, post_l, rod_top, post_l, base_y);
+        line(grid, post_r, rod_top, post_r, base_y);
 
-        // Draw each ball
-        for i in 0..n_balls {
-            let pivot_x = (spacing * (i as f32 + 1.0)) as i32;
-            let theta = if i == 0 {
-                left_theta // left end swings
-            } else if i == n_balls - 1 {
-                -right_theta // right end swings (opposite direction)
-            } else {
-                0.0 // middle balls stationary
-            };
-
-            let bob_x = pivot_x + (rod_len * theta.sin()) as i32;
-            let bob_y = rod_top + (rod_len * theta.cos()) as i32;
-
-            // Rod
-            line(grid, pivot_x, rod_top, bob_x, bob_y);
-
-            // Bob (circle approximated by outline)
-            for step in 0..16_i32 {
-                let a = step as f32 / 16.0 * 2.0 * PI;
-                let bx = bob_x + (ball_r as f32 * a.cos()) as i32;
-                let by = bob_y + (ball_r as f32 * a.sin()) as i32;
-                draw::dot_i(grid, bx, by);
+        // Base doubles as the progress track: solid to eased, dotted beyond.
+        let filled = (ctx.eased * wf) as i32;
+        for x in 0..wi {
+            if x < filled || x % 3 == 0 {
+                draw::dot_i(grid, x, base_y);
             }
-            // Filled centre of bob
-            draw::dot_i(grid, bob_x, bob_y);
         }
 
-        // Ground reference line
-        let ground = (bob_y_eq + ball_r + 1).min(h as i32 - 1);
-        draw::hline(grid, 0, w.saturating_sub(1), ground as usize);
+        for i in 0..n_balls {
+            let pivot_x = x_first + i * pitch;
+            let theta = if i == 0 {
+                left_theta
+            } else if i == n_balls - 1 {
+                right_theta
+            } else {
+                0.0
+            };
+            let bob_x = pivot_x + (rod_len * theta.sin()).round() as i32;
+            let bob_y = rod_top + (rod_len * theta.cos()).round() as i32;
+            line(grid, pivot_x, rod_top, bob_x, bob_y);
+            disc(grid, bob_x, bob_y, ball_r);
+        }
 
-        // Tint: gradient across the width keyed by eased
+        // Tint: base gradient to progress; balls in the leading colour.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
+        let filled_cells = (filled.max(0) as usize + 1) / 2;
         for cx in 0..filled_cells.min(cw) {
             let t = cx as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
-            }
+            draw::tint_row(grid, ch.saturating_sub(1), cx, cx, ctx.palette.sample(t));
+        }
+        let lo = ((x_first - reach).max(0) as usize) / 2 + 1;
+        let hi_c = ((x_first + row_w + reach).max(0) as usize) / 2;
+        for cy in 0..ch.saturating_sub(1) {
+            draw::tint_row(
+                grid,
+                cy,
+                lo,
+                hi_c.saturating_sub(1),
+                ctx.palette.sample(ctx.eased),
+            );
         }
         Ok(())
     }
@@ -1287,7 +1376,7 @@ impl ProgressStyle for Orbital {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Kepler orbit: elliptical path, equal-area sweeping — planet position from mean anomaly"
+        "Kepler orbit: planet with a circling moon sweeps an elliptical path around a pulsing star; orbit traced = progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1297,71 +1386,74 @@ impl ProgressStyle for Orbital {
         let wf = w as f32;
         let hf = h as f32;
 
+        // Ellipse centre, semi-axes and eccentricity (star sits at a focus).
         let cx = wf / 2.0;
-        let cy = hf / 2.0;
-        let a = (wf / 2.0 - 2.0).max(2.0); // semi-major axis in dots
-        let ecc = 0.60_f32; // eccentricity
-        let b = a * (1.0 - ecc * ecc).sqrt(); // semi-minor axis
-        let focus_offset = a * ecc; // star is at focus
+        let cy = (hf - 1.0) / 2.0;
+        let a = (wf / 2.0 - 4.0).max(1.0);
+        let b = (hf / 2.0 - 2.0).max(0.5);
+        let e = 0.3_f32;
+        let star_x = cx + a * e;
 
-        // Draw the full ellipse outline
-        let orbit_steps = (w * 4).max(64);
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=orbit_steps {
-            let e_ang = s as f32 / orbit_steps as f32 * 2.0 * PI;
-            let px = (cx - focus_offset + a * e_ang.cos()) as i32;
-            let py = (cy + b * e_ang.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((lx, ly)) = prev {
-                line(grid, lx, ly, px, py);
+        // Kepler's equation E − e·sin(E) = M, solved by Newton iteration.
+        // Mean anomaly M runs 0 → 2π with progress, starting at aphelion.
+        let kepler = |m: f32| -> f32 {
+            let mut ea = m;
+            for _ in 0..6 {
+                ea -= (ea - e * ea.sin() - m) / (1.0 - e * ea.cos());
             }
-            prev = Some((px, py));
-        }
-
-        // Star at focus (small cross)
-        let star_x = (cx - focus_offset) as i32;
-        let star_y = cy as i32;
-        draw::dot_i(grid, star_x, star_y);
-        draw::dot_i(grid, star_x - 1, star_y);
-        draw::dot_i(grid, star_x + 1, star_y);
-        draw::dot_i(grid, star_x, star_y - 1);
-        draw::dot_i(grid, star_x, star_y + 1);
-
-        // Kepler equation: E − e·sin(E) = M;  solve by Newton-Raphson
-        let period = 6.0_f32; // visual period seconds
-        let m_anim = 2.0 * PI * (ctx.time % period.max(0.001)) / period.max(0.001);
-        let e_anim = {
-            let mut e = m_anim;
-            for _ in 0..8 {
-                e = e - (e - ecc * e.sin() - m_anim) / (1.0 - ecc * e.cos());
-            }
-            e
+            ea
+        };
+        let pos = |ea: f32| -> (i32, i32) {
+            // E measured from aphelion (left), planet travels clockwise.
+            let ang = ea + PI;
+            (
+                (cx + a * ang.cos()).round() as i32,
+                (cy - b * ang.sin()).round() as i32,
+            )
         };
 
-        // Planet position from eccentric anomaly (animated)
-        let planet_x = (cx - focus_offset + a * e_anim.cos()) as i32;
-        let planet_y = (cy + b * e_anim.sin()) as i32;
-
-        // Draw line from focus to planet (radius vector)
-        line(grid, star_x, star_y, planet_x, planet_y);
-
-        // Planet dot (3×3)
-        for dy in -1_i32..=1 {
-            for dx in -1_i32..=1 {
-                draw::dot_i(grid, planet_x + dx, planet_y + dy);
+        // Orbit path: solid where already swept, dotted ahead.
+        let m_now = ctx.eased * 2.0 * PI;
+        let e_now = kepler(m_now);
+        let steps = (w * 2).max(8);
+        for s in 0..=steps {
+            let ea = s as f32 / steps as f32 * 2.0 * PI;
+            if ea <= e_now || s % 4 == 0 {
+                let (x, y) = pos(ea);
+                draw::dot_i(grid, x, y);
             }
         }
 
-        // Shade filled arc from eased (the orbit fraction completed)
+        // Star at the focus: solid core plus short rays that flicker.
+        let sx = star_x.round() as i32;
+        let sy = cy.round() as i32;
+        let star_r = if h >= 12 { 2 } else { 1 };
+        disc(grid, sx, sy, star_r);
+        let ray = star_r + 1 + ((ctx.time * 6.0).sin() > 0.0) as i32;
+        for &(dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            draw::dot_i(grid, sx + dx * (ray + 1), sy + dy * ray);
+        }
+
+        // Planet (solid) with a moon circling it over time.
+        let (px, py) = pos(e_now);
+        disc(grid, px, py, 1);
+        let moon_a = ctx.time * 5.0;
+        draw::dot_i(
+            grid,
+            px + (4.0 * moon_a.cos()).round() as i32,
+            py + (2.5 * moon_a.sin()).round() as i32,
+        );
+
+        // Tint: swept orbit gradient, star and planet in the end colours.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cell_x in 0..filled_cells.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
+        for cx_ in 0..cw {
+            let t = cx_ as f32 / cw.max(1) as f32;
+            for cy_ in 0..ch {
+                draw::tint_row(grid, cy_, cx_, cx_, ctx.palette.sample(t * ctx.eased));
             }
         }
+        tint_around(grid, sx, sy, star_r + 2, ctx.palette.end);
+        tint_around(grid, px, py, 2, ctx.palette.start);
         Ok(())
     }
 }
@@ -1384,14 +1476,13 @@ impl ProgressStyle for TerminalVelocity {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Terminal velocity: v=v_t·(1−e^(−t/τ)) — speed curve fills as object approaches drag limit"
+        "Terminal velocity: v=v_t·(1−e^(−t/τ)) plots toward its asymptote while a falling body's drag arrow grows to match its weight"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let wf = w as f32;
 
         // Physics: τ = 1 (normalised), v_t = 1
         let tau = 1.0_f32;
@@ -1414,7 +1505,9 @@ impl ProgressStyle for TerminalVelocity {
         // Draw v(t) curve up to eased fraction of t_max
         let t_now = ctx.eased * t_max;
         let graph_h = (ax_y as f32 - top_y as f32).max(1.0);
-        let graph_w = (w - ax_x - 1) as f32;
+        // Leave room on the right for the falling body's force diagram.
+        let fbd_w = if w >= 40 { 16 } else { 0 };
+        let graph_w = w.saturating_sub(ax_x + 1 + fbd_w) as f32;
 
         let mut prev: Option<(i32, i32)> = None;
         let steps = w.max(2);
@@ -1432,15 +1525,38 @@ impl ProgressStyle for TerminalVelocity {
             prev = Some((px, py));
         }
 
-        // Falling object: a small square at vertical position y(t) on the right
-        let t_now_anim = (ctx.time % t_max.max(0.001)) * 0.8;
-        let y_pos_norm = (t_now_anim / tau - (1.0 - (-t_now_anim / tau).exp()))
-            / (t_max / tau - 1.0 + (-t_max / tau).exp()).max(1e-6);
-        let obj_x = (wf * 0.92) as i32;
-        let obj_y = (y_pos_norm.clamp(0.0, 1.0) * (ax_y as f32 - 2.0) + 1.0) as i32;
-        for dy in 0_i32..=2 {
-            for dx in -1_i32..=1 {
-                draw::dot_i(grid, obj_x + dx, obj_y + dy);
+        // Falling body with its free-body diagram: weight (down, fixed) and
+        // drag (up, ∝ v) — the arrows match at terminal velocity. Air streaks
+        // rush upward past it faster as it speeds up.
+        if fbd_w > 0 {
+            let v_now = 1.0 - (-t_now / tau).exp();
+            let bx = w as i32 - (fbd_w as i32) / 2;
+            let by = (ax_y as i32) / 2;
+            disc(grid, bx, by, 2);
+            let arrow = |grid: &mut BrailleGrid, y0: i32, len: i32, dir: i32| {
+                if len <= 0 {
+                    return;
+                }
+                let tip = y0 + dir * len;
+                line(grid, bx, y0, bx, tip);
+                draw::dot_i(grid, bx - 1, tip - dir);
+                draw::dot_i(grid, bx + 1, tip - dir);
+            };
+            let max_len = (by - 3).max(1);
+            arrow(grid, by + 3, max_len, 1);
+            arrow(grid, by - 3, (v_now * max_len as f32).round() as i32, -1);
+            // Air streaks either side, scrolling upward with time.
+            let streaks = (v_now * 4.0).round() as i32;
+            let scroll = (ctx.time * (4.0 + 20.0 * v_now)) as i32;
+            for k in 0..streaks {
+                for side in [-5_i32, 5] {
+                    let y = (ax_y as i32
+                        - 1
+                        - (scroll + k * 4 + side).rem_euclid((ax_y as i32).max(1)))
+                    .max(0);
+                    draw::dot_i(grid, bx + side, y);
+                    draw::dot_i(grid, bx + side, y + 1);
+                }
             }
         }
 
@@ -1597,7 +1713,7 @@ impl ProgressStyle for GravityWell {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Gravity well: 1/r potential funnel in dot-lines, test particle spirals inward with progress"
+        "Gravity well: spacetime grid sheet dips into a funnel around a mass; a test particle spirals in with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1606,102 +1722,88 @@ impl ProgressStyle for GravityWell {
         }
         let wf = w as f32;
         let hf = h as f32;
+        let cx = wf / 2.0;
+        let bottom = (hf - 3.0).max(0.0);
 
-        // The funnel is drawn as a side-profile: V shape opening upward.
-        // At horizontal distance d from centre, depth ∝ 1/d (capped).
-        let cx = (wf / 2.0) as i32;
-        let top = 0_i32;
+        // Sheet depth profile: a softened 1/r dip, g(0) = 1, g(∞) → 0.
+        let s = (wf / 10.0).max(1.0);
+        let dip = |x: f32| -> f32 {
+            let u = (x - cx) / s;
+            1.0 / (1.0 + u * u)
+        };
+        // Surface height of grid line `base` at column x.
+        let surf = |base: f32, x: f32| -> f32 { base + (bottom - base) * dip(x) };
 
-        // Draw left and right funnel arms as curved lines y = k/x from centre
-        let depth_max = (hf * 0.85).max(2.0);
-        let k = depth_max * (wf / 2.0 - 2.0); // curvature constant
-
-        let mut prev_l: Option<(i32, i32)> = None;
-        let mut prev_r: Option<(i32, i32)> = None;
-
-        for xi in 1..=(w / 2).max(1) {
-            let xf = xi as f32;
-            let depth = (k / xf).min(depth_max);
-            let py = (top as f32 + hf - 1.0 - depth) as i32;
-            let py = py.clamp(top, (h as i32) - 1);
-
-            let left_x = cx - xi as i32;
-            let right_x = cx + xi as i32;
-
-            draw::dot_i(grid, right_x, py);
-            draw::dot_i(grid, left_x, py);
-
-            if let Some((lx, ly)) = prev_r {
-                line(grid, lx, ly, right_x, py);
+        // Three receding grid lines ("latitudes") that all funnel to the mass.
+        let bases = [1.0_f32, hf * 0.30, hf * 0.55];
+        for &base in &bases {
+            let mut prev: Option<(i32, i32)> = None;
+            for x in 0..w {
+                let y = surf(base, x as f32).round() as i32;
+                if let Some((lx, ly)) = prev {
+                    line(grid, lx, ly, x as i32, y);
+                }
+                prev = Some((x as i32, y));
             }
-            if let Some((lx, ly)) = prev_l {
-                line(grid, lx, ly, left_x, py);
+        }
+        // "Longitude" struts joining the grid lines, bending into the well.
+        let nstrut = 4;
+        for k in 1..=nstrut {
+            for side in [-1.0_f32, 1.0] {
+                let x = cx + side * (k as f32) * (wf / 2.0) / (nstrut as f32 + 0.5);
+                let y0 = surf(bases[0], x).round() as i32;
+                let y1 = surf(bases[2], x).round() as i32;
+                let xi = x.round() as i32;
+                line(grid, xi, y0, xi - side as i32, y1);
             }
-            prev_r = Some((right_x, py));
-            prev_l = Some((left_x, py));
         }
 
-        // Well bottom marker
-        let well_bottom = (top as f32 + hf - 1.0) as i32;
-        draw::dot_i(grid, cx - 1, well_bottom);
-        draw::dot_i(grid, cx, well_bottom);
-        draw::dot_i(grid, cx + 1, well_bottom);
+        // Central mass at the bottom of the funnel.
+        let mass_y = bottom.round() as i32;
+        disc(grid, cx.round() as i32, mass_y, if h >= 12 { 2 } else { 1 });
 
-        // Spiraling particle: r decreases from max to 0 as eased→1
+        // Test particle: orbit radius shrinks with progress, angular speed
+        // rises as it falls (∝ r^-1.5, Kepler), drawn on the sheet surface.
         let r_max = wf / 2.0 - 2.0;
-        let r_now = r_max * (1.0 - ctx.eased);
-        let azimuth = ctx.time * 4.0 * PI; // winds around
-
-        // Particle traces a spiral (draw last quarter turn)
-        let spiral_steps = 32_usize;
-        let mut prev_sp: Option<(i32, i32)> = None;
-        for s in 0..spiral_steps {
-            let frac = s as f32 / spiral_steps as f32;
-            let angle = azimuth - frac * PI * 0.5; // last half-turn
-            let r_s = r_now + frac * r_max * 0.25;
-            let depth = (k / r_s.max(1.0)).min(depth_max);
-            let py_s = (top as f32 + hf - 1.0 - depth) as i32;
-            let px_s = cx + (r_s * angle.cos()) as i32;
-            let py_s = py_s.clamp(top, h as i32 - 1);
-            draw::dot_i(grid, px_s, py_s);
-            if let Some((lx, ly)) = prev_sp {
-                line(grid, lx, ly, px_s, py_s);
-            }
-            prev_sp = Some((px_s, py_s));
-        }
-
-        // Particle at current position
-        let px_now = cx + (r_now * azimuth.cos()) as i32;
-        let depth_now = (k / r_now.max(1.0)).min(depth_max);
-        let py_now = (top as f32 + hf - 1.0 - depth_now) as i32;
-        let py_now = py_now.clamp(top, h as i32 - 1);
-        for dy in -1_i32..=1 {
-            for dx in -1_i32..=1 {
-                draw::dot_i(grid, px_now + dx, py_now + dy);
+        let r_now = (r_max * (1.0 - ctx.eased)).max(3.0);
+        let omega = 1.5 * (r_max / r_now).powf(1.5).min(12.0);
+        let phi = ctx.time * omega;
+        let at = |r: f32, ph: f32| -> (i32, i32) {
+            let x = cx + r * ph.cos();
+            let depth = surf(bases[1], cx + r) + 2.0 * ph.sin();
+            (x.round() as i32, depth.round() as i32)
+        };
+        // Spiral wake trailing the particle.
+        for i in 1..18 {
+            let back = i as f32 * 0.16;
+            let r = (r_now + back * 2.5).min(r_max);
+            let (x, y) = at(r, phi - back);
+            if i % 2 == 0 {
+                draw::dot_i(grid, x, y);
             }
         }
+        let (px, py) = at(r_now, phi);
+        disc(grid, px, py, 1);
 
-        // Tint
+        // Tint: sheet in a depth gradient, mass and particle in the end colour.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cell_x in 0..filled_cells.min(cw) {
-            let t = cell_x as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cell_y in 0..ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, col);
-            }
+        for cy_ in 0..ch {
+            let t = (cy_ as f32 + 0.5) / ch.max(1) as f32;
+            draw::tint_row(grid, cy_, 0, cw, ctx.palette.sample(t));
         }
+        tint_around(grid, cx.round() as i32, mass_y, 2, ctx.palette.end);
+        tint_around(grid, px, py, 1, ctx.palette.start);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 // 9. Relativity light cone
-//    Spacetime diagram: x-axis = space, y-axis = time (up).
-//    Light cone: two 45° lines from the origin event (centre-bottom).
-//    Past cone: 45° lines going down.  Future cone going up.
-//    A particle worldline: a curved timelike path from bottom to top.
-//    eased controls how far up the worldline is drawn.
+//    The textbook 3-D spacetime diagram: an event (here-now) sits at the
+//    centre of a wide "plane of the present"; the past cone opens downward
+//    to an elliptical rim, the future cone opens upward. Light spreads at c,
+//    so the future cone's height and rim grow with eased; a timelike particle
+//    worldline threads both cones and climbs with it.
 // ---------------------------------------------------------------------------
 struct LightCone;
 impl ProgressStyle for LightCone {
@@ -1712,7 +1814,7 @@ impl ProgressStyle for LightCone {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Spacetime light cone: 45° null worldlines + timelike particle path drawn by progress"
+        "Light cone: hourglass of past and future cones through the here-now plane; future cone and worldline grow with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1720,84 +1822,70 @@ impl ProgressStyle for LightCone {
             return Ok(());
         }
         let wf = w as f32;
-        let hf = h as f32;
+        let hi = h as i32;
+        let cx = (wf / 2.0) as i32;
+        let ey = (hi - 1) / 2;
+        // Horizontal stretch so the cones read at bar aspect ratios.
+        let slope = 1.7_f32;
 
-        // Origin event at centre-bottom
-        let origin_x = (wf / 2.0) as i32;
-        let origin_y = (hf - 2.0) as i32;
-
-        // Future light cone: two 45° lines upward from origin
-        // x = origin_x ± Δt  (slope = ±1 in dot-space, scaled to aspect)
-        // Dot aspect: 1 cell = 2 dots wide, 4 dots tall → squash x by 2
-        let scale_x = 1_i32; // how many x-dots per y-dot of light travel
-        for step in 0..h as i32 {
-            let dt = step;
-            let right_x = origin_x + dt * scale_x;
-            let left_x = origin_x - dt * scale_x;
-            let cone_y = origin_y - dt;
-            if cone_y >= 0 {
-                draw::dot_i(grid, right_x, cone_y);
-                draw::dot_i(grid, left_x, cone_y);
-            }
-        }
-
-        // Past light cone: two 45° lines downward (below origin)
-        // We clamp — only visible if origin is not at very bottom
-        for step in 1..4_i32 {
-            let dt = step;
-            let right_x = origin_x + dt * scale_x;
-            let left_x = origin_x - dt * scale_x;
-            let cone_y = origin_y + dt;
-            draw::dot_i(grid, right_x, cone_y);
-            draw::dot_i(grid, left_x, cone_y);
-        }
-
-        // Draw axis labels as dot-marks
-        // x-axis (space): horizontal at origin_y
-        draw::hline(grid, 0, w.saturating_sub(1), origin_y as usize);
-        // t-axis (time): vertical at origin_x
-        draw::vline(grid, origin_x as usize, 0, h.saturating_sub(1));
-
-        // Particle worldline: a slightly curved timelike path
-        // x(τ) = origin_x + A·sin(ω_p·τ),  y(τ) = origin_y − τ  (moving through time)
-        // τ from 0 to eased·(h-2).  Animated lateral drift via ctx.time.
-        let amp_p = (wf / 6.0).max(1.0);
-        let omega_p = 2.0 * PI / (hf.max(1.0));
-        let tau_max = (ctx.eased * (h as f32 - 2.0)) as i32;
-        let drift = ctx.time * 0.3; // slow lateral wiggle
-
-        let mut prev_wp: Option<(i32, i32)> = None;
-        for tau in 0..=tau_max {
-            let tauf = tau as f32;
-            let px = (origin_x as f32 + amp_p * (omega_p * tauf + drift).sin()) as i32;
-            let py = origin_y as i32 - tau;
-            if py >= 0 {
-                draw::dot_i(grid, px, py);
-                if let Some((lx, ly)) = prev_wp {
-                    line(grid, lx, ly, px, py);
+        let ellipse = |grid: &mut BrailleGrid, ecx: i32, ecy: i32, a: f32, b: f32, dotted: bool| {
+            let steps = ((a * 4.0) as i32).max(8);
+            let shift = (ctx.time * 6.0) as i32;
+            for s in 0..steps {
+                if dotted && (s + shift) % 3 != 0 {
+                    continue;
                 }
-                prev_wp = Some((px, py));
+                let t = s as f32 / steps as f32 * 2.0 * PI;
+                draw::dot_i(
+                    grid,
+                    ecx + (a * t.cos()).round() as i32,
+                    ecy + (b * t.sin()).round() as i32,
+                );
             }
+        };
+
+        // Plane of the present: wide dotted ellipse through the event.
+        ellipse(grid, cx, ey, wf / 2.0 - 2.0, (hi / 4) as f32, true);
+
+        // Past cone: fully formed, down to a rim near the bottom.
+        let past_d = (hi - 2 - ey).max(1);
+        let past_a = past_d as f32 * slope;
+        line(grid, cx, ey, cx - past_a as i32, ey + past_d);
+        line(grid, cx, ey, cx + past_a as i32, ey + past_d);
+        ellipse(grid, cx, ey + past_d, past_a, 1.0, false);
+
+        // Future cone: light has reached height `fut_d` so far.
+        let fut_max = ey.max(1);
+        let fut_d = (1.0 + ctx.eased * (fut_max - 1) as f32).round() as i32;
+        let fut_a = fut_d as f32 * slope;
+        line(grid, cx, ey, cx - fut_a as i32, ey - fut_d);
+        line(grid, cx, ey, cx + fut_a as i32, ey - fut_d);
+        ellipse(grid, cx, ey - fut_d, fut_a, 1.0, false);
+
+        // Timelike worldline: wanders (|dx/dy| < 1) up through the event.
+        let top = ey - fut_d + 1;
+        for y in top..hi {
+            let dy = (y - ey) as f32;
+            let x = cx as f32 + (dy * 0.45 + ctx.time * 1.5).sin() * 0.8 * dy.abs().min(4.0);
+            draw::dot_i(grid, x.round() as i32, y);
         }
 
-        // Particle tip marker
-        if let Some((lx, ly)) = prev_wp {
-            for dy in -1_i32..=1 {
-                for dx in -1_i32..=1 {
-                    draw::dot_i(grid, lx + dx, ly + dy);
-                }
-            }
+        // The event itself.
+        for d in -1i32..=1 {
+            draw::dot_i(grid, cx + d, ey);
+            draw::dot_i(grid, cx, ey + d);
         }
 
-        // Tint
+        // Tint: future cone in the end colour, past in the start colour.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled_cells.min(cw) {
-            let t = cx as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
-            }
+        let ey_cell = (ey.max(0) as usize) / 4;
+        for cy in 0..ch {
+            let col = match cy.cmp(&ey_cell) {
+                std::cmp::Ordering::Less => ctx.palette.sample(0.5 + 0.5 * ctx.eased),
+                std::cmp::Ordering::Equal => ctx.palette.sample(0.5),
+                std::cmp::Ordering::Greater => ctx.palette.start,
+            };
+            draw::tint_row(grid, cy, 0, cw, col);
         }
         Ok(())
     }
@@ -1819,86 +1907,107 @@ impl ProgressStyle for DoubleSlit {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Double-slit interference: fringe pattern accumulates as particle count grows with progress"
+        "Double slit: plane waves hit a two-slit barrier, ripples interfere, and the screen's cos² fringes build with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let wf = w as f32;
-        let hf = h as f32;
+        let wi = w as i32;
+        let hi = h as i32;
+        let cy = (hi - 1) as f32 / 2.0;
 
-        // Barrier with two slits lives at x = 35% of width
-        let barrier_x = (wf * 0.30) as usize;
-        // Screen on the right
-        let screen_x = (wf * 0.95) as usize;
+        // Layout: source | plane waves | barrier | ripples | fringe histogram | screen.
+        let barrier_x = (wi * 3 / 10).max(1);
+        let screen_x = wi - 1;
+        let hist_len = (wi / 4).max(1);
+        let ripple_end = screen_x - hist_len - 1;
 
-        // Draw barrier (full vline with gaps for slits)
-        let slit1_y = (hf * 0.33) as usize;
-        let slit2_y = (hf * 0.67) as usize;
-        let slit_h = (hf * 0.08).max(1.0) as usize;
-        for y in 0..h {
-            // Is this y inside a slit?
-            let in_slit1 = y >= slit1_y && y < slit1_y + slit_h;
-            let in_slit2 = y >= slit2_y && y < slit2_y + slit_h;
-            if !in_slit1 && !in_slit2 {
-                draw::dot(grid, barrier_x.min(w.saturating_sub(1)), y);
+        // Two slits symmetric about the centre line.
+        let slit_off = (hi / 5).max(1);
+        let slits = [
+            (cy - slit_off as f32).round() as i32,
+            (cy + slit_off as f32).round() as i32,
+        ];
+        for y in 0..hi {
+            if slits.iter().all(|&sy| (y - sy).abs() > 1) {
+                draw::dot_i(grid, barrier_x, y);
+                draw::dot_i(grid, barrier_x + 1, y);
             }
         }
 
-        // Interference pattern on screen
-        // d = slit separation, λ = wavelength (both in dot units)
-        let slit_sep = (slit2_y as f32 - slit1_y as f32 + slit_h as f32).max(1.0);
-        let lambda = slit_sep * 0.6; // wavelength
-        let dist_l = (screen_x as f32 - barrier_x as f32).max(1.0);
+        // Source block and incoming plane wavefronts marching right.
+        let lambda = 5.0_f32;
+        let phase = (ctx.time * 9.0) % lambda;
+        for y in (cy as i32 - 2)..=(cy as i32 + 2) {
+            draw::dot_i(grid, 0, y);
+            draw::dot_i(grid, 1, y);
+        }
+        let mut x = 3.0 + phase;
+        while (x as i32) < barrier_x - 1 {
+            for y in 0..hi {
+                if y % 2 == 0 {
+                    draw::dot_i(grid, x as i32, y);
+                }
+            }
+            x += lambda;
+        }
 
-        // The fringe pattern: I(y) = cos²(π·d·(y−y_c)/(λ·L))
-        let y_c = hf / 2.0;
-
-        for yi in 0..h {
-            let yf = yi as f32;
-            let sin_t = (yf - y_c) / (dist_l * dist_l + (yf - y_c) * (yf - y_c)).sqrt();
-            let phase = PI * slit_sep * sin_t / lambda;
-            let intensity = phase.cos() * phase.cos(); // I ∈ [0, 1]
-                                                       // Only draw if we have enough "particles" accumulated (ctx.eased)
-                                                       // and intensity is above threshold scaled by 1-eased
-            let threshold = (1.0 - ctx.eased) * 0.98;
-            if intensity > threshold {
-                // Thickness proportional to intensity
-                let sx = screen_x.min(w.saturating_sub(1));
-                draw::dot(grid, sx, yi);
-                if intensity > 0.7 && sx > 0 {
-                    draw::dot(grid, sx.saturating_sub(1), yi);
+        // Circular ripples spreading from each slit (half-arcs to the right).
+        let max_r = (ripple_end - barrier_x).max(1) as f32;
+        for ring in 0.. {
+            let r = phase + 1.0 + ring as f32 * lambda;
+            if r >= max_r {
+                break;
+            }
+            let steps = (r * 3.0) as i32 + 4;
+            for &sy in &slits {
+                for i in 0..=steps {
+                    if i % 2 == 1 {
+                        continue;
+                    }
+                    let a = -PI / 2.0 + PI * i as f32 / steps as f32;
+                    let px = barrier_x + 2 + (r * a.cos()).round() as i32;
+                    let py = sy + (r * a.sin()).round() as i32;
+                    if px <= ripple_end {
+                        draw::dot_i(grid, px, py);
+                    }
                 }
             }
         }
 
-        // Animate a particle in flight: travels from source (left) to screen
-        let flight = (ctx.time * 0.7).fract();
-        let part_x = (flight * screen_x as f32) as i32;
-        // Particle starts from one of the slits, quantum-mechanically both
-        let slit_cy = hf / 2.0;
-        let part_y = slit_cy as i32;
-        draw::dot_i(grid, part_x, part_y);
-        draw::dot_i(grid, part_x, part_y - 1);
-        draw::dot_i(grid, part_x, part_y + 1);
-
-        // Source dot on far left
-        draw::vline(grid, 0, h / 3, 2 * h / 3);
-
-        // Tint: fringe region on the right
-        let (cw, ch) = grid.dimensions();
-        let screen_cell = screen_x / 2;
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled_cells.min(cw) {
-            let t = cx as f32 / cw as f32;
-            let col = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, col);
+        // Screen, and the accumulated hit histogram growing left from it:
+        // I(y) = cos²(π·y/fringe) · envelope, length ∝ progress.
+        for y in 0..hi {
+            draw::dot_i(grid, screen_x, y);
+        }
+        let fringe = (hi as f32 / 3.2).max(1.0);
+        for y in 0..hi {
+            let dy = y as f32 - cy;
+            let env = (1.0 - (dy.abs() / (cy + 2.0))).max(0.0);
+            let i = (PI * dy / fringe).cos().powi(2) * env;
+            let len = (i * ctx.eased * hist_len as f32).round() as i32;
+            for k in 0..len {
+                draw::dot_i(grid, screen_x - 1 - k, y);
             }
         }
-        let _ = screen_cell;
+
+        // Tint: waves in the start colour, fringes in a gradient by progress.
+        let (cw, ch) = grid.dimensions();
+        let bcell = barrier_x.max(0) as usize / 2;
+        let hcell = (ripple_end + 1).max(0) as usize / 2;
+        for cy_ in 0..ch {
+            draw::tint_row(grid, cy_, 0, bcell.saturating_sub(1), ctx.palette.start);
+            draw::tint_row(grid, cy_, bcell + 1, hcell, ctx.palette.sample(0.4));
+            draw::tint_row(
+                grid,
+                cy_,
+                hcell + 1,
+                cw,
+                ctx.palette.sample(0.5 + ctx.eased * 0.5),
+            );
+        }
         Ok(())
     }
 }
@@ -1922,7 +2031,7 @@ impl ProgressStyle for Doppler {
         "physics"
     }
     fn describe(&self) -> &str {
-        "Doppler effect: expanding wavefronts compress ahead/stretch behind a moving source"
+        "Doppler effect: a source drives across with progress; its circular wavefronts bunch up ahead and stretch out behind"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1932,28 +2041,23 @@ impl ProgressStyle for Doppler {
         let wf = w as f32;
         let hf = h as f32;
 
-        let c_sound = wf / 3.0; // wave speed in dots/sec
-        let v_src = ctx.eased * c_sound * 0.85; // source speed (0 → Mach 0.85)
-        let lambda = c_sound * 0.15; // rest wavelength
-        let period = lambda / c_sound; // emission period
-        let n_waves = 7_usize; // number of wavefronts shown
+        let c_sound = 24.0_f32; // wave speed in dots/sec
+        let v_src = c_sound * 0.6; // source speed: Mach 0.6
+        let period = 0.26_f32; // emission period
+        let n_waves = 8_usize; // number of wavefronts shown
 
-        // Source current x-position (travels from left, wraps)
-        let loop_dur = (n_waves as f32 * period).max(0.001);
-        let t_phase = ctx.time % loop_dur;
-        let src_x = v_src * t_phase;
-        let src_y = hf / 2.0;
+        // Source position is the progress: it drives left → right across
+        // the bar while emitting continuously (wavefronts left in its wake).
+        let margin = 4.0_f32;
+        let src_x = margin + ctx.eased * (wf - 2.0 * margin).max(0.0);
+        let src_y = (hf - 1.0) / 2.0;
+        let t_phase = ctx.time % period;
 
         // Draw each wavefront as a circle (dot approximation)
         for n in 0..n_waves {
-            let nf = n as f32;
-            let t_emit = nf * period; // when this front was emitted
-            let age = t_phase - t_emit;
-            if age <= 0.0 {
-                continue;
-            }
+            let age = t_phase + n as f32 * period; // time since emission
             let radius = c_sound * age; // wavefront radius in dots
-            let emit_x = v_src * t_emit; // source was here at emission
+            let emit_x = src_x - v_src * age; // source was here at emission
 
             if radius < 0.5 {
                 continue;
@@ -1976,17 +2080,13 @@ impl ProgressStyle for Doppler {
             }
         }
 
-        // Draw source (small moving dot)
+        // Draw source: a solid emitter.
         let src_ix = src_x as i32;
-        let src_iy = src_y as i32;
-        for dy in -1_i32..=1 {
-            for dx in -1_i32..=1 {
-                draw::dot_i(grid, src_ix + dx, src_iy + dy);
-            }
-        }
+        let src_iy = src_y.round() as i32;
+        disc(grid, src_ix, src_iy, 2);
 
         // Direction arrow above source
-        let arr_y = (src_iy - 3).max(0);
+        let arr_y = (src_iy - 5).max(1);
         let arr_len = (v_src / c_sound * 6.0 + 1.0) as i32;
         line(grid, src_ix, arr_y, src_ix + arr_len, arr_y);
         draw::dot_i(grid, src_ix + arr_len - 1, arr_y - 1);

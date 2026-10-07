@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -847,10 +882,10 @@ pub mod styles {
 //!
 //! - `speedometer`      — 270° arc + tick marks + redline zone + needle
 //! - `ring-progress`    — thin full-circle ring that fills clockwise from 12 o'clock
-//! - `half-gauge`       — 180° semicircle fuel/temperature gauge with needle
+//! - `half-gauge`       — 180° fuel gauge pivoted on the bottom edge, E/F + needle
 //! - `tachometer`       — overshooting + settling needle (time wobble)
 //! - `donut`            — thick filled pie wedge that grows with eased
-//! - `signal-arc`       — concentric arc bands, VU-style, lighting up by tier
+//! - `signal-arc`       — Wi-Fi fan: arcs light from the source outward
 //! - `compass`          — cardinal tick marks + rotating bearing needle
 //! - `vu-needle`        — analog VU bounce around the eased level
 //! - `segmented-ring`   — discrete ring segments lighting up one by one
@@ -864,7 +899,7 @@ pub mod styles {
 //! - `edgewise-meter`   — full-width panel meter: horizontal scale + slanted pointer
 //! - `dial-bank`        — three mini-dials filling in sequence across the width
 //! - `galvanometer`     — top-pivot hanging needle over a bottom arc scale
-//! - `anemometer`       — spinning wind-cup rotor; rotation speed tracks eased
+//! - `anemometer`       — side-view cup rotor on a mast; spin + wind streaks track eased
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -1127,7 +1162,7 @@ impl ProgressStyle for RingProgress {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 3. Half-gauge — 180° semicircle (fuel / temperature) with needle
+// 3. Half-gauge — 180° fuel gauge pivoted on the bottom edge, E/F + needle
 // ────────────────────────────────────────────────────────────────────────────
 
 struct HalfGauge;
@@ -1139,30 +1174,38 @@ impl ProgressStyle for HalfGauge {
         "meter"
     }
     fn describe(&self) -> &str {
-        "180° semicircle gauge (fuel/temperature style): arc spans left→right \
-         across the top of the cell, a needle swings from empty (left) to full (right)"
+        "180° fuel gauge: a tall semicircle dial pivoted on the bottom edge, \
+         E and F at the ends, a thick band near F, and a needle that sweeps \
+         from E to F with a little fuel-slosh jitter"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy, r) = dial_fit(dw, dh);
+        // Pivot sits on the bottom edge so the whole grid height becomes dial.
+        let cx = (dw / 2) as i32;
+        let cy = dh as i32 - 2;
+        let r = (cx - 1).min(cy - 1).max(1);
 
-        // Semicircle: from 180° (left) CCW to 0° (right) in standard math coords.
-        // In screen coords (y down/flipped), this draws the arc at the TOP of the grid.
-        let a_left = PI; // 180°
-        let a_right = 0.0_f32; // 0°
+        // The dial face is a full semicircle; the scale runs 160°→20° so the
+        // needle never lies flat along the baseline.
+        let a_left = 160_f32.to_radians(); // E
+        let a_right = 20_f32.to_radians(); // F
 
-        // Outer arc.
-        let arc_steps = ((r as f32 * PI).round() as usize).max(4);
-        arc(grid, cx, cy, r, a_left, a_right, arc_steps);
+        // Outer arc, thickened over the last fifth (the "full" band).
+        let arc_steps = ((r as f32 * PI * 1.5).round() as usize).max(4);
+        arc(grid, cx, cy, r, PI, 0.0, arc_steps);
+        if r >= 6 {
+            let band = a_right + (a_left - a_right) * 0.2;
+            thick_arc(grid, cx, cy, r - 2, r - 1, band, a_right);
+        }
 
-        // Tick marks at 0, 25, 50, 75, 100% positions.
+        // Tick marks at 0, 25, 50, 75, 100%.
         for i in 0..=4 {
             let frac = i as f32 / 4.0;
             let angle = a_left + frac * (a_right - a_left);
             let tick_len = if i % 2 == 0 {
                 (r / 4).max(1)
             } else {
-                (r / 6).max(1)
+                (r / 7).max(1)
             };
             let x0 = cx + ((r - tick_len) as f32 * angle.cos()).round() as i32;
             let y0 = cy - ((r - tick_len) as f32 * angle.sin()).round() as i32;
@@ -1171,31 +1214,57 @@ impl ProgressStyle for HalfGauge {
             bresenham(grid, x0, y0, x1, y1);
         }
 
-        // Baseline: horizontal line from left arc end to right arc end.
-        let lx = cx - r;
-        let rx = cx + r;
-        if lx >= 0 {
-            draw::hline(
-                grid,
-                lx as usize,
-                rx.min(dw as i32 - 1).max(0) as usize,
-                cy as usize,
-            );
-        }
+        // Baseline under the dial.
+        let base_y = (cy + 1).max(0) as usize;
+        draw::hline(
+            grid,
+            (cx - r).max(0) as usize,
+            (cx + r).max(0) as usize,
+            base_y,
+        );
 
-        // Needle: pivots from bottom centre (cx, cy), sweeps up into semicircle.
-        let needle_angle = a_left + ctx.eased.clamp(0.0, 1.0) * (a_right - a_left);
-        let needle_r = (r - 1).max(1);
+        // Needle with a slight slosh; hub is a small solid block.
+        let slosh = 0.012 * (ctx.time * 7.0).sin() * (1.0 - ctx.eased * 0.5);
+        let e = (ctx.eased + slosh).clamp(0.0, 1.0);
+        let needle_angle = a_left + e * (a_right - a_left);
+        let needle_r = (r - 2).max(1);
         let nx = cx + (needle_r as f32 * needle_angle.cos()).round() as i32;
         let ny = cy - (needle_r as f32 * needle_angle.sin()).round() as i32;
         bresenham(grid, cx, cy, nx, ny);
+        bresenham(grid, cx + 1, cy, nx, ny);
+        for (hx, hy) in [(-1, 0), (0, -1), (1, -1), (2, 0), (0, 1), (1, 1)] {
+            draw::dot_i(grid, cx + hx, cy + hy);
+        }
 
-        // Tint.
+        // Tint: the dial rim is cool on the E side warming to the palette end
+        // at F; cells inside the rim (needle + hub) are lit near-white.
         let (cells_w, cells_h) = grid.dimensions();
+        let lx = (cx - r).max(0) as f32;
+        let span = (2 * r).max(1) as f32;
+        let needle_c = crate::Color::rgb(236, 236, 248);
         for cy_c in 0..cells_h {
             for cx_c in 0..cells_w {
-                let t = cx_c as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(t));
+                let px = cx_c as f32 * 2.0 + 0.5 - cx as f32;
+                let py = cy as f32 - (cy_c as f32 * 4.0 + 1.5);
+                let inside = (px * px + py * py).sqrt() < (r - 3) as f32 && py > -1.0;
+                let t = ((cx_c as f32 * 2.0 + 1.0 - lx) / span).clamp(0.0, 1.0);
+                let c = if inside && r >= 6 {
+                    needle_c
+                } else {
+                    ctx.palette.sample(t)
+                };
+                draw::tint_row(grid, cy_c, cx_c, cx_c, c);
+            }
+        }
+
+        // E / F labels just outside the arc ends, on the bottom row.
+        if cells_h >= 3 && r >= 6 {
+            let row = cells_h - 1;
+            let el = ((cx - r) / 2 - 2).max(0) as usize;
+            let fr = ((cx + r) / 2 + 2).max(0) as usize;
+            if fr < cells_w {
+                draw::glyph(grid, el, row, 'E');
+                draw::glyph(grid, fr, row, 'F');
             }
         }
 
@@ -1330,7 +1399,7 @@ impl ProgressStyle for Donut {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 6. Signal-arc — concentric arc bands lighting up by tier (cell-signal style)
+// 6. Signal-arc — Wi-Fi fan: arcs light from the source outward
 // ────────────────────────────────────────────────────────────────────────────
 
 struct SignalArc;
@@ -1342,42 +1411,83 @@ impl ProgressStyle for SignalArc {
         "meter"
     }
     fn describe(&self) -> &str {
-        "Concentric arc bands like a cell-signal or Wi-Fi icon: each tier is a \
-         thicker arc; bands light up from innermost outward as eased rises"
+        "Wi-Fi signal fan: a source dot under three concentric arcs; arcs light \
+         from the innermost out, the arc being earned sweeps on left→right with \
+         a blinking tip, and unearned arcs wait as dim dotted ghosts"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy, r_max) = dial_fit(dw, dh);
+        let cx = (dw / 2) as i32;
+        let cy = dh as i32 - 2;
+        let r_max = (cy - 1).min(cx - 1).max(1);
 
-        // Signal arcs span 90° centred on the top (90° in math = 12 o'clock).
-        let a_left = 135_f32.to_radians();
-        let a_right = 45_f32.to_radians();
+        // A Wi-Fi fan opens ~110° around 12 o'clock.
+        let a_left = 145_f32.to_radians();
+        let a_right = 35_f32.to_radians();
 
-        // Number of tiers depends on radius; at least 1.
-        let n_tiers = ((r_max / 3).max(1) as usize).min(5);
-        let lit = (ctx.eased.clamp(0.0, 1.0) * n_tiers as f32).ceil() as usize;
+        let n_tiers = ((r_max / 4).max(1) as usize).min(3);
+        let gap = (r_max / n_tiers as i32).max(1);
+        let level = ctx.eased.clamp(0.0, 1.0) * n_tiers as f32;
+        let full = level.floor() as usize;
+        let partial = level - full as f32;
 
-        // Base pivot dot.
-        draw::dot_i(grid, cx, cy);
-
-        for tier in 0..n_tiers {
-            if tier >= lit {
-                break;
-            }
-            let r_inner = (tier as i32 * (r_max / n_tiers as i32).max(1)) + 1;
-            let r_outer = ((tier as i32 + 1) * (r_max / n_tiers as i32).max(1)).min(r_max);
-            if r_inner > r_outer {
-                continue;
-            }
-            thick_arc(grid, cx, cy, r_inner, r_outer, a_left, a_right);
+        // Source dot (2×2) at the pivot.
+        for (ox, oy) in [(0, 0), (1, 0), (0, -1), (1, -1)] {
+            draw::dot_i(grid, cx + ox - 1, cy + oy);
         }
 
-        // Tint by tier.
+        for tier in 0..n_tiers {
+            let r_outer = (tier as i32 + 1) * gap;
+            let r_inner = (r_outer - 1).max(1);
+            if tier < full {
+                thick_arc(grid, cx, cy, r_inner, r_outer, a_left, a_right);
+                continue;
+            }
+            // Ghost: every other dot along the outer radius.
+            let steps = ((r_outer as f32 * 2.0).round() as usize).max(4);
+            for i in (0..=steps).step_by(2) {
+                let a = a_left + (a_right - a_left) * i as f32 / steps as f32;
+                draw::dot_i(
+                    grid,
+                    cx + (r_outer as f32 * a.cos()).round() as i32,
+                    cy - (r_outer as f32 * a.sin()).round() as i32,
+                );
+            }
+            if tier == full && partial > 0.0 {
+                let a_tip = a_left + (a_right - a_left) * partial;
+                thick_arc(grid, cx, cy, r_inner, r_outer, a_left, a_tip);
+                // Blinking tip: one extra dot just outside the sweep front.
+                if (ctx.time * 6.0).sin() > 0.0 {
+                    draw::dot_i(
+                        grid,
+                        cx + ((r_outer + 1) as f32 * a_tip.cos()).round() as i32,
+                        cy - ((r_outer + 1) as f32 * a_tip.sin()).round() as i32,
+                    );
+                }
+            }
+        }
+
+        // Tint by tier: earned arcs glow along the palette, the rest sit dim.
         let (cells_w, cells_h) = grid.dimensions();
+        let tr = ctx.palette.track;
+        let dim = crate::Color::rgb(
+            tr.r.saturating_add(50),
+            tr.g.saturating_add(50),
+            tr.b.saturating_add(60),
+        );
         for cy_c in 0..cells_h {
             for cx_c in 0..cells_w {
-                let t = cx_c as f32 / cells_w.max(1) as f32;
-                draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(t));
+                let px = cx_c as f32 * 2.0 + 0.5 - cx as f32;
+                let py = cy as f32 - (cy_c as f32 * 4.0 + 1.5);
+                let d = (px * px + py * py).sqrt();
+                let tier = ((d - 1.5) / gap as f32).floor().max(0.0) as usize;
+                let lit = d < 2.5 || tier < full || (tier == full && partial > 0.0);
+                let c = if lit {
+                    ctx.palette.sample(tier as f32 / n_tiers as f32)
+                } else {
+                    dim
+                };
+                draw::tint_row(grid, cy_c, cx_c, cx_c, c);
             }
         }
 
@@ -2438,7 +2548,7 @@ impl ProgressStyle for Galvanometer {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 20. Anemometer — spinning wind-cup rotor, speed tracks eased
+// 20. Anemometer — side-view cup rotor on a mast, wind streaks
 // ────────────────────────────────────────────────────────────────────────────
 
 struct Anemometer;
@@ -2450,49 +2560,95 @@ impl ProgressStyle for Anemometer {
         "meter"
     }
     fn describe(&self) -> &str {
-        "Anemometer: a three-cup wind rotor whose spin rate tracks eased — \
-         barely turning at 0%, a blur at 100% — ringed by a dotted bearing \
-         race; the cups are small circles at the arm tips"
+        "Anemometer in side view: a mast with a footing, three hemispherical \
+         cups on a spinning rotor whose speed tracks eased, and wind streaks \
+         blowing across the strip that thicken and quicken with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy, r) = dial_fit(dw, dh);
         let eased = ctx.eased.clamp(0.0, 1.0);
+        let cx = (dw / 2) as i32;
+        let hub_y = (dh as i32 / 3).max(0);
+        let cup = (dh as i32 / 6).max(1);
+        let arm = ((dh as f32) * 0.9)
+            .min(dw as f32 / 2.0 - cup as f32 - 1.0)
+            .max(1.0);
 
-        // Bearing race: sparse dotted outer ring.
-        let steps = ((r as f32 * 2.0 * PI).round() as usize).max(4);
-        for i in (0..=steps).step_by(3) {
-            let a = i as f32 / steps as f32 * 2.0 * PI;
-            let x = cx + (r as f32 * a.cos()).round() as i32;
-            let y = cy - (r as f32 * a.sin()).round() as i32;
-            draw::dot_i(grid, x, y);
+        // Wind streaks: more, longer and faster as eased rises.
+        let n_streaks = 1 + (eased * 6.0).round() as usize;
+        let len = 4.0 + eased * 10.0;
+        for i in 0..n_streaks {
+            let y = ((i * 5 + 2) % dh.max(1)) as i32;
+            let speed = (0.25 + eased * 0.9) * (1.0 + (i % 3) as f32 * 0.3);
+            let u = (ctx.time * speed + i as f32 * 0.37).fract();
+            let x0 = (u * (dw as f32 + len) - len).round() as i32;
+            for x in x0.max(0)..x0 + len as i32 {
+                if x % 2 == 0 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
         }
 
-        // Rotor: angle integrates a speed proportional to eased.
-        let speed = 0.4 + eased * 9.0;
-        let base = ctx.time * speed;
-        let arm_r = (r - 2).max(1);
-        let cup_r = (r / 4).max(1);
+        // Mast and footing.
+        draw::vline(
+            grid,
+            cx.max(0) as usize,
+            hub_y.max(0) as usize,
+            dh.saturating_sub(1),
+        );
+        draw::hline(
+            grid,
+            (cx - 3).max(0) as usize,
+            (cx + 3).max(0) as usize,
+            dh.saturating_sub(1),
+        );
 
+        // Rotor seen edge-on: each arm's projected reach is arm·cos(a); the
+        // cup is a half-disc whose flat face leads the direction of travel.
+        let phase = ctx.time * (0.6 + eased * 8.0);
         for k in 0..3 {
-            let a = base + k as f32 * 2.0 * PI / 3.0;
-            let ax = cx + (arm_r as f32 * a.cos()).round() as i32;
-            let ay = cy - (arm_r as f32 * a.sin()).round() as i32;
-            bresenham(grid, cx, cy, ax, ay);
-            // Cup: small circle at the arm tip.
-            let cup_steps = ((cup_r as f32 * 2.0 * PI).round() as usize).max(4);
-            arc(grid, ax, ay, cup_r, 0.0, 2.0 * PI, cup_steps);
+            let a = phase + k as f32 * 2.0 * PI / 3.0;
+            let x = cx + (arm * a.cos()).round() as i32;
+            let y = hub_y - (a.sin() * 1.5).round() as i32;
+            bresenham(grid, cx, hub_y, x, y);
+            let face = if a.sin() > 0.0 { 1 } else { -1 };
+            for oy in -cup..=cup {
+                let span = (((cup * cup - oy * oy) as f32).sqrt()).round() as i32;
+                for ox in 0..=span {
+                    draw::dot_i(grid, x + face * ox, y + oy);
+                }
+            }
         }
+        // Hub cap.
+        draw::fill_rect(
+            grid,
+            (cx - 1).max(0) as usize,
+            (hub_y - 1).max(0) as usize,
+            3,
+            3,
+        );
 
-        // Hub.
-        draw::dot_i(grid, cx, cy);
-
-        // Tint: hue rotates with the rotor so the spin reads in colour too.
+        // Tint: the rotor band and mast glow along the palette; streaks dim.
         let (cells_w, cells_h) = grid.dimensions();
+        let tr = ctx.palette.track;
+        let dim = crate::Color::rgb(
+            tr.r.saturating_add(55),
+            tr.g.saturating_add(55),
+            tr.b.saturating_add(65),
+        );
+        let reach = arm + cup as f32 + 1.0;
         for cy_c in 0..cells_h {
             for cx_c in 0..cells_w {
-                let t = ((base * 0.15 + cx_c as f32 / cells_w.max(1) as f32).fract()).abs();
-                draw::tint_row(grid, cy_c, cx_c, cx_c, ctx.palette.sample(t));
+                let px = cx_c as f32 * 2.0 + 1.0 - cx as f32;
+                let py = cy_c as f32 * 4.0 + 2.0 - hub_y as f32;
+                let rotor = px.abs() <= reach && py.abs() <= (cup + 3) as f32;
+                let mast = px.abs() <= 4.0 && py > 0.0;
+                let c = if rotor || mast {
+                    ctx.palette.sample((px / reach * 0.5 + 0.5).clamp(0.0, 1.0))
+                } else {
+                    dim
+                };
+                draw::tint_row(grid, cy_c, cx_c, cx_c, c);
             }
         }
 

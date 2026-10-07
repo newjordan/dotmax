@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -844,16 +879,16 @@ pub mod styles {
 //! Ten structurally distinct styles, each built on a real aperiodic or
 //! quasi-periodic mathematical construction:
 //!
-//! - `penrose-p3`            — Rhombus tiling via Robinson-triangle deflation
-//! - `penrose-p2`            — Kite & dart tiling via gnomon/triangle subdivision
+//! - `penrose-p3`            — Fat & thin rhomb tiling via Robinson-triangle subdivision
+//! - `penrose-p2`            — Kite & dart tiling via Robinson-triangle subdivision
 //! - `sun-pattern`           — The canonical Penrose "sun" (5 kites) seed cluster
-//! - `girih-tiles`           — Islamic girih decagon strapwork
-//! - `ammann-bars`           — Ammann quasiperiodic line overlay on rhombi
-//! - `debruijn-pentagrid`    — de Bruijn pentagrid dual: 5 families at 72°
-//! - `decagon-fractal`       — Decagon recursively filled with smaller decagons
-//! - `quasicrystal-diffraction` — Sum of 5 plane waves → 10-fold interference pattern
+//! - `girih-tiles`           — frieze of girih decagons, each with its ten-pointed strapwork star
+//! - `ammann-bars`           — five families of Ammann bars, Fibonacci L/S spacing, over rhomb vertices
+//! - `debruijn-pentagrid`    — de Bruijn pentagrid: 5 families of parallel lines at 72°
+//! - `decagon-fractal`       — frieze of decagons, each holding a ring of ten and a 1/φ² copy
+//! - `quasicrystal-diffraction` — 10-fold Bragg-spot diffraction patterns, rings in φ ratio
 //! - `pinwheel-tiling`       — Pinwheel 1:2 right-triangle substitution tiling
-//! - `truchet-quasi`         — Truchet arcs on a quasiperiodic rhombus lattice
+//! - `truchet-quasi`         — Truchet arcs on a Penrose rhomb tiling, joining into endless curves
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -951,14 +986,6 @@ fn center(dw: usize, dh: usize) -> (f32, f32) {
     (dw as f32 * 0.5, dh as f32 * 0.5)
 }
 
-/// Uniform scale to fit a unit-radius object in the grid with padding.
-#[inline]
-fn fit_scale(dw: usize, dh: usize) -> f32 {
-    let hw = (dw as f32 * 0.5 - 1.0).max(1.0);
-    let hh = (dh as f32 * 0.5 - 1.0).max(1.0);
-    hw.min(hh)
-}
-
 /// Bresenham line rasteriser. Out-of-bounds dots are silently discarded.
 fn bresenham(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
     let mut x = x0;
@@ -1016,21 +1043,145 @@ fn to_dot(cx: f32, cy: f32, scale: f32, ux: f32, uy: f32, rot: f32) -> (i32, i32
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 1. Penrose P3 — rhombus tiling via Robinson-triangle deflation
+// Shared Robinson-triangle tiling (P2 and P3)
 // ────────────────────────────────────────────────────────────────────────────
 //
-// A Penrose P3 tiling decomposes into two Robinson triangles:
-//   • "fat" rhombus → interior angle 72° (composed of two "acute" triangles)
-//   • "thin" rhombus → interior angle 36° (composed of two "obtuse" triangles)
+// Both Penrose tilings come from the same seed — a decagonal wheel of ten
+// 36°-apex Robinson triangles — and differ only in the subdivision rule.
+// Each triangle is `(red, a, b, c)` with apex `a`; two triangles of one tile
+// share an edge that is never inked, so the outlines show whole rhombs (P3)
+// or whole kites and darts (P2).
 //
-// Deflation rule (one step doubles the number of triangles):
-//   Acute triangle  (A) with vertices P, Q, R:
-//     split at S on PR where PS = 1/PHI · PR → A(P,S,Q)  + B(R,S,Q)
-//   Obtuse triangle (B) with vertices P, Q, R:
-//     split at S on QP where QS = 1/PHI · QP → A(R,S,P)  + B(R,Q,S)
-//
-// We seed with 10 acute triangles forming a "sun" and deflate up to 5 times,
-// capping depth with `ctx.eased`.
+//   P3:  red  (thin-rhomb half):  P = a + (b−a)/φ → red(c,P,b) + blue(P,c,a)
+//        blue (fat-rhomb half):   Q = b + (a−b)/φ, R = b + (c−b)/φ
+//                                 → blue(R,c,a) + blue(Q,R,b) + red(R,Q,a)
+//   P2:  red  (kite half):        Q = a + (b−a)/φ, R = b + (c−b)/φ
+//                                 → blue(R,Q,b) + red(Q,a,R) + red(c,a,R)
+//        blue (dart half):        P = c + (a−c)/φ → blue(b,P,a) + red(P,c,b)
+
+/// Seed wheel of ten red triangles, every second one mirrored.
+fn robinson_wheel() -> Vec<MarkedTri> {
+    (0..10)
+        .map(|i| {
+            let ab = (2.0 * i as f32 - 1.0) * PI / 10.0;
+            let ac = (2.0 * i as f32 + 1.0) * PI / 10.0;
+            let mut bv = [ab.cos(), ab.sin()];
+            let mut cv = [ac.cos(), ac.sin()];
+            if i % 2 == 0 {
+                std::mem::swap(&mut bv, &mut cv);
+            }
+            (true, [0.0, 0.0], bv, cv)
+        })
+        .collect()
+}
+
+/// One subdivision step for the rhomb (P3) or kite-and-dart (P2) rule set.
+fn robinson_deflate(tris: Vec<MarkedTri>, kites: bool) -> Vec<MarkedTri> {
+    let inv = 1.0 / PHI;
+    let mut out = Vec::with_capacity(tris.len() * 3);
+    for (red, a, b, c) in tris {
+        match (kites, red) {
+            (false, true) => {
+                let p = lerp2(a, b, inv);
+                out.push((true, c, p, b));
+                out.push((false, p, c, a));
+            }
+            (false, false) => {
+                let q = lerp2(b, a, inv);
+                let r = lerp2(b, c, inv);
+                out.push((false, r, c, a));
+                out.push((false, q, r, b));
+                out.push((true, r, q, a));
+            }
+            (true, true) => {
+                let q = lerp2(a, b, inv);
+                let r = lerp2(b, c, inv);
+                out.push((false, r, q, b));
+                out.push((true, q, a, r));
+                out.push((true, c, a, r));
+            }
+            (true, false) => {
+                let p = lerp2(c, a, inv);
+                out.push((false, b, p, a));
+                out.push((true, p, c, b));
+            }
+        }
+    }
+    out
+}
+
+/// Draw a Penrose tiling across the whole strip: tile outlines (two edges
+/// of every triangle, so the shared half-edge stays blank), with the tiles of
+/// one kind (`stipple_red`) given a sparse dot texture so the two shapes read
+/// apart in monochrome.  Tiles appear left → right up to `ctx.eased`; the
+/// wheel turns very slowly on `ctx.time` so the tiling drifts.
+fn render_robinson(grid: &mut BrailleGrid, ctx: &BarContext, kites: bool, stipple_red: bool) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if dw == 0 || dh == 0 {
+        return;
+    }
+    let (cx, cy) = center(dw, dh);
+    // Wheel radius covers the strip's half-diagonal; four subdivisions (three
+    // for the larger kites) leave tile edges ~7-11 dots long on an 88-dot strip.
+    let scale = (cx * cx + cy * cy).sqrt() + 4.0;
+    let mut tris = robinson_wheel();
+    for _ in 0..if kites { 3 } else { 4 } {
+        tris = robinson_deflate(tris, kites);
+    }
+    let rot = ctx.time * 0.04;
+    let front = ctx.eased.clamp(0.0, 1.0) * (dw as f32 + 6.0) - 3.0;
+    let (sr, cr) = rot.sin_cos();
+    let to_f = |v: [f32; 2]| -> (f32, f32) {
+        (
+            cx + (v[0] * cr - v[1] * sr) * scale,
+            cy - (v[0] * sr + v[1] * cr) * scale,
+        )
+    };
+    for &(red, a, b, c) in &tris {
+        let (pa, pb, pc) = (to_f(a), to_f(b), to_f(c));
+        let mid_x = (pa.0 + pb.0 + pc.0) / 3.0;
+        if mid_x > front {
+            continue;
+        }
+        let ri = |p: (f32, f32)| (p.0.round() as i32, p.1.round() as i32);
+        let (ia, ib, ic) = (ri(pa), ri(pb), ri(pc));
+        // The two halves of a tile meet along b–c, the edge left un-inked.
+        bresenham(grid, ic.0, ic.1, ia.0, ia.1);
+        bresenham(grid, ia.0, ia.1, ib.0, ib.1);
+        if red == stipple_red {
+            // Sparse texture inside the triangle (dots on a 2×2 lattice).
+            let x0 = pa.0.min(pb.0).min(pc.0).floor().max(0.0) as i32;
+            let x1 = pa.0.max(pb.0).max(pc.0).ceil().min(dw as f32) as i32;
+            let y0 = pa.1.min(pb.1).min(pc.1).floor().max(0.0) as i32;
+            let y1 = pa.1.max(pb.1).max(pc.1).ceil().min(dh as f32) as i32;
+            let edge = |p: (f32, f32), q: (f32, f32), x: f32, y: f32| {
+                (q.0 - p.0) * (y - p.1) - (q.1 - p.1) * (x - p.0)
+            };
+            for y in (y0..y1).filter(|y| y % 2 == 1) {
+                for x in (x0..x1).filter(|x| x % 2 == 1) {
+                    let (fx, fy) = (x as f32, y as f32);
+                    let d1 = edge(pa, pb, fx, fy);
+                    let d2 = edge(pb, pc, fx, fy);
+                    let d3 = edge(pc, pa, fx, fy);
+                    let inside =
+                        (d1 > 0.5 && d2 > 0.5 && d3 > 0.5) || (d1 < -0.5 && d2 < -0.5 && d3 < -0.5);
+                    if inside {
+                        draw::dot_i(grid, x, y);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[inline]
+fn lerp2(a: [f32; 2], b: [f32; 2], t: f32) -> [f32; 2] {
+    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 1. Penrose P3 — rhombus tiling
+// ────────────────────────────────────────────────────────────────────────────
 
 struct PenroseP3;
 impl ProgressStyle for PenroseP3 {
@@ -1041,108 +1192,19 @@ impl ProgressStyle for PenroseP3 {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Penrose P3 rhombus tiling: Robinson-triangle deflation reveals fat (72°) \
-         and thin (36°) rhombi generation by generation as progress rises; the \
-         whole pattern rotates slowly with time"
+        "Penrose P3 rhombus tiling built by Robinson-triangle subdivision: fat \
+         (72°) rhombs in outline, thin (36°) rhombs stippled, laid left to right \
+         across the strip as the tiling slowly drifts"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.25;
-
-        // Depth from eased: 0 → depth 0, 1 → depth 4 (max 4 for cost safety).
-        let depth = (ctx.eased * 4.0).floor() as usize;
-        // Reveal fraction within the current depth level.
-        let reveal_frac = (ctx.eased * 4.0).fract();
-
-        // Seed: 10 acute Robinson triangles arranged in a "sun" ring.
-        // Each triangle: type=Acute, vertices (p,q,r) in unit space.
-        // Acute triangle: two short sides length 1, long side PHI.
-        //   p = center, q & r on the circle at angles (k±36°)*π/180
-        let mut tris: Vec<MarkedTri> = Vec::new();
-        for k in 0..10usize {
-            let a1 = (k as f32 * 36.0) * PI / 180.0;
-            let a2 = (k as f32 * 36.0 + 36.0) * PI / 180.0;
-            let p = [0.0f32, 0.0];
-            let q = [a1.cos(), a1.sin()];
-            let r = [a2.cos(), a2.sin()];
-            // Alternate acute/obtuse for perfect sun seeding.
-            let is_acute = k % 2 == 0;
-            tris.push((is_acute, p, q, r));
-        }
-
-        // Deflate `depth` times.
-        for _step in 0..depth.min(4) {
-            tris = deflate_p3(tris);
-            if tris.len() > 3000 {
-                break;
-            } // cost cap
-        }
-
-        // Draw revealed triangles (edges only for aesthetic clarity).
-        let n_total = tris.len();
-        let n_draw = if depth < 4 {
-            (reveal_frac * n_total as f32).round() as usize
-        } else {
-            n_total
-        };
-
-        for tri in tris.iter().take(n_draw) {
-            let (_is_acute, p, q, r) = tri;
-            let pd = to_dot(cx, cy, scale, p[0], p[1], rot);
-            let qd = to_dot(cx, cy, scale, q[0], q[1], rot);
-            let rd = to_dot(cx, cy, scale, r[0], r[1], rot);
-            draw_poly(grid, &[pd, qd, rd]);
-        }
+        render_robinson(grid, ctx, false, true);
         Ok(())
     }
 }
 
-/// One deflation step for P3 Robinson triangles.
-/// is_acute=true → "acute" (fat-rhombus) triangle, false → "obtuse" (thin-rhombus).
-fn deflate_p3(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
-    let mut out = Vec::with_capacity(tris.len() * 2);
-    for (is_acute, p, q, r) in tris {
-        if is_acute {
-            // Acute: P is apex. Split PQ at S where PS = 1/PHI * PQ.
-            let s = lerp2(p, q, 1.0 / PHI);
-            // Produce: acute(Q,S,R) + obtuse(P,S,R)   [classic Penrose deflation]
-            out.push((true, q, s, r));
-            out.push((false, p, s, r));
-        } else {
-            // Obtuse: R is apex opposite the long side. Split RP at S where RS = 1/PHI * RP.
-            let s = lerp2(r, p, 1.0 / PHI);
-            // Produce: obtuse(Q,S,P) + acute(Q,R,S)
-            out.push((false, q, s, p));
-            out.push((true, q, r, s));
-        }
-    }
-    out
-}
-
-#[inline]
-fn lerp2(a: [f32; 2], b: [f32; 2], t: f32) -> [f32; 2] {
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
-}
-
 // ────────────────────────────────────────────────────────────────────────────
-// 2. Penrose P2 — kite & dart tiling via golden gnomon subdivision
+// 2. Penrose P2 — kite & dart tiling
 // ────────────────────────────────────────────────────────────────────────────
-//
-// Kite: a quadrilateral with interior angles 72°,72°,72°,144°.
-// Dart: a quadrilateral with interior angles 36°,36°,36°,252°.
-//
-// We represent each as a pair of "golden triangles":
-//   Golden triangle (GT): isoceles, apex 36°, base angles 72° each.
-//   Golden gnomon  (GG): isoceles, apex 108°, base angles 36° each.
-//
-// Deflation (each step roughly multiplies count by PHI²):
-//   GT (apex P, base QR): split at S on PR s.t. PS=PQ/PHI → GT(P,S,Q) + GG(S,Q,R)
-//   GG (apex P, base QR): split at S on QP s.t. QS=QR/PHI → GT(R,Q,S) + GG(P,R,S)
 
 struct PenroseP2;
 impl ProgressStyle for PenroseP2 {
@@ -1153,77 +1215,14 @@ impl ProgressStyle for PenroseP2 {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Penrose P2 kite & dart tiling: golden-triangle / golden-gnomon subdivision \
-         reveals the kite-and-dart mosaic generation by generation; time animates \
-         a gentle shimmer across revealed tiles"
+        "Penrose P2 kite & dart tiling built by Robinson-triangle subdivision: \
+         kites in outline, darts stippled, laid left to right across the strip \
+         as the tiling slowly drifts"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.18;
-
-        let depth = (ctx.eased * 4.0).floor() as usize;
-        let reveal_frac = (ctx.eased * 4.0).fract();
-
-        // Seed: 5 golden triangles forming a "star" at the origin.
-        let mut tris: Vec<MarkedTri> = Vec::new();
-        for k in 0..5usize {
-            let a_mid = (k as f32 * 72.0 + 90.0) * PI / 180.0;
-            let a_lo = (k as f32 * 72.0 + 90.0 - 36.0) * PI / 180.0;
-            let a_hi = (k as f32 * 72.0 + 90.0 + 36.0) * PI / 180.0;
-            let p = [0.0f32, 0.0];
-            let q = [a_lo.cos(), a_lo.sin()];
-            let r = [a_hi.cos(), a_hi.sin()];
-            let _ = a_mid;
-            tris.push((true, p, q, r)); // golden triangle, apex at center
-        }
-
-        for _step in 0..depth.min(4) {
-            tris = deflate_p2(tris);
-            if tris.len() > 3000 {
-                break;
-            }
-        }
-
-        let n_total = tris.len();
-        let n_draw = if depth < 4 {
-            (reveal_frac * n_total as f32).round() as usize
-        } else {
-            n_total
-        };
-
-        for tri in tris.iter().take(n_draw) {
-            let (_gt, p, q, r) = tri;
-            let pd = to_dot(cx, cy, scale, p[0], p[1], rot);
-            let qd = to_dot(cx, cy, scale, q[0], q[1], rot);
-            let rd = to_dot(cx, cy, scale, r[0], r[1], rot);
-            draw_poly(grid, &[pd, qd, rd]);
-        }
+        render_robinson(grid, ctx, true, false);
         Ok(())
     }
-}
-
-fn deflate_p2(tris: Vec<MarkedTri>) -> Vec<MarkedTri> {
-    let mut out = Vec::with_capacity(tris.len() * 2);
-    for (is_gt, p, q, r) in tris {
-        if is_gt {
-            // Golden triangle: P is apex (36°), Q and R are base.
-            // S on PR such that PS = PQ / PHI (both equal 1 in unit space, S divides at 1/PHI).
-            let s = lerp2(p, r, 1.0 / PHI);
-            out.push((true, p, q, s));
-            out.push((false, s, q, r));
-        } else {
-            // Golden gnomon: P is apex (108°). S on QP such that QS = QR / PHI.
-            let s = lerp2(q, p, 1.0 / PHI);
-            out.push((true, r, q, s));
-            out.push((false, p, r, s));
-        }
-    }
-    out
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1242,51 +1241,60 @@ impl ProgressStyle for SunPattern {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Penrose sun: five kites sharing the central vertex, then the surrounding \
-         dart ring, then outer kite rings — each concentric generation appears as \
-         progress rises, pulsing gently with time"
+        "Penrose sun: five kites (72-72-72-144°) meeting tip-to-tip at one vertex, \
+         laid kite by kite and slowly turning between two progress paths"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        if dw < 2 || dh < 2 {
             return Ok(());
         }
         let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.15;
+        let cy = cy - 0.5;
+        let scale = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let rot = ctx.time * 0.2 + PI / 2.0;
 
-        // Kite: apex at center (36° angle), two arms of length 1/PHI, two arms of length 1.
-        // Vertices in unit space (apex at 0,0, tip at distance 1 along bisector):
-        //   center(0,0), left-wing, outer-tip, right-wing
-        // For kite k: bisector angle = k*72°
-        //   outer_tip  = (cos(a), sin(a))         distance 1
-        //   left_wing  = (cos(a+36°), sin(a+36°)) * (1/PHI)
-        //   right_wing = (cos(a-36°), sin(a-36°)) * (1/PHI)
-
-        // Number of concentric "rings" to draw (1-3 based on eased).
-        let rings = ((ctx.eased * 3.0) as usize).clamp(1, 3);
-
-        for ring in 0..rings {
-            let ring_scale = scale / (1.0 + ring as f32 * 0.6);
-            // Pulse: inner ring blinks faster.
-            let pulse = (ctx.time * (1.0 + ring as f32 * 0.5)).sin() * 0.5 + 0.5;
-            if ring > 0 && pulse < 0.3 {
+        // Progress path either side of the sun: solid when done, dotted ahead.
+        let lit = (e * dw as f32) as i32;
+        let half = scale.ceil() as i32 + 2;
+        let phase = (ctx.time * 6.0) as i32;
+        for x in 0..dw as i32 {
+            if (x - cx as i32).abs() <= half {
                 continue;
             }
-
-            for k in 0..5usize {
-                let a = k as f32 * 72.0 * PI / 180.0 + rot + ring as f32 * 36.0 * PI / 180.0;
-                let tip = [a.cos(), a.sin()];
-                let lw = [(a + PI / 5.0).cos() / PHI, (a + PI / 5.0).sin() / PHI];
-                let rw = [(a - PI / 5.0).cos() / PHI, (a - PI / 5.0).sin() / PHI];
-                let ctr = [0.0f32, 0.0];
-
-                let pd = to_dot(cx, cy, ring_scale, ctr[0], ctr[1], 0.0);
-                let qd = to_dot(cx, cy, ring_scale, lw[0], lw[1], 0.0);
-                let rd = to_dot(cx, cy, ring_scale, tip[0], tip[1], 0.0);
-                let sd = to_dot(cx, cy, ring_scale, rw[0], rw[1], 0.0);
-                draw_poly(grid, &[pd, qd, rd, sd]);
+            if x < lit || (x + phase).rem_euclid(3) == 0 {
+                draw::dot_i(grid, x, cy.round() as i32);
             }
+        }
+
+        // Kite k: tip at the centre, axis at 72k°, wings at ±36° — every
+        // outer vertex sits on the unit circle, so the five close into a
+        // decagon split by five spokes (the shared wing edges).
+        let kites = ((0.2 + e * 1.6).min(1.0) * 5.0).ceil() as usize;
+        for k in 0..kites.min(5) {
+            let th = k as f32 * 2.0 * PI / 5.0;
+            let pts = [
+                to_dot(cx, cy, scale, 0.0, 0.0, rot),
+                to_dot(
+                    cx,
+                    cy,
+                    scale,
+                    (th - PI / 5.0).cos(),
+                    (th - PI / 5.0).sin(),
+                    rot,
+                ),
+                to_dot(cx, cy, scale, th.cos(), th.sin(), rot),
+                to_dot(
+                    cx,
+                    cy,
+                    scale,
+                    (th + PI / 5.0).cos(),
+                    (th + PI / 5.0).sin(),
+                    rot,
+                ),
+            ];
+            draw_poly(grid, &pts);
         }
         Ok(())
     }
@@ -1310,40 +1318,94 @@ impl ProgressStyle for GirihTiles {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Islamic girih tile strapwork: a central 10-gon surrounded by pentagons \
-         and bowties; interior strap lines reveal with progress, the whole pattern \
-         rotating with time like a medieval mosque decoration"
+        "Islamic girih frieze: a row of edge-sharing decagon tiles, each carrying the \
+         ten-pointed strapwork star whose points touch every tile edge at its midpoint, \
+         meeting the neighbouring star there; tiles are laid left to right with \
+         progress and a spark runs round each finished star"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh) * 0.45;
-        let rot = ctx.time * 0.12;
-
-        // Central decagon.
-        let dec = regular_ngon(10, cx, cy, scale, rot);
-        draw_poly(grid, &dec);
-
-        // Interior strapwork: connect every other vertex of the decagon.
-        let n_straps = (ctx.eased * 10.0).round() as usize;
-        for i in 0..n_straps.min(10) {
-            let j = (i + 2) % 10;
-            bresenham(grid, dec[i].0, dec[i].1, dec[j].0, dec[j].1);
-        }
-
-        // Surrounding 10 pentagons at each edge midpoint.
-        let n_pent = (ctx.eased * 10.0 * 2.0 - 10.0).round() as usize; // second half of progress
-        for k in 0..n_pent.min(10) {
-            let a = k as f32 * 36.0 * PI / 180.0 + rot + 18.0 * PI / 180.0;
-            let dist = scale * (1.0 + 1.0 / (2.0 * (PI / 10.0).tan()));
-            let pcx = cx + dist * a.cos();
-            let pcy = cy - dist * a.sin();
-            let side = scale * 2.0 * (PI / 10.0).sin();
-            let pent = regular_ngon(5, pcx, pcy, side * 0.5, rot + a);
-            draw_poly(grid, &pent);
+        // Decagon with vertical left/right edges: vertices at 18° + 36°k.
+        let r = (dh as f32 * 0.5 - 0.5).max(1.0);
+        let pitch = (2.0 * r * (PI / 10.0).cos()).max(2.0);
+        let cy = (dh as f32 - 1.0) * 0.5;
+        let n_tiles = ((dw as f32 / pitch).ceil() as usize).max(1);
+        let total = 0.35 + ctx.eased.clamp(0.0, 1.0) * (n_tiles as f32 - 0.35);
+        let x0 = pitch * 0.5;
+        for k in 0..n_tiles {
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                break;
+            }
+            let cx = x0 + k as f32 * pitch;
+            let off = PI / 10.0;
+            // Tile outline (drawn as a dotted line once the straps are in).
+            let verts: Vec<(f32, f32)> = (0..10)
+                .map(|i| {
+                    let t = off + i as f32 * PI / 5.0;
+                    (cx + r * t.cos(), cy - r * t.sin())
+                })
+                .collect();
+            let outline = (local * 2.0).min(1.0);
+            let n_edges = (outline * 10.0).ceil() as usize;
+            for i in 0..n_edges.min(10) {
+                let (p, q) = (verts[i], verts[(i + 1) % 10]);
+                let steps = ((q.0 - p.0).abs().max((q.1 - p.1).abs()).ceil() as usize).max(1);
+                for s in 0..=steps {
+                    if s % 3 == 0 {
+                        let g = s as f32 / steps as f32;
+                        draw::dot_i(
+                            grid,
+                            (p.0 + (q.0 - p.0) * g).round() as i32,
+                            (p.1 + (q.1 - p.1) * g).round() as i32,
+                        );
+                    }
+                }
+            }
+            // Strapwork: the ten-pointed star whose points sit on the edge
+            // midpoints (where the straps cross into the neighbouring tile).
+            let rm = r * (PI / 10.0).cos();
+            let star: Vec<(f32, f32)> = (0..20)
+                .map(|i| {
+                    let t = off + PI / 10.0 + i as f32 * PI / 10.0;
+                    let rr = if i % 2 == 0 { rm } else { rm * 0.5 };
+                    (cx + rr * t.cos(), cy - rr * t.sin())
+                })
+                .collect();
+            let straps = ((local - 0.3) / 0.7).clamp(0.0, 1.0) * 20.0;
+            let full = straps.floor() as usize;
+            for i in 0..20usize {
+                let (p, q) = (star[i], star[(i + 1) % 20]);
+                let g = match i.cmp(&full) {
+                    std::cmp::Ordering::Less => 1.0,
+                    std::cmp::Ordering::Equal => straps - full as f32,
+                    std::cmp::Ordering::Greater => break,
+                };
+                bresenham(
+                    grid,
+                    p.0.round() as i32,
+                    p.1.round() as i32,
+                    (p.0 + (q.0 - p.0) * g).round() as i32,
+                    (p.1 + (q.1 - p.1) * g).round() as i32,
+                );
+            }
+            // A spark runs round the strap star once the tile is complete.
+            if local >= 1.0 {
+                let u = (ctx.time * 0.4 + k as f32 * 0.31).fract() * 20.0;
+                let i = (u.floor() as usize).min(19);
+                let g = u - i as f32;
+                let (p, q) = (star[i], star[(i + 1) % 20]);
+                let (x, y) = (
+                    (p.0 + (q.0 - p.0) * g).round() as i32,
+                    (p.1 + (q.1 - p.1) * g).round() as i32,
+                );
+                for (ddx, ddy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    draw::dot_i(grid, x + ddx, y + ddy);
+                }
+            }
         }
         Ok(())
     }
@@ -1384,9 +1446,11 @@ impl ProgressStyle for AmmannBars {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Ammann bars: the five quasiperiodic stripe families that decorate every \
-         Penrose P3 rhombus tiling, with long-L and short-S spacings in ratio PHI; \
-         families reveal one by one as progress rises"
+        "Ammann bars: the five families of parallel bars that run through every \
+         Penrose rhomb tiling, at 72° to one another, each spaced in the \
+         never-repeating Fibonacci order of long and short gaps (L/S = φ); a faint \
+         rhomb tiling lies beneath, and the families sweep in one after another \
+         with progress, sliding slowly with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -1394,65 +1458,55 @@ impl ProgressStyle for AmmannBars {
             return Ok(());
         }
         let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.08;
-
-        // How many of the 5 families to draw (reveal with eased).
-        let n_families = (ctx.eased * 5.0).ceil() as usize;
-        let family_frac = (ctx.eased * 5.0).fract(); // partial last family
-
-        for fam in 0..n_families.min(5) {
-            let angle = fam as f32 * 36.0 * PI / 180.0 + rot;
-            // Direction perpendicular to the stripe family.
-            let perp_x = angle.cos();
-            let perp_y = -angle.sin();
-            // Line direction.
-            let line_x = -angle.sin();
-            let line_y = -angle.cos();
-
-            // Generate quasiperiodic offsets: L, S, L, L, S, L, S, …
-            // The Fibonacci word gives the sequence of L/S.
-            let max_lines = 20usize;
-            let mut offsets: Vec<f32> = Vec::with_capacity(max_lines * 2 + 1);
-            offsets.push(0.0);
-            let mut pos = 0.0f32;
-            let l_step = scale * PHI / (PHI + 1.0);
-            let s_step = scale * 1.0 / (PHI + 1.0);
-            let mut fib_a = 1usize;
-            let mut fib_b = 1usize;
-            for _i in 0..max_lines {
-                // Use the Fibonacci word: if fib ratio decides L or S.
-                let use_long = fib_a > fib_b;
-                let step = if use_long { l_step } else { s_step };
-                // Update Fibonacci-like counter (Beatty sequence approximation).
-                let old_a = fib_a;
-                fib_a += fib_b;
-                fib_b = old_a;
-                let fib_a_c = fib_a;
-                let fib_b_c = fib_b;
-                let _ = (fib_a_c, fib_b_c);
-                pos += step;
-                offsets.push(pos);
-                offsets.push(-pos);
+        // Faint rhomb tiling: vertices of the P3 tiling only.
+        let scale = (cx * cx + cy * cy).sqrt() + 4.0;
+        let mut tris = robinson_wheel();
+        for _ in 0..4 {
+            tris = robinson_deflate(tris, false);
+        }
+        for &(_red, a, _b, _c) in &tris {
+            draw::dot_i(
+                grid,
+                (cx + a[0] * scale).round() as i32,
+                (cy - a[1] * scale).round() as i32,
+            );
+        }
+        // Fibonacci word of long/short gaps.
+        let s_gap = 6.0f32;
+        let l_gap = s_gap * PHI;
+        let half = (dw as f32 + dh as f32) * 0.5 + l_gap;
+        let fams = 0.3 + ctx.eased.clamp(0.0, 1.0) * 4.7;
+        for fam in 0..5usize {
+            let reveal = (fams - fam as f32).clamp(0.0, 1.0);
+            if reveal <= 0.0 {
+                break;
             }
-
-            // Last family: only draw partial set.
-            let n_lines = if fam + 1 == n_families {
-                (family_frac * offsets.len() as f32) as usize
-            } else {
-                offsets.len()
-            };
-
-            for &off in offsets.iter().take(n_lines) {
-                // Line at distance `off` from center, in direction `line_*`.
-                let base_x = cx + perp_x * off;
-                let base_y = cy + perp_y * off;
-                let half = scale * 1.5;
-                let x0 = (base_x + line_x * half).round() as i32;
-                let y0 = (base_y + line_y * half).round() as i32;
-                let x1 = (base_x - line_x * half).round() as i32;
-                let y1 = (base_y - line_y * half).round() as i32;
-                bresenham(grid, x0, y0, x1, y1);
+            let th = PI / 2.0 + fam as f32 * 2.0 * PI / 5.0;
+            let (nx, ny) = (th.cos(), -th.sin()); // normal (screen space)
+            let (lx, ly) = (-ny, nx); // bar direction
+            let x_lim = reveal * dw as f32;
+            // Each family slides slowly along its normal; the gap sequence is
+            // anchored to the first bar so the Fibonacci word travels intact.
+            let slide = (ctx.time * 1.5 + fam as f32 * 1.3) % (l_gap + s_gap);
+            let mut pos = -half + slide;
+            for n in 1..=200usize {
+                if pos >= half {
+                    break;
+                }
+                let base = (cx + nx * pos, cy + ny * pos);
+                let reach = half * 1.5;
+                let steps = (reach * 2.0) as usize;
+                for i in 0..=steps {
+                    let t = -reach + i as f32;
+                    let x = base.0 + lx * t;
+                    let y = base.1 + ly * t;
+                    if x >= 0.0 && x <= x_lim && y >= 0.0 && y < dh as f32 {
+                        draw::dot_i(grid, x.round() as i32, y.round() as i32);
+                    }
+                }
+                // n-th letter of the Fibonacci word: L when ⌊(n+1)/φ⌋ − ⌊n/φ⌋ = 1.
+                let is_l = ((n + 1) as f32 / PHI).floor() - (n as f32 / PHI).floor() >= 1.0;
+                pos += if is_l { l_gap } else { s_gap };
             }
         }
         Ok(())
@@ -1482,89 +1536,45 @@ impl ProgressStyle for DeBruijnPentagrid {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "de Bruijn pentagrid: five families of quasiperiodic parallel lines at 72° \
-         intervals whose dual gives a Penrose tiling; the grid weaves in with \
-         progress and the dual rhombus vertices twinkle with time"
+        "de Bruijn pentagrid: five families of evenly spaced parallel lines at 72° to \
+         one another, each with its own offset, whose dual is a Penrose tiling; the \
+         families are laid one after another across the strip with progress and the \
+         grid drifts slowly with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.07;
-
-        // Five-direction angles.
-        let gammas: [f32; 5] = [0.1, 0.2, -0.15, 0.05, -0.08]; // irrational offsets
-        let n_families = (ctx.eased * 5.0).ceil() as usize;
-
-        for (fam, &gamma) in gammas.iter().enumerate().take(n_families.min(5)) {
-            let angle = fam as f32 * 72.0 * PI / 180.0 + rot;
-            let perp_x = angle.cos();
-            let perp_y = -angle.sin();
-            let line_x = -angle.sin();
-            let line_y = -angle.cos();
-
-            // Draw ~9 parallel lines (4 on each side of center).
-            let lines = 9i32;
-            for m in -lines / 2..=lines / 2 {
-                let off = (m as f32 + gamma) * scale * 0.4;
-                let base_x = cx + perp_x * off;
-                let base_y = cy + perp_y * off;
-                let half = scale * 1.5;
-                let x0 = (base_x + line_x * half).round() as i32;
-                let y0 = (base_y + line_y * half).round() as i32;
-                let x1 = (base_x - line_x * half).round() as i32;
-                let y1 = (base_y - line_y * half).round() as i32;
-                bresenham(grid, x0, y0, x1, y1);
+        let spacing = 9.0f32;
+        // Shifts γ_k (sum 0, generic) as in de Bruijn's construction.
+        let gammas: [f32; 5] = [0.2, -0.35, 0.1, 0.4, -0.35];
+        // Families reveal one after another; the first one is always partly in.
+        let fams = 0.25 + ctx.eased.clamp(0.0, 1.0) * 4.75;
+        let drift = ctx.time * 0.25;
+        let cx = dw as f32 * 0.5;
+        let cy = dh as f32 * 0.5;
+        for (fam, &gamma) in gammas.iter().enumerate() {
+            let reveal = (fams - fam as f32).clamp(0.0, 1.0);
+            if reveal <= 0.0 {
+                break;
             }
-        }
-
-        // Dual rhombus vertices: intersections of each pair of families.
-        // Only draw if eased > 0.7.
-        if ctx.eased > 0.7 {
-            let dual_frac = (ctx.eased - 0.7) / 0.3;
-            let step = scale * 0.4;
-            let mut pts: Vec<(i32, i32)> = Vec::new();
-            for fj in 0..5usize {
-                for fk in (fj + 1)..5usize {
-                    let aj = fj as f32 * 72.0 * PI / 180.0 + rot;
-                    let ak = fk as f32 * 72.0 * PI / 180.0 + rot;
-                    for mj in -4i32..=4 {
-                        for mk in -4i32..=4 {
-                            // Intersection of line mj in family j and mk in family k.
-                            let bj_x = (mj as f32 + gammas[fj]) * step * aj.cos();
-                            let bj_y = (mj as f32 + gammas[fj]) * step * (-aj.sin());
-                            let bk_x = (mk as f32 + gammas[fk]) * step * ak.cos();
-                            let bk_y = (mk as f32 + gammas[fk]) * step * (-ak.sin());
-                            let dj_x = -aj.sin();
-                            let dj_y = -aj.cos();
-                            let dk_x = -ak.sin();
-                            let dk_y = -ak.cos();
-                            // Solve: (bj + t*dj) = (bk + s*dk)
-                            let det = dj_x * dk_y - dj_y * dk_x;
-                            if det.abs() < 1e-6 {
-                                continue;
-                            }
-                            let dx = bk_x - bj_x;
-                            let dy = bk_y - bj_y;
-                            let t = (dx * dk_y - dy * dk_x) / det;
-                            let ix = cx + bj_x + t * dj_x;
-                            let iy = cy + bj_y + t * dj_y;
-                            pts.push((ix.round() as i32, iy.round() as i32));
-                        }
+            // Family k: lines x·cos θ + y·sin θ = (n + γ_k)·spacing, θ = 90° + 72°k.
+            let th = PI / 2.0 + fam as f32 * 2.0 * PI / 5.0;
+            let (c, sn) = (th.cos(), th.sin());
+            let x_lim = reveal * dw as f32;
+            for y in 0..dh {
+                for x in 0..dw {
+                    if x as f32 > x_lim {
+                        break;
+                    }
+                    let d = ((x as f32 - cx) * c + (y as f32 - cy) * sn) / spacing - gamma - drift;
+                    let f = d - d.round();
+                    // ~half-dot line width in dot units, scaled by the slope.
+                    if f.abs() * spacing < 0.5 {
+                        draw::dot(grid, x, y);
                     }
                 }
-            }
-            let n_pts = (dual_frac * pts.len() as f32).round() as usize;
-            for &(px, py) in pts.iter().take(n_pts) {
-                // Draw a tiny cross at each dual vertex.
-                draw::dot_i(grid, px, py);
-                draw::dot_i(grid, px + 1, py);
-                draw::dot_i(grid, px - 1, py);
-                draw::dot_i(grid, px, py + 1);
-                draw::dot_i(grid, px, py - 1);
             }
         }
         Ok(())
@@ -1589,54 +1599,61 @@ impl ProgressStyle for DecagonFractal {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Decagon fractal: a central 10-gon filled with rings of smaller 10-gons \
-         at each recursion level, forming a self-similar quasicrystalline snowflake \
-         that unfolds as progress rises"
+        "Decagon fractal: a frieze of self-similar decagons — each holds a ring of ten \
+         satellites and a 1/φ²-scaled copy of itself at its heart, which repeats the \
+         rule; flakes unfold left to right with progress, rings counter-turning"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh) * 0.9;
-        let rot = ctx.time * 0.1;
-
-        let depth = (ctx.eased * 3.0).floor() as usize;
-        let reveal_frac = (ctx.eased * 3.0).fract();
-
-        // Seed: (cx, cy, radius, phase_offset)
-        let mut decagons: Vec<(f32, f32, f32, f32)> = vec![(cx, cy, scale, rot)];
-
-        for _d in 0..depth.min(3) {
-            let mut next = Vec::new();
-            for &(dx, dy, r, phase) in &decagons {
-                // Child decagons: 10 of them at distance r + sub_r.
-                let sub_r = r / (1.0 + PHI);
-                let dist = r - sub_r + sub_r * 0.1; // slight overlap
-                for k in 0..10usize {
-                    let a = k as f32 * 36.0 * PI / 180.0 + phase;
-                    let nx = dx + dist * a.cos();
-                    let ny = dy - dist * a.sin();
-                    next.push((nx, ny, sub_r, phase + a));
-                }
-            }
-            // Draw the current level's decagons.
-            for &(dx, dy, r, phase) in &decagons {
-                let pts = regular_ngon(10, dx, dy, r, phase);
-                draw_poly(grid, &pts);
-            }
-            decagons = next;
-            if decagons.len() > 500 {
+        let panels = (dw / 18).max(1);
+        let pw = dw as f32 / panels as f32;
+        let big = (dh as f32 * 0.5 - 0.5).min(pw * 0.5 - 0.5).max(1.0);
+        let cy = (dh as f32 - 1.0) * 0.5;
+        let total = 0.3 + ctx.eased.clamp(0.0, 1.0) * (panels as f32 - 0.3);
+        let shrink = 1.0 / (1.0 + PHI); // 1/φ²
+        for k in 0..panels {
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
                 break;
             }
-        }
-
-        // Partial reveal of the last depth ring.
-        let n_draw = (reveal_frac * decagons.len() as f32).round() as usize;
-        for &(dx, dy, r, phase) in decagons.iter().take(n_draw) {
-            let pts = regular_ngon(10, dx, dy, r, phase);
-            draw_poly(grid, &pts);
+            let cx = pw * (k as f32 + 0.5) - 0.5;
+            let dir = if k % 2 == 0 { 1.0 } else { -1.0 };
+            let rot = PI / 2.0;
+            // Self-similar rule: a decagon = outline + ring of ten satellites
+            // near its rim + a 1/φ²-scaled copy at its heart, and the copy
+            // obeys the same rule.
+            let spin = rot + dir * ctx.time * 0.5;
+            let mut level_r = big;
+            let mut budget = local * 2.0;
+            for level in 0..2 {
+                if budget <= 0.0 || level_r < 1.0 {
+                    break;
+                }
+                let part = budget.min(1.0);
+                budget -= 1.0;
+                draw_poly(grid, &regular_ngon(10, cx, cy, level_r, rot));
+                let child = level_r * 0.16;
+                let dist = level_r * 0.72;
+                let n = (part * 10.0).ceil() as usize;
+                let lspin = if level % 2 == 0 {
+                    spin
+                } else {
+                    2.0 * rot - spin
+                };
+                for j in 0..n.min(10) {
+                    let t = lspin + j as f32 * PI / 5.0;
+                    let (px, py) = (cx + dist * t.cos(), cy - dist * t.sin());
+                    if child >= 1.2 {
+                        draw_poly(grid, &regular_ngon(10, px, py, child, rot));
+                    } else {
+                        draw::dot_i(grid, px.round() as i32, py.round() as i32);
+                    }
+                }
+                level_r *= shrink;
+            }
         }
         Ok(())
     }
@@ -1660,39 +1677,61 @@ impl ProgressStyle for QuasicrystalDiffraction {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Quasicrystal interference: sum of 5 plane waves at 72° intervals produces \
-         a 10-fold diffraction pattern; a moving threshold cuts through the field as \
-         progress rises, the whole pattern rotating slowly with time"
+        "Quasicrystal diffraction: a row of 10-fold Bragg-spot patterns (bright centre, \
+         two rings of ten spots at radii in φ ratio, the outer ring turned 18°) — the \
+         forbidden symmetry that won Shechtman the Nobel prize; patterns expose \
+         left to right with progress and their spots twinkle"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh).max(1.0);
-
-        // Spatial frequency: higher → more rings visible.
-        let freq = 3.0 / scale;
-        // Phase drift with time — the whole pattern rotates.
-        let phase = ctx.time * 0.4;
-
-        // Threshold: eased controls which portion of intensity is lit.
-        // f ranges from -5 to 5; threshold sweeps 5 → -5 as eased goes 0→1.
-        let threshold = 5.0 - ctx.eased * 10.0;
-
-        for dy in 0..dh {
-            for dx in 0..dw {
-                let ux = (dx as f32 - cx) / scale;
-                let uy = (dy as f32 - cy) / scale;
-                // Sum of 5 plane waves.
-                let mut f = 0.0f32;
-                for k in 0..5usize {
-                    let angle = k as f32 * 72.0 * PI / 180.0 + phase;
-                    f += (2.0 * PI * freq * (ux * angle.cos() + uy * angle.sin()) * scale).cos();
+        let panels = (dw / 18).max(1);
+        let pw = dw as f32 / panels as f32;
+        let r_max = (dh as f32 * 0.5 - 0.5).min(pw * 0.5 - 0.5).max(1.0);
+        let cy = (dh as f32 - 1.0) * 0.5;
+        // Ring radii in φ ratio, outermost touching the strip edge.
+        let phi = 1.618_034_f32;
+        let radii = [r_max / phi, r_max];
+        let total = 0.3 + ctx.eased.clamp(0.0, 1.0) * (panels as f32 - 0.3);
+        let blob = |grid: &mut BrailleGrid, x: f32, y: f32, big: bool| {
+            let (xi, yi) = (x.round() as i32, y.round() as i32);
+            draw::dot_i(grid, xi, yi);
+            if big {
+                for (ddx, ddy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    draw::dot_i(grid, xi + ddx, yi + ddy);
                 }
-                if f > threshold {
-                    draw::dot(grid, dx, dy);
+            }
+        };
+        for k in 0..panels {
+            let local = (total - k as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                break;
+            }
+            let cx = pw * (k as f32 + 0.5) - 0.5;
+            // Central (000) beam — always strong.
+            blob(grid, cx, cy, true);
+            for (ri, &rr) in radii.iter().enumerate() {
+                let need = ri as f32 * 0.5;
+                if local <= need {
+                    break;
+                }
+                let frac = ((local - need) * 2.0).min(1.0);
+                let n_spots = (frac * 10.0).ceil() as usize;
+                let off = if ri % 2 == 0 {
+                    PI / 2.0
+                } else {
+                    PI / 2.0 + PI / 10.0
+                };
+                for j in 0..n_spots.min(10) {
+                    let t = off + j as f32 * PI / 5.0;
+                    let x = cx + rr * t.cos();
+                    let y = cy - rr * t.sin();
+                    // Inner rings are brighter; spots twinkle on time.
+                    let tw = (ctx.time * 3.0 + j as f32 * 1.7 + ri as f32 * 2.3 + k as f32).sin();
+                    let big = ri == 1 && tw > -0.5;
+                    blob(grid, x, y, big);
                 }
             }
         }
@@ -1849,9 +1888,10 @@ impl ProgressStyle for TruchetQuasi {
         "penrose"
     }
     fn describe(&self) -> &str {
-        "Truchet-quasi: quarter-circle arcs placed in the fat and thin rhombi of a \
-         Penrose-like quasiperiodic lattice; orientation is deterministically varied \
-         so the arc flow never repeats, revealed tile by tile with progress"
+        "Truchet-quasi: Truchet-style arcs on a Penrose rhomb tiling — every tile \
+         carries an arc round its corner, and the arcs join across tile edges into \
+         unbroken curves that never repeat; tiles are laid left to right with \
+         progress, edges faint, and the tiling drifts slowly with time"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -1859,87 +1899,58 @@ impl ProgressStyle for TruchetQuasi {
             return Ok(());
         }
         let (cx, cy) = center(dw, dh);
-        let scale = fit_scale(dw, dh);
-        let rot = ctx.time * 0.09;
-
-        // Generate rhombi from a simple pentagrid projection.
-        // For a pentagrid with 5 families at 72°·k:
-        //   Each pair of family lines (j,k) intersects, dual vertex = rhombus.
-        //   Rhombus type = |j - k| mod 5: if 1 or 4 → fat, if 2 or 3 → thin.
-        let spacing = scale * 0.35;
-        let mut rhombi: Vec<(f32, f32, f32, bool, usize)> = Vec::new(); // (cx, cy, angle, is_fat, idx)
-
-        let n_lines = 5i32;
-        for fj in 0..5usize {
-            for fk in (fj + 1)..5usize {
-                let aj = fj as f32 * 72.0 * PI / 180.0 + rot;
-                let ak = fk as f32 * 72.0 * PI / 180.0 + rot;
-                for mj in -n_lines..=n_lines {
-                    for mk in -n_lines..=n_lines {
-                        let bj_x = mj as f32 * spacing * aj.cos();
-                        let bj_y = mj as f32 * spacing * (-aj.sin());
-                        let bk_x = mk as f32 * spacing * ak.cos();
-                        let bk_y = mk as f32 * spacing * (-ak.sin());
-                        let dj_x = -aj.sin();
-                        let dj_y = -aj.cos();
-                        let dk_x = -ak.sin();
-                        let dk_y = -ak.cos();
-                        let det = dj_x * dk_y - dj_y * dk_x;
-                        if det.abs() < 1e-6 {
-                            continue;
-                        }
-                        let dx = bk_x - bj_x;
-                        let dy = bk_y - bj_y;
-                        let t = (dx * dk_y - dy * dk_x) / det;
-                        let rx = cx + bj_x + t * dj_x;
-                        let ry = cy + bj_y + t * dj_y;
-                        // Inside grid?
-                        if rx < 0.0 || ry < 0.0 || rx >= dw as f32 || ry >= dh as f32 {
-                            continue;
-                        }
-                        let diff = (fk - fj) % 5;
-                        let is_fat = diff == 1 || diff == 4;
-                        let idx = (mj.unsigned_abs() as usize * 7
-                            + mk.unsigned_abs() as usize * 13
-                            + fj * 3
-                            + fk * 5)
-                            & 1; // 0 or 1
-                        rhombi.push((rx, ry, aj, is_fat, idx));
-                    }
+        let scale = (cx * cx + cy * cy).sqrt() + 4.0;
+        let mut tris = robinson_wheel();
+        for _ in 0..4 {
+            tris = robinson_deflate(tris, false);
+        }
+        let rot = ctx.time * 0.04;
+        let front = 6.0 + ctx.eased.clamp(0.0, 1.0) * (dw as f32 + 2.0) - 3.0;
+        let (sr, cr) = rot.sin_cos();
+        let to_f = |v: [f32; 2]| -> (f32, f32) {
+            (
+                cx + (v[0] * cr - v[1] * sr) * scale,
+                cy - (v[0] * sr + v[1] * cr) * scale,
+            )
+        };
+        for &(_red, a, b, c) in &tris {
+            let (pa, pb, pc) = (to_f(a), to_f(b), to_f(c));
+            let mid_x = (pa.0 + pb.0 + pc.0) / 3.0;
+            if mid_x > front || mid_x < -8.0 || mid_x > dw as f32 + 8.0 {
+                continue;
+            }
+            // Faint tile edges: every third dot of the two outer edges.
+            for (p, q) in [(pa, pb), (pa, pc)] {
+                let n = ((q.0 - p.0).abs().max((q.1 - p.1).abs()).ceil() as usize).max(1);
+                for i in (0..=n).step_by(3) {
+                    let g = i as f32 / n as f32;
+                    draw::dot_i(
+                        grid,
+                        (p.0 + (q.0 - p.0) * g).round() as i32,
+                        (p.1 + (q.1 - p.1) * g).round() as i32,
+                    );
                 }
             }
-        }
-
-        let n_total = rhombi.len();
-        let n_draw = (ctx.eased * n_total as f32).round() as usize;
-
-        for &(rx, ry, angle, _is_fat, flip) in rhombi.iter().take(n_draw) {
-            // Draw a small quarter-arc inside the rhombus.
-            // Arc radius = spacing * 0.4.
-            let r = spacing * 0.4;
-            let arc_steps = 8usize;
-            // Choose two corners based on flip.
-            let corner_a = angle + if flip == 0 { 0.0 } else { PI };
-            let corner_b = corner_a + PI * 0.5;
-            // Arc from corner_a to corner_b.
-            let arc_cx = rx + r * corner_a.cos();
-            let arc_cy = ry - r * corner_a.sin();
-            for s in 0..=arc_steps {
-                let a = corner_b + (corner_a - corner_b) * s as f32 / arc_steps as f32;
-                let px = (arc_cx + r * a.cos()).round() as i32;
-                let py = (arc_cy - r * a.sin()).round() as i32;
-                draw::dot_i(grid, px, py);
+            // Arc round the apex `a`, radius half the edge, from edge a–b to
+            // edge a–c; the two halves of each rhomb complete one arc.
+            let rad = 0.5 * ((pb.0 - pa.0).powi(2) + (pb.1 - pa.1).powi(2)).sqrt();
+            let t0 = (pb.1 - pa.1).atan2(pb.0 - pa.0);
+            let t1 = (pc.1 - pa.1).atan2(pc.0 - pa.0);
+            let mut sweep = t1 - t0;
+            // atan2 differences lie in (−2π, 2π): one wrap picks the short arc.
+            if sweep > PI {
+                sweep -= 2.0 * PI;
+            } else if sweep < -PI {
+                sweep += 2.0 * PI;
             }
-            // Second arc from the opposite corner.
-            let corner_c = corner_a + PI;
-            let corner_d = corner_c + PI * 0.5;
-            let arc_cx2 = rx + r * corner_c.cos();
-            let arc_cy2 = ry - r * corner_c.sin();
-            for s in 0..=arc_steps {
-                let a = corner_d + (corner_c - corner_d) * s as f32 / arc_steps as f32;
-                let px = (arc_cx2 + r * a.cos()).round() as i32;
-                let py = (arc_cy2 - r * a.sin()).round() as i32;
-                draw::dot_i(grid, px, py);
+            let steps = ((rad * sweep.abs() * 1.5).ceil() as usize).max(2);
+            for i in 0..=steps {
+                let t = t0 + sweep * i as f32 / steps as f32;
+                draw::dot_i(
+                    grid,
+                    (pa.0 + rad * t.cos()).round() as i32,
+                    (pa.1 + rad * t.sin()).round() as i32,
+                );
             }
         }
         Ok(())

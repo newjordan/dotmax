@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -839,19 +874,24 @@ pub fn render_string(style: &dyn ProgressStyle, ctx: &BarContext) -> Result<Stri
 
 pub mod styles {
     pub mod medieval {
-//! Medieval / Fantasy-RPG progress bars — twelve structurally distinct styles,
-//! each built around a different narrative mechanism: physical kinematics
-//! (sword, bow, catapult, drawbridge, portcullis), spatial reveal
-//! (castle construction, scroll unrolling, treasure chest, shield charge),
-//! projectile arcs (trebuchet launch), dynamic fire / fluid simulation
-//! (torch, potion), and mounted combat (jousting).
+//! Medieval / Fantasy-RPG progress bars — fourteen pictorial scenes, each a
+//! recognisable object whose state tracks completion: a sword drawn from its
+//! scabbard, a longbow at full draw, a castle rising course by course, a
+//! trebuchet lobbing boulders further downrange, heraldic shields filling with
+//! colour, two knights charging down the lists, a drawbridge lowering over a
+//! moat, a wall of torches lighting one by one, potion flasks filling, a
+//! treasure chest opening, a scroll unrolling, a portcullis lifting, a
+//! blacksmith hammering out a glowing blade on an anvil, and a heraldic
+//! banner unfurling from its pole.
 //!
 //! Every bar animates via `ctx.time` and tracks completion via `ctx.eased`.
-//! All are safe at 1×1, 2×1, and 80×1 grids — no panic paths exist.
+//! Objects are drawn in fixed material colours (stone, steel, wood, gold,
+//! flame) with one colour per terminal cell. All are safe at 1×1, 2×1, and
+//! 80×1 grids — every write goes through bounds-checked helpers.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 // ---------------------------------------------------------------------------
@@ -869,18 +909,115 @@ fn mhash_f(n: u32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
-// Bresenham line helper — draws dots from (x0,y0) to (x1,y1).
+// Material palette — fixed so the objects read as what they are.
 // ---------------------------------------------------------------------------
 
-fn line_dots(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
-    let dx = (x1 - x0).abs();
-    let dy = (y1 - y0).abs();
-    let steps = dx.max(dy).max(1);
+const STONE: Color = Color::rgb(150, 150, 165);
+const SAND: Color = Color::rgb(224, 198, 140);
+const WOOD: Color = Color::rgb(160, 104, 54);
+const WOOD_DK: Color = Color::rgb(108, 68, 36);
+const LEATHER: Color = Color::rgb(126, 70, 38);
+const IRON: Color = Color::rgb(118, 124, 142);
+const STEEL: Color = Color::rgb(205, 215, 232);
+const WHITE: Color = Color::rgb(250, 250, 255);
+const GOLD: Color = Color::rgb(245, 196, 64);
+const FLAME_Y: Color = Color::rgb(255, 218, 96);
+const FLAME_O: Color = Color::rgb(255, 136, 40);
+const FLAME_R: Color = Color::rgb(226, 64, 36);
+const WATER: Color = Color::rgb(56, 116, 210);
+const GRASS: Color = Color::rgb(84, 156, 70);
+const EARTH: Color = Color::rgb(120, 86, 52);
+const PARCH: Color = Color::rgb(234, 214, 168);
+const PARCH_DK: Color = Color::rgb(196, 160, 104);
+const GLASS: Color = Color::rgb(170, 205, 228);
+const RED: Color = Color::rgb(214, 54, 54);
+const BLUE: Color = Color::rgb(64, 104, 224);
+const GREEN: Color = Color::rgb(72, 184, 92);
+const PURPLE: Color = Color::rgb(164, 84, 214);
+const DIM: Color = Color::rgb(96, 96, 112);
+
+/// Heraldic tinctures / brew colours, cycled across repeated objects.
+const TINCTURES: [Color; 5] = [RED, BLUE, GREEN, PURPLE, GOLD];
+
+// ---------------------------------------------------------------------------
+// Bounds-safe colour drawing helpers (dot space, signed coordinates).
+// ---------------------------------------------------------------------------
+
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    let l = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t) as u8;
+    Color::rgb(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b))
+}
+
+/// Colour the cell that owns dot `(x, y)`.
+fn tint(grid: &mut BrailleGrid, x: i32, y: i32, c: Color) {
+    if x >= 0 && y >= 0 {
+        let (cx, cy) = (x as usize / 2, y as usize / 4);
+        draw::tint_row(grid, cy, cx, cx, c);
+    }
+}
+
+/// Set one dot and colour its cell; out-of-bounds is ignored.
+fn px(grid: &mut BrailleGrid, x: i32, y: i32, c: Color) {
+    let (w, h) = draw::dot_dims(grid);
+    if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
+        draw::dot_i(grid, x, y);
+        tint(grid, x, y, c);
+    }
+}
+
+/// Filled inclusive rectangle `[x0..=x1] × [y0..=y1]`, clipped to the grid.
+fn block(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, c: Color) {
+    let (w, h) = draw::dot_dims(grid);
+    let (xa, xb) = (x0.min(x1).max(0), x0.max(x1).min(w as i32 - 1));
+    let (ya, yb) = (y0.min(y1).max(0), y0.max(y1).min(h as i32 - 1));
+    for y in ya..=yb {
+        for x in xa..=xb {
+            px(grid, x, y, c);
+        }
+    }
+}
+
+/// Straight line between two dots.
+fn seg(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, c: Color) {
+    let steps = (x1 - x0).abs().max((y1 - y0).abs()).clamp(1, 4096);
     for s in 0..=steps {
         let t = s as f32 / steps as f32;
-        let px = x0 + ((x1 - x0) as f32 * t) as i32;
-        let py = y0 + ((y1 - y0) as f32 * t) as i32;
-        draw::dot_i(grid, px, py);
+        let x = x0 as f32 + (x1 - x0) as f32 * t;
+        let y = y0 as f32 + (y1 - y0) as f32 * t;
+        px(grid, x.round() as i32, y.round() as i32, c);
+    }
+}
+
+/// Stamp a character-art sprite; `col` maps each glyph to a colour (or none).
+fn sprite(
+    grid: &mut BrailleGrid,
+    rows: &[&str],
+    x0: i32,
+    y0: i32,
+    flip: bool,
+    col: impl Fn(char) -> Option<Color>,
+) {
+    for (j, row) in rows.iter().enumerate() {
+        let n = row.len() as i32;
+        for (i, ch) in row.chars().enumerate() {
+            if let Some(c) = col(ch) {
+                let i = i as i32;
+                let x = if flip { x0 + n - 1 - i } else { x0 + i };
+                px(grid, x, y0 + j as i32, c);
+            }
+        }
+    }
+}
+
+/// A small waving pennant flown from a pole whose top is at `(x, y)`.
+fn pennant(grid: &mut BrailleGrid, x: i32, y: i32, pole: i32, t: f32, c: Color) {
+    seg(grid, x, y, x, y + pole, WOOD_DK);
+    for k in 0..4 {
+        let lift = ((t * 7.0 - k as f32 * 0.9).sin() * 0.6).round() as i32;
+        px(grid, x + 1 + k, y + lift, c);
+        if k < 3 {
+            px(grid, x + 1 + k, y + 1 + lift, c);
+        }
     }
 }
 
@@ -903,14 +1040,17 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(TreasureChest),
         Box::new(ScrollUnroll),
         Box::new(PortcullisRaise),
+        Box::new(AnvilForge),
+        Box::new(BannerUnfurl),
     ]
 }
 
 // ---------------------------------------------------------------------------
-// 1 — Sword draw: blade reveals from scabbard, glint travels down the edge.
+// 1 — Sword draw: a longsword slides out of its scabbard, glint on the blade.
 // ---------------------------------------------------------------------------
 
-/// Blade slides out of a scabbard; a glint races along the revealed edge via time.
+/// Hilt (pommel, grip, crossguard) pulls left; the blade emerges from a
+/// leather scabbard with gold fittings. A glint runs along the bare steel.
 struct SwordDraw;
 impl ProgressStyle for SwordDraw {
     fn name(&self) -> &str {
@@ -920,86 +1060,59 @@ impl ProgressStyle for SwordDraw {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Blade slides out of a scabbard with eased reveal; glint races the edge via time"
+        "A longsword drawn from a leather scabbard: pommel, grip and gold crossguard pull clear as the steel blade emerges, a glint running its edge"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let cy = hi / 2;
 
-        let mid = h / 2;
+        // Scabbard on the right: leather body, gold throat and chape.
+        let mouth = (wi * 56 / 100).max(1);
+        let end = wi - 2;
+        block(grid, mouth, cy - 2, end - 1, cy + 2, LEATHER);
+        block(grid, end, cy - 1, end + 1, cy + 1, GOLD);
+        block(grid, mouth, cy - 2, mouth + 1, cy + 2, GOLD);
 
-        // Scabbard: right portion — occupies rightmost 1/6 of width, always visible.
-        let scabbard_w = (w / 6).max(2);
-        let scabbard_x = w.saturating_sub(scabbard_w);
-        // Scabbard outline (top + bottom rails)
-        draw::hline(grid, scabbard_x, w.saturating_sub(1), mid.saturating_sub(1));
-        draw::hline(
-            grid,
-            scabbard_x,
-            w.saturating_sub(1),
-            (mid + 1).min(h.saturating_sub(1)),
-        );
-        // Scabbard opening cap
-        draw::vline(
-            grid,
-            scabbard_x,
-            mid.saturating_sub(1),
-            (mid + 1).min(h.saturating_sub(1)),
-        );
-
-        // Blade: reveals leftward from scabbard mouth as eased grows.
-        let blade_max = scabbard_x.saturating_sub(1);
-        let blade_len = (ctx.eased * blade_max as f32) as usize;
-        let blade_start = blade_max.saturating_sub(blade_len);
-
-        if blade_len > 0 {
-            // Spine — centre line
-            draw::hline(grid, blade_start, blade_max, mid);
-            // Upper edge (offset 1 above spine)
-            if mid >= 1 {
-                draw::hline(grid, blade_start, blade_max, mid - 1);
-            }
-            // Tip — a pointed termination
-            let tip_x = blade_start;
-            draw::dot_i(grid, tip_x as i32 - 1, mid as i32);
-
-            // Crossguard at blade–scabbard boundary
-            let guard_x = blade_max;
-            let guard_top = mid.saturating_sub(2);
-            let guard_bot = (mid + 2).min(h.saturating_sub(1));
-            draw::vline(grid, guard_x, guard_top, guard_bot);
-        }
-
-        // Glint: a bright dot that runs along the revealed blade length with time.
-        if blade_len > 1 {
-            let glint_phase = (ctx.time * 1.4).fract();
-            let glint_x = blade_start + (glint_phase * blade_len as f32) as usize;
-            draw::dot_i(grid, glint_x as i32, mid.saturating_sub(1) as i32);
-            draw::dot_i(grid, glint_x as i32, mid as i32);
-        }
-
-        // Tint: steel blue across revealed blade, brown on scabbard.
-        let (cells_w, cells_h) = grid.dimensions();
-        let blade_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..blade_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Blade: as long as the scabbard; only the drawn part is visible.
+        let blade = (end - mouth).max(3);
+        let guard = mouth - 1 - (p * blade as f32) as i32;
+        let tip = guard + 1 + blade;
+        let shown = (mouth - 1).min(tip);
+        for x in guard + 1..=shown {
+            match tip - x {
+                0 | 1 => px(grid, x, cy, STEEL),
+                2 | 3 => block(grid, x, cy - 1, x, cy, STEEL),
+                _ => block(grid, x, cy - 1, x, cy + 1, STEEL),
             }
         }
+        let bare = shown - guard;
+        if bare > 3 {
+            let gx = guard + 1 + ((ctx.time * 0.9).fract() * bare as f32) as i32;
+            block(grid, gx, cy - 1, gx + 1, cy + 1, WHITE);
+        }
 
+        // Hilt: crossguard, wrapped grip, round pommel.
+        block(grid, guard - 1, cy - 5, guard, cy + 5, GOLD);
+        px(grid, guard - 2, cy - 5, GOLD);
+        px(grid, guard - 2, cy + 5, GOLD);
+        block(grid, guard - 7, cy - 1, guard - 2, cy + 1, LEATHER);
+        block(grid, guard - 10, cy - 1, guard - 8, cy + 1, GOLD);
+        block(grid, guard - 9, cy - 2, guard - 9, cy + 2, GOLD);
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2 — Bow draw: string pulls back, arrow nocked; releases at 100%.
+// 2 — Bow draw: the string is pulled back to full draw, then loosed.
 // ---------------------------------------------------------------------------
 
-/// A longbow: stave bends as eased pulls the string; at 100% the string snaps forward.
+/// A recurved longbow: progress pulls the nocked arrow back and bends the
+/// stave; at 100% the arrow flies into the archery butt.
 struct BowDraw;
 impl ProgressStyle for BowDraw {
     fn name(&self) -> &str {
@@ -1009,99 +1122,99 @@ impl ProgressStyle for BowDraw {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Longbow stave bends with eased draw; arrow nocked; string releases at 100%"
+        "A wooden longbow drawn back by progress: the stave bends, the string pulls to a point behind a fletched arrow aimed at a target; at 100% the arrow flies"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let cy = hi / 2;
+        let released = ctx.progress >= 0.999;
 
-        let mid_y = (h / 2) as i32;
-        let bow_x = (w / 5) as i32; // stave x position
-        let max_bend = (w / 8).max(2) as i32; // max draw-back distance (rightward)
-
-        // Stave: vertical arc. We draw a curved stave as a column of dots
-        // with a slight leftward bulge proportional to draw amount.
-        let stave_top = 0i32;
-        let stave_bot = (h as i32).saturating_sub(1);
-        let bow_curve = ((ctx.eased) * max_bend as f32) as i32;
-
-        for dy in stave_top..=stave_bot {
-            // Parabolic bow curve: leftward bulge at centre, straight at tips.
-            let frac = 1.0 - (2.0 * dy as f32 / stave_bot.max(1) as f32 - 1.0).powi(2);
-            let bend = (frac * bow_curve as f32) as i32;
-            let sx = bow_x - bend;
-            draw::dot_i(grid, sx, dy);
+        // Target (archery butt) on a tripod at the right edge.
+        let tx = wi - 6;
+        seg(grid, tx - 3, hi - 1, tx, cy, WOOD_DK);
+        seg(grid, tx + 3, hi - 1, tx, cy, WOOD_DK);
+        let ry = (cy as f32 - 0.5).max(1.0);
+        for y in 0..hi {
+            for x in tx - 4..=tx + 4 {
+                let u = (x - tx) as f32 / 4.5;
+                let v = (y - cy) as f32 / ry;
+                let r = (u * u + v * v).sqrt();
+                if r <= 1.0 && !(0.52..0.64).contains(&r) {
+                    let c = if r < 0.34 {
+                        GOLD
+                    } else if r < 0.64 {
+                        RED
+                    } else {
+                        WHITE
+                    };
+                    px(grid, x, y, c);
+                }
+            }
         }
 
-        // String: released or taut.
-        // At progress < 1: string pulled back to nock point (right of stave).
-        // At progress == 1: string spring-forward (oscillate via time near stave).
-        let release = ctx.progress >= 0.999;
-        let nock_x = if release {
-            // Released: string snaps; oscillate around bow_x with damped sine.
-            let decay = (-(ctx.time % 1.5) * 3.0).exp();
-            let osc = (ctx.time * 30.0).sin() * decay * max_bend as f32;
-            bow_x + osc as i32
+        // Stave: a D-shaped curve bulging toward the target.
+        let bx = wi * 36 / 100;
+        let bend = if released { 3.0 } else { 3.0 + p * 4.0 };
+        for y in 0..hi {
+            let u = (y - cy) as f32 / cy.max(1) as f32;
+            let off = (bend * (1.0 - u * u)).round() as i32;
+            px(grid, bx + off, y, WOOD);
+            if u.abs() < 0.7 {
+                px(grid, bx + off + 1, y, WOOD);
+            }
+        }
+        block(
+            grid,
+            bx + bend as i32,
+            cy - 1,
+            bx + bend as i32 + 1,
+            cy + 1,
+            LEATHER,
+        );
+
+        // String and arrow.
+        let max_draw = (wi * 24 / 100).max(1);
+        let alen = (wi * 26 / 100).max(4);
+        let nock = if released {
+            let f = (t * 0.8).fract();
+            bx + (f * (tx - 2 - alen - bx) as f32) as i32
         } else {
-            bow_x + (ctx.eased * max_bend as f32) as i32 + 1
+            bx - (p * max_draw as f32) as i32
         };
-
-        // Top string (stave tip top → nock)
-        line_dots(grid, bow_x, stave_top, nock_x, mid_y);
-        // Bottom string (nock → stave tip bottom)
-        line_dots(grid, nock_x, mid_y, bow_x, stave_bot);
-
-        // Arrow: shaft from nock leftward to fletching.
-        if release {
-            // Arrow has flown — draw it travelling rightward off-screen via time.
-            let flight_x = (bow_x + (ctx.time % 0.8 * w as f32 * 1.5) as i32).min(w as i32 + 4);
-            draw::dot_i(grid, flight_x, mid_y);
-            draw::dot_i(grid, flight_x + 1, mid_y);
-            draw::dot_i(grid, flight_x + 2, mid_y - 1);
-            draw::dot_i(grid, flight_x + 2, mid_y + 1);
+        let string_x = if released { bx } else { nock };
+        seg(grid, bx, 0, string_x, cy, Color::rgb(236, 230, 206));
+        seg(grid, string_x, cy, bx, hi - 1, Color::rgb(236, 230, 206));
+        seg(grid, nock, cy, nock + alen, cy, Color::rgb(222, 190, 140));
+        let hx = nock + alen;
+        let head = if (t * 1.3).fract() < 0.15 {
+            WHITE
         } else {
-            let arrow_len = (w as i32 * 3 / 5).max(2);
-            let arrow_start = nock_x;
-            let arrow_end = (arrow_start - arrow_len).max(bow_x + 2);
-            if arrow_end < arrow_start {
-                draw::hline(
-                    grid,
-                    arrow_end as usize,
-                    arrow_start as usize,
-                    mid_y as usize,
-                );
-                // Arrowhead (tip pointing right)
-                draw::dot_i(grid, arrow_start + 1, mid_y - 1);
-                draw::dot_i(grid, arrow_start + 1, mid_y + 1);
-                draw::dot_i(grid, arrow_start + 2, mid_y);
-                // Fletching (left end)
-                draw::dot_i(grid, arrow_end - 1, mid_y - 1);
-                draw::dot_i(grid, arrow_end - 1, mid_y + 1);
-            }
+            STEEL
+        };
+        block(grid, hx, cy - 2, hx, cy + 2, head);
+        block(grid, hx + 1, cy - 1, hx + 2, cy + 1, head);
+        px(grid, hx + 3, cy, head);
+        // Fletching: two feather chevrons behind the nock.
+        for k in [0, 3] {
+            seg(grid, nock + k, cy - 2, nock + k + 2, cy, RED);
+            seg(grid, nock + k, cy + 2, nock + k + 2, cy, RED);
         }
-
-        // Tint: warm wood across stave region, highlight at string.
-        let (cells_w, cells_h) = grid.dimensions();
-        let draw_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..draw_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3 — Castle build: stone courses stack up row by row with crenellations.
+// 3 — Castle build: towers, curtain walls and keep rise course by course.
 // ---------------------------------------------------------------------------
 
-/// Stone courses stack from the ground up; crenellated battlements crown the top at 100%.
+/// Two crenellated towers, curtain walls and a gated keep rise from the ground
+/// up; a stone drops onto the working course; banners fly when complete.
 struct CastleBuild;
 impl ProgressStyle for CastleBuild {
     fn name(&self) -> &str {
@@ -1111,76 +1224,74 @@ impl ProgressStyle for CastleBuild {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Stone courses stack upward course by course; crenellations crown the top at completion"
+        "A stone castle — crenellated towers, curtain walls and a gated keep — rises course by course from the ground; blocks drop onto the fresh course and banners fly when complete"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let sx = |v: i32| v * wi / 88;
+        let sy = |v: i32| v * hi / 16;
+        let gy = hi - 1;
+        let mh = sy(2).max(1);
 
-        // Each "course" is 2 dots tall; we fill from the bottom up.
-        let course_h = 2usize;
-        let total_courses = (h / course_h).max(1);
-        let courses_built = (ctx.eased * total_courses as f32).ceil() as usize;
-
-        for course in 0..courses_built.min(total_courses) {
-            let y0 = h.saturating_sub((course + 1) * course_h);
-            let _y1 = h.saturating_sub(course * course_h + 1);
-
-            // Alternate stone patterns: solid courses and mortar-jointed rows.
-            draw::fill_rect(grid, 0, y0, w, course_h);
-            if course % 2 != 0 {
-                // Jointed course: solid but with gaps at alternating x positions
-                // Mortar joints (knock out single dots) — staggered per course
-                let offset = (course / 2) % 2;
-                let joint_spacing = 4usize;
-                let mut jx = offset * 2;
-                while jx < w {
-                    // Top mortar line only
-                    // (we just leave the fill and add a gap character — but we can't
-                    //  clear dots. Instead skip the dot. Draw row with gaps manually.)
-                    jx += joint_spacing;
-                }
-            }
-
-            // Crenellations on the topmost visible course.
-            if course + 1 == courses_built && course == total_courses - 1 {
-                // Draw crenellations: every 4 dots, leave a gap of 2 (merlon / crenel pattern).
-                let crenel_w = 4usize;
-                let merlon_w = 3usize;
-                let mut cx = 0usize;
-                while cx < w {
-                    // Crenel gap: do nothing (dots were filled above).
-                    // We paint merlons explicitly over the top row.
-                    let mx_end = (cx + merlon_w).min(w);
-                    for mx in cx..mx_end {
-                        draw::dot(grid, mx, y0);
+        // Rows at or below `level` have been laid.
+        let level = gy - (p * hi as f32) as i32;
+        let hole = |x: i32, y: i32| {
+            let gate = x >= sx(40) && x < sx(48) && y >= sy(10);
+            let arch = (x == sx(40) || x == sx(48) - 1) && y == sy(10);
+            let slit = (x == sx(10) || x == sx(77)) && y >= sy(7) && y <= sy(9);
+            let win = (x == sx(43) || x == sx(44)) && y >= sy(5) && y <= sy(6);
+            (gate && !arch) || slit || win
+        };
+        // (x0, x1, body top) for tower, wall, keep, wall, tower.
+        let parts = [
+            (4, 17, 5),
+            (17, 36, 9),
+            (36, 52, 3),
+            (52, 71, 9),
+            (71, 84, 5),
+        ];
+        for &(a, b, top) in &parts {
+            let (x0, x1, top) = (sx(a), sx(b), sy(top));
+            for x in x0..x1 {
+                let merlon = (x - x0) % 4 < 2;
+                let col_top = if merlon { top - mh } else { top };
+                for y in col_top.max(level)..=gy {
+                    if hole(x, y) {
+                        continue;
                     }
-                    cx += merlon_w + crenel_w;
+                    let fresh = p < 1.0 && y / 4 == level / 4;
+                    px(grid, x, y, if fresh { SAND } else { STONE });
                 }
             }
         }
 
-        // Tint: grey stone palette left → right.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cx in 0..cells_w {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
+        if p < 1.0 && level > 3 {
+            // A block being lowered onto the working course.
+            let k = (t * 1.1) as u32;
+            let f = (t * 1.1).fract();
+            let bx = sx(6) + (mhash_f(k) * sx(76) as f32) as i32;
+            let by = (f * (level - 2) as f32) as i32;
+            block(grid, bx, by, bx + 2, by + 1, SAND);
+        } else if p >= 1.0 {
+            pennant(grid, sx(10), 0, sy(5) - mh - 1, t, ctx.palette.start);
+            pennant(grid, sx(77), 0, sy(5) - mh - 1, t + 0.4, ctx.palette.end);
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 4 — Trebuchet launch: arm winds back then arcs a projectile across the sky.
+// 4 — Trebuchet: the arm swings and hurls a boulder further with progress.
 // ---------------------------------------------------------------------------
 
-/// Trebuchet counterweight winches up then releases; a boulder arcs a parabolic trajectory.
+/// A wooden trebuchet on its A-frame swings its throwing arm (counterweight
+/// dropping) and lobs a boulder; progress pushes the landing point downrange.
 struct TrebuchetLaunch;
 impl ProgressStyle for TrebuchetLaunch {
     fn name(&self) -> &str {
@@ -1190,101 +1301,92 @@ impl ProgressStyle for TrebuchetLaunch {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Trebuchet arm winches back (0→50%) then releases a boulder on a parabolic arc (50→100%)"
+        "A wooden trebuchet swings its arm as the iron counterweight drops, hurling a boulder along a dotted arc; progress pushes the target flag further downrange"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let sx = |v: i32| v * wi / 88;
+        let gy = hi - 1;
 
-        let base_x = (w / 5) as i32;
-        let base_y = (h as i32).saturating_sub(1);
-        let pivot_y = base_y - (h as i32 / 2).max(2);
-        let arm_len = (h / 2).max(2) as i32;
-
-        // Draw the frame: vertical mast + base.
-        draw::vline(grid, base_x as usize, pivot_y as usize, base_y as usize);
-        draw::hline(
-            grid,
-            (base_x - 2).max(0) as usize,
-            (base_x + 2) as usize,
-            base_y as usize,
-        );
-
-        // Arm angle: winds from -120° (arm up, counterweight down) to +60° (released).
-        // Progress 0→0.5: wind back from 0° to -130° (arm pointing backward/up).
-        // Progress 0.5→1: swing forward from -130° to +80°.
-        let arm_angle_deg = if ctx.progress < 0.5 {
-            let wind = ctx.progress * 2.0; // 0→1
-            -130.0 * wind // 0° → -130°
-        } else {
-            let release = (ctx.progress - 0.5) * 2.0; // 0→1
-            -130.0 + 210.0 * release // -130° → +80°
-        };
-        let arm_angle = arm_angle_deg * PI / 180.0;
-
-        // Arm: from pivot to sling end.
-        let arm_tip_x = base_x + (arm_len as f32 * arm_angle.cos()) as i32;
-        let arm_tip_y = pivot_y + (arm_len as f32 * arm_angle.sin()) as i32;
-        // Counterweight arm: short arm on opposite side.
-        let cw_x = base_x - ((arm_len / 2) as f32 * arm_angle.cos()) as i32;
-        let cw_y = pivot_y - ((arm_len / 2) as f32 * arm_angle.sin()) as i32;
-
-        line_dots(grid, cw_x, cw_y, arm_tip_x, arm_tip_y);
-        // Pivot dot
-        draw::dot_i(grid, base_x, pivot_y);
-        // Counterweight bob
-        draw::dot_i(grid, cw_x, cw_y);
-        draw::dot_i(grid, cw_x, cw_y + 1);
-        draw::dot_i(grid, cw_x + 1, cw_y);
-
-        // Sling: short dangling line from arm tip.
-        let sling_len = (arm_len / 3).max(1);
-        let sling_x = arm_tip_x;
-        let sling_bot = arm_tip_y + sling_len;
-        draw::vline(
-            grid,
-            sling_x.max(0) as usize,
-            arm_tip_y.max(0) as usize,
-            sling_bot.max(0).min(base_y) as usize,
-        );
-
-        // Boulder: only exists when arm has passed vertical (progress > 0.5 and beyond).
-        if ctx.progress > 0.52 {
-            // The launch starts from the sling tip; boulder follows a parabola.
-            let t_launch = ((ctx.progress - 0.5) * 2.0).clamp(0.0, 1.0);
-            let boulder_x = base_x + (t_launch * (w as f32 - base_x as f32) * 0.85) as i32;
-            // Parabola: y = launch_y - v*t + 0.5*g*t^2 (in dot space, flipped Y).
-            let launch_y = pivot_y - arm_len; // apex of throw
-            let bouldy =
-                launch_y + ((t_launch * 2.0 - t_launch * t_launch) * -(h as f32 * 0.4)) as i32;
-            draw::dot_i(grid, boulder_x, bouldy);
-            draw::dot_i(grid, boulder_x + 1, bouldy);
-            draw::dot_i(grid, boulder_x, bouldy + 1);
-            draw::dot_i(grid, boulder_x + 1, bouldy + 1);
+        // Ground.
+        for x in (0..wi).step_by(2) {
+            px(grid, x, gy, GRASS);
         }
 
-        // Tint: warm ochre across revealed flight path.
-        let (cells_w, cells_h) = grid.dimensions();
-        let lit_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..lit_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Frame: base beam, wheels, A-frame legs up to the pivot.
+        let (pvx, pvy) = (sx(14), gy - hi * 8 / 16);
+        block(grid, sx(5), gy - 1, sx(23), gy - 1, WOOD_DK);
+        block(grid, sx(6), gy - 1, sx(8), gy, WOOD_DK);
+        block(grid, sx(20), gy - 1, sx(22), gy, WOOD_DK);
+        seg(grid, sx(7), gy - 1, pvx, pvy, WOOD);
+        seg(grid, sx(21), gy - 1, pvx, pvy, WOOD);
+
+        // Launch cycle: swing, flight, reload.
+        let f = (ctx.time / 2.4).fract();
+        let cock = 200.0_f32.to_radians();
+        let fire = 52.0_f32.to_radians();
+        let a = if f < 0.2 {
+            cock + (fire - cock) * (f / 0.2).powi(2)
+        } else if f < 0.85 {
+            fire
+        } else {
+            fire + (cock - fire) * ((f - 0.85) / 0.15)
+        };
+        let long = (hi * 9 / 16).max(2) as f32;
+        let short = long * 0.4;
+        let (ca, sa) = (a.cos(), a.sin());
+        let tip = (pvx + (ca * long) as i32, pvy - (sa * long) as i32);
+        let cw = (pvx - (ca * short) as i32, pvy + (sa * short) as i32);
+        seg(grid, cw.0, cw.1, tip.0, tip.1, WOOD);
+        block(grid, cw.0 - 2, cw.1, cw.0 + 1, cw.1 + 3, IRON);
+
+        // Trajectory toward the landing flag.
+        let rel = (
+            pvx + (fire.cos() * long) as i32,
+            pvy - (fire.sin() * long) as i32,
+        );
+        let lx = sx(34) + (p * (wi - sx(34) - 4) as f32) as i32;
+        let apex = (rel.1 as f32 - 1.0).max(0.0) + 2.0;
+        let arc = |s: f32| {
+            let x = rel.0 as f32 + (lx - rel.0) as f32 * s;
+            let y = rel.1 as f32 + ((gy - 2) - rel.1) as f32 * s - apex * 4.0 * s * (1.0 - s);
+            (x.round() as i32, y.round() as i32)
+        };
+        for k in (0..40).step_by(2) {
+            let (x, y) = arc(k as f32 / 40.0);
+            px(grid, x, y, DIM);
+        }
+        pennant(grid, lx, gy - 5, 5, ctx.time, RED);
+
+        // Boulder: in the sling, in flight, or landed with a dust puff.
+        let (bx, by) = if (0.2..0.85).contains(&f) {
+            arc(((f - 0.2) / 0.5).min(1.0))
+        } else {
+            tip
+        };
+        block(grid, bx - 1, by - 1, bx + 1, by + 1, STONE);
+        if (0.7..0.85).contains(&f) {
+            for k in 0..6u32 {
+                let dx = (mhash_f(k) * 8.0 - 4.0) as i32;
+                let dy = (mhash_f(k + 9) * 3.0) as i32;
+                px(grid, bx + dx, by - dy, SAND);
             }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 5 — Shield charge: a heraldic charge (cross) fills into the shield face.
+// 5 — Shield charge: a rack of heater shields fills with heraldic colour.
 // ---------------------------------------------------------------------------
 
-/// Circular shield whose heraldic cross charge fills in quadrant by quadrant.
+/// Heater shields hang in a row; each fills bottom-up with its tincture,
+/// leaving a cross as the heraldic charge, then catches a passing glint.
 struct ShieldCharge;
 impl ProgressStyle for ShieldCharge {
     fn name(&self) -> &str {
@@ -1294,81 +1396,88 @@ impl ProgressStyle for ShieldCharge {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Circular shield face: a heraldic cross charge fills quarter by quarter; boss glints"
+        "A row of heater shields, iron outlines filling one by one with heraldic colours around a cross charge; a glint sweeps across the finished shields"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let r = (w.min(h * 2) / 2).saturating_sub(1).max(1) as i32;
-        let arm_w = (r / 3).max(1); // half-width of cross arms
-
-        // Shield rim: circle outline.
-        let rim_steps = 72usize;
-        for s in 0..rim_steps {
-            let a = s as f32 / rim_steps as f32 * 2.0 * PI;
-            draw::dot_i(
-                grid,
-                cx + (r as f32 * a.cos()) as i32,
-                cy + (r as f32 * a.sin() * 0.55) as i32,
-            );
-        }
-
-        // Heraldic cross: fills in proportion to eased (four arms grow outward).
-        let fill_r = (ctx.eased * r as f32) as i32;
-
-        // Vertical arm (top + bottom)
-        for dy in -fill_r.min(r)..=fill_r.min(r) {
-            for dx in -arm_w..=arm_w {
-                if (cx + dx) >= 0 && (cy + dy) >= 0 {
-                    draw::dot_i(grid, cx + dx, cy + dy);
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let n = ((wi + 4) / 18).max(1);
+        let slot = wi / n;
+        let sw = (slot - 4).clamp(2, 14);
+        let shoulder = hi * 55 / 100;
+        let bar_y = hi * 30 / 100;
+        let sweep = (ctx.time * 40.0) as i32 % (wi + 40);
+        let half = |y: i32| {
+            if y < shoulder {
+                sw / 2
+            } else {
+                let u = (y - shoulder) as f32 / (hi - shoulder).max(1) as f32;
+                ((sw / 2) as f32 * (1.0 - u * u)).round() as i32
+            }
+        };
+        for i in 0..n {
+            let cx = i * slot + slot / 2;
+            let f = (p * n as f32 - i as f32).clamp(0.0, 1.0);
+            let c = TINCTURES[i as usize % TINCTURES.len()];
+            // Iron outline.
+            for y in 0..hi {
+                let hw = half(y).max(1);
+                px(grid, cx - hw, y, IRON);
+                px(grid, cx + hw - 1, y, IRON);
+                if y == 0 || y == hi - 1 {
+                    block(grid, cx - hw, y, cx + hw - 1, y, IRON);
+                }
+            }
+            if f <= 0.0 {
+                continue;
+            }
+            // Field rises from the point; the cross stays as negative space.
+            let fill_top = hi as f32 - f * hi as f32;
+            for y in 0..hi {
+                if (y as f32) < fill_top {
+                    continue;
+                }
+                let hw = half(y);
+                for x in cx - hw..cx + hw {
+                    let cross = x == cx - 1 || x == cx || y == bar_y || y == bar_y + 1;
+                    if cross && y > 0 && y < hi - 2 && hw > 2 {
+                        continue;
+                    }
+                    let glint = f >= 1.0 && (x + y - sweep + 20).abs() < 3;
+                    px(grid, x, y, if glint { mix(c, WHITE, 0.6) } else { c });
                 }
             }
         }
-        // Horizontal arm (left + right)
-        for dx in -fill_r.min(r)..=fill_r.min(r) {
-            for dy in -arm_w..=arm_w {
-                if (cx + dx) >= 0 && (cy + dy) >= 0 {
-                    draw::dot_i(grid, cx + dx, cy + dy);
-                }
-            }
-        }
-
-        // Central boss — glints with time.
-        let glint = (ctx.time * 6.0).sin() > 0.6;
-        let boss_r = (arm_w / 2).max(1);
-        for dy in -boss_r..=boss_r {
-            for dx in -boss_r..=boss_r {
-                if dx * dx + dy * dy <= boss_r * boss_r && glint {
-                    draw::dot_i(grid, cx + dx, cy + dy);
-                }
-            }
-        }
-
-        // Tint: red (charge) and gold (field).
-        let (cells_w, cells_h) = grid.dimensions();
-        let charge_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx_c in 0..charge_cells.min(cells_w) {
-            let t = cx_c as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy_c in 0..cells_h {
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
-            }
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 6 — Jousting: knight lowers lance, horse charges, impact at 100%.
+// 6 — Jousting: two mounted knights charge each other down the lists.
 // ---------------------------------------------------------------------------
 
-/// A mounted knight charges from left: lance angle drops with progress; impact burst at 100%.
+/// Knight on a caparisoned horse, facing right (legs drawn separately).
+const KNIGHT: [&str; 12] = [
+    "......pp................",
+    "......hhh...............",
+    "......hhh..........e....",
+    ".....aaaa.........eee...",
+    ".....aaaa........nnnnn..",
+    ".....aaaa.......nnnnnnn.",
+    ".....aaaa......nnnn..nnn",
+    "..cccccccccccccnnn....nn",
+    ".ccccccccccccccnn.......",
+    "cccccccccccccccn........",
+    "ccccccccccccccc.........",
+    ".ccccccccccccc..........",
+];
+
+/// Blue and red knights gallop toward each other with couched lances; the
+/// lances meet and splinter at 100%.
 struct Jousting;
 impl ProgressStyle for Jousting {
     fn name(&self) -> &str {
@@ -1378,89 +1487,77 @@ impl ProgressStyle for Jousting {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Mounted knight charges from left; lance lowers with progress; impact splinter at 100%"
+        "Two armoured knights on caparisoned horses gallop toward each other with striped lances couched; they close with progress and the lances splinter on impact at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let lance = (wi * 15 / 88).max(2);
+        let start = -10;
+        let meet = wi / 2 - 24 - lance;
+        let xl = start + (p * (meet - start) as f32) as i32;
 
-        let mid = (h / 2) as i32;
-
-        // Horse + rider: occupies about 8 dots wide; position driven by eased.
-        let horse_w = (w / 8).max(3) as i32;
-        let horse_x = ((ctx.eased * (w as f32 - horse_w as f32)) as i32).min(w as i32 - horse_w);
-
-        // Horse body: horizontal bar.
-        draw::hline(
-            grid,
-            horse_x.max(0) as usize,
-            (horse_x + horse_w - 1).max(0) as usize,
-            mid as usize,
-        );
-        // Horse legs (2 pairs).
-        let leg_y = (mid + 1).min(h as i32 - 1) as usize;
-        draw::dot_i(grid, horse_x + 1, leg_y as i32);
-        draw::dot_i(grid, horse_x + horse_w - 2, leg_y as i32);
-        // Rider's torso above mid.
-        let rider_x = horse_x + horse_w / 2;
-        draw::dot_i(grid, rider_x, mid - 1);
-        draw::dot_i(grid, rider_x, mid - 2);
-
-        // Lance: pivots downward from rider shoulder as progress increases.
-        // Angle goes from 15° (near horizontal, pointing right) to 0° (fully level).
-        let lance_angle_deg = 20.0 * (1.0 - ctx.eased); // 20° → 0°
-        let lance_angle = lance_angle_deg * PI / 180.0;
-        let lance_len = (w as f32 * 0.55).max(4.0) as i32;
-        let lance_base_x = rider_x + 1;
-        let lance_base_y = mid - 1;
-        let lance_tip_x = lance_base_x + (lance_len as f32 * lance_angle.cos()) as i32;
-        let lance_tip_y = lance_base_y + (lance_len as f32 * lance_angle.sin()) as i32;
-
-        line_dots(grid, lance_base_x, lance_base_y, lance_tip_x, lance_tip_y);
-
-        // Impact effect at progress == 1: radiating splinter dots via time.
-        if ctx.progress >= 0.999 {
-            let impact_x = w as i32 - 2;
-            let burst_r = ((ctx.time % 0.5) * 8.0) as i32;
-            for i in 0..8i32 {
-                let a = i as f32 * PI / 4.0;
-                let bx = impact_x + (burst_r as f32 * a.cos()) as i32;
-                let by = mid + (burst_r as f32 * a.sin() * 0.5) as i32;
-                draw::dot_i(grid, bx, by);
+        for (side, team) in [(false, BLUE), (true, RED)] {
+            let x0 = if side { wi - 24 - xl } else { xl };
+            let stride = (t * 7.0 + if side { 1.3 } else { 0.0 }).sin();
+            let bob = i32::from(stride > 0.0);
+            // Couched lance with painted stripes (drawn first so the horse's
+            // head keeps its colour where the lance crosses it).
+            let (from, to) = if side {
+                (x0 + 14, x0 - lance)
+            } else {
+                (x0 + 9, x0 + 23 + lance)
+            };
+            let ly = bob + 5;
+            let steps = (to - from).abs();
+            for k in 0..=steps {
+                let x = from + if side { -k } else { k };
+                let y = ly - k * 2 / steps.max(1);
+                px(grid, x, y, if (x / 4) % 2 == 0 { WHITE } else { team });
+            }
+            sprite(grid, &KNIGHT, x0, bob, side, |ch| match ch {
+                'p' | 'c' => Some(team),
+                'h' | 'a' => Some(STEEL),
+                'e' | 'n' => Some(WOOD),
+                _ => None,
+            });
+            // Galloping legs: extended vs gathered.
+            let spread = if stride > 0.0 { 2 } else { -1 };
+            for (lx, dir) in [(1, -1), (3, -1), (12, 1), (14, 1)] {
+                let (x, d) = if side {
+                    (x0 + 23 - lx, -dir * spread)
+                } else {
+                    (x0 + lx, dir * spread)
+                };
+                seg(grid, x, bob + 12, x + d, hi - 1, WOOD_DK);
             }
         }
 
-        // Target tilt (opposing target at right edge): vertical bar.
-        let target_x = (w as i32 - 3).max(0);
-        draw::vline(
-            grid,
-            target_x as usize,
-            mid.saturating_sub(2) as usize,
-            (mid + 2).min(h as i32 - 1) as usize,
-        );
-
-        // Tint: steel blue across the charge track.
-        let (cells_w, cells_h) = grid.dimensions();
-        let lit_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..lit_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Impact: splinters burst where the lances meet.
+        if ctx.progress >= 0.99 {
+            let r = (t * 2.0).fract() * 7.0;
+            for k in 0..8 {
+                let a = k as f32 * PI / 4.0 + 0.3;
+                let x = wi / 2 + (a.cos() * r * 1.4) as i32;
+                let y = 3 + (a.sin() * r * 0.6) as i32;
+                px(grid, x, y, if k % 2 == 0 { GOLD } else { WHITE });
             }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 7 — Drawbridge: hangs on chains, rotates from vertical (0%) to horizontal (100%).
+// 7 — Drawbridge: the bridge swings down on chains across the moat.
 // ---------------------------------------------------------------------------
 
-/// Drawbridge planks lower from vertical (raised) to horizontal (open) driven by eased.
+/// A crenellated gatehouse beside a moat; the drawbridge rotates from upright
+/// (closed) to flat across the water (open) as progress grows.
 struct DrawbridgeLower;
 impl ProgressStyle for DrawbridgeLower {
     fn name(&self) -> &str {
@@ -1470,81 +1567,84 @@ impl ProgressStyle for DrawbridgeLower {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Drawbridge rotates from vertical (raised) to horizontal (lowered) via eased; chains visible"
+        "A wooden drawbridge lowers on iron chains from a crenellated gatehouse, swinging from upright to flat across a rippling moat to the far bank"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let gy = hi - 1;
+        let tx = wi * 64 / 100;
+        let top = hi * 5 / 16;
+        let mh = (hi * 2 / 16).max(1);
 
-        // Gate wall: left edge vertical bar.
-        let gate_x = 2usize;
-        draw::vline(grid, gate_x, 0, h.saturating_sub(1));
-
-        // Pivot: top of gate.
-        let pivot_x = gate_x as i32;
-        let pivot_y = 1i32;
-
-        // Bridge angle: 90° (up) at 0%, 0° (flat) at 100%.
-        let bridge_angle = PI / 2.0 * (1.0 - ctx.eased); // 90° → 0°
-        let bridge_len = (w.saturating_sub(gate_x + 2)).max(2) as i32;
-
-        let bridge_tip_x = pivot_x + (bridge_len as f32 * bridge_angle.cos()) as i32;
-        let bridge_tip_y = pivot_y + (bridge_len as f32 * bridge_angle.sin()) as i32;
-
-        // Bridge planks: two parallel lines (top and bottom of plank surface).
-        let perp_sin = bridge_angle.cos(); // perpendicular direction
-        let perp_cos = bridge_angle.sin();
-        let thickness = 2i32;
-        for offset in -thickness..=thickness {
-            let ox = (offset as f32 * perp_sin * 0.5) as i32;
-            let oy = (offset as f32 * perp_cos * 0.5) as i32;
-            line_dots(
-                grid,
-                pivot_x + ox,
-                pivot_y + oy,
-                bridge_tip_x + ox,
-                bridge_tip_y + oy,
-            );
+        // Gatehouse with merlons and arrow slits.
+        for x in tx..wi {
+            let merlon = (x - tx) % 4 < 2;
+            let y0 = if merlon { top - mh } else { top };
+            for y in y0..=gy {
+                let slit = (x == tx + 8 || x == tx + 20) && y >= top + 2 && y <= top + 4;
+                if !slit {
+                    px(grid, x, y, STONE);
+                }
+            }
         }
-
-        // Chain: from gate top to bridge tip (diagonal line with dots).
-        let chain_anchor_x = pivot_x - 1;
-        let chain_anchor_y = 0i32;
-        line_dots(
+        pennant(
             grid,
-            chain_anchor_x,
-            chain_anchor_y,
-            bridge_tip_x,
-            bridge_tip_y,
+            tx + (wi - tx) / 2,
+            0,
+            top - mh - 1,
+            t,
+            ctx.palette.end,
         );
 
-        // Gate arch: just an indication.
-        let gate_h = (h / 2).max(1);
-        for y in 0..gate_h {
-            draw::dot_i(grid, pivot_x - 1, y as i32);
-        }
-
-        // Tint: brown timber palette.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cx in 0..cells_w {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Far bank and moat.
+        let bl = (hi * 10 / 16).max(2);
+        let hy = gy - 3;
+        let mx0 = tx - bl - 1;
+        block(grid, 0, hy + 2, mx0 - 1, gy, EARTH);
+        block(grid, 0, hy + 1, mx0 - 1, hy + 1, GRASS);
+        for x in mx0.max(0)..tx {
+            let crest = ((x as f32 * 0.7 - t * 4.0).sin() > 0.4) as i32;
+            for y in hy + 3 - crest..=gy {
+                if (y + x) % 3 != 0 || y == hy + 3 - crest {
+                    px(grid, x, y, WATER);
+                }
             }
         }
 
+        // Bridge: hinged at the gate's foot, rotating 90° toward the bank.
+        let a = p * PI / 2.0;
+        let ex = tx - 1 - (bl as f32 * a.sin()).round() as i32;
+        let ey = hy - (bl as f32 * a.cos()).round() as i32;
+        seg(grid, tx - 1, hy, ex, ey, WOOD);
+        if a < PI / 4.0 {
+            seg(grid, tx - 2, hy, ex - 1, ey, WOOD);
+        } else {
+            seg(grid, tx - 1, hy + 1, ex, ey + 1, WOOD);
+        }
+        // Chains from the gatehouse to the bridge tip (dotted links).
+        let (cx0, cy0) = (tx, top + 1);
+        let steps = (ex - cx0).abs().max((ey - cy0).abs()).max(1);
+        for s in (0..=steps).step_by(2) {
+            let x = cx0 + (ex - cx0) * s / steps;
+            let y = cy0 + (ey - cy0) * s / steps;
+            px(grid, x, y, IRON);
+        }
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 8 — Torch flame: fuel/light meter with flickering flame driven by time.
+// 8 — Torch flame: wall torches light one after another.
 // ---------------------------------------------------------------------------
 
-/// Torch handle at base; flame column height = eased; flicker lobe animated via time.
+/// A row of wall-mounted torches (wooden haft, iron bracket, pitch head);
+/// progress lights them in turn, each flame flickering and throwing sparks.
 struct TorchFlame;
 impl ProgressStyle for TorchFlame {
     fn name(&self) -> &str {
@@ -1554,83 +1654,75 @@ impl ProgressStyle for TorchFlame {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Torch handle at base; flame height = eased; flickering fire lobes animated via time"
+        "A row of wall torches in iron brackets lights one by one; each teardrop flame flickers yellow-orange-red and throws rising sparks"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let n = (wi / 15).max(1);
+        let slot = wi / n;
+        let head_y = hi / 2;
+        let lit = p * n as f32;
+        for i in 0..n {
+            let cx = i * slot + slot / 2;
+            let fi = i as f32;
+            // Haft, bracket and pitch-soaked head.
+            block(grid, cx, head_y + 2, cx + 1, hi - 2, WOOD);
+            px(grid, cx, hi - 1, WOOD);
+            block(grid, cx - 2, hi * 11 / 16, cx + 3, hi * 11 / 16, IRON);
+            block(grid, cx - 1, head_y, cx + 2, head_y + 1, WOOD_DK);
 
-        // Layout: each torch occupies about 4 dots wide; space several across width.
-        let torch_w = 4usize;
-        let n_torches = (w / (torch_w + 2)).max(1);
-        let spacing = (w / n_torches).max(torch_w);
-
-        for t_idx in 0..n_torches {
-            let tx = t_idx * spacing + spacing / 2;
-            let tx = tx.min(w.saturating_sub(2)) as i32;
-
-            // Handle: bottom third.
-            let handle_h = (h / 3).max(1);
-            let handle_top = (h - handle_h) as i32;
-            draw::vline(grid, tx as usize, handle_top as usize, h - 1);
-            // Torch head: slightly wider.
-            let head_y = handle_top - 2;
-            draw::hline(
-                grid,
-                (tx - 1).max(0) as usize,
-                (tx + 1) as usize,
-                head_y.max(0) as usize,
-            );
-
-            // Flame column: height driven by eased.
-            let flame_max = (handle_top - 2).max(0) as usize;
-            let flame_h = (ctx.eased * flame_max as f32) as usize;
-            let flame_base_y = handle_top as usize;
-            let flame_tip_y = flame_base_y.saturating_sub(flame_h);
-
-            // Core flame column.
-            for fy in flame_tip_y..flame_base_y {
-                // Vary width: narrow at top, wider at base.
-                let frac = (flame_base_y - fy) as f32 / flame_h.max(1) as f32;
-                let half_w = (frac * 2.0 + 0.3) as i32;
-                for dx in -half_w..=half_w {
-                    draw::dot_i(grid, tx + dx, fy as i32);
+            let f = (lit - fi).clamp(0.0, 1.0);
+            if f <= 0.0 {
+                continue;
+            }
+            let flick = 0.85 + 0.15 * (t * 11.0 + fi * 1.7).sin() * (t * 7.3 + fi).sin();
+            let fh = (head_y as f32 * (0.35 + 0.65 * f) * flick).max(1.0);
+            for k in 0..fh as i32 {
+                let u = k as f32 / fh;
+                let hw = if u < 0.2 {
+                    2.2
+                } else {
+                    2.8 * (1.0 - u).powf(0.8)
+                };
+                let sway = (t * 8.0 + fi * 2.0 + u * 3.0).sin() * u * 1.5;
+                let c = if u < 0.35 {
+                    FLAME_Y
+                } else if u < 0.7 {
+                    FLAME_O
+                } else {
+                    FLAME_R
+                };
+                let mid = cx as f32 + 0.5 + sway;
+                let (xl, xr) = ((mid - hw).round() as i32, (mid + hw).round() as i32 - 1);
+                block(grid, xl, head_y - 1 - k, xr.max(xl), head_y - 1 - k, c);
+            }
+            if f >= 1.0 {
+                for s in 0..2 {
+                    let ph = (t * 1.3 + fi * 0.37 + s as f32 * 0.5).fract();
+                    let y = head_y - 1 - (ph * head_y as f32) as i32;
+                    let x = cx + ((t * 3.0 + fi + s as f32 * 2.0).sin() * 3.0) as i32;
+                    if y < head_y - 1 - fh as i32 {
+                        px(grid, x, y, FLAME_O);
+                    }
                 }
             }
-
-            // Flicker lobe: sinusoidal side-sway of the tip.
-            if flame_h > 1 {
-                let flicker = (ctx.time * 12.0 + t_idx as f32 * 1.7).sin();
-                let sway = (flicker * 2.0) as i32;
-                let lobe_y = flame_tip_y as i32;
-                draw::dot_i(grid, tx + sway, lobe_y - 1);
-                draw::dot_i(grid, tx + sway + 1, lobe_y);
-                draw::dot_i(grid, tx + sway - 1, lobe_y);
-            }
         }
-
-        // Tint: fire orange→yellow column-wise.
-        let (cells_w, cells_h) = grid.dimensions();
-        for cx in 0..cells_w {
-            // Flame is vertical — tint top rows hotter.
-            for cy in 0..cells_h {
-                let vertical_t = 1.0 - (cy as f32 / cells_h.saturating_sub(1).max(1) as f32);
-                let color = ctx.palette.sample(vertical_t * ctx.eased);
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 9 — Potion bottle: fills with bubbling brew from base upward.
+// 9 — Potion brew: round-bottomed flasks fill with bubbling brews.
 // ---------------------------------------------------------------------------
 
-/// Flask outline; liquid level = eased; bubbles rise from the surface via time.
+/// Corked round-bottom flasks fill one after another with coloured potions;
+/// bubbles rise through the liquid and filled flasks glint.
 struct PotionBrew;
 impl ProgressStyle for PotionBrew {
     fn name(&self) -> &str {
@@ -1640,93 +1732,80 @@ impl ProgressStyle for PotionBrew {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Flask outline with liquid rising to eased level; bubbles drift upward via time"
+        "Corked round-bottom glass flasks fill one by one with red, blue, green and violet potions; bubbles rise through the brew and full flasks glint"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let n = (wi / 18).max(1);
+        let slot = wi / n;
+        let r = ((hi - 4) / 2).min(slot / 2 - 2).max(1);
+        let by = hi - 1 - r;
+        let rf = r as f32;
+        for i in 0..n {
+            let cx = i * slot + slot / 2;
+            let f = (p * n as f32 - i as f32).clamp(0.0, 1.0);
+            let c = TINCTURES[i as usize % TINCTURES.len()];
 
-        let cx = (w / 2) as i32;
-        // Bottle geometry.
-        let neck_w = (w / 8).max(1) as i32; // half-width of neck
-        let body_w = (w / 3).max(2) as i32; // half-width of body
-        let neck_h = (h / 4).max(1) as i32; // height of neck section
-        let body_h = (h as i32) - neck_h - 2; // body height
-        let body_top = neck_h;
-        let body_bot = body_top + body_h;
+            // Glass: round body, short neck, cork.
+            for y in by - r - 1..=by + r + 1 {
+                for x in cx - r - 1..=cx + r + 1 {
+                    let (dx, dy) = ((x - cx) as f32, (y - by) as f32);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if (d - rf).abs() < 0.5 && !(dy < 0.0 && dx.abs() <= 1.0) {
+                        px(grid, x, y, GLASS);
+                    }
+                }
+            }
+            seg(grid, cx - 2, 2, cx - 2, by - r, GLASS);
+            seg(grid, cx + 2, 2, cx + 2, by - r, GLASS);
+            block(grid, cx - 2, 0, cx + 2, 1, WOOD);
+            if f <= 0.0 {
+                continue;
+            }
 
-        // Draw neck (left + right walls).
-        for y in 0..neck_h {
-            draw::dot_i(grid, cx - neck_w, y as i32);
-            draw::dot_i(grid, cx + neck_w, y as i32);
-        }
-        // Neck-to-body shoulder flare.
-        draw::dot_i(grid, cx - neck_w - 1, neck_h as i32);
-        draw::dot_i(grid, cx + neck_w + 1, neck_h as i32);
-        // Body walls.
-        for y in body_top..body_bot {
-            draw::dot_i(grid, cx - body_w, y as i32);
-            draw::dot_i(grid, cx + body_w, y as i32);
-        }
-        // Bottom of bottle.
-        draw::hline(
-            grid,
-            (cx - body_w).max(0) as usize,
-            (cx + body_w) as usize,
-            (body_bot).min(h as i32 - 1).max(0) as usize,
-        );
-        // Stopper at neck top.
-        draw::hline(
-            grid,
-            (cx - neck_w).max(0) as usize,
-            (cx + neck_w) as usize,
-            0,
-        );
-
-        // Liquid fill: from the bottom of the body upward.
-        let liquid_h = (ctx.eased * body_h as f32) as i32;
-        let liquid_top = body_bot - liquid_h;
-        for y in liquid_top.max(body_top)..body_bot {
-            draw::hline(
-                grid,
-                (cx - body_w + 1).max(0) as usize,
-                (cx + body_w - 1) as usize,
-                y.max(0).min(h as i32 - 1) as usize,
-            );
-        }
-
-        // Bubbles: rise from liquid surface, wrap via time.
-        let n_bubbles = 5usize;
-        for b in 0..n_bubbles {
-            let phase = mhash_f(b as u32);
-            let bx = cx - body_w + 1 + (mhash_f(b as u32 + 100) * (body_w * 2 - 2) as f32) as i32;
-            let rise = ((ctx.time * 0.8 + phase) % 1.0) as f32;
-            let by = body_bot - 1 - (rise * liquid_h as f32) as i32;
-            if by >= liquid_top && by < body_bot && liquid_h > 0 {
-                draw::dot_i(grid, bx, by);
+            // Liquid with a sloshing surface and bubbles left as gaps.
+            let level = (by + r) as f32 - f * 2.0 * rf;
+            let fi = i as f32;
+            let bubbles: Vec<(i32, i32)> = (0..3)
+                .map(|k| {
+                    let ph = (t * 0.7 + k as f32 * 0.33 + fi * 0.21).fract();
+                    let bx = cx + ((mhash_f(i as u32 * 7 + k) - 0.5) * rf) as i32;
+                    let span = ((by + r) as f32 - level).max(0.0);
+                    (bx, by + r - 1 - (ph * span) as i32)
+                })
+                .collect();
+            for y in by - r..=by + r {
+                for x in cx - r..=cx + r {
+                    let (dx, dy) = ((x - cx) as f32, (y - by) as f32);
+                    let wob = (t * 3.0 + fi + x as f32 * 0.6).sin() * 0.6;
+                    if (dx * dx + dy * dy).sqrt() < rf - 0.8
+                        && y as f32 >= level + wob
+                        && !bubbles.contains(&(x, y))
+                    {
+                        px(grid, x, y, c);
+                    }
+                }
+            }
+            if f >= 1.0 && (t * 0.9 + fi * 0.3).fract() < 0.25 {
+                px(grid, cx - r / 2, by - r / 2, WHITE);
             }
         }
-
-        // Tint: potion colour from palette.
-        let (cells_w, cells_h) = grid.dimensions();
-        let liquid_cells = (ctx.eased * cells_h as f32) as usize;
-        for cy in cells_h.saturating_sub(liquid_cells)..cells_h {
-            let t = (cells_h - 1 - cy) as f32 / liquid_cells.max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t);
-            draw::tint_row(grid, cy, 0, cells_w.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 10 — Treasure chest: lid rotates open; gold glints inside.
+// 10 — Treasure chest: the lid opens on a heap of glittering gold.
 // ---------------------------------------------------------------------------
 
-/// Chest box visible at all times; lid angle = eased * 90°; gold glints pulse with time.
+/// An iron-banded wooden chest with a gold lock plate; progress lifts the
+/// domed lid to reveal a gold hoard; sparkles twinkle beside it.
 struct TreasureChest;
 impl ProgressStyle for TreasureChest {
     fn name(&self) -> &str {
@@ -1736,85 +1815,87 @@ impl ProgressStyle for TreasureChest {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Treasure chest lid rotates open (angle = eased * 90°); gold glints pulse via time"
+        "An iron-banded wooden treasure chest with a gold lock: the domed lid lifts with progress to reveal a glittering heap of gold, sparkles twinkling around it"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let cw = (wi - 24).clamp(4, 52) / 2 * 2;
+        let x0 = (wi - cw) / 2;
+        let x1 = x0 + cw - 1;
+        let xc = x0 + cw / 2;
+        let by = hi / 2;
+        let lid_h = (hi / 4).max(1);
+        let lid_top = by - lid_h - (p * (by - lid_h) as f32) as i32;
+        let lid_bot = by - 1 - (p * (lid_h + 1) as f32) as i32;
 
-        // Chest box: lower 60% of height.
-        let box_h = (h * 3 / 5).max(2);
-        let box_y = h.saturating_sub(box_h);
-        let box_x0 = (w / 6).max(1);
-        let box_x1 = w.saturating_sub(w / 6 + 1);
-        let box_w = box_x1.saturating_sub(box_x0).max(2);
-
-        // Chest body outline.
-        draw::rect_outline(grid, box_x0, box_y, box_w, box_h);
-        // Metal bands (horizontal stripes).
-        let band_y = box_y + box_h / 2;
-        draw::hline(grid, box_x0, box_x1, band_y);
-        // Lock clasp.
-        let clasp_x = box_x0 + box_w / 2;
-        draw::dot(grid, clasp_x, band_y);
-        draw::dot(grid, clasp_x, band_y.saturating_sub(1));
-
-        // Lid: hinged at back-top corner (box_x0, box_y).
-        // Opens forward-upward: angle 0° (flat, closed) → 90° (vertical, open).
-        let lid_angle = ctx.eased * PI / 2.0;
-        let lid_len = box_w as i32;
-        let hinge_x = box_x0 as i32;
-        let hinge_y = box_y as i32;
-        let lid_tip_x = hinge_x + (lid_len as f32 * lid_angle.cos()) as i32;
-        let lid_tip_y = hinge_y - (lid_len as f32 * lid_angle.sin()) as i32;
-        line_dots(grid, hinge_x, hinge_y, lid_tip_x, lid_tip_y);
-        // Lid face (parallel line offset inward).
-        let lid_inner_x = hinge_x + 1;
-        let lid_inner_tip_x = lid_inner_x + (lid_len as f32 * lid_angle.cos()) as i32;
-        let lid_inner_tip_y = hinge_y - ((lid_len - 1) as f32 * lid_angle.sin()) as i32;
-        line_dots(grid, lid_inner_x, hinge_y, lid_inner_tip_x, lid_inner_tip_y);
-
-        // Gold inside (revealed when chest is open).
-        if ctx.eased > 0.2 {
-            let gold_y = box_y + 2;
-            let gold_x0 = box_x0 + 2;
-            let gold_x1 = box_x1.saturating_sub(2);
-            if gold_x1 > gold_x0 {
-                draw::hline(grid, gold_x0, gold_x1, gold_y);
-                // Glints: pulse with time.
-                let n_glints = (box_w / 4).max(1);
-                for g in 0..n_glints {
-                    let gx = gold_x0 + g * 4;
-                    let glint_on = ((ctx.time * 5.0 + g as f32 * 1.3).sin()) > 0.3;
-                    if glint_on && gx < gold_x1 {
-                        draw::dot(grid, gx, gold_y.saturating_sub(1));
-                    }
+        // Domed lid.
+        for y in lid_top..=lid_bot {
+            let inset = if y == lid_top { 2 } else { 0 };
+            block(grid, x0 + inset, y, x1 - inset, y, WOOD);
+        }
+        // Gold hoard visible between lid and body (drawn after the lid so a
+        // shared cell glows gold).
+        for x in x0 + 1..x1 {
+            let u = (x - xc) as f32 / (cw / 2) as f32;
+            let top = by - 1 - (4.0 * (1.0 - u * u)).round() as i32;
+            for y in top.max(lid_bot + 1)..by {
+                if y / 4 == lid_bot / 4 {
+                    continue;
+                }
+                if mhash((x * 31 + y * 7) as u32) % 7 != 0 {
+                    let tw = mhash((x * 13 + y) as u32 + (t * 6.0) as u32) % 23 == 0;
+                    px(grid, x, y, if tw { WHITE } else { GOLD });
                 }
             }
         }
 
-        // Tint: gold inside, dark wood outside.
-        let (cells_w, cells_h) = grid.dimensions();
-        let open_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..open_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Body with a plank seam.
+        for y in by..hi {
+            if y == by + 4 {
+                continue;
             }
+            block(grid, x0, y, x1, y, WOOD);
         }
+        // Iron bands and gold lock plate with keyhole.
+        for bx in [x0 + 4, x1 - 5] {
+            block(grid, bx, lid_top, bx + 1, lid_bot, IRON);
+            block(grid, bx, by, bx + 1, hi - 1, IRON);
+        }
+        block(grid, xc - 2, by, xc + 1, by + 3, GOLD);
 
+        // Sparkles on either side once the chest is open.
+        let cycle = (t * 2.0) as u32;
+        for k in 0..6u32 {
+            if mhash_f(k * 5 + cycle) > p {
+                continue;
+            }
+            let left = k % 2 == 0;
+            let span = (x0 - 4).max(1) as f32;
+            let off = (mhash_f(k + cycle * 3) * span) as i32;
+            let x = if left { 1 + off } else { x1 + 3 + off };
+            let y = 2 + (mhash_f(k * 3 + cycle) * (hi - 5) as f32) as i32;
+            px(grid, x, y, GOLD);
+            px(grid, x - 1, y, GOLD);
+            px(grid, x + 1, y, GOLD);
+            px(grid, x, y - 1, GOLD);
+            px(grid, x, y + 1, GOLD);
+        }
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 11 — Scroll unroll: parchment unrolls rightward; text lines revealed.
+// 11 — Scroll unroll: parchment unrolls between two wooden-capped rolls.
 // ---------------------------------------------------------------------------
 
-/// A parchment scroll unrolls from left to right; horizontal text lines appear as it opens.
+/// The right-hand roll travels with progress, unfurling parchment covered in
+/// lines of script; the moving roll turns as it goes.
 struct ScrollUnroll;
 impl ProgressStyle for ScrollUnroll {
     fn name(&self) -> &str {
@@ -1824,84 +1905,68 @@ impl ProgressStyle for ScrollUnroll {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Parchment scroll unrolls rightward; text lines revealed with rolled curl visible at edge"
+        "A parchment scroll unrolls between two rolls with wooden end-caps, revealing lines of handwritten script; the travelling roll turns as it goes"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let lx = 1;
+        let rx = lx + 5 + (p * (wi - 11).max(0) as f32) as i32;
 
-        // Revealed parchment width (from left).
-        let revealed = (ctx.eased * w as f32) as usize;
-
-        // Parchment surface: top and bottom edges.
-        draw::hline(grid, 0, revealed.min(w.saturating_sub(1)), 0);
-        draw::hline(
-            grid,
-            0,
-            revealed.min(w.saturating_sub(1)),
-            h.saturating_sub(1),
-        );
-
-        // Rolled curl at the leading edge: an oval/arc.
-        if revealed < w && revealed > 0 {
-            let curl_x = revealed as i32;
-            let curl_r = (h / 2).max(1) as i32;
-            for dy in -curl_r..=curl_r {
-                // Right half-circle (scroll roll opening to the left).
-                let dx = ((curl_r * curl_r - dy * dy).max(0) as f32).sqrt() as i32;
-                draw::dot_i(grid, curl_x + dx / 2, (h as i32 / 2) + dy);
-                draw::dot_i(grid, curl_x, (h as i32 / 2) + dy);
+        // Parchment with script as negative-space words.
+        let (top, bot) = (2, hi - 3);
+        for y in top..=bot {
+            let text_row = (y - 4) % 3 == 0 && y >= 4 && y <= bot - 2;
+            let line = (y / 3) as u32;
+            let mut word_end = lx + 6;
+            let mut in_word = false;
+            for x in lx + 4..rx {
+                if text_row && x >= lx + 7 && x < rx - 2 {
+                    if x >= word_end {
+                        in_word = !in_word;
+                        let len = if in_word {
+                            2 + (mhash(line * 977 + x as u32) % 6) as i32
+                        } else {
+                            2
+                        };
+                        word_end = x + len;
+                    }
+                    if in_word {
+                        continue;
+                    }
+                }
+                px(grid, x, y, PARCH);
             }
         }
 
-        // Text lines on the revealed parchment.
-        let line_spacing = (h / 4).max(1);
-        let mut line_y = line_spacing;
-        let mut line_idx = 0u32;
-        while line_y < h.saturating_sub(1) {
-            // Each line has a "typed" length that grows with revealed.
-            let line_len = if revealed > 4 {
-                revealed.saturating_sub(4)
-            } else {
-                0
-            };
-            // Animate last char with a cursor flicker.
-            let typed = line_len.min(w.saturating_sub(2));
-            if typed > 0 {
-                draw::hline(grid, 2, 2 + typed.saturating_sub(1), line_y);
+        // Rolls: parchment cylinders with wooden end-caps.
+        let spin = (ctx.time * 3.0) as i32;
+        for (i, x) in [lx, rx].into_iter().enumerate() {
+            for xx in x..x + 4 {
+                let seam = i == 1 && (xx - x) == spin.rem_euclid(4);
+                for y in 1..hi - 1 {
+                    if !seam || y % 2 == 0 {
+                        px(grid, xx, y, PARCH_DK);
+                    }
+                }
             }
-            // Cursor at end of last line.
-            let cursor_on = (ctx.time * 3.0).sin() > 0.0;
-            if cursor_on && typed < w.saturating_sub(2) {
-                draw::dot(grid, 2 + typed, line_y);
-            }
-            line_y += line_spacing;
-            line_idx += 1;
-            let _ = line_idx;
+            block(grid, x - 1, 0, x + 4, 0, WOOD_DK);
+            block(grid, x - 1, hi - 1, x + 4, hi - 1, WOOD_DK);
         }
-
-        // Tint: warm parchment across revealed section.
-        let (cells_w, cells_h) = grid.dimensions();
-        let revealed_cells = (ctx.eased * cells_w as f32) as usize;
-        for cx in 0..revealed_cells.min(cells_w) {
-            let t = cx as f32 / cells_w.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx, cx, color);
-            }
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// 12 — Portcullis raise: iron gate lifts from floor; spikes pass upward.
+// 12 — Portcullis raise: the iron gate lifts out of a stone archway.
 // ---------------------------------------------------------------------------
 
-/// Iron portcullis with vertical bars and horizontal crossbars rises from the floor.
+/// A crenellated gatehouse with an arched opening; the spiked iron
+/// portcullis lattice rattles upward into the wall as progress grows.
 struct PortcullisRaise;
 impl ProgressStyle for PortcullisRaise {
     fn name(&self) -> &str {
@@ -1911,74 +1976,227 @@ impl ProgressStyle for PortcullisRaise {
         "medieval"
     }
     fn describe(&self) -> &str {
-        "Iron portcullis rises upward: bars and crossbars lift by eased; spiked tips emerge at top"
+        "A spiked iron portcullis lattice rattles up into a crenellated stone gatehouse, clearing the arched gateway; torches flicker either side"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+        let gy = hi - 1;
+        let gl = wi * 30 / 100;
+        let gr = wi - gl;
+        let cx = wi / 2;
+        let half = ((gr - gl) / 2).max(1) as f32;
+        let wall_top = (hi * 2 / 16).max(1);
+        let arch_top = hi * 5 / 16;
+        let open_top = |x: i32| {
+            let u = ((x - cx) as f32 + 0.5) / half;
+            arch_top + (4.0 * (1.0 - (1.0 - u * u).max(0.0).sqrt())).round() as i32
+        };
+        let torches = [gl - 5, gr + 4];
+        let niche = |x: i32, y: i32| {
+            torches
+                .iter()
+                .any(|&tx| (x - tx).abs() <= 2 && y >= hi * 5 / 16 && y <= hi * 10 / 16)
+        };
 
-        // Gate archway walls.
-        draw::vline(grid, 0, 0, h.saturating_sub(1));
-        draw::vline(grid, w.saturating_sub(1), 0, h.saturating_sub(1));
-
-        // Gate floor track (raised level).
-        let floor_y = h.saturating_sub(1);
-        draw::hline(grid, 0, w.saturating_sub(1), floor_y);
-
-        // Gate rises: y_offset = (1 - eased) * full_h; starts at floor, lifts toward ceiling.
-        let full_h = h;
-        let lift_offset = ((1.0 - ctx.eased) * full_h as f32) as i32;
-
-        // Vertical bars: every 4 dots across the width.
-        let bar_spacing = 4usize;
-        let mut bar_x = 2usize;
-        while bar_x < w.saturating_sub(2) {
-            let bar_top = lift_offset.max(0) as usize;
-            let bar_bot = (lift_offset + full_h as i32).min(h as i32 - 1).max(0) as usize;
-            draw::vline(grid, bar_x, bar_top, bar_bot.min(floor_y));
-
-            // Spike tip at the top of each bar (visible as gate rises).
-            let spike_y = lift_offset - 1;
-            if spike_y >= 0 && (spike_y as usize) < h {
-                draw::dot_i(grid, bar_x as i32, spike_y);
+        // Stone gatehouse with merlons, arched opening and torch niches.
+        for x in 0..wi {
+            for y in 0..=gy {
+                if y < wall_top && x % 6 >= 3 {
+                    continue;
+                }
+                if x >= gl && x < gr && y >= open_top(x) {
+                    continue;
+                }
+                if niche(x, y) {
+                    continue;
+                }
+                px(grid, x, y, STONE);
             }
-            bar_x += bar_spacing;
+        }
+        for (k, &tx) in torches.iter().enumerate() {
+            let fl = (t * 9.0 + k as f32 * 2.1).sin();
+            block(grid, tx, hi * 8 / 16, tx, hi * 10 / 16, WOOD);
+            let fh = 2 + i32::from(fl > 0.0);
+            block(
+                grid,
+                tx - 1,
+                hi * 8 / 16 - fh,
+                tx + 1,
+                hi * 8 / 16 - 1,
+                FLAME_O,
+            );
+            px(grid, tx, hi * 8 / 16 - fh - 1, FLAME_Y);
         }
 
-        // Horizontal crossbars (2 of them, fixed relative to gate).
-        let cross_spacing = full_h as i32 / 3;
-        for ci in 1..=2usize {
-            let cross_y = lift_offset + ci as i32 * cross_spacing;
-            if cross_y >= 0 && (cross_y as usize) < floor_y {
-                draw::hline(grid, 2, w.saturating_sub(3), cross_y as usize);
+        // Portcullis: lattice bottom rises from the ground into the arch.
+        let rattle = if p > 0.0 && p < 1.0 {
+            ((t * 14.0).sin() * 0.6).round() as i32
+        } else {
+            0
+        };
+        let yb = gy - (p * (gy - arch_top + 2) as f32) as i32 + rattle;
+        for x in gl + 1..gr - 1 {
+            let top = open_top(x);
+            let bar = (x - gl - 2).rem_euclid(4) == 0;
+            for y in top..=yb {
+                let rung = (yb - y).rem_euclid(4) == 2;
+                if bar || rung {
+                    px(grid, x, y, IRON);
+                }
+            }
+            if bar && yb + 1 >= top {
+                px(grid, x, yb + 1, STEEL);
             }
         }
-
-        // Tint: dark iron with eased progress brightening.
-        let (cells_w, cells_h) = grid.dimensions();
-        let raised_cells = (ctx.eased * cells_h as f32) as usize;
-        for cy in 0..cells_h {
-            // Top portion (raised through) gets full palette colour.
-            let t = if raised_cells == 0 {
-                0.0
-            } else if cy < raised_cells {
-                cy as f32 / raised_cells as f32
-            } else {
-                0.1 // dim un-raised section
-            };
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cells_w.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
-// Isolated tests for the medieval theme — run even when other themes panic.
+// 13 — Anvil forge: a hammer beats a glowing blade out across an anvil.
 // ---------------------------------------------------------------------------
+
+/// A blacksmith's anvil (horn, face, waist, flared base); a red-hot blade on
+/// its face lengthens with progress while a hammer rises and strikes the
+/// glowing tip, throwing sparks on every blow.
+struct AnvilForge;
+impl ProgressStyle for AnvilForge {
+    fn name(&self) -> &str {
+        "anvil-forge"
+    }
+    fn theme(&self) -> &str {
+        "medieval"
+    }
+    fn describe(&self) -> &str {
+        "A blacksmith's hammer rises and strikes a red-hot blade on an iron anvil, sparks flying; the blade is beaten longer with progress, cooling to steel behind the glowing tip"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let sx = |v: i32| v * wi / 88;
+        let sy = |v: i32| v * hi / 16;
+
+        // Anvil: horn tapering left, flat face, narrow waist, flared feet.
+        let face = sy(10);
+        block(grid, sx(10), face, sx(40), face + 1, IRON);
+        seg(grid, sx(2), face, sx(10), face, IRON);
+        seg(grid, sx(5), face + 1, sx(10), face + 1, IRON);
+        seg(grid, sx(8), face + 2, sx(14), face + 2, IRON);
+        block(grid, sx(36), face + 2, sx(40), face + 2, IRON);
+        block(grid, sx(18), face + 2, sx(32), sy(13), IRON);
+        block(grid, sx(15), sy(14), sx(35), sy(14), IRON);
+        block(grid, sx(12), sy(15), sx(38), sy(15), IRON);
+
+        // Blade on the face, growing rightward; the tip is still glowing.
+        let b0 = sx(12);
+        let b1 = sx(26) + (p * (wi - sx(26) - 4).max(0) as f32) as i32;
+        let by = face - 2;
+        for x in b0..=b1 {
+            let heat = b1 - x;
+            let c = if heat < 4 {
+                FLAME_Y
+            } else if heat < 10 {
+                FLAME_O
+            } else if heat < 14 {
+                FLAME_R
+            } else {
+                STEEL
+            };
+            if heat < 2 {
+                px(grid, x, by + 1, c);
+            } else {
+                block(grid, x, by, x, by + 1, c);
+            }
+        }
+
+        // Hammer: slow lift, fast blow onto the hot tip.
+        let f = (ctx.time * 1.4).fract();
+        let lift = if f < 0.75 {
+            (f / 0.75).sqrt() * sy(4) as f32
+        } else {
+            (1.0 - (f - 0.75) / 0.25) * sy(4) as f32
+        };
+        let hx = b1 - 5;
+        let hy = by - 1 - lift.round() as i32;
+        seg(grid, hx + 2, hy - 1, hx + 10, hy - 3, WOOD);
+        block(grid, hx - 2, hy - 2, hx + 2, hy, STEEL);
+
+        // Sparks spray from the strike for a moment after each blow.
+        if f < 0.18 {
+            let r = f / 0.18 * 9.0;
+            for k in 0..7 {
+                let a = PI * (0.1 + 0.8 * k as f32 / 6.0);
+                let x = hx + (a.cos() * r * 1.6) as i32;
+                let y = by - (a.sin() * r * 0.7) as i32;
+                px(grid, x, y, if k % 2 == 0 { FLAME_Y } else { FLAME_O });
+            }
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 14 — Banner unfurl: a swallow-tailed heraldic banner streams from its pole.
+// ---------------------------------------------------------------------------
+
+/// A tall pole with a gold finial; a red banner with a gold fess unfurls
+/// rightward with progress, rippling in the wind, its end cut swallow-tail.
+struct BannerUnfurl;
+impl ProgressStyle for BannerUnfurl {
+    fn name(&self) -> &str {
+        "banner-unfurl"
+    }
+    fn theme(&self) -> &str {
+        "medieval"
+    }
+    fn describe(&self) -> &str {
+        "A red heraldic banner with a gold stripe unfurls from a tall pole with a gold finial, streaming further with progress and rippling in the wind, its end cut swallow-tail"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let t = ctx.time;
+
+        // Pole and finial.
+        block(grid, 2, 2, 3, hi - 1, WOOD_DK);
+        block(grid, 1, 0, 4, 1, GOLD);
+
+        // Cloth: rows [top, bot] relative to the pole, rippling more toward
+        // the free end; the last few columns are cut into a swallow-tail.
+        let (top, bot) = (2, (hi - 4).max(2));
+        let mid = (top + bot) / 2;
+        let len = 3 + (p * (wi - 9).max(0) as f32) as i32;
+        let tail = (len / 5).clamp(1, 6);
+        for i in 0..len {
+            let x = 4 + i;
+            let reach = i as f32 / (wi - 9).max(1) as f32;
+            let wave = ((i as f32 * 0.22 - t * 5.0).sin() * (0.4 + 1.6 * reach)).round() as i32;
+            let notch = (i - (len - tail)).max(0) * (bot - top) / (2 * tail);
+            for v in top..=bot {
+                if (v - mid).abs() < notch {
+                    continue;
+                }
+                let fess = (v - mid).abs() <= (bot - top) / 6;
+                px(grid, x, v + wave, if fess { GOLD } else { RED });
+            }
+        }
+        Ok(())
+    }
+}
 
 
 

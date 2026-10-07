@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -841,26 +876,28 @@ pub mod styles {
     pub mod transit {
 //! Transit / Transportation progress bars — the **transit** theme.
 //!
-//! Twelve structurally distinct bars built around trains, planes, boats, and
-//! mass-transit systems.  Every style uses a different spatial layout, temporal
-//! mechanic, and geometric primitive — color never separates two styles here.
+//! Twelve transit scenes: trains, planes, boats, rides and mass-transit
+//! systems. Vehicles are drawn side-on as recognisable silhouettes and move
+//! through their scene as progress grows, while wheels, rotors, flames, steps
+//! or waves animate with time. Cells already passed are tinted with the
+//! palette gradient so progress also reads as a left-to-right sweep.
 //!
 //! # Style catalogue
 //!
 //! | name | mechanic |
 //! |---|---|
-//! | `steam-train`       | Locomotive + cars slide right; wheels rotate + smoke puffs rise |
-//! | `airplane-takeoff`  | Plane taxis along a runway then climbs on a curved ascent |
-//! | `sailboat-tacking`  | Hull + sail zigzag across the bar; heading flips at walls |
+//! | `steam-train`       | Locomotive (boiler, cab, stack, dome) + tender + coach roll right; rods drive the wheels, smoke trails back |
+//! | `airplane-takeoff`  | Side-view airliner (swept wing, tail fin, windows, engine) taxis the runway, pitches up and climbs out with a contrail |
+//! | `sailboat-tacking`  | Sloop (hull, mast, mainsail + jib) sails right over rolling waves; sails swing through each tack |
 //! | `subway-map`        | Station dots along a route line; train marker advances between them |
-//! | `hot-air-balloon`   | Envelope + basket rises; flame bursts pulse from basket |
-//! | `ferris-wheel`      | Cabins orbit a rimmed wheel that spins driven by time |
+//! | `hot-air-balloon`   | Teardrop envelope with gores, basket on ropes and a flickering burner drifts up and right |
+//! | `ferris-wheel`      | Big spoked wheel on an A-frame turns, cabins hang level; festoon bulbs light up with progress |
 //! | `cable-car`         | Gondola climbs a diagonal cable; support towers mark intervals |
-//! | `escalator`         | Steps slide diagonally upward in a loop driven by time |
-//! | `rocket-gantry`     | Countdown fills the frame; gantry arms retract then liftoff plume |
-//! | `ferry-crossing`    | Ferry hull crosses with a V-shaped wake spreading behind |
-//! | `bicycle`           | Two spinning wheels advance; pedal crank rotates between them |
-//! | `helicopter`        | Rotor blades spin above a fuselage; body rises as progress grows |
+//! | `escalator`         | Stepped truss with handrail between two floors; steps climb, a rider walks, rides up and steps off |
+//! | `rocket-gantry`     | Propellant line fills the rocket by its gantry; arms swing clear, liftoff |
+//! | `ferry-crossing`    | Ferry (hull, two window decks, funnel) crosses between piers, V wake and smoke streaming behind |
+//! | `bicycle`           | Diamond-frame bicycle with saddle and handlebars rolls right; spokes and pedal cranks turn |
+//! | `helicopter`        | Bubble cabin, tail boom, tail rotor and skids lift off a pad and climb right; main rotor spins |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -902,8 +939,8 @@ fn circle(grid: &mut BrailleGrid, cx: i32, cy: i32, r: i32) {
     let mut prev: Option<(i32, i32)> = None;
     for s in 0..=steps {
         let angle = s as f32 / steps as f32 * 2.0 * PI;
-        let px = cx + (r as f32 * angle.cos()) as i32;
-        let py = cy + (r as f32 * angle.sin()) as i32;
+        let px = cx + (r as f32 * angle.cos()).round() as i32;
+        let py = cy + (r as f32 * angle.sin()).round() as i32;
         draw::dot_i(grid, px, py);
         if let Some((ppx, ppy)) = prev {
             if (px - ppx).abs() + (py - ppy).abs() > 2 {
@@ -911,6 +948,66 @@ fn circle(grid: &mut BrailleGrid, cx: i32, cy: i32, r: i32) {
             }
         }
         prev = Some((px, py));
+    }
+}
+
+/// Horizontal run in signed dot coordinates, clipped to the grid.
+fn hl(grid: &mut BrailleGrid, x0: i32, x1: i32, y: i32) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if y < 0 || y >= dh as i32 || dw == 0 {
+        return;
+    }
+    let lo = x0.min(x1).max(0);
+    let hi = x0.max(x1).min(dw as i32 - 1);
+    for x in lo..=hi {
+        draw::dot(grid, x as usize, y as usize);
+    }
+}
+
+/// Vertical run in signed dot coordinates, clipped to the grid.
+fn vl(grid: &mut BrailleGrid, x: i32, y0: i32, y1: i32) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if x < 0 || x >= dw as i32 || dh == 0 {
+        return;
+    }
+    let lo = y0.min(y1).max(0);
+    let hi = y0.max(y1).min(dh as i32 - 1);
+    for y in lo..=hi {
+        draw::dot(grid, x as usize, y as usize);
+    }
+}
+
+/// Stamp a dot-art sprite (`#` = dot) with its top-left corner at `(x, y)`.
+///
+/// `slope` shears the sprite vertically around column `pivot` (positive lifts
+/// the right-hand side), which reads as a pitch rotation at braille scale.
+fn stamp(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str], pivot: i32, slope: f32) {
+    for (r, row) in rows.iter().enumerate() {
+        for (c, b) in row.bytes().enumerate() {
+            if b == b'#' {
+                let c = c as i32;
+                let lift = ((c - pivot) as f32 * slope).round() as i32;
+                draw::dot_i(grid, x + c, y + r as i32 - lift);
+            }
+        }
+    }
+}
+
+/// Map `t` in `0..=1` onto the integer range `a..=b`.
+fn lerp_i(a: i32, b: i32, t: f32) -> i32 {
+    a + ((b - a) as f32 * t.clamp(0.0, 1.0)).round() as i32
+}
+
+/// Tint every cell column left of the progress point with the palette
+/// gradient; cells ahead keep the default colour. Shared by every style here.
+fn tint_progress(grid: &mut BrailleGrid, ctx: &BarContext) {
+    let (cw, ch) = grid.dimensions();
+    let filled = ((ctx.eased.clamp(0.0, 1.0) * cw as f32) as usize).min(cw);
+    for cx in 0..filled {
+        let c = ctx.palette.sample(cx as f32 / cw.max(1) as f32);
+        for cy in 0..ch {
+            draw::tint_row(grid, cy, cx, cx, c);
+        }
     }
 }
 
@@ -942,11 +1039,43 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Steam train
-//    Locomotive + passenger cars advance rightward.  Progress = how far the
-//    train has traveled across the bar.  Driving wheels rotate (circle arcs
-//    spinning via time).  Smoke puffs rise from the stack: puffs grow and drift
-//    upward over time.  Horizontal fill behind the train = distance covered.
+//    Side-view locomotive (cab, boiler, steam dome, flared smokestack,
+//    cowcatcher) pulling a coal tender and a coach along a rail.  Progress =
+//    how far the head of the train has rolled.  The connecting rod circles with
+//    time and smoke puffs stream back from the stack.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Locomotive body, facing right (wheels are drawn procedurally below row 7).
+const LOCO: [&str; 11] = [
+    ".....................####",
+    "########..............##",
+    ".##..##.......##......##",
+    ".##..##......####.....##",
+    ".#########################",
+    ".##########################",
+    ".#.#.#.####################",
+    "############################",
+    "........................####",
+    ".........................####",
+    "..........................####",
+];
+/// Coal tender (11 wide) — lumpy coal heap over a box.
+const TENDER: [&str; 5] = [
+    "..##.###.#.",
+    ".#########.",
+    "###########",
+    "###########",
+    "###########",
+];
+/// Passenger coach (18 wide) — roof, window band, frame.
+const COACH: [&str; 6] = [
+    ".################.",
+    "##################",
+    "#..#..#..#..#..#.#",
+    "#..#..#..#..#..#.#",
+    "##################",
+    "##################",
+];
 
 struct SteamTrain;
 impl ProgressStyle for SteamTrain {
@@ -957,148 +1086,93 @@ impl ProgressStyle for SteamTrain {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Steam locomotive chugs rightward: spinning wheels, rising smoke puffs, trailing passenger cars"
+        "Steam locomotive with cab, boiler, dome and flared stack pulls a tender and coach; connecting rods turn the wheels and smoke streams back"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let rail_y = dh - 1;
+        let top = rail_y - 13; // sprite top row (row 7 = running board)
 
-        // Ground line
-        let ground_y = dh.saturating_sub(1);
-        draw::hline(grid, 0, dw - 1, ground_y);
+        // Rail + sleepers
+        hl(grid, 0, dw - 1, rail_y);
 
-        // Wheel radius (scale with height)
-        let wheel_r = ((dh as f32 * 0.18).max(2.0) as i32).max(2);
-        let wheel_y = (ground_y as i32) - wheel_r;
+        let head = lerp_i(27, dw + 1, ctx.eased);
+        let lx = head - 27;
+        let tx = lx - 13;
+        let cx = tx - 20;
 
-        // Train head position: advances rightward with eased
-        // Train width (locomotive + 2 cars) spans about 40% of the bar
-        let train_span = ((dw as f32 * 0.40).max(8.0)) as i32;
-        let loco_w = (train_span / 2).max(4);
-        let car_w = (train_span / 4).max(3);
-
-        // Lead edge of locomotive = eased * dw, clamped so loco doesn't exit right
-        let head_x = ((ctx.eased * dw as f32) as i32)
-            .min(dw as i32 - 1)
-            .max(loco_w);
-
-        // ── Locomotive body ──
-        let loco_x0 = head_x - loco_w;
-        let loco_top = (wheel_y - (dh as i32 / 3)).max(0);
-        // Body rectangle
-        for y in loco_top..wheel_y {
-            draw::hline(
-                grid,
-                loco_x0.max(0) as usize,
-                (head_x - 1).max(loco_x0).min(dw as i32 - 1) as usize,
-                y as usize,
-            );
-        }
-        // Cab (taller box at the rear half)
-        let cab_x0 = loco_x0;
-        let cab_top = (loco_top - dh as i32 / 5).max(0);
-        for y in cab_top..loco_top {
-            draw::hline(
-                grid,
-                cab_x0.max(0) as usize,
-                (cab_x0 + loco_w / 2).min(dw as i32 - 1).max(0) as usize,
-                y as usize,
-            );
-        }
-        // Smokestack: a short vertical column at front top
-        let stack_x = (head_x - loco_w / 6).max(0).min(dw as i32 - 1);
-        let stack_top = loco_top - 1;
-        draw::vline(
-            grid,
-            stack_x as usize,
-            stack_top.max(0) as usize,
-            loco_top as usize,
+        // Locomotive
+        stamp(grid, lx, top, &LOCO, 0, 0.0);
+        let wy = top + 10;
+        let ang = ctx.time * 6.0;
+        let (pdx, pdy) = (
+            (1.4 * ang.cos()).round() as i32,
+            (1.4 * ang.sin()).round() as i32,
         );
+        for wx in [6, 12, 18] {
+            circle(grid, lx + wx, wy, 2);
+        }
+        // Connecting rod rides the crank pins of all three driving wheels
+        line(grid, lx + 6 + pdx, wy + pdy, lx + 18 + pdx, wy + pdy);
+        // Piston rod to the cylinder under the smokebox
+        line(grid, lx + 18 + pdx, wy + pdy, lx + 22, top + 8);
+        circle(grid, lx + 23, wy + 1, 1);
 
-        // ── Driving wheels (3 on the locomotive) ──
-        let wheel_angle = ctx.time * 3.0 * PI;
-        let loco_wheel_positions = [
-            loco_x0 + loco_w / 5,
-            loco_x0 + 2 * loco_w / 5,
-            loco_x0 + 3 * loco_w / 5,
-        ];
-        for &wx in &loco_wheel_positions {
-            if wx >= 0 && wx < dw as i32 {
-                circle(grid, wx, wheel_y, wheel_r);
-                // Spoke: a rotating line inside the wheel
-                let spoke_ex = (wx as f32 + wheel_r as f32 * wheel_angle.cos()) as i32;
-                let spoke_ey = (wheel_y as f32 + wheel_r as f32 * wheel_angle.sin()) as i32;
-                line(grid, wx, wheel_y, spoke_ex, spoke_ey);
+        // Tender + coach, coupled at running-board height
+        stamp(grid, tx, top + 3, &TENDER, 0, 0.0);
+        for wx in [2, 8] {
+            circle(grid, tx + wx, wy + 1, 1);
+        }
+        hl(grid, tx + 11, lx - 1, top + 7);
+        stamp(grid, cx, top + 2, &COACH, 0, 0.0);
+        for wx in [3, 14] {
+            circle(grid, cx + wx, wy + 1, 1);
+        }
+        hl(grid, cx + 18, tx - 1, top + 7);
+
+        // Smoke puffs: born at the stack, drift back (left) and up, growing
+        let sx = lx + 22;
+        for i in 0..4 {
+            let age = (ctx.time * 0.9 + i as f32 * 0.25).fract();
+            let px = sx - (age * 18.0) as i32;
+            let py = top - 1 - (age * 3.0) as i32;
+            if age < 0.35 {
+                disk(grid, px, py, 1);
+            } else {
+                circle(grid, px, py, 2);
             }
         }
 
-        // ── Passenger cars (2 cars trailing behind locomotive) ──
-        let gap = (wheel_r).max(2);
-        for car_idx in 0..2 {
-            let car_x1 = loco_x0 - gap - car_idx as i32 * (car_w + gap);
-            let car_x0 = car_x1 - car_w;
-            if car_x1 < 0 {
-                break;
-            }
-            let car_top = wheel_y - dh as i32 / 4;
-            // Car body outline
-            for y in car_top.max(0)..wheel_y {
-                draw::hline(
-                    grid,
-                    car_x0.max(0) as usize,
-                    car_x1.min(dw as i32 - 1).max(0) as usize,
-                    y as usize,
-                );
-            }
-            // Windows: two dots
-            let win_y = (car_top + (wheel_y - car_top) / 3).max(0);
-            draw::dot_i(grid, car_x0 + car_w / 3, win_y);
-            draw::dot_i(grid, car_x0 + 2 * car_w / 3, win_y);
-            // Car wheels (2 per car)
-            for wi in [car_x0 + car_w / 4, car_x0 + 3 * car_w / 4] {
-                if wi >= 0 && wi < dw as i32 {
-                    circle(grid, wi, wheel_y, (wheel_r * 2 / 3).max(1));
-                }
-            }
-        }
-
-        // ── Smoke puffs above the stack ──
-        let puff_count = 4usize;
-        for p in 0..puff_count {
-            let age = (ctx.time * 0.8 + p as f32 * 0.25).fract();
-            let puff_x = stack_x + (age * 4.0) as i32;
-            let puff_y = stack_top as i32 - (age * dh as f32 * 0.5) as i32;
-            let puff_r = ((age * 3.0) as i32).max(1).min(wheel_r);
-            if puff_y >= 0 {
-                circle(grid, puff_x, puff_y, puff_r);
-            }
-        }
-
-        // Track already drawn (ground_y).  Color: left of train = traveled.
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            draw::tint_row(grid, ch / 2, cx, cx, ctx.palette.sample(t));
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
-        }
-
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. Airplane takeoff
-//    Progress < 0.55: plane taxis along a runway (horizontal, on the ground).
-//    Progress 0.55..1.0: plane lifts off and follows an ascending curve
-//    (y = baseline - eased^2 * height).  The runway is the full-width baseline.
-//    The plane is a simple swept silhouette (fuselage + wing + tail).
-//    Dotted center-line markings scroll leftward as the plane moves.
+//    A side-view airliner — tail fin, window band, cockpit, swept wing and
+//    under-wing engine — taxis along the runway for the first half of the bar,
+//    then rotates nose-up and climbs out trailing a dashed contrail.  Runway
+//    lights strobe in sequence and the tail beacon blinks with time.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Airliner, nose to the right (32 x 10 dots).
+const AIRLINER: [&str; 10] = [
+    "##",
+    "###",
+    "####",
+    "#####",
+    "############################",
+    "######.#.#.#.#.#.#.#.#.#.###..#",
+    "..##############################",
+    ".....#########################",
+    "...........#######..######",
+    ".........#####.......####",
+];
 
 struct AirplaneTakeoff;
 impl ProgressStyle for AirplaneTakeoff {
@@ -1109,116 +1183,100 @@ impl ProgressStyle for AirplaneTakeoff {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Plane taxis along a runway then climbs on an ascending curve; scrolling center-line markings"
+        "Side-view airliner with swept wing, tail fin and window band taxis the runway, rotates nose-up and climbs out trailing a contrail; strobe lights and tail beacon blink"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let ground = dh - 1;
+        let p = ctx.eased.clamp(0.0, 1.0);
 
-        let ground_y = dh.saturating_sub(2) as i32;
-
-        // ── Runway ──
-        draw::hline(grid, 0, dw - 1, ground_y as usize);
-        // Dotted center line (scrolling left)
-        let scroll = (ctx.time * 8.0) as usize % 8;
-        let mut x = scroll;
+        // Runway (solid) then grass verge (sparse) past the liftoff point
+        let runway_end = dw * 3 / 4;
+        hl(grid, 0, runway_end, ground);
+        let mut x = runway_end + 3;
         while x < dw {
-            draw::dot(grid, x, ground_y as usize - (dh / 4).max(1));
-            x += 8;
+            draw::dot_i(grid, x, ground);
+            x += 3;
+        }
+        // Sequenced strobe lights running toward the runway end
+        let n_lights = 5;
+        let lit = (ctx.time * 8.0) as i32 % n_lights;
+        for i in 0..n_lights {
+            let lx = runway_end - 4 - (n_lights - 1 - i) * 5;
+            draw::dot_i(grid, lx, ground - 1);
+            if i == lit {
+                draw::dot_i(grid, lx, ground - 2);
+                draw::dot_i(grid, lx - 1, ground - 1);
+                draw::dot_i(grid, lx + 1, ground - 1);
+            }
         }
 
-        // ── Plane position ──
-        let taxi_threshold = 0.55_f32;
-        let plane_x = (ctx.eased * (dw as f32 - 4.0)).max(0.0) as i32;
-
-        // Altitude: 0 while taxiing, then ramps up
-        let altitude = if ctx.eased <= taxi_threshold {
-            0.0_f32
+        // Plane placement: taxi for p < 0.45, then climb
+        let taxi_end = 0.45_f32;
+        let nose = if p <= taxi_end {
+            lerp_i(31, dw * 3 / 5, p / taxi_end)
         } else {
-            let climb_frac = (ctx.eased - taxi_threshold) / (1.0 - taxi_threshold);
-            climb_frac * climb_frac * (dh as f32 - 3.0)
+            lerp_i(dw * 3 / 5, dw - 2, (p - taxi_end) / (1.0 - taxi_end))
         };
-        let plane_y = (ground_y as f32 - altitude) as i32;
+        let climb = ((p - taxi_end) / (1.0 - taxi_end)).clamp(0.0, 1.0);
+        let gear_rows = 1;
+        let ground_top = ground - AIRLINER.len() as i32 - gear_rows;
+        let alt = (climb.powf(1.3) * (ground_top + 1) as f32) as i32;
+        let pitch = 0.1 * (climb * 4.0).min(1.0);
+        let px = nose - 31;
+        let py = ground_top - alt;
+        stamp(grid, px, py, &AIRLINER, 16, pitch);
 
-        // ── Plane silhouette ──
-        // Fuselage: horizontal line of 6–10 dots
-        let fuselage_len = ((dw as f32 * 0.12).max(6.0) as i32).max(6);
-        let nose_x = plane_x;
-        let tail_x = (plane_x - fuselage_len).max(0);
-        draw::hline(
-            grid,
-            tail_x as usize,
-            nose_x.min(dw as i32 - 1).max(0) as usize,
-            plane_y.max(0).min(dh as i32 - 1) as usize,
-        );
-
-        // Wing: diagonal sweep downward from mid-fuselage
-        let wing_root_x = plane_x - fuselage_len / 3;
-        let wing_span = fuselage_len / 2;
-        let wing_sweep = (dh as i32 / 3).max(1);
-        if altitude < dh as f32 * 0.3 {
-            // On ground / low altitude: wing is nearly horizontal (slight dihedral)
-            line(
-                grid,
-                wing_root_x,
-                plane_y,
-                wing_root_x - wing_span,
-                (plane_y + 1).min(dh as i32 - 1),
-            );
-        } else {
-            // Climbing: wings sweep back more aggressively
-            line(
-                grid,
-                wing_root_x,
-                plane_y,
-                wing_root_x - wing_span,
-                (plane_y + wing_sweep / 2).min(dh as i32 - 1),
-            );
+        if climb <= 0.0 {
+            // Landing gear down: nose gear and main gear touching the runway
+            vl(grid, px + 27, py + 8, ground - 1);
+            for gx in [14, 15, 17] {
+                draw::dot_i(grid, px + gx, ground - 1);
+            }
+            vl(grid, px + 15, py + 10, ground - 1);
         }
 
-        // Tail fin: short vertical at the rear
-        let tail_top_y = (plane_y - dh as i32 / 5).max(0);
-        draw::vline(
-            grid,
-            tail_x.max(0) as usize,
-            tail_top_y as usize,
-            plane_y.max(0).min(dh as i32 - 1) as usize,
-        );
-
-        // Jet exhaust: a few trailing dots behind the tail when airborne
-        if altitude > 2.0 {
-            for ex in 1..=3 {
-                let ex_x = tail_x - ex;
-                if ex_x >= 0 {
-                    draw::dot_i(grid, ex_x, plane_y);
+        // Anti-collision beacon blinking above the tail fin
+        let tail_lift = ((-16) as f32 * pitch).round() as i32;
+        if ((ctx.time * 3.0) as i32) % 2 == 0 {
+            draw::dot_i(grid, px, py - 1 - tail_lift);
+            draw::dot_i(grid, px + 1, py - 1 - tail_lift);
+        }
+        // Once airborne, a dashed contrail streams back from the tail
+        if climb > 0.0 {
+            let flow = (ctx.time * 12.0) as i32;
+            for d in 2..(px + 2).clamp(2, 40) {
+                if (d + flow).rem_euclid(5) < 3 {
+                    let lift = ((-16 - d) as f32 * pitch).round() as i32;
+                    draw::dot_i(grid, px - d, py + 5 - lift);
                 }
             }
         }
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
-        }
-
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Sailboat tacking
-//    A sailboat (hull + triangular sail) crosses the bar left→right.
-//    It zigzags vertically — tacking upwind — so the heading reverses each
-//    time the boat hits the top or bottom boundary.
-//    The hull is a short horizontal wedge; the sail is a right triangle.
-//    Waves are simple sine undulations along the bottom.
+//    A sloop — hull with raised bow, mast with pennant, big mainsail and a
+//    jib — sails rightward over rolling waves.  Each tack swings the sails
+//    through (they narrow edge-on, then fill again).  The hull bobs and a
+//    short wake trails behind with time.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Sloop hull, bow to the right (20 x 4 dots).
+const HULL: [&str; 4] = [
+    "..................##",
+    "####################",
+    ".##################",
+    "...##############",
+];
 
 struct SailboatTacking;
 impl ProgressStyle for SailboatTacking {
@@ -1229,78 +1287,74 @@ impl ProgressStyle for SailboatTacking {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Sailboat hull and sail zigzag across the bar tacking upwind; sine-wave water below"
+        "Sloop with hull, mast, mainsail and jib sails right over rolling waves; the sails swing through each tack and the hull bobs"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
 
-        // ── Water (bottom quarter) ──
-        let water_top = dh * 3 / 4;
-        for x in 0..dw {
-            let wave = (PI * x as f32 / (dw as f32 * 0.2) + ctx.time * 2.0).sin();
-            let wy = (water_top as f32 + wave * (dh as f32 * 0.04)) as usize;
-            draw::dot(grid, x, wy.min(dh - 1));
-        }
-
-        // ── Boat position (horizontal = eased * dw) ──
-        let boat_x = ((ctx.eased * dw as f32) as i32).min(dw as i32 - 1).max(2);
-
-        // Tacking: vertical position oscillates with a zigzag wave
-        // The number of tacks grows with progress.
-        let tack_freq = 1.5_f32; // tacks per full crossing
-        let tack_phase = ctx.eased * tack_freq * 2.0 * PI;
-        let tack_range = (water_top as f32 * 0.75).max(1.0);
-        let boat_y_center = water_top as f32 / 2.0;
-        let boat_y = (boat_y_center + tack_range * tack_phase.sin() * 0.5) as i32;
-        let clamp_lo = 0_i32;
-        let clamp_hi = (water_top as i32).max(0);
-        let boat_y = boat_y.clamp(clamp_lo, clamp_hi);
-
-        // ── Hull (a flat wedge: wider at stern, narrows to point at bow) ──
-        let hull_len = ((dw as f32 * 0.10).max(5.0)) as i32;
-        // Bow (front = right), stern (back = left)
-        draw::dot_i(grid, boat_x, boat_y); // bow point
-        for i in 1..hull_len {
-            let half_w = (i as f32 / hull_len as f32 * 2.0) as i32;
-            for dy in -half_w..=half_w {
-                draw::dot_i(grid, boat_x - i, boat_y + dy);
+        // Water: two rows of travelling wave crests
+        let water = dh - 3;
+        for row in 0..3 {
+            let y = water + row;
+            if row == 1 {
+                continue;
+            }
+            let shift = (ctx.time * (6.0 + row as f32 * 3.0)) as i32 + row * 5;
+            for x in 0..dw {
+                if (x + shift).rem_euclid(10) < 3 + row / 2 {
+                    draw::dot_i(grid, x, y);
+                }
             }
         }
 
-        // ── Sail (right triangle: mast=vertical, boom=horizontal, hyp=diagonal) ──
-        let mast_h = ((dh as f32 * 0.45).max(3.0)) as i32;
-        let sail_base = hull_len / 2;
-        let mast_x = boat_x - sail_base;
-        // Mast (vertical)
-        draw::vline(
-            grid,
-            mast_x.max(0) as usize,
-            (boat_y - mast_h).max(0) as usize,
-            (boat_y - 1).max(0) as usize,
-        );
-        // Boom (horizontal, at hull level)
-        draw::hline(
-            grid,
-            mast_x.max(0) as usize,
-            (boat_x - 1).max(0).min(dw as i32 - 1) as usize,
-            boat_y as usize,
-        );
-        // Hypotenuse (from mast top to bow)
-        line(grid, mast_x, (boat_y - mast_h).max(0), boat_x - 1, boat_y);
+        // Boat placement + bob
+        let bob = ((ctx.time * 2.2).sin() * 0.9).round() as i32;
+        let bx = lerp_i(0, dw - 20, p);
+        let hull_top = water - 3 + bob;
+        stamp(grid, bx, hull_top - 1, &HULL, 0, 0.0);
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Mast + pennant
+        let mast_x = bx + 8;
+        let mast_h = (hull_top - 1).clamp(2, 11);
+        let mast_top = hull_top - mast_h;
+        vl(grid, mast_x, mast_top, hull_top - 1);
+        let flap = ((ctx.time * 7.0) as i32) % 2;
+        draw::dot_i(grid, mast_x - 1, mast_top);
+        draw::dot_i(grid, mast_x - 2, mast_top + flap);
+
+        // Sails: width swings with the tack (edge-on mid-tack)
+        let tack = (p * 3.0 * PI).cos().abs();
+        let swing = 0.45 + 0.55 * tack;
+        let main_w = (7.0 * swing).round() as i32;
+        let jib_w = (8.0 * swing).round() as i32;
+        let sail_rows = (mast_h - 2).max(1);
+        for r in 0..sail_rows {
+            let y = mast_top + 1 + r;
+            let f = (r + 1) as f32 / sail_rows as f32;
+            let mw = (main_w as f32 * f).round() as i32;
+            if mw > 0 {
+                hl(grid, mast_x - 1 - mw, mast_x - 1, y);
+            }
+            // Jib starts a little lower and keeps a gap from the mast
+            let jf = ((r as f32 - 1.0) / sail_rows as f32).max(0.0);
+            let jw = (jib_w as f32 * jf).round() as i32;
+            if jw > 0 {
+                hl(grid, mast_x + 2, mast_x + 1 + jw, y);
             }
         }
 
+        // Wake: short dashes behind the stern
+        for k in 0..3 {
+            let wx = bx - 2 - k * 4 - ((ctx.time * 8.0) as i32 % 4);
+            hl(grid, wx - 1, wx, hull_top + 2 + k % 2);
+        }
+
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
@@ -1369,27 +1423,17 @@ impl ProgressStyle for SubwayMap {
             draw::vline(grid, sx.min(dw - 1), tick_top, tick_bot);
         }
 
-        // Color: cells behind the train
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
-        }
-
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. Hot-air balloon
-//    Progress = how high the balloon has risen (bottom → top).
-//    The envelope is an oval (wide top, narrowing to the neck).
-//    The basket hangs below on two cords.
-//    Flame bursts: tall vertical spike from the basket mouth, pulsing with time.
-//    The balloon's horizontal position is centered; vertical position rises.
+//    A teardrop envelope (round crown tapering to the throat) divided into
+//    gores, a wicker basket hung on ropes, and a burner flame that flickers in
+//    the gap.  Progress lifts the balloon off the launch field and drifts it
+//    rightward; clouds slide past and the balloon sways with time.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct HotAirBalloon;
@@ -1401,120 +1445,102 @@ impl ProgressStyle for HotAirBalloon {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Hot-air balloon rises from bottom to top; envelope oval, basket, pulsing flame bursts"
+        "Teardrop hot-air balloon with gored envelope, rope-hung basket and flickering burner lifts off and drifts up and right past clouds"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let ground = dh - 1;
 
-        let cx = (dw / 2) as i32;
+        // Launch field: ground line with grass tufts that falls away below as
+        // the balloon gains height.
+        let ground = ground + (p * dh as f32 * 1.5) as i32;
+        let mut gx = 0;
+        while gx < dw {
+            draw::dot_i(grid, gx, ground);
+            if gx % 7 == 3 {
+                draw::dot_i(grid, gx, ground - 1);
+            }
+            gx += 2;
+        }
 
-        // Balloon rises: at eased=0 it sits at the bottom; at 1 it's at the top.
-        let env_ry = ((dh as f32 * 0.30).max(2.0)) as i32;
-        let env_rx = ((dw as f32 * 0.28).max(2.0)) as i32;
-        let basket_h = ((dh as f32 * 0.10).max(1.0)) as i32;
-        let basket_w = ((dw as f32 * 0.10).max(2.0)) as i32;
-        let cord_len = ((dh as f32 * 0.05).max(1.0)) as i32;
-        let total_h = env_ry * 2 + cord_len + basket_h;
+        // Clouds drifting left behind the balloon
+        for i in 0..3 {
+            let span = dw + 16;
+            let cx = (dw + 8 - ((ctx.time * 3.0) as i32 + i * span / 3).rem_euclid(span)) as i32;
+            let cy = 1 + (i * 3) % 5;
+            hl(grid, cx - 3, cx + 3, cy + 1);
+            hl(grid, cx - 1, cx + 1, cy);
+        }
 
-        // Center y: starts at bottom-total_h/2, ends at top+total_h/2
-        let bottom_cy = (dh as i32) - env_ry - 2;
-        let top_cy = env_ry + 2;
-        let balloon_cy = (bottom_cy as f32 + (top_cy - bottom_cy) as f32 * ctx.eased) as i32;
-        let cy_lo = 0_i32;
-        let cy_hi = (dh as i32 - 1).max(0);
-        let balloon_cy = balloon_cy.clamp(cy_lo, cy_hi);
+        // Envelope geometry (scaled to height)
+        let rx = (dh * 6 / 16).max(2);
+        let ry = (rx - 1).max(1);
+        let taper = (rx * 2 / 3).max(1);
+        let throat = (rx / 3).max(1);
+        let env_h = ry + 1 + taper;
+        let total = env_h + 1 + 2; // envelope + rope row + basket
+        let sway = ((ctx.time * 1.6).sin() * 1.2).round() as i32;
+        let bx = lerp_i(rx + 2, dw - rx - 3, p) + sway;
+        let top = lerp_i(dh - total - 1, 0, p.powf(0.8));
 
-        // ── Envelope outline (ellipse) ──
-        let env_steps = ((env_rx + env_ry) * 4).max(24) as usize;
-        let mut prev: Option<(i32, i32)> = None;
-        for s in 0..=env_steps {
-            let angle = s as f32 / env_steps as f32 * 2.0 * PI;
-            let px = cx + (env_rx as f32 * angle.cos()) as i32;
-            let py = balloon_cy + (env_ry as f32 * angle.sin()) as i32;
-            draw::dot_i(grid, px, py);
-            if let Some((ppx, ppy)) = prev {
-                if (px - ppx).abs() + (py - ppy).abs() > 2 {
-                    line(grid, ppx, ppy, px, py);
+        // Half-width of the envelope at row k (0 = crown)
+        let half = |k: i32| -> f32 {
+            if k <= ry {
+                let d = (ry - k) as f32 / (ry as f32 + 0.6);
+                rx as f32 * (1.0 - d * d).max(0.0).sqrt()
+            } else {
+                let f = (k - ry) as f32 / taper as f32;
+                rx as f32 + (throat as f32 - rx as f32) * f
+            }
+        };
+        for k in 0..env_h {
+            let y = top + k;
+            let w = half(k).round() as i32;
+            let g = (half(k) * 0.45).round() as i32;
+            for x in (bx - w)..=(bx + w) {
+                // Gore seams: dark lines at +-45% of the width (not on the crown)
+                let seam = k > 0 && w > 2 && ((x - bx).abs() == g);
+                if !seam {
+                    draw::dot_i(grid, x, y);
                 }
             }
-            prev = Some((px, py));
         }
-        // Vertical stripes on the envelope (2 stripes)
-        for stripe_off in [-env_rx / 3, env_rx / 3] {
-            draw::vline(
-                grid,
-                (cx + stripe_off).max(0) as usize,
-                (balloon_cy - env_ry + 1).max(0) as usize,
-                (balloon_cy + env_ry - 1).min(dh as i32 - 1).max(0) as usize,
-            );
+        // Throat mouth: open gap at the bottom centre
+        let mouth_y = top + env_h - 1;
+
+        // Ropes + basket
+        let rope_y = mouth_y + 1;
+        draw::dot_i(grid, bx - throat, rope_y);
+        draw::dot_i(grid, bx + throat, rope_y);
+        hl(grid, bx - throat, bx + throat, rope_y + 1);
+        hl(grid, bx - throat + 1, bx + throat - 1, rope_y + 2);
+
+        // Burner flame flickers between the ropes, licking into the mouth
+        let flick = ((ctx.time * 11.0) as i32).rem_euclid(3);
+        draw::dot_i(grid, bx, rope_y);
+        if flick > 0 {
+            draw::dot_i(grid, bx, mouth_y);
         }
-
-        // ── Neck (bottom of envelope narrowing) ──
-        let neck_y = balloon_cy + env_ry;
-        let neck_w = basket_w / 2;
-        draw::hline(
-            grid,
-            (cx - neck_w).max(0) as usize,
-            (cx + neck_w).min(dw as i32 - 1).max(0) as usize,
-            neck_y.max(0).min(dh as i32 - 1) as usize,
-        );
-
-        // ── Cords from neck to basket ──
-        let basket_top_y = neck_y + cord_len;
-        line(grid, cx - neck_w, neck_y, cx - basket_w, basket_top_y);
-        line(grid, cx + neck_w, neck_y, cx + basket_w, basket_top_y);
-
-        // ── Basket ──
-        let basket_bot_y = basket_top_y + basket_h;
-        for y in basket_top_y..=basket_bot_y.min(dh as i32 - 1) {
-            draw::hline(
-                grid,
-                (cx - basket_w).max(0) as usize,
-                (cx + basket_w).min(dw as i32 - 1).max(0) as usize,
-                y.max(0) as usize,
-            );
+        if flick == 2 {
+            draw::dot_i(grid, bx - 1, rope_y);
+            draw::dot_i(grid, bx + 1, rope_y);
         }
 
-        // ── Flame burst (from basket mouth = balloon_cy + env_ry - 1, going up) ──
-        let flame_pulse = (ctx.time * 6.0).sin() * 0.5 + 0.5; // 0..1
-        let flame_h = ((env_ry as f32 * 0.6 * flame_pulse) as i32).max(1);
-        for fy in 0..flame_h {
-            let fw = ((1.0 - fy as f32 / flame_h as f32) * neck_w as f32) as i32;
-            let flame_y = neck_y - 1 - fy;
-            if flame_y >= 0 {
-                draw::hline(
-                    grid,
-                    (cx - fw).max(0) as usize,
-                    (cx + fw).min(dw as i32 - 1).max(0) as usize,
-                    flame_y as usize,
-                );
-            }
-        }
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx_cell in 0..filled.min(cw) {
-            let t = cx_cell as f32 / cw.max(1) as f32;
-            for cy_cell in 0..ch {
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
-            }
-        }
-
-        let _ = total_h;
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. Ferris wheel
-//    A large circle (rim) with 8 evenly-spaced cabins (small circles) orbiting
-//    it.  The whole wheel rotates driven by time.  Two support struts anchor the
-//    axle to the ground.  Progress controls how far the fill line covers the
-//    lower half of the wheel (boarding/loading metaphor).
+//    A big rimmed wheel with spokes turning about a hub on an A-frame, cabins
+//    hanging level from the rim as it rotates.  Festoon light strings run from
+//    lamp posts to the wheel; bulbs light up left-to-right with progress.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct FerrisWheel;
@@ -1526,79 +1552,86 @@ impl ProgressStyle for FerrisWheel {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Ferris wheel spins continuously; 8 cabins orbit the rim; support struts anchor to ground"
+        "Big spoked Ferris wheel turns on an A-frame with cabins hanging level; festoon bulbs on the light strings switch on with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let ground = dh - 1;
 
-        let cx = (dw / 2) as i32;
-        let ground_y = dh.saturating_sub(2) as i32;
+        let r = ((dh - 2) / 2).max(2);
+        let cx = dw / 2;
+        let cy = ((dh - 1) / 2).max(1);
+        let spin = ctx.time * 0.7;
 
-        // Wheel fits vertically
-        let wheel_r = ((dh as f32 * 0.38).max(3.0) as i32).max(3);
-        let axle_y = (ground_y - wheel_r).max(wheel_r);
-
-        // ── Rim ──
-        circle(grid, cx, axle_y, wheel_r);
-
-        // ── Spokes (8 spokes rotating with time) ──
-        let n_spokes = 8usize;
-        for sp in 0..n_spokes {
-            let angle = sp as f32 / n_spokes as f32 * 2.0 * PI + ctx.time * 0.8;
-            let sx = (cx as f32 + wheel_r as f32 * angle.cos()) as i32;
-            let sy = (axle_y as f32 + wheel_r as f32 * angle.sin()) as i32;
-            line(grid, cx, axle_y, sx, sy);
+        // Rim
+        circle(grid, cx, cy, r);
+        // Spokes from just outside the hub to the rim
+        let n = 6;
+        for s in 0..n {
+            let a = spin + s as f32 / n as f32 * 2.0 * PI;
+            let (c, si) = (a.cos(), a.sin());
+            let x0 = cx + (2.0 * c).round() as i32;
+            let y0 = cy + (2.0 * si).round() as i32;
+            let x1 = cx + (r as f32 * c).round() as i32;
+            let y1 = cy + (r as f32 * si).round() as i32;
+            line(grid, x0, y0, x1, y1);
+            // Cabin hangs level below its pivot on the rim
+            hl(grid, x1 - 1, x1 + 1, y1 + 1);
+            hl(grid, x1 - 1, x1 + 1, y1 + 2);
         }
+        disk(grid, cx, cy, 1);
 
-        // ── Hub (axle disk) ──
-        disk(grid, cx, axle_y, (wheel_r / 6).max(1));
+        // A-frame legs + base
+        let leg = (r * 3 / 4).max(2);
+        line(grid, cx, cy, cx - leg, ground);
+        line(grid, cx, cy, cx + leg, ground);
+        hl(grid, cx - leg - 2, cx + leg + 2, ground);
 
-        // ── Cabins (small dots at spoke tips) ──
-        let n_cabins = 8usize;
-        let cabin_r = (wheel_r / 5).max(1);
-        for c in 0..n_cabins {
-            let angle = c as f32 / n_cabins as f32 * 2.0 * PI + ctx.time * 0.8;
-            let cabin_cx = (cx as f32 + wheel_r as f32 * angle.cos()) as i32;
-            let cabin_cy = (axle_y as f32 + wheel_r as f32 * angle.sin()) as i32;
-            // Cabin hangs below its pivot point (gravity-aligned)
-            let hang = cabin_r;
-            disk(grid, cabin_cx, cabin_cy + hang, cabin_r);
-        }
-
-        // ── Support struts ──
-        let strut_spread = (wheel_r as f32 * 0.7) as i32;
-        line(grid, cx, axle_y, cx - strut_spread, ground_y);
-        line(grid, cx, axle_y, cx + strut_spread, ground_y);
-        draw::hline(
-            grid,
-            (cx - strut_spread).max(0) as usize,
-            (cx + strut_spread).min(dw as i32 - 1) as usize,
-            ground_y as usize,
-        );
-
-        // ── Progress indicator: arc of filled cabins ──
-        let n_filled = (ctx.eased * n_cabins as f32).round() as usize;
-        for c in 0..n_filled.min(n_cabins) {
-            let angle = c as f32 / n_cabins as f32 * 2.0 * PI + ctx.time * 0.8;
-            let cabin_cx = (cx as f32 + (wheel_r as f32 * 1.05) * angle.cos()) as i32;
-            let cabin_cy = (axle_y as f32 + (wheel_r as f32 * 1.05) * angle.sin()) as i32;
-            draw::dot_i(grid, cabin_cx, cabin_cy);
-            draw::dot_i(grid, cabin_cx + 1, cabin_cy);
-        }
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx_cell in 0..filled.min(cw) {
-            let t = cx_cell as f32 / cw.max(1) as f32;
-            for cy_cell in 0..ch {
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
+        // Festoon strings: lamp posts at the ends, sagging string to the wheel,
+        // bulbs every 4 dots — lit bulbs (a 2x2 block) sweep in with progress.
+        let post_top = 2.min(dh - 1);
+        vl(grid, 1, post_top, ground);
+        vl(grid, dw - 2, post_top, ground);
+        let segs = [(1, cx - r - 3), (cx + r + 3, dw - 2)];
+        let lit_x = (p * dw as f32) as i32;
+        for (a, b) in segs {
+            if b <= a {
+                continue;
+            }
+            let span = (b - a) as f32;
+            let sag = (dh as f32 * 0.22).max(1.0);
+            let y_at = |x: i32| -> i32 {
+                let u = (x - a) as f32 / span;
+                post_top + (4.0 * sag * u * (1.0 - u)).round() as i32
+            };
+            for x in a..=b {
+                if x % 2 == 0 {
+                    draw::dot_i(grid, x, y_at(x));
+                }
+            }
+            let mut x = a + 3;
+            while x < b - 1 {
+                let y = y_at(x) + 1;
+                if x <= lit_x {
+                    hl(grid, x, x + 1, y);
+                    hl(grid, x, x + 1, y + 1);
+                } else {
+                    draw::dot_i(grid, x, y);
+                }
+                x += 4;
             }
         }
+        // Leading bulb twinkles
+        if ((ctx.time * 6.0) as i32) % 2 == 0 {
+            draw::dot_i(grid, lit_x, dh - 3);
+        }
 
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
@@ -1688,27 +1721,23 @@ impl ProgressStyle for CableCar {
         let win_y = (body_top + car_h / 3).min(body_bot);
         draw::dot_i(grid, g_x, win_y);
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
-        }
-
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. Escalator
-//    Diagonal steps tile the frame and scroll upward continuously, driven purely
-//    by time.  Progress determines how wide the escalator band is (how many
-//    steps fill from left to right = eased * width).  Each step is a small
-//    right-triangle: horizontal tread + vertical riser.
+//    Side view of an escalator between a lower and an upper floor: a stepped
+//    staircase of treads and risers on a diagonal truss, with a handrail and
+//    newel curves at both ends.  The steps climb continuously with time.  A
+//    rider marks progress: walks along the lower floor, rides up the steps,
+//    then walks off along the upper floor.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Standing rider (3 x 5) and walking-stride variant.
+const RIDER: [&str; 6] = [".##.", ".##.", "####", ".##.", ".##.", ".##."];
+const RIDER_STRIDE: [&str; 6] = [".##.", ".##.", "####", ".##.", ".##.", "#..#"];
 
 struct Escalator;
 impl ProgressStyle for Escalator {
@@ -1719,86 +1748,253 @@ impl ProgressStyle for Escalator {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Escalator steps scroll upward diagonally via time; progress widens the moving band"
+        "Escalator between two floors: stepped truss and handrail with steps climbing over time; a rider walks on, rides up and steps off with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
 
-        // Step size: tread width and riser height in dots
-        let tread = ((dw as f32 / 8.0).max(3.0) as usize).max(3);
-        let riser = ((dh as f32 / 4.0).max(2.0) as usize).max(2);
+        let lo = dh - 1; // lower floor row
+        let hi = (dh * 3 / 8).max(1).min(lo); // upper floor row
+        let riser = 2;
+        let tread = 4;
+        let rise = (lo - hi).max(0);
+        let run = rise / riser * tread;
+        let xa = (dw - run) / 2; // foot of the incline
+        let xb = xa + run; // head of the incline
 
-        // Scroll offset: steps move up (decreasing y) over time
-        let scroll = ((ctx.time * riser as f32 * 1.5) as usize) % (riser + 1).max(1);
+        // Floors: lower floor, upper floor slab with its front edge
+        hl(grid, 0, xa + 2, lo);
+        hl(grid, xb, dw - 1, hi);
+        hl(grid, xb + 2, dw - 1, hi + 1);
+        vl(grid, xb, hi, hi + 3);
 
-        // Active escalator width = eased fraction of dw
-        let active_w = ((ctx.eased * dw as f32).round() as usize).min(dw);
+        // Rider: walk → ride → walk, mapped linearly on x.  A one-dot halo
+        // around the rider keeps the handrail and steps from merging into it.
+        let rx = lerp_i(3, dw - 5, p);
+        let feet = if rx + 1 < xa {
+            lo - 1
+        } else if rx + 1 > xb {
+            hi - 1
+        } else {
+            lo - 1 - (rx + 1 - xa) * riser / tread.max(1)
+        };
+        let halo = |x: i32, y: i32| x >= rx - 1 && x <= rx + 4 && y >= feet - 6 && y <= feet;
 
-        // Handrails: two diagonal lines bounding the escalator
-        let hr_left_x0 = 0_i32;
-        let hr_left_y0 = (dh as i32) - 1;
-        let hr_left_x1 = active_w as i32;
-        let hr_left_y1 = 0_i32;
-        if active_w > 0 {
-            line(grid, hr_left_x0, hr_left_y0, hr_left_x1, hr_left_y1);
-        }
-
-        // Draw step grid
-        let total_steps_x = dw / tread + 2;
-        let total_steps_y = dh / riser + 2;
-        for row in 0..total_steps_y {
-            for col in 0..total_steps_x {
-                // Position of this step's top-left corner, with scroll
-                let x = col * tread;
-                // Each row is diagonally offset by col so steps nest on the staircase
-                let base_y = (dh + riser).saturating_sub((row + 1) * riser);
-                let y_raw = base_y as i32 + scroll as i32 - col as i32 * riser as i32 / 2;
-
-                if x >= active_w {
-                    continue;
-                } // only draw within active band
-
-                // Tread (horizontal)
-                let tread_x1 = (x + tread).min(active_w) - 1;
-                if y_raw >= 0 && (y_raw as usize) < dh {
-                    draw::hline(grid, x.min(dw - 1), tread_x1.min(dw - 1), y_raw as usize);
-                }
-                // Riser (vertical)
-                let riser_y0 = y_raw;
-                let riser_y1 = y_raw + riser as i32;
-                if x < dw {
-                    for ry in riser_y0..=riser_y1 {
-                        draw::dot_i(grid, x as i32, ry);
-                    }
+        // Steps: sawtooth profile marching up the incline with time
+        let shift = ((ctx.time * 4.0) as i32).rem_euclid(tread);
+        let mut prev_y = lo;
+        for x in xa..=xb {
+            let u = x - xa - shift;
+            let k = u.div_euclid(tread) + 1;
+            let y = (lo - k * riser - (shift * riser + tread / 2) / tread).clamp(hi, lo);
+            let (y0, y1) = if x > xa {
+                (y.min(prev_y), y.max(prev_y))
+            } else {
+                (y, y)
+            };
+            for yy in y0..=y1 {
+                if !halo(x, yy) {
+                    draw::dot_i(grid, x, yy);
                 }
             }
+            prev_y = y;
         }
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Truss: solid side cladding band under the steps
+        for x in (xa + 2)..=xb {
+            let ny = lo - (x - xa) * riser / tread.max(1);
+            vl(grid, x, ny + 3, (ny + 4).min(lo));
+        }
+
+        // Handrail parallel to the steps, flat runs + newel curves at the ends
+        let hr = 5;
+        for x in xa..=xb {
+            let y = lo - hr - ((x - xa) * rise + run / 2) / run.max(1);
+            if !halo(x, y) {
+                draw::dot_i(grid, x, y);
             }
         }
+        hl(grid, xa - 4, xa, lo - hr);
+        vl(grid, xa - 5, lo - hr + 1, lo - hr + 2);
+        hl(grid, xb, xb + 4, hi - hr);
+        vl(grid, xb + 5, hi - hr + 1, hi - hr + 2);
 
+        let on_floor = rx + 1 < xa || rx + 1 > xb;
+        let stride = on_floor && ((ctx.time * 5.0) as i32) % 2 == 1;
+        let sprite: &[&str] = if stride { &RIDER_STRIDE } else { &RIDER };
+        stamp(grid, rx, feet - 5, sprite, 0, 0.0);
+
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. Rocket gantry launch
-//    Focus: the launch pad, gantry structure, and countdown.
-//    progress < 0.80: gantry arms extend inward from the sides, holding the rocket.
-//    progress 0.80..1.0: arms retract; exhaust plume grows from the bottom.
-//    The rocket is a tall narrow rectangle (body) + nose cone (triangle) + fins.
-//    Liftoff smoke billows outward at the base via a widening half-disk.
+//    A finned rocket stands on its pad beside a lattice gantry whose arms hold
+//    it. Progress pumps propellant from a spherical tank along the ground line
+//    to the pad, frosting the rocket's tanks from the bottom up. Near the end
+//    the arms swing clear, the engines light, smoke rolls out of the flame
+//    trench and the rocket climbs out of frame.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Materials of the gantry scene, in rising priority. Each cell takes the
+/// colour of the material most of its dots hold; rocket parts weigh more.
+const G_STEEL: u8 = 1;
+const G_SMOKE: u8 = 2;
+const G_FUEL: u8 = 3;
+const G_FLAME: u8 = 4;
+const G_CORE: u8 = 5;
+const G_HULL: u8 = 6;
+const G_FROST: u8 = 7;
+const G_TRIM: u8 = 8;
+
+/// Fast integer hash → `[0, 1)` for smoke puffs.
+fn gantry_hash(n: u32) -> f32 {
+    let mut x = n.wrapping_mul(2_654_435_761);
+    x ^= x >> 15;
+    (x.wrapping_mul(2_246_822_519) % 1000) as f32 / 1000.0
+}
+
+/// A dot-space canvas of gantry-scene materials, flushed into a grid at once.
+struct GantryCanvas {
+    w: usize,
+    h: usize,
+    ink: Vec<u8>,
+}
+
+impl GantryCanvas {
+    fn new(w: usize, h: usize) -> Self {
+        Self {
+            w,
+            h,
+            ink: vec![0; w * h],
+        }
+    }
+
+    fn set(&mut self, x: i32, y: i32, ink: u8) {
+        if x >= 0 && y >= 0 && (x as usize) < self.w && (y as usize) < self.h {
+            self.ink[y as usize * self.w + x as usize] = ink;
+        }
+    }
+
+    fn get(&self, x: i32, y: i32) -> u8 {
+        if x >= 0 && y >= 0 && (x as usize) < self.w && (y as usize) < self.h {
+            self.ink[y as usize * self.w + x as usize]
+        } else {
+            0
+        }
+    }
+
+    /// Paint an upright rocket: nozzle at `(cx, base)`, `len` dots tall, hull
+    /// radius `r` — pointed nose cone, hull with a porthole, swept fins and a
+    /// flickering two-tone flame `flame` dots long. Hull below `frost_y` is
+    /// painted frosted (fuelled).
+    #[allow(clippy::too_many_arguments)]
+    fn rocket(&mut self, cx: f32, base: f32, len: f32, r: f32, flame: f32, frost_y: f32, t: f32) {
+        let nose = len * 0.3;
+        let nose_at = len - nose;
+        let fin = len * 0.36;
+        let flare = r * 0.9 + 0.8;
+        let port_u = nose_at - r * 1.2;
+        let reach = (r + flare + 1.0).ceil() as i32;
+        for y in (base - len - 1.0) as i32..=(base + flame + 1.0) as i32 {
+            for dx in -reach..=reach {
+                // u climbs from the nozzle (0) to the nose tip (len).
+                let u = base - (y as f32 + 0.5);
+                let v = (dx as f32).abs();
+                let x = cx as i32 + dx;
+                let ink = if u > nose_at && u <= len {
+                    let k = (u - nose_at) / nose;
+                    (v <= r * (1.0 - k).powf(0.85) + 0.2).then_some(G_TRIM)
+                } else if (0.0..=nose_at).contains(&u) {
+                    let porthole = r >= 2.0 && (u - port_u).powi(2) + v * v < 1.1;
+                    if v <= r && !porthole {
+                        Some(if (y as f32) > frost_y {
+                            G_FROST
+                        } else {
+                            G_HULL
+                        })
+                    } else if u < fin && v > r && v <= r + flare * (1.0 - u / fin) {
+                        Some(G_TRIM)
+                    } else {
+                        None
+                    }
+                } else if (-1.5..0.0).contains(&u) && v > r * 0.75 && v <= r + flare {
+                    // Fin tips sweep down past the nozzle.
+                    Some(G_TRIM)
+                } else if u < 0.0 && u >= -flame {
+                    let k = -u / flame.max(0.1);
+                    let jag = 0.75 + 0.25 * (t * 37.0 + v * 2.3 + u * 0.9).sin();
+                    let width = r * 0.8 * (1.0 - k).powf(0.6) * jag + 0.3;
+                    if v <= width {
+                        Some(if k < 0.4 && v < width * 0.6 {
+                            G_CORE
+                        } else {
+                            G_FLAME
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(ink) = ink {
+                    self.set(x, y, ink);
+                }
+            }
+        }
+    }
+
+    /// Set every inked dot, then colour each cell by its weighted majority.
+    fn flush(&self, grid: &mut BrailleGrid) {
+        grid.enable_color_support();
+        for y in 0..self.h {
+            for x in 0..self.w {
+                if self.ink[y * self.w + x] != 0 {
+                    draw::dot(grid, x, y);
+                }
+            }
+        }
+        for cy in 0..(self.h + 3) / 4 {
+            for cx in 0..(self.w + 1) / 2 {
+                let mut counts = [0u8; 9];
+                for y in cy * 4..(cy * 4 + 4).min(self.h) {
+                    for x in cx * 2..(cx * 2 + 2).min(self.w) {
+                        counts[self.ink[y * self.w + x] as usize] += 1;
+                    }
+                }
+                let weight = |i: u8| {
+                    counts[i as usize]
+                        * match i {
+                            G_STEEL | G_SMOKE => 1,
+                            G_FUEL => 2,
+                            _ => 3,
+                        }
+                };
+                let best = (1..9u8).rev().max_by_key(|&i| weight(i)).unwrap_or(0);
+                if counts[best as usize] > 0 {
+                    let color = match best {
+                        G_STEEL => crate::Color::rgb(130, 135, 150),
+                        G_SMOKE => crate::Color::rgb(175, 175, 188),
+                        G_FUEL => crate::Color::rgb(90, 200, 255),
+                        G_FLAME => crate::Color::rgb(255, 140, 40),
+                        G_CORE => crate::Color::rgb(255, 236, 150),
+                        G_HULL => crate::Color::rgb(236, 238, 245),
+                        G_FROST => crate::Color::rgb(185, 225, 255),
+                        _ => crate::Color::rgb(235, 70, 60),
+                    };
+                    let _ = grid.set_cell_color(cx, cy, color);
+                }
+            }
+        }
+    }
+}
 
 struct RocketGantry;
 impl ProgressStyle for RocketGantry {
@@ -1809,154 +2005,161 @@ impl ProgressStyle for RocketGantry {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Launch pad countdown: gantry arms hold then retract; liftoff plume erupts at the base"
+        "Rocket fuels beside its gantry, the arms swing clear, and it lifts off"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 4 || h < 4 {
             return Ok(());
         }
+        let mut cv = GantryCanvas::new(w, h);
+        let (wf, hf) = (w as f32, h as f32);
+        let q = ctx.eased;
+        let ground = h as i32 - 1;
 
-        let cx = (dw / 2) as i32;
-        let ground_y = (dh as i32) - 1;
-        let rocket_w = ((dw as f32 * 0.08).max(3.0)) as i32;
-        let rocket_h = ((dh as f32 * 0.55).max(4.0)) as i32;
-        let nose_h = ((rocket_h as f32 * 0.25).max(2.0)) as i32;
-        let fin_w = ((rocket_w as f32 * 0.8).max(2.0)) as i32;
-        let fin_h = ((rocket_h as f32 * 0.15).max(2.0)) as i32;
+        // Phases: fuelling to FUELLED, arms retract to IGNITE, then liftoff.
+        const FUELLED: f32 = 0.78;
+        const IGNITE: f32 = 0.86;
+        let fuel = (q / FUELLED).min(1.0);
+        let swing = ((q - FUELLED) / (IGNITE - FUELLED)).clamp(0.0, 1.0);
+        let burn = ((q - IGNITE) / (1.0 - IGNITE)).clamp(0.0, 1.0);
 
-        // Liftoff threshold
-        let liftoff_t = 0.80_f32;
-        // How far the rocket has risen above the pad (0 until liftoff, then grows)
-        let rise = if ctx.eased < liftoff_t {
-            0_i32
-        } else {
-            let frac = (ctx.eased - liftoff_t) / (1.0 - liftoff_t);
-            (frac * frac * dh as f32 * 0.6) as i32
-        };
+        let len = (hf - 3.0).min(wf * 0.3);
+        let r = (len / 6.2).max(0.8);
+        let pad_x = wf * 0.74;
+        // The climb ends with the rocket half out of frame on a long flame.
+        let rise = burn * burn * (len * 0.55 + 2.0);
+        let base = hf - 2.0 - rise;
 
-        let rocket_base_y = ground_y - rise;
-        let rocket_top_y = (rocket_base_y - rocket_h).max(0);
-
-        // ── Rocket body ──
-        for y in rocket_top_y..=rocket_base_y.min(ground_y) {
-            draw::hline(
-                grid,
-                (cx - rocket_w).max(0) as usize,
-                (cx + rocket_w).min(dw as i32 - 1).max(0) as usize,
-                y.max(0).min(dh as i32 - 1) as usize,
-            );
+        // Ground, and the spherical propellant tank on its legs.
+        for x in 0..w as i32 {
+            cv.set(x, ground, G_STEEL);
         }
-
-        // ── Nose cone (triangle pointing up) ──
-        for ny in 0..nose_h {
-            let half_w = ((1.0 - ny as f32 / nose_h as f32) * rocket_w as f32) as i32;
-            let y = rocket_top_y - nose_h + ny;
-            if y >= 0 {
-                draw::hline(
-                    grid,
-                    (cx - half_w).max(0) as usize,
-                    (cx + half_w).min(dw as i32 - 1).max(0) as usize,
-                    y as usize,
-                );
+        let tank_r = (hf * 0.28).min(wf * 0.08).max(1.0);
+        let (tank_x, tank_y) = (tank_r + 2.0, hf - tank_r - 3.0);
+        for y in (tank_y - tank_r) as i32..=(tank_y + tank_r) as i32 + 1 {
+            for x in (tank_x - tank_r) as i32 - 1..=(tank_x + tank_r) as i32 + 1 {
+                let d = (x as f32 + 0.5 - tank_x).hypot((y as f32 + 0.5 - tank_y) * 1.0);
+                if d <= tank_r && d > tank_r - 1.2 {
+                    cv.set(x, y, G_STEEL);
+                } else if d <= tank_r - 1.2 && (y as f32) > tank_y + (fuel * 2.0 - 1.0) * tank_r {
+                    // The tank drains as the rocket fills.
+                    cv.set(x, y, G_FUEL);
+                }
+            }
+        }
+        for leg in [-0.7, 0.7] {
+            let lx = (tank_x + leg * tank_r) as i32;
+            for y in (tank_y + tank_r * 0.7) as i32..ground {
+                cv.set(lx, y, G_STEEL);
             }
         }
 
-        // ── Fins (at the base) ──
-        let fin_y0 = rocket_base_y - fin_h;
-        for fy in 0..fin_h {
-            let flare = (fy as f32 / fin_h as f32 * fin_w as f32) as i32;
-            let y = fin_y0 + fy;
-            if y >= 0 && y <= ground_y {
-                draw::dot_i(grid, cx - rocket_w - flare, y);
-                draw::dot_i(grid, cx + rocket_w + flare, y);
+        // The fuel line: an empty pipe that floods toward the pad with progress.
+        let pipe0 = (tank_x + tank_r) as i32 + 1;
+        let pipe1 = (pad_x - r - 1.0) as i32;
+        let flow = pipe0 + ((pipe1 - pipe0) as f32 * fuel) as i32;
+        let pulse = (ctx.time * 12.0) as i32;
+        for x in pipe0..=pipe1 {
+            cv.set(x, ground - 3, G_STEEL);
+            if x < flow {
+                cv.set(x, ground - 2, G_FUEL);
+                if (x + pulse) % 5 != 0 {
+                    cv.set(x, ground - 1, G_FUEL);
+                }
+            } else if x % 3 == 0 {
+                cv.set(x, ground - 2, G_STEEL);
             }
         }
 
-        // ── Gantry structure ──
-        let gantry_tower_x_l = cx - dw as i32 / 4;
-        let gantry_tower_x_r = cx + dw as i32 / 4;
-        // Towers (full height vertical bars)
-        draw::vline(grid, gantry_tower_x_l.max(0) as usize, 0, ground_y as usize);
-        draw::vline(
-            grid,
-            gantry_tower_x_r.max(0).min(dw as i32 - 1) as usize,
-            0,
-            ground_y as usize,
-        );
-
-        // Gantry arms: horizontal bars at 3 heights, retracting as we approach liftoff
-        let arm_retract = if ctx.eased >= liftoff_t {
-            let frac = (ctx.eased - liftoff_t) / (1.0 - liftoff_t);
-            (frac * (gantry_tower_x_r - cx - rocket_w) as f32) as i32
-        } else {
-            0_i32
-        };
-
-        for arm_frac in [0.25_f32, 0.50, 0.75] {
-            let arm_y = (ground_y as f32 * arm_frac) as i32;
-            let arm_inner_l = cx - rocket_w - 1 + arm_retract;
-            let arm_inner_r = cx + rocket_w + 1 - arm_retract;
-            // Left arm: from left tower to rocket
-            if arm_inner_l > gantry_tower_x_l {
-                draw::hline(
-                    grid,
-                    gantry_tower_x_l.max(0) as usize,
-                    arm_inner_l.max(0).min(dw as i32 - 1) as usize,
-                    arm_y.max(0).min(dh as i32 - 1) as usize,
-                );
-            }
-            // Right arm: from rocket to right tower
-            if arm_inner_r < gantry_tower_x_r {
-                draw::hline(
-                    grid,
-                    arm_inner_r.max(0) as usize,
-                    gantry_tower_x_r.min(dw as i32 - 1).max(0) as usize,
-                    arm_y.max(0).min(dh as i32 - 1) as usize,
-                );
+        // Lattice gantry tower to the left of the pad, X-braced.
+        let tw = (r * 1.6).max(2.0) as i32;
+        let tx1 = (pad_x - r - 3.0) as i32;
+        let tx0 = tx1 - tw;
+        let top = ((hf - 2.0 - len * 1.1) as i32).max(0);
+        for y in top..ground {
+            cv.set(tx0, y, G_STEEL);
+            cv.set(tx1, y, G_STEEL);
+            let k = (y - top).rem_euclid(tw * 2);
+            let off = if k < tw { k } else { tw * 2 - k };
+            cv.set(tx0 + off, y, G_STEEL);
+        }
+        // Swing arms: reach the hull until they retract toward the tower.
+        let arm_reach = ((pad_x - r) as i32 - tx1) as f32 * (1.0 - swing);
+        for arm_y in [hf - 2.0 - len * 0.45, hf - 2.0 - len * 0.8] {
+            let ay = arm_y as i32;
+            for x in tx1..=tx1 + arm_reach as i32 {
+                cv.set(x, ay, G_STEEL);
             }
         }
 
-        // ── Launch plume (after liftoff) ──
-        if ctx.eased >= liftoff_t {
-            let plume_frac = (ctx.eased - liftoff_t) / (1.0 - liftoff_t);
-            let plume_h = (plume_frac * dh as f32 * 0.5) as i32;
-            let pulse = (ctx.time * 10.0).sin() * 0.3 + 0.7;
-            for py in 0..plume_h {
-                let spread =
-                    ((py as f32 / plume_h.max(1) as f32) * rocket_w as f32 * 2.0 * pulse) as i32;
-                let y = ground_y + py;
-                if y < dh as i32 {
-                    draw::hline(
-                        grid,
-                        (cx - rocket_w - spread).max(0) as usize,
-                        (cx + rocket_w + spread).min(dw as i32 - 1).max(0) as usize,
-                        y as usize,
-                    );
+        // Liftoff: smoke rolls out of the flame trench to both sides.
+        if burn > 0.0 {
+            let boil = (ctx.time * 5.0) as u32;
+            let spread = 3.0 + burn.sqrt() * wf * 0.16;
+            for i in 0..(spread * 0.9) as u32 {
+                let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+                let ox = side * gantry_hash(i * 29 + boil * 7) * spread;
+                let rad = 1.0 + gantry_hash(i * 31 + boil * 3) * 2.2 * (1.0 - ox.abs() / spread);
+                let (px, py) = (pad_x + ox, hf - 2.0 - gantry_hash(i * 37 + boil) * 2.0);
+                for dy in -3..=1 {
+                    for dx in -3..=3 {
+                        let d = ((dx * dx + dy * dy) as f32).sqrt();
+                        if d <= rad && (rad < 2.0 || d > rad - 1.3) {
+                            cv.set(px as i32 + dx, py as i32 + dy, G_SMOKE);
+                        }
+                    }
                 }
             }
         }
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx_cell in 0..filled.min(cw) {
-            let t = cx_cell as f32 / cw.max(1) as f32;
-            for cy_cell in 0..ch {
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
+        let flame = if burn > 0.0 {
+            r * (2.4 + 0.8 * (ctx.time * 23.0).sin().abs()) + rise
+        } else {
+            0.0
+        };
+        // Propellant level inside the rocket, rising from the nozzle.
+        let frost_y = base - len * 0.7 * fuel;
+        cv.rocket(pad_x, base, len, r, flame, frost_y, ctx.time);
+
+        // Keep the arms in front of the hull while they still hold it.
+        if swing < 1.0 && burn == 0.0 {
+            for arm_y in [hf - 2.0 - len * 0.45, hf - 2.0 - len * 0.8] {
+                let ay = arm_y as i32;
+                let end = tx1 + arm_reach as i32;
+                if cv.get(end + 1, ay) == G_HULL || cv.get(end + 1, ay) == G_FROST {
+                    cv.set(end + 1, ay, 0);
+                }
             }
         }
 
+        cv.flush(grid);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 10. Ferry crossing with wake
-//     Ferry is a wide flat hull (a thick rectangle).  Progress = crossing fraction.
-//     Behind the ferry, two diverging wake lines spread at ±angle.
-//     The water surface is a horizontal baseline.  Wave crests dot the surface.
+//     A side-view ferry — raked hull, two decks of windows and a funnel —
+//     crosses from the left pier to the right pier.  Behind it a V wake opens
+//     across the water (one arm toward the viewer, one toward the horizon)
+//     with dashes running away from the stern; funnel smoke streams back and
+//     wave crests travel with time.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Ferry, bow to the right (32 x 10 dots).
+const FERRY: [&str; 10] = [
+    "...........##",
+    "..........###",
+    "..........###.........##",
+    "......####################",
+    "......#.#.#.#.#.#.#.#.#.###",
+    "...###########################",
+    "...##.##.##.##.##.##.##.##.##.#",
+    "################################",
+    ".##############################",
+    "..###########################",
+];
 
 struct FerryCrossing;
 impl ProgressStyle for FerryCrossing {
@@ -1967,115 +2170,87 @@ impl ProgressStyle for FerryCrossing {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Ferry hull crosses the bar; a V-shaped wake fans out behind; wave crests dot the surface"
+        "Ferry with hull, two window decks and a funnel crosses between piers; a V wake opens behind, smoke streams back and waves roll"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let waterline = dh - 4; // hull's last row sits here
 
-        let water_y = dh / 2;
-
-        // ── Water surface ──
-        for x in 0..dw {
-            let wave = (PI * x as f32 / (dw as f32 * 0.15) + ctx.time * 3.0).sin();
-            let wy = (water_y as f32 + wave * (dh as f32 * 0.04)) as usize;
-            draw::dot(grid, x, wy.min(dh - 1));
+        // Piers: deck + pilings at both banks
+        for (a, b) in [(0, 3), (dw - 4, dw - 1)] {
+            hl(grid, a, b, waterline - 1);
+            vl(grid, a + 1, waterline, dh - 1);
+            vl(grid, b - 1, waterline, dh - 1);
         }
 
-        // ── Ferry position ──
-        let ferry_w = ((dw as f32 * 0.18).max(6.0)) as i32;
-        let ferry_h = ((dh as f32 * 0.20).max(2.0)) as i32;
-        let bow_x = ((ctx.eased * dw as f32) as i32)
-            .min(dw as i32 - 1)
-            .max(ferry_w);
-        let stern_x = bow_x - ferry_w;
-        let hull_top = (water_y as i32) - ferry_h;
-
-        // Hull: filled rectangle
-        for y in hull_top.max(0)..=water_y as i32 {
-            draw::hline(
-                grid,
-                stern_x.max(0) as usize,
-                bow_x.min(dw as i32 - 1).max(0) as usize,
-                y as usize,
-            );
-        }
-
-        // Superstructure (box on top of hull)
-        let super_w = ferry_w / 3;
-        let super_h = (ferry_h / 2).max(1);
-        let super_x0 = stern_x + ferry_w / 3;
-        for y in (hull_top - super_h).max(0)..hull_top.max(0) {
-            draw::hline(
-                grid,
-                super_x0.max(0) as usize,
-                (super_x0 + super_w).min(dw as i32 - 1).max(0) as usize,
-                y as usize,
-            );
-        }
-
-        // Funnel / smokestack
-        let funnel_x = super_x0 + super_w / 2;
-        let funnel_top = (hull_top - super_h - ferry_h / 3).max(0);
-        draw::vline(
-            grid,
-            funnel_x.max(0) as usize,
-            funnel_top as usize,
-            (hull_top - super_h).max(funnel_top).max(0) as usize,
-        );
-
-        // ── Wake: two lines diverging from stern ──
-        let wake_len = ((ctx.eased * dw as f32) as i32).min(dw as i32);
-        let wake_angle_dots = (dh as f32 * 0.25).max(1.0) as i32;
-        let wake_y0 = water_y as i32;
-        // Upper wake line
-        line(
-            grid,
-            stern_x.max(0),
-            wake_y0,
-            (stern_x - wake_len).max(0),
-            (wake_y0 - wake_angle_dots).max(0),
-        );
-        // Lower wake line
-        line(
-            grid,
-            stern_x.max(0),
-            wake_y0,
-            (stern_x - wake_len).max(0),
-            (wake_y0 + wake_angle_dots).min(dh as i32 - 1),
-        );
-        // Ripple dots along wake
-        for w in (0..wake_len as usize).step_by(4) {
-            let phase = w as f32 / wake_len as f32;
-            let spread = (phase * wake_angle_dots as f32) as i32;
-            let wx = stern_x - w as i32;
-            if wx >= 0 {
-                draw::dot_i(grid, wx, wake_y0 - spread / 2);
-                draw::dot_i(grid, wx, wake_y0 + spread / 2);
+        // Wave crests on the water below the hull, travelling with time
+        for (row, speed) in [(1, 5.0_f32), (3, 8.0)] {
+            let y = waterline + row;
+            let shift = (ctx.time * speed) as i32 + row * 4;
+            for x in 5..dw - 5 {
+                if (x + shift).rem_euclid(11) < 2 {
+                    draw::dot_i(grid, x, y);
+                }
             }
         }
 
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Ferry placement
+        let fx = lerp_i(4, dw - 36, p);
+        let top = waterline - FERRY.len() as i32 + 1;
+        stamp(grid, fx, top, &FERRY, 0, 0.0);
+
+        // V wake from the stern: near arm opens down toward the viewer, far
+        // arm runs flat toward the horizon; dashes stream away from the boat.
+        let wake_len = (fx - 4).clamp(0, 34);
+        let apex_x = fx - 1;
+        let apex_y = waterline + 1;
+        let flow = (ctx.time * 10.0) as i32;
+        for d in 0..wake_len {
+            if (d + flow).rem_euclid(4) == 3 {
+                continue;
+            }
+            let x = apex_x - d;
+            let near = apex_y + (d * 2 + 6) / 14;
+            draw::dot_i(grid, x, near.min(dh - 1));
+            if d % 2 == 0 {
+                draw::dot_i(grid, x, apex_y - (d + 8) / 16);
+            }
+        }
+        // Churned water at the stern
+        if (flow / 2) % 2 == 0 {
+            draw::dot_i(grid, fx - 2, waterline);
+            draw::dot_i(grid, fx - 3, waterline + 1);
+        } else {
+            draw::dot_i(grid, fx - 3, waterline);
+            draw::dot_i(grid, fx - 2, waterline + 1);
+        }
+
+        // Funnel smoke streaming back
+        for i in 0..3 {
+            let age = (ctx.time * 0.8 + i as f32 / 3.0).fract();
+            let sx = fx + 11 - (age * 14.0) as i32;
+            let sy = top - 1 - (age * 2.0) as i32;
+            hl(grid, sx - 1, sx + 1, sy);
+            if age > 0.4 {
+                draw::dot_i(grid, sx, sy - 1);
             }
         }
 
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 11. Bicycle
-//     Two spoked wheels advance rightward.  A pedal crank between them rotates
-//     with time.  Chain stays and seat tube connect the wheels.  Progress = how
-//     far the bicycle has traveled.  Wheel rotation rate = time * constant.
+//     A diamond-frame bicycle — chainstays, seat and down tubes, top tube,
+//     fork, saddle and handlebars — rolls rightward on two spoked wheels.
+//     Spokes spin and the pedal crank turns with time.  Progress = distance.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Bicycle;
@@ -2087,131 +2262,96 @@ impl ProgressStyle for Bicycle {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Two spoked wheels advance rightward; crank rotates between them; frame connects front to rear"
+        "Diamond-frame bicycle with saddle and handlebars rolls right on spoked wheels; spokes spin and the pedal crank turns"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let ground = dh - 1;
+        let r = ((dh - 7) / 2).max(2);
+        let ay = ground - 1 - r;
+        let wb = r * 2 + 10; // wheelbase
 
-        let ground_y = (dh as i32) - 1;
-        let wheel_r = ((dh as f32 * 0.30).max(3.0) as i32).max(3);
-        let axle_y = ground_y - wheel_r;
-
-        // Wheel separation
-        let wb = ((dw as f32 * 0.28).max(wheel_r as f32 * 2.0 + 2.0)) as i32;
-
-        // Bicycle center x: follows eased
-        let cx_lo = wb / 2;
-        let cx_hi = (dw as i32 - wb / 2 - 1).max(cx_lo);
-        let center_x =
-            ((ctx.eased * (dw as f32 - wb as f32 / 2.0)) as i32 + wb / 2).clamp(cx_lo, cx_hi);
-        let rear_x = center_x - wb / 2;
-        let front_x = center_x + wb / 2;
-
-        // Wheel spin angle
+        let rear = lerp_i(r + 1, dw - wb - r - 2, ctx.eased);
+        let front = rear + wb;
         let spin = ctx.time * 4.0;
 
-        // ── Rear wheel ──
-        circle(grid, rear_x, axle_y, wheel_r);
-        let n_spokes = 6usize;
-        for s in 0..n_spokes {
-            let a = s as f32 / n_spokes as f32 * 2.0 * PI + spin;
-            let sx = (rear_x as f32 + wheel_r as f32 * a.cos()) as i32;
-            let sy = (axle_y as f32 + wheel_r as f32 * a.sin()) as i32;
-            line(grid, rear_x, axle_y, sx, sy);
-        }
-
-        // ── Front wheel ──
-        circle(grid, front_x, axle_y, wheel_r);
-        for s in 0..n_spokes {
-            let a = s as f32 / n_spokes as f32 * 2.0 * PI + spin;
-            let sx = (front_x as f32 + wheel_r as f32 * a.cos()) as i32;
-            let sy = (axle_y as f32 + wheel_r as f32 * a.sin()) as i32;
-            line(grid, front_x, axle_y, sx, sy);
-        }
-
-        // ── Frame ──
-        // Seat tube: rear axle up to saddle
-        let saddle_y = axle_y - wheel_r * 2 / 3;
-        let saddle_x = rear_x + wb / 6;
-        draw::vline(
-            grid,
-            rear_x.max(0) as usize,
-            axle_y.max(0) as usize,
-            saddle_y.max(0).min(dh as i32 - 1) as usize,
-        );
-        // Saddle (horizontal)
-        draw::hline(
-            grid,
-            (saddle_x - wheel_r / 3).max(0) as usize,
-            (saddle_x + wheel_r / 3).min(dw as i32 - 1) as usize,
-            saddle_y.max(0) as usize,
-        );
-        // Top tube: saddle to stem
-        let stem_x = front_x - wb / 8;
-        let stem_y = axle_y - wheel_r * 2 / 3;
-        line(grid, saddle_x, saddle_y, stem_x, stem_y);
-        // Down tube: saddle bottom to bottom bracket
-        let bb_x = center_x;
-        let bb_y = axle_y;
-        line(grid, saddle_x, saddle_y, bb_x, bb_y);
-        // Chain stay: bottom bracket to rear axle
-        line(grid, bb_x, bb_y, rear_x, axle_y);
-        // Fork: stem down to front axle
-        line(grid, stem_x, stem_y, front_x, axle_y);
-        // Handlebar (short horizontal above stem)
-        let hb_y = stem_y - 1;
-        draw::hline(
-            grid,
-            (stem_x - wheel_r / 4).max(0) as usize,
-            (stem_x + wheel_r / 4).min(dw as i32 - 1) as usize,
-            hb_y.max(0) as usize,
-        );
-
-        // ── Crank (at bottom bracket) ──
-        let crank_len = (wheel_r / 2).max(2);
-        let crank_a = spin * 1.5;
-        let crank_ex = (bb_x as f32 + crank_len as f32 * crank_a.cos()) as i32;
-        let crank_ey = (bb_y as f32 + crank_len as f32 * crank_a.sin()) as i32;
-        line(grid, bb_x, bb_y, crank_ex, crank_ey);
-        // Second crank arm (180° offset)
-        let crank_bx = (bb_x as f32 - crank_len as f32 * crank_a.cos()) as i32;
-        let crank_by = (bb_y as f32 - crank_len as f32 * crank_a.sin()) as i32;
-        line(grid, bb_x, bb_y, crank_bx, crank_by);
-        // Pedals
-        draw::dot_i(grid, crank_ex - 1, crank_ey);
-        draw::dot_i(grid, crank_ex, crank_ey);
-        draw::dot_i(grid, crank_ex + 1, crank_ey);
-        draw::dot_i(grid, crank_bx - 1, crank_by);
-        draw::dot_i(grid, crank_bx, crank_by);
-        draw::dot_i(grid, crank_bx + 1, crank_by);
-
-        // ── Ground ──
-        draw::hline(grid, 0, dw - 1, ground_y as usize);
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx in 0..filled.min(cw) {
-            let t = cx as f32 / cw.max(1) as f32;
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        for wx in [rear, front] {
+            circle(grid, wx, ay, r);
+            for s in 0..3 {
+                let a = spin + s as f32 * 2.0 * PI / 3.0;
+                let sx = wx + ((r - 1) as f32 * a.cos()).round() as i32;
+                let sy = ay + ((r - 1) as f32 * a.sin()).round() as i32;
+                line(grid, wx, ay, sx, sy);
             }
         }
 
+        // Frame key points
+        let bb = (rear + wb * 9 / 20, ay + 1); // bottom bracket
+        let seat = (rear + wb / 3, ay - r - 1); // seat cluster
+        let head = (front - wb / 6, ay - r - 1); // head tube top
+        let head_lo = (front - wb / 7, ay - r + 1);
+        line(grid, rear, ay, bb.0, bb.1); // chainstay
+        line(grid, rear, ay, seat.0, seat.1); // seatstay
+        line(grid, bb.0, bb.1, seat.0, seat.1); // seat tube
+        line(grid, seat.0, seat.1, head.0, head.1); // top tube
+        line(grid, bb.0, bb.1, head_lo.0, head_lo.1); // down tube
+        line(grid, head.0, head.1, front, ay); // fork
+
+        // Saddle on a short post
+        draw::dot_i(grid, seat.0 - 1, seat.1 - 1);
+        hl(grid, seat.0 - 3, seat.0, seat.1 - 2);
+        // Stem + handlebars sweeping back
+        draw::dot_i(grid, head.0 - 1, head.1 - 1);
+        hl(grid, head.0 - 3, head.0 - 1, head.1 - 2);
+        draw::dot_i(grid, head.0 - 4, head.1 - 1);
+
+        // Crank + pedals around the bottom bracket
+        let crank = (r / 2).max(2) as f32;
+        let ca = spin * 0.8;
+        for sgn in [1.0_f32, -1.0] {
+            let ex = bb.0 + (sgn * crank * ca.cos()).round() as i32;
+            let ey = bb.1 + (sgn * crank * ca.sin()).round() as i32;
+            line(grid, bb.0, bb.1, ex, ey);
+            hl(grid, ex - 1, ex + 1, ey);
+        }
+
+        // Road with dashes scrolling back under the wheels
+        let shift = (ctx.time * 12.0) as i32;
+        for x in 0..dw {
+            if (x + shift).rem_euclid(6) < 4 {
+                draw::dot_i(grid, x, ground);
+            }
+        }
+
+        tint_progress(grid, ctx);
         Ok(())
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 12. Helicopter
-//     A fuselage (horizontal elongated body) with a tail boom extending right.
-//     Above the body: the main rotor — two blades that spin rapidly with time.
-//     At the tail tip: the tail rotor (small spinning disk).
-//     The whole helicopter rises as progress grows (y tracks eased).
+//     Side view: bubble cabin with a windscreen, tapering tail boom with fin
+//     and tail rotor, skids on struts, and a two-blade main rotor whose
+//     visible span sweeps with time.  It lifts off a helipad and climbs to
+//     the right as progress grows, kicking up downwash while low.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Helicopter body, nose to the right (26 x 9 dots).
+const HELI: [&str; 9] = [
+    ".#.................#",
+    ".##.............######",
+    ".###..........#######..#",
+    ".############.#######....#",
+    "..#.....##################",
+    "..............###########",
+    "................#######",
+    "...............#.....#",
+    "............##########.#",
+];
 
 struct Helicopter;
 impl ProgressStyle for Helicopter {
@@ -2222,131 +2362,66 @@ impl ProgressStyle for Helicopter {
         "transit"
     }
     fn describe(&self) -> &str {
-        "Helicopter fuselage rises as progress grows; main rotor blades spin; tail rotor whirls"
+        "Helicopter with bubble cabin, tail boom, tail rotor and skids lifts off a pad and climbs right; the main rotor sweeps and downwash kicks up"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
+        let (dw, dh) = (dw as i32, dh as i32);
+        let p = ctx.eased.clamp(0.0, 1.0);
+        let ground = dh - 1;
 
-        // ── Helicopter vertical position (rises with eased) ──
-        let min_y = (dh as i32 / 4).max(2); // highest point (top quarter)
-        let max_y = (dh as i32 * 3 / 4).max(min_y + 1); // lowest point (bottom quarter)
-        let body_y = (max_y as f32 - (max_y - min_y) as f32 * ctx.eased) as i32;
+        // Helipad: ground line with a raised pad on the left
+        hl(grid, 0, dw - 1, ground);
+        hl(grid, 2, 26, ground - 1);
 
-        // Helicopter is centered horizontally
-        let cx = (dw / 2) as i32;
+        // Placement: lift off, then climb and fly right
+        let rest_top = ground - 1 - HELI.len() as i32; // skids on the pad
+        let lift = (p * 4.0).min(1.0);
+        let alt = (lift * 2.0 + p * (rest_top as f32 - 1.0).max(0.0)) as i32;
+        let hover = if p > 0.02 {
+            ((ctx.time * 2.5).sin() * 0.8).round() as i32
+        } else {
+            0
+        };
+        let x = lerp_i(2, dw - 26, p);
+        let y = rest_top - alt + hover;
+        let tilt = if p > 0.05 { -0.06 } else { 0.0 }; // nose down in forward flight
+        stamp(grid, x, y, &HELI, 13, tilt);
 
-        let body_w = ((dw as f32 * 0.25).max(6.0)) as i32;
-        let body_h = ((dh as f32 * 0.12).max(2.0)) as i32;
-        let tail_len = ((dw as f32 * 0.25).max(4.0)) as i32;
+        // Main rotor: two blades seen edge-on — visible span sweeps with time,
+        // faint tip marks hint at the full rotor disk.
+        let mast_x = x + 19;
+        let rotor_y = y - 1;
+        let big_r = 14_i32;
+        let ang = ctx.time * 9.0;
+        let span = (big_r as f32 * ang.cos().abs()).round() as i32;
+        hl(grid, mast_x - span, mast_x + span, rotor_y);
+        draw::dot_i(grid, mast_x - big_r, rotor_y);
+        draw::dot_i(grid, mast_x + big_r, rotor_y);
 
-        // ── Fuselage (filled rectangle) ──
-        let body_x0 = cx - body_w / 2;
-        let body_x1 = cx + body_w / 2;
-        for y in body_y..=(body_y + body_h).min(dh as i32 - 1) {
-            draw::hline(
-                grid,
-                body_x0.max(0) as usize,
-                body_x1.min(dw as i32 - 1).max(0) as usize,
-                y.max(0) as usize,
-            );
-        }
+        // Tail rotor at the fin: a short spinning blade
+        let ta = ctx.time * 13.0;
+        let (tx, ty) = (x + 1, y + 1);
+        let ex = (2.0 * ta.cos()).round() as i32;
+        let ey = (2.0 * ta.sin()).round() as i32;
+        line(grid, tx - ex, ty - ey, tx + ex, ty + ey);
 
-        // ── Cockpit dome (small half-disk on the front / left) ──
-        let dome_cx = body_x0 + body_w / 5;
-        let dome_r = (body_h * 2 / 3).max(1);
-        let dome_top = body_y - dome_r;
-        for dy in 0..dome_r {
-            let half_w = ((1.0 - dy as f32 / dome_r as f32) * dome_r as f32) as i32;
-            let y = dome_top + dy;
-            if y >= 0 {
-                draw::hline(
-                    grid,
-                    (dome_cx - half_w).max(0) as usize,
-                    (dome_cx + half_w).min(dw as i32 - 1).max(0) as usize,
-                    y as usize,
-                );
+        // Downwash: dust dashes blown outward along the ground while low
+        if alt < 5 {
+            let spread = (ctx.time * 10.0) as i32 % 6;
+            let c = x + 18;
+            for side in [-1, 1] {
+                for k in 0..2 {
+                    let d = 6 + spread + k * 6;
+                    hl(grid, c + side * d, c + side * (d + 1), ground - 1);
+                }
             }
         }
 
-        // ── Tail boom (thin horizontal line extending right from fuselage) ──
-        let boom_y = body_y + body_h / 2;
-        let tail_tip = body_x1 + tail_len;
-        draw::hline(
-            grid,
-            body_x1.max(0) as usize,
-            tail_tip.min(dw as i32 - 1).max(0) as usize,
-            boom_y.max(0).min(dh as i32 - 1) as usize,
-        );
-        // Tail fin (short vertical at the tip)
-        let fin_h = (body_h * 2).max(2);
-        draw::vline(
-            grid,
-            tail_tip.max(0).min(dw as i32 - 1) as usize,
-            (boom_y - fin_h / 2).max(0) as usize,
-            (boom_y + fin_h / 2).min(dh as i32 - 1) as usize,
-        );
-
-        // ── Main rotor (two blades, 90° apart, spinning fast) ──
-        let rotor_y = body_y - 1;
-        let rotor_r = ((dw as f32 * 0.38).max(4.0)) as i32;
-        let rotor_spin = ctx.time * 8.0 * PI; // fast spin
-
-        for blade_i in 0..2 {
-            let angle = rotor_spin + blade_i as f32 * PI;
-            let rx = (cx as f32 + rotor_r as f32 * angle.cos()) as i32;
-            let ry = (rotor_y as f32 + rotor_r as f32 * angle.sin() * 0.2) as i32;
-            line(grid, cx, rotor_y, rx, ry);
-        }
-        // Rotor hub
-        disk(grid, cx, rotor_y, 1);
-
-        // ── Tail rotor (small, vertical, at tail tip) ──
-        let tr_r = (fin_h / 3).max(1);
-        let tr_spin = ctx.time * 12.0 * PI;
-        let tr_cx = tail_tip.min(dw as i32 - 2);
-        let tr_cy = boom_y;
-        for blade_i in 0..2 {
-            let angle = tr_spin + blade_i as f32 * PI;
-            let tx = (tr_cx as f32 + tr_r as f32 * angle.cos() * 0.2) as i32;
-            let ty = (tr_cy as f32 + tr_r as f32 * angle.sin()) as i32;
-            line(grid, tr_cx, tr_cy, tx, ty);
-        }
-
-        // ── Landing skids ──
-        let skid_y = (body_y + body_h + 1).min(dh as i32 - 1);
-        let skid_l0 = (body_x0 - body_w / 6).max(0) as usize;
-        let skid_l1 = (body_x0 + body_w / 4).min(dw as i32 - 1).max(0) as usize;
-        let skid_r0 = (body_x1 - body_w / 4).max(0) as usize;
-        let skid_r1 = (body_x1 + body_w / 6).min(dw as i32 - 1).max(0) as usize;
-        draw::hline(grid, skid_l0, skid_l1, skid_y.max(0) as usize);
-        draw::hline(grid, skid_r0, skid_r1, skid_y.max(0) as usize);
-        // Struts: short verticals connecting body bottom to skid
-        draw::vline(
-            grid,
-            (body_x0 + body_w / 5).max(0) as usize,
-            (body_y + body_h).max(0) as usize,
-            skid_y.max(0) as usize,
-        );
-        draw::vline(
-            grid,
-            (body_x1 - body_w / 5).max(0) as usize,
-            (body_y + body_h).max(0) as usize,
-            skid_y.max(0) as usize,
-        );
-
-        // Color
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cx_cell in 0..filled.min(cw) {
-            let t = cx_cell as f32 / cw.max(1) as f32;
-            for cy_cell in 0..ch {
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
-            }
-        }
-
+        tint_progress(grid, ctx);
         Ok(())
     }
 }

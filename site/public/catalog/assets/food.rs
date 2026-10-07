@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -848,11 +883,21 @@ pub mod styles {
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
+/// Set dot `(x, y)` and tint its cell `c`. Colour is one per cell (2×4 dots),
+/// so the last object drawn over a cell decides its colour.
+fn px(grid: &mut BrailleGrid, x: i32, y: i32, c: Color) {
+    if x >= 0 && y >= 0 {
+        draw::dot_i(grid, x, y);
+        let (cx, cy) = (x as usize / 2, y as usize / 4);
+        draw::tint_row(grid, cy, cx, cx, c);
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Deterministic hash — gives pseudo-random f32 in [0, 1) from any u32 seed.
+// Deterministic hash — gives a pseudo-random u32 from any u32 seed.
 // ---------------------------------------------------------------------------
 #[inline]
 fn hash(n: u32) -> u32 {
@@ -861,16 +906,12 @@ fn hash(n: u32) -> u32 {
     x.wrapping_mul(2_246_822_519)
 }
 
-#[inline]
-fn hashf(n: u32) -> f32 {
-    (hash(n) % 1_000) as f32 / 1_000.0
-}
-
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
-/// Beer glass filling with a foam head and rising bubbles.
+/// Glass beer mugs with handles, filling amber one after another under a
+/// white foam head; bubbles rise through the beer over time.
 struct BeerGlass;
 impl ProgressStyle for BeerGlass {
     fn name(&self) -> &str {
@@ -880,87 +921,77 @@ impl ProgressStyle for BeerGlass {
         "food"
     }
     fn describe(&self) -> &str {
-        "Beer glass fills with amber liquid; foam head and rising bubbles animate over time"
+        "Row of glass beer mugs with handles filling amber in turn; foam heads and rising bubbles"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 8 || h < 6 {
             return Ok(());
         }
-
-        // Glass outline — tapered slightly: wider at top, narrower at base.
-        let left = 1usize;
-        let right = w.saturating_sub(2);
-        // Left and right walls
-        draw::vline(grid, left, 0, h - 1);
-        draw::vline(grid, right, 0, h - 1);
-        // Base
-        draw::hline(grid, left, right, h - 1);
-
-        // Liquid level from the bottom, driven by eased progress.
-        let liquid_h = (ctx.eased * (h - 2) as f32).round() as usize;
-        let liquid_top = h.saturating_sub(1).saturating_sub(liquid_h);
-        if liquid_h > 0 {
-            draw::fill_rect(
-                grid,
-                left + 1,
-                liquid_top,
-                right.saturating_sub(left + 1).max(1),
-                liquid_h,
-            );
-        }
-
-        // Foam head: 1–2 dot rows above the liquid.
-        let foam_rows = ((ctx.eased * 2.0).round() as usize).min(2);
-        for fr in 0..foam_rows {
-            let fy = liquid_top.saturating_sub(fr + 1);
-            // Bumpy foam: dots spaced every 2.
-            let mut fx = left + 1;
-            while fx < right {
-                draw::dot(grid, fx, fy);
-                fx += 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let n = (wi / 28).max(1);
+        let pitch = wi / n;
+        let bw = ((pitch - 10).clamp(4, 18)) & !1;
+        let glass = Color::rgb(175, 200, 220);
+        let beer = Color::rgb(240, 165, 30);
+        let foam = Color::rgb(250, 248, 235);
+        let ih = hi - 2;
+        for i in 0..n {
+            let x0 = (pitch * i + (pitch - bw - 6) / 2) | 1;
+            let x1 = x0 + bw + 1;
+            let f = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            // Glass: walls, base, and a D-shaped handle on the right.
+            for y in 1..hi {
+                px(grid, x0, y, glass);
+                px(grid, x1, y, glass);
             }
-        }
-
-        // Bubbles: small dots that rise from the bottom of the liquid.
-        if liquid_h > 1 {
-            let bubble_count = 4usize;
-            for i in 0..bubble_count {
-                let bx = left
-                    + 1
-                    + (hashf(i as u32) * (right.saturating_sub(left + 2)).max(1) as f32) as usize;
-                // Period varies per bubble so they don't all move in sync.
-                let period = 1.5 + hashf(i as u32 + 100) * 2.0;
-                let phase = hashf(i as u32 + 200);
-                let t = (ctx.time / period + phase).fract();
-                // Only show bubble while it's inside the liquid column.
-                let by_raw = liquid_top + ((1.0 - t) * liquid_h as f32) as usize;
-                if by_raw < h.saturating_sub(1) {
-                    draw::dot(grid, bx.min(right.saturating_sub(1)), by_raw);
+            for x in x0..=x1 {
+                px(grid, x, hi - 1, glass);
+            }
+            let (hy0, hy1) = (4.min(hi - 2), (hi - 4).max(4));
+            for x in x1..=x1 + 4 {
+                px(grid, x, hy0, glass);
+                px(grid, x, hy1, glass);
+            }
+            for y in hy0..=hy1 {
+                px(grid, x1 + 4, y, glass);
+            }
+            // Beer from the bottom up; the top two rows are foam.
+            let level = (f * ih as f32).round() as i32;
+            if level <= 0 {
+                continue;
+            }
+            let top = hi - 1 - level;
+            // Bottom-up, so the foam owns the colour of the cell it shares.
+            for y in (top..hi - 1).rev() {
+                for x in x0 + 1..x1 {
+                    let foamy = y < top + 2 && level > 2;
+                    // Bubbles: negative-space dots rising on fixed columns.
+                    let col = (x - x0 - 1) % 5 == (i % 5) + 1;
+                    let rise = ((ctx.time * 5.0) as i32 + x * 3) % level.max(1);
+                    if !foamy && col && y == hi - 2 - rise {
+                        continue;
+                    }
+                    px(grid, x, y, if foamy { foam } else { beer });
+                }
+            }
+            // A full mug's head domes up over the rim.
+            if f >= 1.0 {
+                for x in x0..=x1 {
+                    if (x + (ctx.time * 4.0) as i32) % 3 != 0 {
+                        px(grid, x, 0, foam);
+                    }
                 }
             }
         }
-
-        // Palette tint — amber/gold over the liquid rows.
-        let (cw, ch) = grid.dimensions();
-        let liq_cell_top = liquid_top / 4;
-        for cy in liq_cell_top..ch {
-            let t = if liquid_h == 0 {
-                0.5
-            } else {
-                (cy.saturating_sub(liq_cell_top)) as f32 / ch.max(1) as f32
-            };
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Coffee cup filling with steam wisps drifting upward.
+/// A coffee pot travels along a row of mugs, pouring a stream into each in
+/// turn; filled mugs steam.
 struct CoffeePour;
 impl ProgressStyle for CoffeePour {
     fn name(&self) -> &str {
@@ -970,81 +1001,93 @@ impl ProgressStyle for CoffeePour {
         "food"
     }
     fn describe(&self) -> &str {
-        "Coffee cup fills with dark brew; sinusoidal steam wisps drift upward as it warms"
+        "Coffee pot pours a wavering stream into a row of mugs one by one; full mugs steam"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 6 || h < 4 {
+        if w < 8 || h < 12 {
             return Ok(());
         }
-
-        // Cup outline.
-        let left = w / 6;
-        let right = w.saturating_sub(w / 6 + 1);
-        draw::hline(grid, left, right, h - 1); // base
-        draw::vline(grid, left, h / 3, h - 1); // left wall
-        draw::vline(grid, right, h / 3, h - 1); // right wall
-        draw::hline(grid, left, right, h / 3); // rim
-
-        // Handle: a small arc on the right side.
-        let hx = right + 1;
-        let hmid = (h / 3 + h - 1) / 2;
-        draw::dot(grid, hx.min(w - 1), hmid.saturating_sub(1));
-        draw::dot(grid, hx.min(w - 1), hmid);
-        draw::dot(grid, hx.min(w - 1), hmid + 1);
-
-        // Coffee fill from bottom of cup up.
-        let cup_inner_h = h.saturating_sub(h / 3 + 2);
-        let fill_h = (ctx.eased * cup_inner_h as f32).round() as usize;
-        if fill_h > 0 {
-            let fill_top = h.saturating_sub(1).saturating_sub(fill_h);
-            draw::fill_rect(
-                grid,
-                left + 1,
-                fill_top,
-                right.saturating_sub(left + 1).max(1),
-                fill_h,
-            );
-        }
-
-        // Steam wisps above the cup: sine waves drifting up with time.
-        let wisp_count = 3usize;
-        let steam_amount = ctx.eased;
-        for i in 0..wisp_count {
-            if steam_amount < (i as f32 * 0.3) {
-                continue;
+        let (wi, hi) = (w as i32, h as i32);
+        let n = (wi / 22).max(1);
+        let pitch = wi / n;
+        let mug = Color::rgb(235, 235, 240);
+        let coffee = Color::rgb(130, 75, 35);
+        let crema = Color::rgb(205, 150, 90);
+        let pot = Color::rgb(150, 160, 175);
+        let steam = Color::rgb(170, 170, 185);
+        let top = hi - 8;
+        let pour = ctx.eased * n as f32;
+        let current = (pour as i32).min(n - 1);
+        for i in 0..n {
+            let x0 = (pitch * i + (pitch - 16) / 2) | 1;
+            let x1 = x0 + 11;
+            let f = (pour - i as f32).clamp(0.0, 1.0);
+            // Mug: walls, base, and a handle on the right.
+            for y in top..hi {
+                px(grid, x0, y, mug);
+                px(grid, x1, y, mug);
             }
-            let base_x =
-                left + 1 + i * ((right.saturating_sub(left + 1)).max(3) / (wisp_count).max(1));
-            let phase = (i as f32) * 2.0 * PI / wisp_count as f32;
-            let rise_speed = 0.8 + i as f32 * 0.3;
-            for dot_y in 0..h / 3 {
-                // Phase advances with time to make the wisp drift upward.
-                let t = dot_y as f32 / (h / 3).max(1) as f32;
-                let drift_t = (ctx.time * rise_speed + t * 3.0 + phase).sin() * 2.0;
-                let sx = base_x as i32 + drift_t as i32;
-                // Fade out near top (only draw some dots for wispiness).
-                let density = ((1.0 - t) * 3.0) as usize;
-                if dot_y % (density.max(1)) == 0 {
-                    draw::dot_i(grid, sx, dot_y as i32);
+            for x in x0..=x1 {
+                px(grid, x, hi - 1, mug);
+            }
+            for &(dx, dy) in &[(1, 1), (2, 1), (3, 2), (3, 3), (3, 4), (2, 5), (1, 5)] {
+                px(grid, x1 + dx, top + dy, mug);
+            }
+            // Coffee level, crema on top.
+            let level = (f * (hi - 1 - top) as f32).round() as i32;
+            for y in (hi - 1 - level..hi - 1).rev() {
+                for x in x0 + 1..x1 {
+                    let c = if y == hi - 1 - level { crema } else { coffee };
+                    px(grid, x, y, c);
+                }
+            }
+            // Full mugs give off two curling wisps of steam.
+            if f >= 1.0 && i != current {
+                for k in 0..2 {
+                    for y in 1..top - 1 {
+                        let sx = x0
+                            + 3
+                            + k * 5
+                            + ((ctx.time * 3.0 + y as f32 * 0.9 + k as f32 * 2.0).sin() * 1.3)
+                                .round() as i32;
+                        if (y + (ctx.time * 6.0) as i32 + k) % 3 != 0 {
+                            px(grid, sx, y, steam);
+                        }
+                    }
                 }
             }
         }
-
-        // Palette tint over the fill area.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        // The pot hovers above the mug being filled, tipped toward its spout.
+        if ctx.eased < 1.0 {
+            let x0 = (pitch * current + (pitch - 16) / 2) | 1;
+            let sx = x0 + 6;
+            let bx = sx - 8;
+            for y in 0..4 {
+                for x in bx + y / 2..bx + 7 - y / 2 {
+                    px(grid, x, y, pot);
+                }
+            }
+            px(grid, bx - 1, 1, pot);
+            px(grid, bx - 1, 2, pot);
+            px(grid, bx + 7, 2, pot);
+            px(grid, sx - 1, 3, pot);
+            // Wavering stream from the spout down to the coffee surface.
+            let f = (pour - current as f32).clamp(0.0, 1.0);
+            let surface = hi - 1 - (f * (hi - 1 - top) as f32).round() as i32;
+            for y in 4..surface {
+                let wob = ((ctx.time * 12.0 + y as f32).sin() * 0.6).round() as i32;
+                px(grid, sx + wob, y, coffee);
+            }
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Pizza being eaten: slices disappear as progress rises.
+/// Pizza slices served one by one: crust along the top, cheese tapering to a
+/// point, pepperoni; the slice being served drips a stretchy cheese string.
 struct PizzaSlices;
 impl ProgressStyle for PizzaSlices {
     fn name(&self) -> &str {
@@ -1054,80 +1097,72 @@ impl ProgressStyle for PizzaSlices {
         "food"
     }
     fn describe(&self) -> &str {
-        "Pizza loses slices as progress climbs — radial wedges removed from 8-slice pie"
+        "Row of pepperoni pizza slices served in turn; the newest one stretches a swaying cheese string"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 8 || h < 6 {
             return Ok(());
         }
-
-        let cx = w / 2;
-        let cy = h / 2;
-        let r = (w.min(h) / 2).saturating_sub(1).max(1);
-
-        // How many slices remain (out of 8). At progress=0 → 8 slices, at 1 → 0.
-        let total_slices = 8usize;
-        let eaten = (ctx.eased * total_slices as f32).round() as usize;
-        let remaining = total_slices.saturating_sub(eaten);
-
-        // Draw filled wedges for remaining slices.
-        let slice_angle = 2.0 * PI / total_slices as f32;
-        // Rotate so we start at the top.
-        let start_offset = -PI / 2.0;
-
-        for s in 0..remaining {
-            let a0 = start_offset + s as f32 * slice_angle;
-            let a1 = a0 + slice_angle;
-            // Rasterise the wedge by scanning all dots in bounding box.
-            for dy in 0..h {
-                for dx in 0..w {
-                    let fx = dx as f32 - cx as f32;
-                    let fy = dy as f32 - cy as f32;
-                    let dist = (fx * fx + fy * fy).sqrt();
-                    if dist > r as f32 {
-                        continue;
-                    }
-                    let mut angle = fy.atan2(fx);
-                    // Normalise angle into [a0, a1] range.
-                    // atan2 ∈ [-π, π] and a0 < 3π/2, so this runs at most twice.
-                    #[allow(clippy::while_float)]
-                    while angle < a0 {
-                        angle += 2.0 * PI;
-                    }
-                    if angle <= a1 {
-                        draw::dot(grid, dx, dy);
+        let (wi, hi) = (w as i32, h as i32);
+        let n = (wi / 18).max(1);
+        let pitch = wi / n;
+        let crust = Color::rgb(200, 130, 60);
+        let cheese = Color::rgb(255, 210, 80);
+        let pep_c = Color::rgb(210, 40, 40);
+        let dim = Color::rgb(90, 85, 80);
+        let sh = (hi - 2).max(3);
+        let served = ctx.eased * n as f32;
+        for i in 0..n {
+            let cx = (pitch * i + pitch / 2) & !1;
+            let f = (served - i as f32).clamp(0.0, 1.0);
+            // Rows filled from the crust down for the slice being served.
+            let rows = (f * sh as f32).ceil() as i32;
+            for row in 0..sh {
+                let hw = ((sh - row) as f32 * 7.0 / sh as f32).round() as i32;
+                let y = row;
+                for dx in -hw..=hw {
+                    let x = cx + dx;
+                    let edge = dx.abs() == hw;
+                    if row < rows {
+                        // Crust fills the first cell row; two cell-aligned
+                        // pepperoni rounds sit in the cheese with a gap rim.
+                        let pep = matches!((dx, row), (-4..=-3, 5..=6) | (2..=3, 9..=10));
+                        let rim = matches!((dx, row), (-4..=-3, 4 | 7) | (2..=3, 8 | 11));
+                        let c = if row < 4 {
+                            crust
+                        } else if pep {
+                            pep_c
+                        } else {
+                            cheese
+                        };
+                        if !rim && (row != 0 || (dx + 30) % 3 != 0) {
+                            px(grid, x, y, c);
+                        }
+                    } else if edge || row == 0 {
+                        px(grid, x, y, dim);
                     }
                 }
             }
-        }
-
-        // Crust ring.
-        for dot_y in 0..h {
-            for dot_x in 0..w {
-                let fx = dot_x as f32 - cx as f32;
-                let fy = dot_y as f32 - cy as f32;
-                let dist = (fx * fx + fy * fy).sqrt();
-                if dist >= r as f32 && dist <= r as f32 + 1.0 {
-                    draw::dot(grid, dot_x, dot_y);
+            // Cheese string below the slice being served.
+            if f > 0.0 && f < 1.0 {
+                let sway = (ctx.time * 3.0 + i as f32).sin();
+                let y0 = rows.min(sh);
+                for y in y0..hi {
+                    let t = (y - y0) as f32 / (hi - y0).max(1) as f32;
+                    px(grid, cx + (sway * t * 3.0).round() as i32, y, cheese);
                 }
             }
         }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let color = ctx.palette.sample(cy_c as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Boiling pot: liquid heat-fills from bottom, bubbles pop at the surface.
+/// Boiling pot: a steel stock pot with a lipped rim and side handles; the
+/// water rises with progress, bubbles stream up through it and burst at the
+/// surface, and steam curls over the rim once it is near the boil.
 struct BoilingPot;
 impl ProgressStyle for BoilingPot {
     fn name(&self) -> &str {
@@ -1137,78 +1172,81 @@ impl ProgressStyle for BoilingPot {
         "food"
     }
     fn describe(&self) -> &str {
-        "Pot fills with boiling liquid; bubbles pop vigorously at the surface driven by time"
+        "Steel pot with handles fills with bubbling water; bubbles burst at the surface and steam rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 12 || h < 8 {
             return Ok(());
         }
-
-        // Pot outline: rounded bottom, straight walls, rim with handles.
-        let left = 2usize;
-        let right = w.saturating_sub(3);
-        let rim = 1usize;
-        let base = h - 1;
-
-        // Pot walls.
-        draw::vline(grid, left, rim, base);
-        draw::vline(grid, right, rim, base);
-        // Pot base.
-        draw::hline(grid, left + 1, right.saturating_sub(1), base);
-        // Rim.
-        draw::hline(grid, left, right, rim);
-        // Handles.
-        draw::dot(grid, left.saturating_sub(1), rim);
-        draw::dot(grid, left.saturating_sub(1), rim + 1);
-        draw::dot(grid, right + 1, rim);
-        draw::dot(grid, right + 1, rim + 1);
-
-        // Fill: liquid from base upward.
-        let inner_w = right.saturating_sub(left + 1).max(1);
-        let inner_h = base.saturating_sub(rim + 1).max(1);
-        let fill_h = (ctx.eased * inner_h as f32).round() as usize;
-        if fill_h > 0 {
-            let fill_top = base.saturating_sub(fill_h);
-            draw::fill_rect(grid, left + 1, fill_top, inner_w, fill_h);
-
-            // Bubbles at the surface: time-driven pop timing.
-            let surface_y = fill_top;
-            let bubble_count = 6usize;
-            for i in 0..bubble_count {
-                let bx_frac = hashf(i as u32 + 77);
-                let bx = left + 1 + (bx_frac * (inner_w.saturating_sub(1)) as f32) as usize;
-                // Each bubble pops on its own period.
-                let period = 0.4 + hashf(i as u32 + 200) * 0.8;
-                let t = (ctx.time / period + hashf(i as u32 + 300)).fract();
-                // Pop arc: rises a few dots above the surface then disappears.
-                if t < 0.5 {
-                    let rise = (t * 2.0 * PI).sin(); // 0..0 parabola via sine half-wave
-                    let bubble_y = surface_y as i32 - (rise * 3.0) as i32;
-                    draw::dot_i(grid, bx as i32, bubble_y);
-                    // Small splat ring at apex.
-                    if t > 0.3 && t < 0.45 {
-                        draw::dot_i(grid, bx as i32 - 1, bubble_y);
-                        draw::dot_i(grid, bx as i32 + 1, bubble_y);
+        let (wi, hi) = (w as i32, h as i32);
+        let steel = Color::rgb(160, 170, 185);
+        let water = Color::rgb(60, 145, 235);
+        let foam = Color::rgb(210, 235, 255);
+        let steam = Color::rgb(175, 175, 190);
+        let pw = (wi * 6 / 10).max(6);
+        let x0 = (wi - pw) / 2;
+        let x1 = x0 + pw;
+        let rim = (hi / 3).max(2);
+        // Pot: walls, base, lipped rim, loop handles.
+        for y in rim..hi {
+            px(grid, x0, y, steel);
+            px(grid, x1, y, steel);
+        }
+        for x in x0 - 2..=x1 + 2 {
+            px(grid, x, rim, steel);
+        }
+        for x in x0..=x1 {
+            px(grid, x, hi - 1, steel);
+        }
+        for &(dx, dy) in &[(1, 2), (2, 2), (3, 2), (3, 3), (3, 4), (2, 4), (1, 4)] {
+            px(grid, x0 - dx, rim + dy, steel);
+            px(grid, x1 + dx, rim + dy, steel);
+        }
+        // Water, with bubble gaps streaming upward on fixed columns.
+        let ih = hi - 2 - rim;
+        let level = (ctx.eased * ih as f32).round() as i32;
+        let surface = hi - 1 - level;
+        for y in surface..hi - 1 {
+            for x in x0 + 1..x1 {
+                let col = (x - x0) % 6 == 3;
+                let rise = ((ctx.time * 7.0) as i32 + x * 5) % (level + 2);
+                if col && y == hi - 2 - rise {
+                    continue;
+                }
+                px(grid, x, y, water);
+            }
+        }
+        if level > 0 {
+            // Bursting bubbles dance just above the surface.
+            for x in x0 + 1..x1 {
+                let pop = ((ctx.time * 9.0) as i32 + x * 7) % 9;
+                if pop == 0 || (pop == 1 && ctx.eased > 0.5) {
+                    px(grid, x, surface - 1, foam);
+                }
+            }
+        }
+        // Steam over the rim once the pot is past half full.
+        if ctx.eased > 0.5 {
+            for k in 0..3 {
+                let sx = x0 + pw * (k + 1) / 4;
+                for y in 0..rim - 1 {
+                    let wob = ((ctx.time * 3.0 + y as f32 * 0.8 + k as f32 * 2.0).sin() * 1.5)
+                        .round() as i32;
+                    if (y + (ctx.time * 6.0) as i32 + k) % 3 != 0 {
+                        px(grid, sx + wob, y, steam);
                     }
                 }
             }
         }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Sushi conveyor: plates slide right, count served = eased.
+/// Sushi conveyor belt: salmon and tamago nigiri ride a moving belt and
+/// fill it from the left as progress grows.
 struct SushiConveyor;
 impl ProgressStyle for SushiConveyor {
     fn name(&self) -> &str {
@@ -1218,81 +1256,86 @@ impl ProgressStyle for SushiConveyor {
         "food"
     }
     fn describe(&self) -> &str {
-        "Sushi plates slide along a conveyor belt; plates served scales with progress"
+        "Salmon and tamago nigiri glide along a moving conveyor belt that fills with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 6 || h < 3 {
+        if w < 8 || h < 8 {
             return Ok(());
         }
-
-        // Two belt rails.
-        let rail_top = 0usize;
-        let rail_bot = h.saturating_sub(1);
-        draw::hline(grid, 0, w - 1, rail_top);
-        draw::hline(grid, 0, w - 1, rail_bot);
-
-        // Belt notches (static texture).
-        let notch_gap = 4usize;
-        let mut nx = 0;
-        while nx < w {
-            draw::dot(grid, nx, rail_top + 1);
-            draw::dot(grid, nx, rail_bot.saturating_sub(1));
-            nx += notch_gap;
+        let (wi, hi) = (w as i32, h as i32);
+        let belt = Color::rgb(125, 125, 140);
+        let rice = Color::rgb(245, 245, 240);
+        let salmon = Color::rgb(250, 120, 70);
+        let nori = Color::rgb(40, 90, 60);
+        let egg = Color::rgb(250, 215, 70);
+        // Belt: rails plus tread marks that scroll with time.
+        let shift = (ctx.time * 8.0) as i32;
+        for x in 0..wi {
+            px(grid, x, hi - 3, belt);
+            px(grid, x, hi - 1, belt);
+            if (x - shift).rem_euclid(4) == 0 {
+                px(grid, x, hi - 2, belt);
+            }
         }
-
-        // Total plates to show on the belt at full progress.
-        let max_plates = (w / 10).max(2);
-        let served = (ctx.eased * max_plates as f32).round() as usize;
-
-        // Plate width/height in dots.
-        let pw = 6usize;
-        let ph = h.saturating_sub(2).max(2);
-        let plate_gap = (w / max_plates.max(1)).max(pw + 2);
-        let belt_speed = 8.0_f32; // dots per second
-
-        for i in 0..max_plates {
-            // Shift each plate with time so they slide right.
-            let base_x = i * plate_gap;
-            let scroll = (ctx.time * belt_speed) as usize % (w + pw);
-            let plate_x = (base_x + scroll) % (w + pw);
-
-            // Only draw plates that have been "served" (within eased count).
-            if i >= served {
+        // Dishes ride the belt; only those inside the filled span are shown.
+        let pitch = 16;
+        let travel = ctx.time * 8.0;
+        let off = (travel as i32).rem_euclid(pitch);
+        let base = (travel as i32).div_euclid(pitch);
+        let fill_x = ctx.eased * wi as f32;
+        let slots = wi / pitch + 2;
+        for k in 0..slots {
+            let x = (k - 1) * pitch + off + 2;
+            if (x + 6) as f32 > fill_x {
                 continue;
             }
-
-            let px0 = plate_x.min(w.saturating_sub(1));
-            // Plate oval: fill a rounded rect.
-            let ph_inner = ph.saturating_sub(2).max(1);
-            draw::fill_rect(grid, px0, 1 + 1, pw.min(w.saturating_sub(px0)), ph_inner);
-            // Plate border top/bottom.
-            draw::hline(grid, px0, (px0 + pw).min(w - 1), 1);
-            draw::hline(grid, px0, (px0 + pw).min(w - 1), 1 + ph_inner + 1);
-
-            // Nigiri topping: a small bump in the center of the plate.
-            let top_x = px0 + pw / 2;
-            if top_x < w {
-                draw::dot(grid, top_x, 2);
-                draw::dot(grid, top_x, 3);
+            if (k - base).rem_euclid(2) == 0 {
+                // Nigiri: rice block topped by a striped salmon slab.
+                for y in hi - 7..hi - 3 {
+                    for dx in 0..12 {
+                        let corner = (dx == 0 || dx == 11) && y == hi - 7;
+                        if !corner {
+                            px(grid, x + dx, y, rice);
+                        }
+                    }
+                }
+                for y in hi - 10..hi - 7 {
+                    for dx in -1..13 {
+                        let corner = (dx == -1 || dx == 12) && y == hi - 10;
+                        if !corner && (dx + y).rem_euclid(4) != 0 {
+                            px(grid, x + dx, y, salmon);
+                        }
+                    }
+                }
+            } else {
+                // Tamago: rice block, yellow omelette slab, nori belt. Drawn
+                // bottom-up so the omelette owns the cell it shares with rice.
+                for y in (hi - 10..hi - 3).rev() {
+                    for dx in 0..12 {
+                        let c = if (5..=6).contains(&dx) {
+                            nori
+                        } else if y < hi - 7 {
+                            egg
+                        } else {
+                            rice
+                        };
+                        let corner = (dx == 0 || dx == 11) && (y == hi - 10 || y == hi - 7);
+                        if !corner {
+                            px(grid, x + dx, y, c);
+                        }
+                    }
+                }
             }
         }
-
-        // Palette tint on belt rows.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = cy as f32 / ch.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Popcorn kernels launching on parabolic arcs, filling a box.
+/// Red-and-white striped popcorn boxes heaping up with fluffy popped kernels,
+/// one box after another; a fresh kernel pops out of the filling box.
 struct PopcornPopping;
 impl ProgressStyle for PopcornPopping {
     fn name(&self) -> &str {
@@ -1302,78 +1345,82 @@ impl ProgressStyle for PopcornPopping {
         "food"
     }
     fn describe(&self) -> &str {
-        "Kernels pop on random parabolic arcs; the box fills with fluffy popcorn as progress rises"
+        "Striped popcorn boxes heap up with fluffy kernels in turn while fresh ones pop into the air"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 8 || h < 8 {
             return Ok(());
         }
-
-        // Box outline.
-        draw::rect_outline(grid, 0, 0, w, h);
-
-        // Settled popcorn pile: fill from the bottom up, scaled by eased.
-        let pile_h = (ctx.eased * (h - 2) as f32).round() as usize;
-        if pile_h > 0 {
-            // Wavy top edge with small sine bumps.
-            let pile_top = h.saturating_sub(1).saturating_sub(pile_h);
-            draw::fill_rect(
-                grid,
-                1,
-                pile_top + 1,
-                w.saturating_sub(2).max(1),
-                pile_h.saturating_sub(1),
-            );
-            // Wavy surface: alternate dots on top row.
-            for px in (1..w.saturating_sub(1)).step_by(2) {
-                let wave = ((px as f32 * 0.7 + ctx.time * 0.5).sin() * 1.0) as i32;
-                draw::dot_i(grid, px as i32, pile_top as i32 + wave);
+        let (wi, hi) = (w as i32, h as i32);
+        let n = (wi / 22).max(1);
+        let pitch = wi / n;
+        let red = Color::rgb(225, 40, 45);
+        let white = Color::rgb(245, 240, 230);
+        let corn = Color::rgb(255, 235, 150);
+        let top = hi - 10;
+        // Kernel heap layout above the box mouth, filled in this order.
+        let heap = [
+            (-5, 1),
+            (0, 1),
+            (5, 1),
+            (-3, -2),
+            (3, -2),
+            (0, -4),
+            (-7, -1),
+            (7, -1),
+        ];
+        let puff = |grid: &mut BrailleGrid, kx: i32, ky: i32| {
+            for &(dx, dy) in &[
+                (0, -1),
+                (1, -1),
+                (-1, 0),
+                (0, 0),
+                (1, 0),
+                (2, 0),
+                (0, 1),
+                (1, 1),
+            ] {
+                px(grid, kx + dx, ky + dy, corn);
+            }
+        };
+        for i in 0..n {
+            let bx = pitch * i + pitch / 2;
+            let f = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            // Box: tapers from 16 dots at the mouth to 12 at the base, with
+            // vertical red stripes on white.
+            for y in top..hi {
+                let hw = 8 - (y - top) * 2 / 9;
+                for dx in -hw..=hw {
+                    let stripe = (dx + 16).rem_euclid(4) < 2;
+                    let edge = dx.abs() == hw || y == top || y == hi - 1;
+                    if stripe {
+                        px(grid, bx + dx, y, red);
+                    } else if edge {
+                        px(grid, bx + dx, y, white);
+                    }
+                }
+            }
+            // Heap of popped kernels grows with this box's share of progress.
+            let count = (f * heap.len() as f32).round() as usize;
+            for &(hx, hy) in heap.iter().take(count) {
+                puff(grid, bx + hx, top - 2 + hy);
+            }
+            // The box being filled pops a kernel on a little arc.
+            if f > 0.0 && f < 1.0 {
+                let ph = (ctx.time * 1.6 + i as f32).fract();
+                let kx = bx + ((ph - 0.5) * 14.0) as i32;
+                let ky = top - 2 - ((ph * PI).sin() * (top - 2) as f32) as i32;
+                puff(grid, kx, ky);
             }
         }
-
-        // Airborne popcorn: each kernel follows a parabolic arc.
-        let kernel_count = 8usize;
-        for i in 0..kernel_count {
-            // Each kernel has a random launch time offset.
-            let offset = hashf(i as u32) * 2.0;
-            let period = 0.6 + hashf(i as u32 + 50) * 0.7;
-            let t = ((ctx.time * 1.2 + offset) / period).fract();
-
-            // Only in the air during rising phase (t < 0.7).
-            if t > 0.7 {
-                continue;
-            }
-            if ctx.eased < hashf(i as u32 + 10) * 0.9 {
-                continue;
-            } // threshold before launch
-
-            // Horizontal: random x near center spread.
-            let lx = 2 + (hashf(i as u32 + 20) * (w.saturating_sub(4)) as f32) as usize;
-            // Vertical: parabola — peaks in the middle of the phase.
-            let up = -((t / 0.35 - 1.0).powi(2) - 1.0); // 0→1→0 arc
-            let ky = (h as f32 - 2.0) * (1.0 - up * 0.85) - 1.0;
-            let ky = ky as i32;
-
-            draw::dot_i(grid, lx as i32, ky);
-            draw::dot_i(grid, lx as i32 + 1, ky);
-            draw::dot_i(grid, lx as i32, ky - 1);
-        }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Egg hourglass: sand empties from top chamber, fills bottom chamber.
+/// Egg timers: a row of upright hourglasses that run one after another.
 struct EggTimer;
 impl ProgressStyle for EggTimer {
     fn name(&self) -> &str {
@@ -1383,83 +1430,70 @@ impl ProgressStyle for EggTimer {
         "food"
     }
     fn describe(&self) -> &str {
-        "Egg-timer hourglass drains sand from the top into the bottom as progress advances"
+        "Row of wooden-capped hourglass egg timers — each drains a trickle of sand from its top bulb into a growing heap, one after another"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 6 {
+        if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let mid_y = h / 2;
-        let cx = w / 2;
-
-        // Outer hourglass silhouette — two triangles meeting at the waist.
-        for dy in 0..mid_y {
-            let spread = ((1.0 - dy as f32 / mid_y as f32) * (cx as f32 - 1.0)).round() as usize;
-            let x0 = cx.saturating_sub(spread);
-            let x1 = (cx + spread).min(w - 1);
-            draw::dot(grid, x0, dy);
-            draw::dot(grid, x1, dy);
-        }
-        for dy in mid_y..h {
-            let spread =
-                (((dy - mid_y) as f32 / mid_y.max(1) as f32) * (cx as f32 - 1.0)).round() as usize;
-            let x0 = cx.saturating_sub(spread);
-            let x1 = (cx + spread).min(w - 1);
-            draw::dot(grid, x0, dy);
-            draw::dot(grid, x1, dy);
-        }
-        // Waist pinch (single dot at center for each side).
-        draw::dot(grid, cx.saturating_sub(1), mid_y);
-        draw::dot(grid, (cx + 1).min(w - 1), mid_y);
-
-        // Top sand (draining): fills from top downward, decreases as progress rises.
-        let top_fill = ((1.0 - ctx.eased) * (mid_y as f32 - 1.0)).round() as usize;
-        for row in 0..top_fill {
-            let spread =
-                ((1.0 - row as f32 / mid_y.max(1) as f32) * (cx as f32 - 2.0)).round() as usize;
-            let x0 = cx.saturating_sub(spread);
-            let x1 = (cx + spread).min(w - 1);
-            if x1 > x0 {
-                draw::hline(grid, x0 + 1, x1.saturating_sub(1), row);
+        let glass = Color::rgb(170, 200, 230);
+        let sand = Color::rgb(240, 200, 110);
+        let wood = Color::rgb(170, 110, 60);
+        let n = ((w as i32 + 9) / 22).max(1);
+        // Half-width of the glass at row `r` (1..=14): two bulbs pinched at 7/8.
+        let half = |r: i32| -> i32 {
+            let k = if r <= 7 { r } else { 15 - r };
+            (5.0 - (k - 1) as f32 * 0.75).round().max(1.0) as i32
+        };
+        for i in 0..n {
+            let x0 = i * 22 + 4;
+            let cx = x0 + 6;
+            let f = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            // Glass walls.
+            for r in 1..=14 {
+                px(grid, cx - half(r), r, glass);
+                px(grid, cx + half(r), r, glass);
+            }
+            // Top bulb: sand sits in the funnel and sinks as it drains.
+            let top_rows = ((1.0 - f) * 5.0).round() as i32;
+            for r in (8 - top_rows)..=7 {
+                for x in (cx - half(r) + 1)..=(cx + half(r) - 1).max(cx) {
+                    px(grid, x, r, sand);
+                }
+            }
+            // Bottom bulb: a heap that grows and narrows toward its peak.
+            let heap = (f * 5.0).round() as i32;
+            for k in 0..heap {
+                let r = 14 - k;
+                let ww = (half(r) - 1 - k / 2).max(0);
+                for x in (cx - ww)..=(cx + ww) {
+                    px(grid, x, r, sand);
+                }
+            }
+            // Falling trickle through the neck while the timer runs.
+            if f > 0.0 && f < 1.0 {
+                let flick = (ctx.time * 10.0) as i32;
+                for r in 8..=(14 - heap) {
+                    if (r + flick) % 2 == 0 {
+                        px(grid, cx, r, sand);
+                    }
+                }
+            }
+            // Wooden end caps and corner posts.
+            for x in x0..=x0 + 12 {
+                px(grid, x, 0, wood);
+                px(grid, x, 15, wood);
             }
         }
-
-        // Bottom sand (accumulating): fills from bottom upward as progress rises.
-        let bot_fill = (ctx.eased * (mid_y as f32 - 1.0)).round() as usize;
-        for row in 0..bot_fill {
-            let abs_row = h.saturating_sub(1).saturating_sub(row);
-            let spread_t = row as f32 / mid_y.max(1) as f32;
-            let spread = (spread_t * (cx as f32 - 2.0)).round() as usize;
-            let x0 = cx.saturating_sub(spread);
-            let x1 = (cx + spread).min(w - 1);
-            if x1 > x0 {
-                draw::hline(grid, x0 + 1, x1.saturating_sub(1), abs_row);
-            }
-        }
-
-        // Falling sand particle: a dot that travels from waist to mid when in-flight.
-        if ctx.eased > 0.0 && ctx.eased < 1.0 {
-            let fall_t = (ctx.time * 3.0).fract();
-            let particle_y = mid_y + (fall_t * mid_y as f32) as usize;
-            draw::dot(grid, cx, particle_y.min(h - 1));
-        }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Pancake stack growing one pancake at a time.
+/// Pancake stack on a plate, growing one golden pancake at a time; a butter
+/// pat sits on top and maple syrup drips down the side over time.
 struct PancakeStack;
 impl ProgressStyle for PancakeStack {
     fn name(&self) -> &str {
@@ -1469,78 +1503,66 @@ impl ProgressStyle for PancakeStack {
         "food"
     }
     fn describe(&self) -> &str {
-        "A stack of pancakes grows taller with each progress increment; syrup drips animate"
+        "Golden pancakes stack up on a plate one by one, topped with butter and dripping syrup"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 3 {
+        if w < 16 || h < 8 {
             return Ok(());
         }
-
-        let max_cakes = 6usize;
-        let cake_h = (h / max_cakes).max(2);
-        let count = (ctx.eased * max_cakes as f32).ceil() as usize;
-
-        for i in 0..count.min(max_cakes) {
-            let y0 = h.saturating_sub((i + 1) * cake_h);
-            let y1 = h.saturating_sub(i * cake_h + 1);
-
-            // Pancake ellipse: taller in center, tapers on sides.
-            for dy in y0..=y1 {
-                let t = if y1 <= y0 {
-                    0.5
-                } else {
-                    (dy - y0) as f32 / (y1 - y0).max(1) as f32
-                };
-                let rel = 1.0 - (t * 2.0 - 1.0).powi(2); // 0→1→0 bulge
-                let half = ((w as f32 / 2.0) * (0.6 + rel * 0.4)).round() as usize;
-                let cx = w / 2;
-                let px0 = cx.saturating_sub(half);
-                let px1 = (cx + half).min(w - 1);
-                draw::hline(grid, px0, px1, dy);
+        let (wi, hi) = (w as i32, h as i32);
+        let plate = Color::rgb(225, 230, 240);
+        let cake = Color::rgb(230, 165, 70);
+        let butter = Color::rgb(255, 235, 120);
+        let syrup = Color::rgb(150, 70, 20);
+        let cx = wi / 2;
+        let pw = (wi * 2 / 5).max(8);
+        // Plate: a wide rim under the stack.
+        for x in cx - pw / 2 - 6..=cx + pw / 2 + 6 {
+            px(grid, x, hi - 1, plate);
+        }
+        // Pancakes: 3 dots tall each, rounded ends, slightly varied widths.
+        let max = ((hi - 4) / 3).max(1);
+        let count = (ctx.eased * max as f32).ceil() as i32;
+        let mut top = hi - 1;
+        for k in 0..count {
+            let hw = pw / 2 - (hash(k as u32 + 11) % 4) as i32;
+            let y0 = hi - 2 - k * 3;
+            for dy in 0..3 {
+                // Bottom row is a seam gap (only the rounded rims show), so
+                // each pancake reads separately from the one below.
+                let inset = i32::from(dy != 1);
+                for x in cx - hw + inset..=cx + hw - inset {
+                    if dy != 0 || (x - cx).abs() >= hw - 2 {
+                        px(grid, x, y0 - dy, cake);
+                    }
+                }
             }
-
-            // Syrup drip: wiggly vertical line on right side, time-animated.
-            let drip_x = w * 3 / 4;
-            let drip_start = y0;
-            let drip_end = y1 + 1;
-            for dy in drip_start..drip_end {
-                let sine = (ctx.time * 4.0 + dy as f32 * 0.5).sin() * 1.5;
-                let dx = drip_x as i32 + sine as i32;
-                draw::dot_i(grid, dx, dy as i32);
+            top = y0 - 2;
+        }
+        if count > 0 {
+            // Butter pat and a syrup drip running down the right side.
+            for y in top - 2..top {
+                for x in cx - 2..cx + 2 {
+                    px(grid, x, y, butter);
+                }
+            }
+            let drip_x = cx + pw / 2 - 4;
+            let len = (hi - 2 - top).max(1);
+            let reach = ((ctx.time * 3.0).fract() * len as f32) as i32;
+            for y in top..=top + reach {
+                px(grid, drip_x, y, syrup);
+                px(grid, drip_x + 1, y, syrup);
             }
         }
-
-        // Top animation: a last pancake floating down if mid-progress.
-        let frac = (ctx.eased * max_cakes as f32).fract();
-        if frac > 0.0 && frac < 1.0 && count > 0 {
-            let stack_top = h.saturating_sub(count * cake_h);
-            let fall_offset = ((1.0 - frac) * (cake_h as f32 * 2.0)) as usize;
-            let landing_y = stack_top.saturating_sub(fall_offset.min(h));
-            let half = w / 3;
-            let cx = w / 2;
-            draw::hline(
-                grid,
-                cx.saturating_sub(half),
-                (cx + half).min(w - 1),
-                landing_y,
-            );
-        }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
-        }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Candy jar filling with jellybeans.
+/// Candy jar: a lidded glass jar fills from the bottom with brightly coloured
+/// round sweets, one per cell, while the next sweet drops in from the top.
 struct CandyJar;
 impl ProgressStyle for CandyJar {
     fn name(&self) -> &str {
@@ -1550,72 +1572,84 @@ impl ProgressStyle for CandyJar {
         "food"
     }
     fn describe(&self) -> &str {
-        "A glass candy jar fills with jelly beans whose colors shift across the palette"
+        "Lidded glass jar fills with multicoloured round sweets from the bottom up as one more drops in"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 12 || h < 12 {
             return Ok(());
         }
-
-        // Jar outline: wide body, narrow lid.
-        let left = 1usize;
-        let right = w.saturating_sub(2);
-        let lid_h = (h / 5).max(1);
-        let body_h = h.saturating_sub(lid_h);
-
-        // Lid.
-        draw::hline(grid, left + 1, right.saturating_sub(1), 0);
-        draw::hline(grid, left, right, lid_h);
-        draw::vline(grid, left + 1, 0, lid_h);
-        draw::vline(grid, right.saturating_sub(1), 0, lid_h);
-
-        // Jar body.
-        draw::vline(grid, left, lid_h, h - 1);
-        draw::vline(grid, right, lid_h, h - 1);
-        draw::hline(grid, left, right, h - 1);
-
-        // Fill beans: stack from the bottom.
-        let inner_h = body_h.saturating_sub(2).max(1);
-        let _inner_w = right.saturating_sub(left + 1).max(1);
-        let fill_h = (ctx.eased * inner_h as f32).round() as usize;
-
-        if fill_h > 0 {
-            let fill_top = h.saturating_sub(1).saturating_sub(fill_h);
-            // Individual beans: 2-dot oval shapes in a pseudo-random grid.
-            let bean_rows = fill_h / 3;
-            for row in 0..bean_rows {
-                let by = fill_top + row * 3;
-                let row_offset = if row % 2 == 0 { 0usize } else { 2 };
-                let mut bx = left + 1 + row_offset;
-                let mut bi = 0u32;
-                while bx + 2 < right {
-                    // Each bean is a 2-wide dot pair.
-                    let jitter = (hashf(bi + row as u32 * 37) * 1.0) as i32;
-                    draw::dot_i(grid, bx as i32, by as i32 + jitter);
-                    draw::dot_i(grid, bx as i32 + 1, by as i32 + jitter);
-                    draw::dot_i(grid, bx as i32, by as i32 + jitter + 1);
-                    bx += 4;
-                    bi += 1;
-                }
+        let (wi, hi) = (w as i32, h as i32);
+        let glass = Color::rgb(175, 205, 225);
+        let lid = Color::rgb(220, 60, 120);
+        let sweets = [
+            Color::rgb(240, 60, 60),
+            Color::rgb(250, 210, 50),
+            Color::rgb(80, 210, 90),
+            Color::rgb(70, 150, 245),
+            Color::rgb(245, 120, 210),
+            Color::rgb(255, 150, 40),
+        ];
+        // Jar walls sit on odd/even dot columns so they own their cells.
+        let jw = ((wi * 6 / 10) & !1).max(8);
+        let x0 = ((wi - jw) / 2) | 1;
+        let x1 = x0 + jw + 1;
+        // Lid with a knob, then the glass: shoulders, walls, base.
+        for x in x0 + 2..=x1 - 2 {
+            px(grid, x, 1, lid);
+            px(grid, x, 2, lid);
+        }
+        let mid = (x0 + x1) / 2;
+        px(grid, mid, 0, lid);
+        px(grid, mid + 1, 0, lid);
+        for y in 4..hi {
+            px(grid, x0, y, glass);
+            px(grid, x1, y, glass);
+        }
+        px(grid, x0 + 1, 3, glass);
+        px(grid, x1 - 1, 3, glass);
+        for x in x0..=x1 {
+            px(grid, x, hi - 1, glass);
+        }
+        // Sweets fill whole cells inside the jar, bottom row first.
+        let (c0, c1) = ((x0 + 1) / 2, x1 / 2 - 1);
+        let rows = hi / 4 - 1;
+        if c1 < c0 || rows < 1 {
+            return Ok(());
+        }
+        let per_row = c1 - c0 + 1;
+        let total = per_row * rows;
+        let count = (ctx.eased * total as f32).round() as i32;
+        let sweet = |grid: &mut BrailleGrid, x: i32, y: i32, c: Color| {
+            for &(dx, dy) in &[(0, 0), (1, 0), (0, 1), (1, 1), (0, -1), (1, 2)] {
+                px(grid, x + dx, y + dy, c);
             }
+        };
+        for k in 0..count {
+            let (cx, cy) = (c0 + k % per_row, hi / 4 - 1 - k / per_row);
+            let c = sweets[(hash(k as u32 * 7 + 3) % 6) as usize];
+            sweet(grid, cx * 2, cy * 4 + 1, c);
         }
-
-        // Palette tint for color variety on the beans.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = 1.0 - cy as f32 / ch.max(1) as f32; // invert so colors change row by row
-            let color = ctx.palette.sample((t + ctx.time * 0.05).fract());
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        // The next sweet falls in from under the lid.
+        if count < total {
+            let (cx, cy) = (c0 + count % per_row, hi / 4 - 1 - count / per_row);
+            let ty = cy * 4 + 1;
+            let fy = 4 + ((ctx.time * 1.5).fract() * (ty - 4).max(0) as f32) as i32;
+            sweet(
+                grid,
+                cx * 2,
+                fy,
+                sweets[(hash(count as u32 * 7 + 3) % 6) as usize],
+            );
         }
-
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Noodle being slurped: a wiggly spaghetti strand shortens from right to left.
+/// Noodle bowl: a red ramen bowl with chopsticks lifting a long wiggly
+/// noodle that is slurped shorter and shorter as progress grows.
 struct NoodleSlurp;
 impl ProgressStyle for NoodleSlurp {
     fn name(&self) -> &str {
@@ -1625,69 +1659,60 @@ impl ProgressStyle for NoodleSlurp {
         "food"
     }
     fn describe(&self) -> &str {
-        "A spaghetti strand wiggles and shortens from the right as it is slurped up"
+        "Chopsticks lift a wiggly noodle from a red ramen bowl; it is slurped shorter as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 2 {
+        if w < 24 || h < 12 {
             return Ok(());
         }
-
-        let mid_y = h / 2;
-        // Remaining noodle length shrinks as eased rises.
-        let noodle_len = ((1.0 - ctx.eased) * w as f32).round() as usize;
-
-        if noodle_len > 0 {
-            // Draw noodle from left edge to noodle_len with time-driven sine wiggle.
-            let strand_count = 3usize;
-            for s in 0..strand_count {
-                let y_base = mid_y.saturating_sub(s);
-                for px in 0..noodle_len.min(w) {
-                    // Phase and frequency per strand for variety.
-                    let freq = 0.4 + s as f32 * 0.15;
-                    let speed = 3.0 + s as f32 * 1.5;
-                    let phase = s as f32 * PI / strand_count as f32;
-                    let wave = ((px as f32 * freq + ctx.time * speed + phase).sin()
-                        * (h as f32 * 0.2)) as i32;
-                    draw::dot_i(grid, px as i32, y_base as i32 + wave);
-                }
-            }
-
-            // "Mouth" at the leading edge: a small vertical bite marker.
-            let mouth_x = noodle_len.min(w.saturating_sub(1));
-            draw::vline(
-                grid,
-                mouth_x,
-                mid_y.saturating_sub(1),
-                (mid_y + 1).min(h - 1),
-            );
-        }
-
-        // Sauce splatter near origin: dots scattered around x=0 with time jitter.
-        for i in 0..4u32 {
-            let period = 0.5 + hashf(i + 500) * 0.5;
-            let t = (ctx.time / period + hashf(i + 600)).fract();
-            if t < 0.15 {
-                let sx = (hashf(i + 700) * 5.0) as i32;
-                let sy = mid_y as i32 + (hashf(i + 800) * 4.0) as i32 - 2;
-                draw::dot_i(grid, sx, sy);
+        let (wi, hi) = (w as i32, h as i32);
+        let bowl = Color::rgb(210, 45, 45);
+        let rim_c = Color::rgb(240, 240, 235);
+        let noodle = Color::rgb(250, 220, 120);
+        let stick = Color::rgb(160, 110, 60);
+        // Bowl: lower half-ellipse on the left with a pale rim.
+        let bhw = (wi / 6).clamp(6, 15);
+        let bx = bhw + 1;
+        let rim = hi - 9;
+        for y in rim..hi {
+            let t = (y - rim) as f32 / (hi - rim) as f32;
+            let hw = (bhw as f32 * (1.0 - t * t).sqrt()).round() as i32;
+            for x in bx - hw..=bx + hw {
+                px(grid, x, y, if y == rim { rim_c } else { bowl });
             }
         }
-
-        // Palette tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let color = ctx.palette.sample(cy as f32 / ch.max(1) as f32);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        // The lifted noodle: a wiggling strand out of the bowl to the right,
+        // getting shorter as it is slurped.
+        let start = bx + bhw / 2;
+        let full = wi - 2 - start;
+        let end = start + ((1.0 - ctx.eased) * full as f32) as i32;
+        let mid = (rim / 2).max(2) as f32;
+        for x in start..=end {
+            let t = (x - start) as f32;
+            let y = mid + (t * 0.45 - ctx.time * 7.0).sin() * (mid - 1.0) * (t / 10.0).min(1.0);
+            px(grid, x, y.round() as i32, noodle);
+            px(grid, x, y.round() as i32 + 1, noodle);
         }
-
+        // Chopsticks pinch the noodle's far end.
+        if end > start + 2 {
+            let t = (end - start) as f32;
+            let ey = (mid + (t * 0.45 - ctx.time * 7.0).sin() * (mid - 1.0) * (t / 10.0).min(1.0))
+                .round() as i32;
+            for k in 0..6 {
+                px(grid, end + 1 + k, ey - 1 - k / 2, stick);
+                px(grid, end + 1 + k, ey + 2 + k / 2, stick);
+            }
+        }
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Toast browning in a toaster: color darkens from golden to dark brown via palette.
+/// Toaster: two slices of bread sink into a chrome toaster as the lever goes
+/// down, browning from pale to golden to dark, then pop up when done; heat
+/// shimmers over the slots while toasting.
 struct ToastBrowning;
 impl ProgressStyle for ToastBrowning {
     fn name(&self) -> &str {
@@ -1697,89 +1722,97 @@ impl ProgressStyle for ToastBrowning {
         "food"
     }
     fn describe(&self) -> &str {
-        "Toast darkens from pale gold to deep brown inside a toaster; the toast pops up at 100%"
+        "Two bread slices sink into a chrome toaster and brown with progress, popping up at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 16 || h < 12 {
             return Ok(());
         }
-
-        // Toaster body: outer rectangle.
-        draw::rect_outline(grid, 0, h / 3, w, h.saturating_sub(h / 3));
-
-        // Slots in the toaster top.
-        let slot_w = (w / 3).max(2);
-        let slot_x1 = w / 4;
-        let slot_x2 = w * 3 / 4;
-        draw::hline(
-            grid,
-            slot_x1,
-            slot_x1 + slot_w.min(w.saturating_sub(slot_x1)),
-            h / 3,
-        );
-        draw::hline(
-            grid,
-            slot_x2.saturating_sub(slot_w / 2),
-            slot_x2 + slot_w / 2,
-            h / 3,
-        );
-
-        // Toast rectangles: two slices popping up.
-        let pop_h = if ctx.eased >= 0.99 {
-            // Full pop: toast rises above the toaster.
-            h / 3 + 1
+        let (wi, hi) = (w as i32, h as i32);
+        let chrome = Color::rgb(185, 195, 210);
+        let p = ctx.eased;
+        let lerp = |a: f32, b: f32, t: f32| (a + (b - a) * t) as u8;
+        // Bread colour: pale -> golden over the first half, golden -> brown after.
+        let toast = if p < 0.5 {
+            let t = p * 2.0;
+            Color::rgb(
+                lerp(245.0, 225.0, t),
+                lerp(225.0, 160.0, t),
+                lerp(170.0, 60.0, t),
+            )
         } else {
-            // Toast is inside: visible height = eased * slot depth.
-            let slot_depth = h / 3;
-            (ctx.eased * slot_depth as f32).round() as usize
+            let t = (p - 0.5) * 2.0;
+            Color::rgb(
+                lerp(225.0, 140.0, t),
+                lerp(160.0, 80.0, t),
+                lerp(60.0, 30.0, t),
+            )
         };
-
-        // Left slice.
-        let tx1 = slot_x1 + 1;
-        let tw1 = slot_w.saturating_sub(2).max(1);
-        if pop_h > 0 {
-            let toast_top = h / 3 + 1;
-            let toast_bot = (toast_top + tw1).min(h - 1);
-            // Draw toast shape: rectangle.
-            draw::fill_rect(
-                grid,
-                tx1,
-                toast_top.saturating_sub(pop_h),
-                tw1,
-                pop_h.min(toast_bot.saturating_sub(toast_top) + 1),
-            );
+        let tw = (wi / 3).clamp(10, 36);
+        let x0 = (wi - tw) / 2;
+        let x1 = x0 + tw;
+        let top = hi / 2;
+        // Bread sinks while toasting and pops up (with a bounce) when done.
+        let sink = if p >= 1.0 {
+            -(((ctx.time * 6.0).sin().abs()) * 2.0) as i32
+        } else {
+            (p.min(0.15) / 0.15 * 3.0) as i32
+        };
+        let sw = (tw - 6) / 2;
+        for s in 0..2 {
+            let sx = x0 + 2 + s * (sw + 2);
+            let sy = top - 6 + sink;
+            for y in sy..top {
+                for x in sx..sx + sw {
+                    // Rounded shoulders on the top of each slice.
+                    let corner = y == sy && (x == sx || x == sx + sw - 1);
+                    if !corner {
+                        px(grid, x, y, toast);
+                    }
+                }
+            }
         }
-
-        // Right slice (mirrored).
-        let tx2 = slot_x2.saturating_sub(slot_w / 2) + 1;
-        if pop_h > 0 {
-            let toast_top = h / 3 + 1;
-            draw::fill_rect(
-                grid,
-                tx2,
-                toast_top.saturating_sub(pop_h),
-                slot_w.saturating_sub(2).max(1),
-                pop_h,
-            );
+        // Toaster body: rounded box with slots on top and a side lever.
+        for y in top..hi {
+            for x in x0..=x1 {
+                let corner = (y == top || y == hi - 1) && (x == x0 || x == x1);
+                let edge = x == x0 || x == x1 || y == top || y == hi - 1;
+                let stripe = y == top + 3;
+                if !corner && (edge || stripe) {
+                    px(grid, x, y, chrome);
+                }
+            }
         }
-
-        // Palette tint darkens as progress increases — lighter at start, darker at end.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            // Color the toast darker based on progress.
-            let brown_t = ctx.eased;
-            let color = ctx.palette.sample(brown_t);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        let lever_y = if p >= 1.0 {
+            top + 1
+        } else {
+            top + 1 + (p * (hi - top - 3) as f32) as i32
+        };
+        for x in x1 + 1..=x1 + 3 {
+            px(grid, x, lever_y, chrome);
         }
-
+        // Heat shimmer above the slots while toasting.
+        if p > 0.0 && p < 1.0 {
+            for k in 0..3 {
+                let hx = x0 + tw * (k + 1) / 4;
+                for y in 0..top - 7 + sink {
+                    let wob = ((ctx.time * 5.0 + y as f32 + k as f32).sin() * 1.2).round() as i32;
+                    if (y + (ctx.time * 8.0) as i32) % 2 == 0 {
+                        px(grid, hx + wob, y, Color::rgb(255, 140, 60));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
 
 // ---------------------------------------------------------------------------
 
-/// Pie chart / progress: radial sweep fills a circular pie from 0→2π.
+/// Lattice pie seen from the side: a tapered tin, crimped rim, and a domed
+/// top whose woven lattice crust sweeps across with progress; steam rises
+/// from the baked part.
 struct PieSweep;
 impl ProgressStyle for PieSweep {
     fn name(&self) -> &str {
@@ -1789,63 +1822,73 @@ impl ProgressStyle for PieSweep {
         "food"
     }
     fn describe(&self) -> &str {
-        "A pie dish fills clockwise from 0° to 360°; a pulsing crust ring surrounds the fill"
+        "Domed lattice pie in a tin: the woven golden crust sweeps across as progress grows, steaming"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w < 4 || h < 4 {
+        if w < 16 || h < 12 {
             return Ok(());
         }
-
-        let cx = w / 2;
-        let cy = h / 2;
-        let r = (w.min(h) / 2).saturating_sub(1).max(1);
-
-        let filled_angle = ctx.eased * 2.0 * PI;
-
-        for dy in 0..h {
-            for dx in 0..w {
-                let fx = dx as f32 - cx as f32;
-                let fy = dy as f32 - cy as f32;
-                let dist = (fx * fx + fy * fy).sqrt();
-                if dist > r as f32 {
+        let (wi, hi) = (w as i32, h as i32);
+        let tin = Color::rgb(170, 178, 190);
+        let crust = Color::rgb(230, 165, 70);
+        let raw = Color::rgb(120, 105, 85);
+        let steam = Color::rgb(175, 175, 190);
+        let pw = (wi * 7 / 10).max(12);
+        let x0 = (wi - pw) / 2;
+        let x1 = x0 + pw;
+        let rim = hi - 6;
+        // Tin: tapered sides and base.
+        for y in rim + 1..hi {
+            let inset = (y - rim) / 2;
+            px(grid, x0 + inset, y, tin);
+            px(grid, x1 - inset, y, tin);
+        }
+        for x in x0 + 2..=x1 - 2 {
+            px(grid, x, hi - 1, tin);
+        }
+        let sweep = x0 as f32 + ctx.eased * pw as f32;
+        // Crimped rim: a wavy band of crust along the top of the tin.
+        for x in x0 - 1..=x1 + 1 {
+            let c = if (x as f32) < sweep { crust } else { raw };
+            px(grid, x, rim, c);
+            px(grid, x, rim + 1 + (x % 2), c);
+        }
+        // Domed top: woven lattice where baked, outline where not.
+        let cx = (x0 + x1) as f32 / 2.0;
+        let rx = pw as f32 / 2.0;
+        let ry = (rim - 2) as f32;
+        let dome = |x: i32, y: i32| {
+            let nx = (x as f32 - cx) / rx;
+            let ny = (y - rim) as f32 / ry;
+            nx * nx + ny * ny <= 1.0 && y < rim
+        };
+        for y in 0..rim {
+            for x in x0..=x1 {
+                if !dome(x, y) {
                     continue;
                 }
-
-                // Angle measured clockwise from top (12-o'clock).
-                let mut angle = fy.atan2(fx) + PI / 2.0;
-                if angle < 0.0 {
-                    angle += 2.0 * PI;
-                }
-
-                if angle <= filled_angle {
-                    draw::dot(grid, dx, dy);
-                }
-            }
-        }
-
-        // Crust: pulsing ring that shimmers with time.
-        let pulse = 0.5 + 0.5 * (ctx.time * 2.0 * PI * 0.5).sin();
-        let crust_r = r as f32 + 0.5 + pulse * 0.5;
-        for dy in 0..h {
-            for dx in 0..w {
-                let fx = dx as f32 - cx as f32;
-                let fy = dy as f32 - cy as f32;
-                let dist = (fx * fx + fy * fy).sqrt();
-                if (dist - crust_r).abs() < 1.0 {
-                    draw::dot(grid, dx, dy);
+                let edge = !dome(x, y - 1) || !dome(x - 1, y) || !dome(x + 1, y);
+                if (x as f32) < sweep {
+                    let lattice = (x + y).rem_euclid(5) < 2 || (x - y).rem_euclid(5) < 2;
+                    if edge || lattice {
+                        px(grid, x, y, crust);
+                    }
+                } else if edge {
+                    px(grid, x, y, raw);
                 }
             }
         }
-
-        // Palette tint radiating from center.
-        let (cw, ch) = grid.dimensions();
-        for cy_c in 0..ch {
-            let t = cy_c as f32 / ch.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, cy_c, 0, cw.saturating_sub(1), color);
+        // Steam curls up from the baked side of the dome.
+        if ctx.eased > 0.1 {
+            let sx = ((x0 as f32 + sweep) / 2.0) as i32;
+            for y in 0..3 {
+                let wob = ((ctx.time * 4.0 + y as f32).sin() * 1.5).round() as i32;
+                if (y + (ctx.time * 6.0) as i32) % 3 != 0 {
+                    px(grid, sx + wob, y, steam);
+                }
+            }
         }
-
         Ok(())
     }
 }

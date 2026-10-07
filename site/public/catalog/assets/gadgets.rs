@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -843,14 +878,36 @@ pub mod styles {
 //!
 //! Every style mimics a familiar consumer device interaction: phone charging,
 //! WiFi connecting, Bluetooth pairing, disk defragging, CRT power-on, dial-up
-//! modem handshake, vinyl spinning up, drone propellers, an activity ring,
+//! modem handshake, a vinyl record spinning up, a quadcopter, an activity ring,
 //! USB file transfer, a gear train, and an e-ink page refresh. All are
 //! stateless — animation is driven entirely by `ctx.time` and `ctx.eased`.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
+
+// ─── dot-art helpers ─────────────────────────────────────────────────────────
+
+/// Stamp a sprite: every `#` in `rows` sets the dot at `(x + col, y + row)`.
+fn sprite(grid: &mut BrailleGrid, x: i32, y: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x + c as i32, y + r as i32);
+            }
+        }
+    }
+}
+
+/// Solid block of dots from signed coordinates (clipped to the grid).
+fn block(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32) {
+    for yy in y..y + h {
+        for xx in x..x + w {
+            draw::dot_i(grid, xx, yy);
+        }
+    }
+}
 
 // ─── tiny deterministic hash ─────────────────────────────────────────────────
 
@@ -1205,7 +1262,10 @@ impl ProgressStyle for BluetoothPair {
 
 // ─── 4. Disk defragmenter ────────────────────────────────────────────────────
 
-/// A grid of shade-glyph blocks reorganize from chaotic to solid.
+/// The classic defrag cluster map: a grid of small cluster blocks. Behind the
+/// sweep the used clusters are packed solid and contiguous; ahead of it the
+/// disk is still fragmented (scattered hollow clusters with gaps). A blinking
+/// read/write head marks the cluster being moved.
 struct DiskDefrag;
 impl ProgressStyle for DiskDefrag {
     fn name(&self) -> &str {
@@ -1215,43 +1275,35 @@ impl ProgressStyle for DiskDefrag {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "Disk defrag: chaotic shade blocks consolidate into solid filled region"
+        "Disk defrag cluster map: scattered hollow fragments ahead of the sweep, packed solid clusters behind it, with a blinking read/write head"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cells_w, cells_h) = grid.dimensions();
-        if cells_w == 0 || cells_h == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
             return Ok(());
         }
-
-        let total_cells = cells_w * cells_h;
-        // How many cells are "defragged" (consolidated) vs still fragmented.
-        let defragged = (ctx.eased * total_cells as f32) as usize;
-
-        // Cells are laid out in a zigzag (boustrophedon) scan order.
-        for cy in 0..cells_h {
-            for cx in 0..cells_w {
-                let linear = cy * cells_w + cx;
-                let color = ctx
-                    .palette
-                    .sample(linear as f32 / total_cells.max(1) as f32);
-
-                if linear < defragged {
-                    // Defragged: solid block.
-                    draw::glyph(grid, cx, cy, '█');
-                    draw::tint_row(grid, cy, cx, cx, color);
-                } else {
-                    // Fragmented: random shade glyph determined by hash + time.
-                    // The fragmented blocks "shuffle" — they animate in place.
-                    let epoch = (ctx.time * 4.0) as u32;
-                    let h_val = hash(linear as u32 * 31 + epoch * 7 + 3);
-                    let shade_level = (h_val % 4) as usize; // 0..3 → ' ░▒▓'
-                    if shade_level > 0 {
-                        draw::shade(grid, cx, cy, shade_level);
-                        // Dim tint for fragmented cells.
-                        let frag_color = ctx.palette.sample(0.15);
-                        draw::tint_row(grid, cy, cx, cx, frag_color);
-                    }
+        let cols = (w / 4).max(1);
+        let rows = (h / 4).max(1);
+        let total = cols * rows;
+        // Column-major order so the sweep runs left to right across all rows.
+        let done = (ctx.eased * total as f32) as usize;
+        let head_on = (ctx.time * 5.0).fract() < 0.5;
+        for i in 0..total {
+            let (col, row) = (i / rows, i % rows);
+            let (x, y) = (col * 4, row * 4);
+            if i < done {
+                // Defragmented: 70% of the swept area is packed data.
+                if (i as f32) < done as f32 * 0.7 + 0.5 {
+                    draw::fill_rect(grid, x, y, 3, 3);
                 }
+            } else if i == done {
+                if head_on {
+                    draw::fill_rect(grid, x, y, 3, 3);
+                } else {
+                    draw::rect_outline(grid, x, y, 3, 3);
+                }
+            } else if hashf(i as u32 + 17) < 0.6 {
+                draw::rect_outline(grid, x, y, 3, 3);
             }
         }
         Ok(())
@@ -1393,7 +1445,9 @@ impl ProgressStyle for DialUpModem {
 
 // ─── 7. CD / Vinyl spinning up ────────────────────────────────────────────────
 
-/// A disc outline with an index mark rotates; RPM increases with progress.
+/// A round black record (grooves, paper label, spindle) spins on the platter,
+/// its sheen gap and label mark turning faster as progress rises; the tonearm
+/// tracks inward and a playback timeline beside it fills.
 struct VinylSpinUp;
 impl ProgressStyle for VinylSpinUp {
     fn name(&self) -> &str {
@@ -1403,80 +1457,87 @@ impl ProgressStyle for VinylSpinUp {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "Vinyl/CD disc outline spins up; rotation speed scales with progress"
+        "Vinyl record: a grooved black disc with a paper label spins up on the turntable while the tonearm tracks inward and a playback timeline fills"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let (cells_w, cells_h) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let r = ((hi as f32 - 1.0) / 2.0).clamp(0.5, 7.5);
+        let (cx, cy) = (r + 1.0, (hi as f32 - 1.0) / 2.0);
 
-        let cx = w / 2;
-        let cy = h / 2;
-        // Radius: constrained to fit in the shorter axis, slightly inset.
-        let r_max = (w.min(h * 2) / 2).saturating_sub(1).max(1);
-
-        // Angular speed: 0 rpm at progress=0 → 360 deg/s at progress=1.
-        let omega = ctx.eased * 2.0 * PI * 2.0; // 2 full turns/sec at full progress.
-        let angle = ctx.time * omega;
-
-        // Outer disc ring.
-        let steps = (2.0 * PI * r_max as f32) as usize + 4;
-        for i in 0..steps {
-            let theta = i as f32 / steps as f32 * 2.0 * PI;
-            // Squish Y by 0.5 (dots are taller than wide).
-            let dx = (theta.cos() * r_max as f32) as i32;
-            let dy = (theta.sin() * r_max as f32 * 0.5) as i32;
-            draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
-        }
-
-        // Inner hole (label ring) — about 30% of r_max.
-        let r_inner = (r_max * 3 / 10).max(1);
-        let inner_steps = (2.0 * PI * r_inner as f32) as usize + 4;
-        for i in 0..inner_steps {
-            let theta = i as f32 / inner_steps as f32 * 2.0 * PI;
-            let dx = (theta.cos() * r_inner as f32) as i32;
-            let dy = (theta.sin() * r_inner as f32 * 0.5) as i32;
-            draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
-        }
-
-        // Center spindle dot.
-        draw::dot(grid, cx, cy);
-
-        // Index mark: a short radial line from inner to outer, rotating.
-        let mark_steps = (r_max - r_inner).max(1);
-        for step in 0..=mark_steps {
-            let r = r_inner + step;
-            let dx = (angle.cos() * r as f32) as i32;
-            let dy = (angle.sin() * r as f32 * 0.5) as i32;
-            draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
-        }
-
-        // Groove lines (concentric rings at intermediate radii).
-        let n_grooves = 3usize;
-        for g in 1..=n_grooves {
-            let r_g = r_inner + (r_max - r_inner) * g / (n_grooves + 1);
-            if r_g == 0 {
-                continue;
-            }
-            let g_steps = (2.0 * PI * r_g as f32) as usize + 4;
-            for i in (0..g_steps).step_by(3) {
-                // Sparse for groove look.
-                let theta = i as f32 / g_steps as f32 * 2.0 * PI;
-                let dx = (theta.cos() * r_g as f32) as i32;
-                let dy = (theta.sin() * r_g as f32 * 0.5) as i32;
-                draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
+        // The record: rim, concentric grooves broken by a turning sheen gap,
+        // and a solid paper label with a spindle hole and one print mark.
+        let spin = ctx.time * (1.5 + ctx.eased * 9.0);
+        let (mx, my) = (cx + 1.5 * spin.cos(), cy + 1.5 * spin.sin());
+        for y in 0..hi {
+            for x in 0..(2.0 * r + 3.0) as i32 {
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                let d = (dx * dx + dy * dy).sqrt();
+                let diff = (dy.atan2(dx) - spin).rem_euclid(PI);
+                let gap = !(0.35..PI - 0.35).contains(&diff);
+                let mark = (x as f32 - mx).abs() < 0.6 && (y as f32 - my).abs() < 0.6;
+                let on = if d > r + 0.3 {
+                    false
+                } else if d > r - 0.7 {
+                    true // rim
+                } else if d < 0.7 {
+                    false // spindle hole
+                } else if d < 2.6 {
+                    !mark // label
+                } else {
+                    let groove = (d - 2.6).rem_euclid(1.6) < 0.6;
+                    groove && !gap
+                };
+                if on {
+                    draw::dot_i(grid, x, y);
+                }
             }
         }
 
-        // Tint the disc area with palette gradient (left→right).
-        for cx_c in 0..cells_w {
-            let t = cx_c as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(ctx.eased * t);
-            for cy_c in 0..cells_h {
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
-            }
+        // Tonearm: pivot block, arm swinging the stylus inward with progress.
+        let px = (cx + r + 5.0) as i32;
+        draw::fill_rect(grid, (px - 1).max(0) as usize, 0, 3, 3);
+        let reach = r - 0.5 - ctx.eased * (r - 3.5).max(0.0);
+        let (sx, sy) = ((cx + reach * 0.7) as i32, (cy + reach * 0.7) as i32);
+        let steps = 16;
+        for k in 0..=steps {
+            let t = k as f32 / steps as f32;
+            draw::dot_i(
+                grid,
+                px + ((sx - px) as f32 * t).round() as i32,
+                1 + ((sy - 1) as f32 * t).round() as i32,
+            );
+        }
+
+        // Playback timeline: track line, elapsed fill and a round playhead.
+        let x0 = px + 5;
+        let span = (wi - x0 - 3).max(0);
+        let mid = hi / 2;
+        for x in x0..x0 + span {
+            draw::dot_i(grid, x, mid);
+        }
+        let head = x0 + (ctx.eased * span as f32) as i32;
+        for x in x0..head {
+            draw::dot_i(grid, x, mid - 1);
+            draw::dot_i(grid, x, mid + 1);
+        }
+        for (ox, oy) in [
+            (0, -2),
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (0, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+            (0, 2),
+        ] {
+            draw::dot_i(grid, head + ox, mid + oy);
         }
         Ok(())
     }
@@ -1484,7 +1545,9 @@ impl ProgressStyle for VinylSpinUp {
 
 // ─── 8. Drone quad-propellers ────────────────────────────────────────────────
 
-/// Four rotating arc-pairs in quadrants; RPM rises to full with progress.
+/// Top-down quadcopter: a central body with a blinking nose LED, four arms
+/// and four rotor rings whose twin blades spin faster as progress rises,
+/// while the drone flies left to right.
 struct DroneProps;
 impl ProgressStyle for DroneProps {
     fn name(&self) -> &str {
@@ -1494,77 +1557,53 @@ impl ProgressStyle for DroneProps {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "Quad-drone: four propeller arcs spin up as progress rises"
+        "Quadcopter seen from above: body, four arms and rotor rings whose blades spin up with progress as the drone flies across"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let (cells_w, cells_h) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let cx = 14 + (ctx.eased * (wi - 29).max(0) as f32) as i32;
+        let cy = hi / 2;
+        let bob = i32::from((ctx.time * 2.0).fract() >= 0.5 && ctx.eased < 1.0);
 
-        // Propeller hubs at the four quadrant centers.
-        let qw = w / 2;
-        let qh = h / 2;
-        // Arc radius: fills the quadrant.
-        let r = (qw.min(qh * 2) / 2).max(1);
-
-        // Spin rate: 0 → 3 rev/sec.
-        let omega = ctx.eased * 2.0 * PI * 3.0;
-        let angle = ctx.time * omega;
-
-        // Four hub positions: (cx, cy) in dot space.
-        let hubs = [
-            (qw / 2, qh / 2),
-            (w - qw / 2, qh / 2),
-            (qw / 2, h - qh / 2),
-            (w - qw / 2, h - qh / 2),
-        ];
-
-        // Draw a cross-frame connector (drone body).
-        let body_cx = w / 2;
-        let body_cy = h / 2;
-        draw::dot(grid, body_cx, body_cy);
-        // Arms from center to each hub (sparse dots).
-        for (hx, hy) in &hubs {
-            let dx = *hx as i32 - body_cx as i32;
-            let dy = *hy as i32 - body_cy as i32;
-            let steps = dx.abs().max(dy.abs()).max(1);
-            for step in 0..steps {
-                let t = step as f32 / steps as f32;
-                let px = body_cx as i32 + (dx as f32 * t) as i32;
-                let py = body_cy as i32 + (dy as f32 * t) as i32;
-                draw::dot_i(grid, px, py);
+        // Body: a rounded hull with a blinking nose LED on the leading edge.
+        for (dx, dy) in (-3..=3_i32).flat_map(|x| (-2..=2_i32).map(move |y| (x, y))) {
+            if dx.abs() + dy.abs() < 5 {
+                draw::dot_i(grid, cx + dx, cy + dy + bob);
             }
         }
-
-        // For each hub, draw two blade arcs (180° apart).
-        for (prop_idx, (hx, hy)) in hubs.iter().enumerate() {
-            let hub_angle = angle + prop_idx as f32 * PI * 0.5; // Each prop offset.
-                                                                // Two blades per prop, 180° apart.
-            for blade in 0..2usize {
-                let blade_angle = hub_angle + blade as f32 * PI;
-                // Arc: 60° sweep.
-                let arc_sweep = PI / 3.0;
-                let arc_steps = (arc_sweep * r as f32) as usize + 4;
-                for step in 0..arc_steps {
-                    let theta = blade_angle - arc_sweep / 2.0
-                        + step as f32 / arc_steps.max(1) as f32 * arc_sweep;
-                    let dx = (theta.cos() * r as f32) as i32;
-                    let dy = (theta.sin() * r as f32 * 0.5) as i32;
-                    draw::dot_i(grid, *hx as i32 + dx, *hy as i32 + dy);
-                }
-            }
-            // Hub dot.
-            draw::dot(grid, *hx, *hy);
+        if (ctx.time * 3.0).fract() < 0.5 {
+            draw::dot_i(grid, cx + 5, cy + bob);
         }
 
-        // Tint by quadrant.
-        for cx_c in 0..cells_w {
-            for cy_c in 0..cells_h {
-                let t = cx_c as f32 / cells_w.max(1) as f32;
-                let color = ctx.palette.sample(t * ctx.eased);
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
+        // Arms and rotors at the four corners.
+        let spin = ctx.time * (3.0 + ctx.eased * 25.0);
+        for (sx, sy) in [(-1, -1), (1, -1), (-1, 1), (1, 1)] {
+            let (rx, ry) = (cx + sx * 10, cy + sy * 4 + bob);
+            for k in 1..8 {
+                draw::dot_i(grid, cx + sx * (k * 10 / 8), cy + sy * (k * 4 / 8) + bob);
+            }
+            // Rotor guard ring.
+            for s in 0..16 {
+                let a = s as f32 * PI / 8.0;
+                draw::dot_i(
+                    grid,
+                    rx + (a.cos() * 3.5).round() as i32,
+                    ry + (a.sin() * 3.5).round() as i32,
+                );
+            }
+            // Twin blades, counter-rotating on diagonal pairs.
+            let a = spin * (sx * sy) as f32;
+            for k in -3..=3 {
+                let t = k as f32;
+                draw::dot_i(
+                    grid,
+                    rx + (a.cos() * t).round() as i32,
+                    ry + (a.sin() * t * 0.9).round() as i32,
+                );
             }
         }
         Ok(())
@@ -1573,8 +1612,18 @@ impl ProgressStyle for DroneProps {
 
 // ─── 9. Smartwatch activity ring ─────────────────────────────────────────────
 
-/// A circular ring closes clockwise as progress increases.
+/// Three concentric round rings — red Move, green Exercise, blue Stand —
+/// close clockwise from twelve o'clock over dim tracks, drawn as true circles
+/// (braille dots are square). Matching summary bars sit to the right.
 struct ActivityRing;
+
+/// Ring colours: Move, Exercise, Stand.
+const RING_COLORS: [Color; 3] = [
+    Color::rgb(250, 40, 90),
+    Color::rgb(150, 250, 40),
+    Color::rgb(40, 220, 250),
+];
+
 impl ProgressStyle for ActivityRing {
     fn name(&self) -> &str {
         "activity-ring"
@@ -1583,78 +1632,96 @@ impl ProgressStyle for ActivityRing {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "Smartwatch activity ring closes clockwise as progress fills it"
+        "Smartwatch activity rings: concentric red, green and blue circles close clockwise as progress grows, with matching summary bars"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
+        let (cw, ch) = grid.dimensions();
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let (cells_w, cells_h) = grid.dimensions();
-
-        let cx = w / 2;
-        let cy = h / 2;
-        let r_outer = (w.min(h * 2) / 2).saturating_sub(1).max(2);
-        let r_inner = r_outer.saturating_sub((r_outer / 4).max(1));
-
-        // Total arc swept: progress × 2π, starting at top (−π/2).
-        let start_angle = -PI / 2.0;
-        let sweep = ctx.eased * 2.0 * PI;
-
-        // Draw thick arc from r_inner to r_outer.
-        let steps = ((2.0 * PI * r_outer as f32) as usize + 4).max(16);
-        for i in 0..=steps {
-            let frac = i as f32 / steps as f32;
-            let theta = frac * 2.0 * PI;
-            // Only draw dots within the swept angle.
-            let rel = (theta - (start_angle + PI * 2.0)).rem_euclid(2.0 * PI);
-            if rel > sweep {
-                continue;
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let vals = [e, e.powf(0.8), e.powf(1.3)];
+        let r_out = (h.min(w) as f32 / 2.0).max(1.0);
+        let (ccx, ccy) = (r_out, h as f32 / 2.0);
+        let s = r_out / 8.0;
+        let radii = [7.0 * s, 4.6 * s, 2.2 * s];
+        let half = 0.95 * s;
+        let box_w = (2.0 * r_out).ceil() as usize + 1;
+        // Per-cell ring ownership: (ring, lit) with the strongest vote.
+        let mut votes = vec![[0u8; 6]; cw * ch];
+        for y in 0..h {
+            for x in 0..box_w.min(w) {
+                let dx = x as f32 + 0.5 - ccx;
+                let dy = y as f32 + 0.5 - ccy;
+                let d = (dx * dx + dy * dy).sqrt();
+                for (k, &r) in radii.iter().enumerate() {
+                    if (d - r).abs() > half {
+                        continue;
+                    }
+                    let ang = dx.atan2(-dy).rem_euclid(2.0 * PI) / (2.0 * PI);
+                    let lit = ang <= vals[k] && vals[k] > 0.0;
+                    if lit || (x + y) % 2 == 0 {
+                        draw::dot(grid, x, y);
+                    }
+                    let cell = (y / 4) * cw + x / 2;
+                    if let Some(v) = votes.get_mut(cell) {
+                        let slot = k * 2 + usize::from(lit);
+                        v[slot] = v[slot].saturating_add(if lit { 2 } else { 1 });
+                    }
+                }
             }
-
-            for r in r_inner..=r_outer {
-                let dx = (theta.cos() * r as f32) as i32;
-                let dy = (theta.sin() * r as f32 * 0.5) as i32;
-                draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
+        }
+        // Summary bars to the right, one per ring.
+        let bx0 = box_w + 3;
+        let bar_w = w.saturating_sub(bx0 + 1);
+        if bar_w > 2 {
+            for (k, &v) in vals.iter().enumerate() {
+                let y = (h * (2 * k + 1)) / 6;
+                let fill = (v * bar_w as f32) as usize;
+                for x in 0..bar_w {
+                    if x < fill {
+                        draw::dot(grid, bx0 + x, y);
+                        if y + 1 < h {
+                            draw::dot(grid, bx0 + x, y + 1);
+                        }
+                    } else if x % 3 == 0 {
+                        draw::dot(grid, bx0 + x, y);
+                    }
+                }
             }
         }
 
-        // "Track" ring (unfilled portion) — sparse dots.
-        for i in 0..=steps {
-            let frac = i as f32 / steps as f32;
-            let theta = frac * 2.0 * PI;
-            let rel = (theta - (start_angle + PI * 2.0)).rem_euclid(2.0 * PI);
-            if rel <= sweep {
-                continue;
-            }
-            if i % 3 != 0 {
-                continue;
-            } // Sparse.
-            let r = (r_inner + r_outer) / 2;
-            let dx = (theta.cos() * r as f32) as i32;
-            let dy = (theta.sin() * r as f32 * 0.5) as i32;
-            draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
-        }
-
-        // Leading-edge glow: extra dots at the arc tip.
-        let tip_theta = start_angle + sweep;
-        for r in r_inner..=r_outer {
-            let dx = (tip_theta.cos() * r as f32) as i32;
-            let dy = (tip_theta.sin() * r as f32 * 0.5) as i32;
-            draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
-            draw::dot_i(grid, cx as i32 + dx + 1, cy as i32 + dy);
-        }
-
-        // Tint filled cells.
-        let mid_c = cells_w / 2;
-        let r_cells = (r_outer / 2).max(1);
-        let cx0 = mid_c.saturating_sub(r_cells);
-        let cx1 = (mid_c + r_cells).min(cells_w.saturating_sub(1));
-        for cx_c in cx0..=cx1 {
-            let t = (cx_c.saturating_sub(cx0)) as f32 / (cx1.saturating_sub(cx0) + 1).max(1) as f32;
-            let color = ctx.palette.sample(ctx.eased * t + ctx.eased * 0.2);
-            for cy_c in 0..cells_h {
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
+        grid.enable_color_support();
+        let dim = |c: Color| Color::rgb(c.r / 3, c.g / 3, c.b / 3);
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let px = cx * 2 + 1;
+                let color = if px < box_w {
+                    let v = votes[cy * cw + cx];
+                    let (best, _) =
+                        v.iter().enumerate().fold(
+                            (0, 0u8),
+                            |acc, (i, &n)| if n > acc.1 { (i, n) } else { acc },
+                        );
+                    let c = RING_COLORS[best / 2];
+                    if best % 2 == 1 {
+                        c
+                    } else {
+                        dim(c)
+                    }
+                } else if px >= bx0 && bar_w > 2 {
+                    let k = ((cy * 4 + 2) * 3 / h.max(1)).min(2);
+                    let fill = (vals[k] * bar_w as f32) as usize;
+                    if px - bx0 < fill {
+                        RING_COLORS[k]
+                    } else {
+                        dim(RING_COLORS[k])
+                    }
+                } else {
+                    dim(RING_COLORS[0])
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
         Ok(())
@@ -1663,7 +1730,9 @@ impl ProgressStyle for ActivityRing {
 
 // ─── 10. USB file transfer ────────────────────────────────────────────────────
 
-/// File glyphs fly from a left device to a right device; count matches eased%.
+/// The USB trident logo on the left points at a flash drive on the right;
+/// little file packets (dog-eared pages) stream along into the drive's
+/// metal plug, the drive's storage fills with progress and its LED blinks.
 struct UsbTransfer;
 impl ProgressStyle for UsbTransfer {
     fn name(&self) -> &str {
@@ -1673,77 +1742,107 @@ impl ProgressStyle for UsbTransfer {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "USB transfer: file packets fly left→right; count and speed scale with progress"
+        "USB transfer: file packets stream from the USB trident logo into a flash drive's plug; the drive fills with progress, LED blinking"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
-            return Ok(());
+        let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
+        let my = hi / 2;
+
+        // USB trident logo: base circle, shaft, arrowhead, two branches.
+        sprite(grid, 0, my - 2, &[".##.", "#..#", "#..#", ".##."]);
+        for x in 4..20 {
+            draw::dot_i(grid, x, my);
         }
-        let (cells_w, cells_h) = grid.dimensions();
+        sprite(grid, 20, my - 2, &["#..", "##.", "###", "##.", "#.."]);
+        for k in 0..4 {
+            draw::dot_i(grid, 7 + k, my - 1 - k);
+            draw::dot_i(grid, 10 + k, my + 1 + k);
+        }
+        for x in 11..14 {
+            draw::dot_i(grid, x, my - 4);
+        }
+        sprite(grid, 14, my - 5, &[".##.", "#..#", ".##."]);
+        for x in 14..16 {
+            draw::dot_i(grid, x, my + 4);
+        }
+        sprite(grid, 16, my + 3, &["###", "###", "###"]);
 
-        let mid = h / 2;
-
-        // ── Device icons: left (source) and right (destination) ──
-        // Left block: a 2-dot-wide, full-height rect.
-        let dev_w = (w / 16).max(2);
-        draw::fill_rect(grid, 0, 0, dev_w, h);
-        // Right block.
-        draw::fill_rect(grid, w.saturating_sub(dev_w), 0, dev_w, h);
-
-        // ── USB cable track line ──
-        draw::hline(grid, dev_w, w.saturating_sub(dev_w + 1), mid);
-
-        // ── Flying file packets ──
-        // Number of active packets: 1 at 0%, up to 6 at 100%.
-        let max_packets = 6usize;
-        let active = ((ctx.eased * max_packets as f32).ceil() as usize).min(max_packets);
-        let track_w = w.saturating_sub(dev_w * 2 + 2);
-
-        for p in 0..active {
-            let phase = p as f32 / max_packets as f32;
-            // Speed: faster at higher progress.
-            let speed = 0.4 + ctx.eased * 0.6;
-            let t = (ctx.time * speed + phase).fract();
-            let x0 = dev_w + 1 + (t * track_w as f32) as usize;
-            let x0 = x0.min(w.saturating_sub(dev_w + 3));
-
-            // Packet shape: small rectangle, 3-dot wide, 2-dot tall.
-            let pkt_w = (w / 20).clamp(2, 4);
-            let pkt_h = 2usize.min(h);
-            let py0 = mid.saturating_sub(pkt_h / 2);
-            draw::fill_rect(grid, x0, py0, pkt_w, pkt_h);
-
-            // Tiny "file" notch on the packet (top-right corner void).
-            if x0 + pkt_w < w && py0 < h {
-                // Just leave that corner unset (draw::fill_rect already did it,
-                // but this gives the packet a recognisable dog-ear by drawing the
-                // outline of the corner explicitly with dots).
-            }
-
-            // Tint.
-            let t_color = p as f32 / max_packets.max(1) as f32;
-            let color = ctx.palette.sample(t_color);
-            let cx0 = (x0 / 2).min(cells_w.saturating_sub(1));
-            let cx1 = ((x0 + pkt_w) / 2).min(cells_w.saturating_sub(1));
-            for cy in 0..cells_h {
-                draw::tint_row(grid, cy, cx0, cx1, color);
+        // Flash drive: plug (with two contact holes) + body.
+        let body_w = 24.min(wi / 3).max(6);
+        let bx = wi - body_w;
+        let px = bx - 9;
+        sprite(
+            grid,
+            px,
+            my - 4,
+            &[
+                "#########",
+                "#........",
+                "#.##..##.",
+                "#.##..##.",
+                "#........",
+                "#........",
+                "#........",
+                "#########",
+            ],
+        );
+        draw::rect_outline(
+            grid,
+            bx.max(0) as usize,
+            (my - 7).max(0) as usize,
+            body_w.max(1) as usize - 1,
+            (hi - 2).max(1) as usize,
+        );
+        // Stored data fills the body.
+        let inner = (body_w - 6).max(0);
+        let fill = (ctx.eased * inner as f32).round() as i32;
+        for x in 0..fill {
+            for y in my - 4..=my + 4 {
+                if (x + y) % 2 == 0 || x % 3 == 0 {
+                    draw::dot_i(grid, bx + 2 + x, y);
+                }
             }
         }
+        // Activity LED near the end.
+        if (t * 6.0).fract() < 0.5 {
+            block(grid, wi - 3, my - 1, 2, 2);
+        }
 
-        // Tint device icons.
-        let dev_cells = (dev_w / 2).max(1);
-        let src_color = ctx.palette.sample(0.0);
-        let dst_color = ctx.palette.sample(1.0);
-        for cy in 0..cells_h {
-            draw::tint_row(grid, cy, 0, dev_cells.saturating_sub(1), src_color);
-            draw::tint_row(
-                grid,
-                cy,
-                cells_w.saturating_sub(dev_cells),
-                cells_w.saturating_sub(1),
-                dst_color,
-            );
+        // File packets streaming from the arrowhead into the plug.
+        let (x0, x1) = (25, px - 1);
+        let span = (x1 - x0).max(1);
+        for i in 0..3 {
+            let s = (t * 0.9 + i as f32 / 3.0).fract();
+            let x = x0 + (s * span as f32) as i32;
+            if x + 4 > x1 {
+                continue;
+            }
+            sprite(grid, x, my - 3, &["##.", "###", "###", "###"]);
+        }
+        for x in (x0..x1).step_by(3) {
+            draw::dot_i(grid, x, my + 3);
+        }
+
+        grid.enable_color_support();
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let qx = cx as i32 * 2 + 1;
+                let color = if qx < 24 {
+                    Color::rgb(220, 226, 236) // logo
+                } else if qx < px - 1 {
+                    Color::rgb(110, 250, 150) // packets
+                } else if qx < bx {
+                    Color::rgb(196, 200, 210) // metal plug
+                } else if qx >= wi - 4 {
+                    Color::rgb(80, 255, 120) // LED
+                } else {
+                    Color::rgb(60, 120, 250)
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
+            }
         }
         Ok(())
     }
@@ -1751,7 +1850,9 @@ impl ProgressStyle for UsbTransfer {
 
 // ─── 11. Gear train ──────────────────────────────────────────────────────────
 
-/// Interlocking rotating gears; large left, smaller right, alternate directions.
+/// A row of round toothed gears, alternating large and small, each meshed with
+/// its neighbour. Progress engages the train gear by gear: engaged gears turn
+/// (neighbours counter-rotating, small ones faster), idle gears sit still.
 struct GearTrain;
 impl ProgressStyle for GearTrain {
     fn name(&self) -> &str {
@@ -1761,101 +1862,48 @@ impl ProgressStyle for GearTrain {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "Interlocking gear train: large and small gears rotate in opposite directions"
+        "Gear train: a row of meshed toothed gears, large and small; progress engages them one by one (idle gears ghosted) and engaged gears counter-rotate"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let (cells_w, cells_h) = grid.dimensions();
+        let cy = (h as f32 - 1.0) / 2.0;
+        let big = (cy - 1.2).clamp(1.0, 6.3);
+        let small = (big * 0.6).max(1.0);
+        let pitch = big + small + 1.6;
+        let n = (((w as f32 - 2.0 * big - 2.0) / pitch) as usize + 1).max(1);
+        let engaged = (ctx.eased * n as f32).ceil() as usize;
 
-        // Draw a gear: circle with N teeth (short radial protrusions).
-        let draw_gear = |grid: &mut BrailleGrid,
-                         cx: i32,
-                         cy: i32,
-                         r: usize,
-                         n_teeth: usize,
-                         angle_offset: f32| {
-            if r == 0 {
-                return;
+        for i in 0..n {
+            let r = if i % 2 == 0 { big } else { small };
+            let teeth = if i % 2 == 0 { 10.0 } else { 6.0 };
+            let cx = big + 1.0 + i as f32 * pitch;
+            // Meshed gears share surface speed: ω ∝ 1/r, alternating sign.
+            let dir = if i % 2 == 0 { 1.0 } else { -1.0 };
+            let rot = if i < engaged {
+                ctx.time * 3.0 * dir / r
+            } else {
+                0.0
+            };
+            // Idle gears are ghosted (every third dot) so engagement reads.
+            let samples = (r * 14.0) as usize;
+            let stride = if i < engaged { 1 } else { 3 };
+            for s in (0..samples).step_by(stride) {
+                let a = s as f32 / samples as f32 * 2.0 * PI;
+                let tooth = ((a - rot) * teeth / (2.0 * PI)).rem_euclid(1.0) < 0.5;
+                let rr = if tooth { r + 1.2 } else { r };
+                draw::dot_i(
+                    grid,
+                    (cx + a.cos() * rr).round() as i32,
+                    (cy + a.sin() * rr).round() as i32,
+                );
             }
-            let tooth_len = (r / 4).max(1) as f32;
-            let r_f = r as f32;
-            let steps = (2.0 * PI * r_f) as usize + 8;
-            for i in 0..=steps {
-                let theta = i as f32 / steps as f32 * 2.0 * PI + angle_offset;
-                // Is this angle at a tooth?
-                let tooth_phase = (theta * n_teeth as f32 / (2.0 * PI)).fract();
-                let tooth_bump = if (0.25..=0.75).contains(&tooth_phase) {
-                    0.0
-                } else {
-                    tooth_len
-                };
-                let r_here = r_f + tooth_bump;
-                let dx = (theta.cos() * r_here) as i32;
-                let dy = (theta.sin() * r_here * 0.5) as i32;
-                draw::dot_i(grid, cx + dx, cy + dy);
-            }
-            // Hub.
-            draw::dot_i(grid, cx, cy);
-        };
-
-        // Gear dimensions: big gear on the left, smaller on the right.
-        let big_r = (h * 3 / 8).max(2);
-        let small_r = (big_r / 2).max(1);
-        let big_cx = (big_r + 2) as i32;
-        let big_cy = (h / 2) as i32;
-        // Small gear meshes with the big gear; positioned to its right.
-        let mesh_gap = 1i32; // gap between teeth
-        let small_cx = big_cx + big_r as i32 + small_r as i32 + mesh_gap;
-        let small_cy = big_cy;
-
-        // Rotation: speed 1.0 rad/s at full progress.
-        let omega_big = ctx.eased * 1.5;
-        let big_angle = ctx.time * omega_big;
-        // Small gear rotates inversely proportional to size ratio.
-        let gear_ratio = big_r as f32 / small_r.max(1) as f32;
-        let small_angle = -ctx.time * omega_big * gear_ratio;
-
-        let n_teeth_big = (big_r / 2).clamp(4, 16);
-        let n_teeth_small = (small_r / 2).clamp(3, 8);
-
-        draw_gear(grid, big_cx, big_cy, big_r, n_teeth_big, big_angle);
-        // Only draw small gear if it fits within the grid.
-        if small_cx + small_r as i32 + 2 < w as i32 {
-            draw_gear(
-                grid,
-                small_cx,
-                small_cy,
-                small_r,
-                n_teeth_small,
-                small_angle,
-            );
-        }
-
-        // Optional third (tiny) gear further right.
-        let tiny_r = (small_r / 2).max(1);
-        let tiny_cx = small_cx + small_r as i32 + tiny_r as i32 + mesh_gap;
-        let tiny_angle = -small_angle * (small_r as f32 / tiny_r.max(1) as f32);
-        if tiny_cx + tiny_r as i32 + 2 < w as i32 {
-            draw_gear(
-                grid,
-                tiny_cx,
-                small_cy,
-                tiny_r,
-                (tiny_r / 2).clamp(3, 6),
-                tiny_angle,
-            );
-        }
-
-        // Tint: gradient left to right.
-        for cx_c in 0..cells_w {
-            let t = cx_c as f32 / cells_w.max(1) as f32;
-            let color = ctx.palette.sample(t);
-            for cy_c in 0..cells_h {
-                draw::tint_row(grid, cy_c, cx_c, cx_c, color);
-            }
+            // Hub with a spoke mark so rotation reads.
+            draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
+            let (sx, sy) = (cx + rot.cos() * r * 0.55, cy + rot.sin() * r * 0.55);
+            draw::dot_i(grid, sx.round() as i32, sy.round() as i32);
         }
         Ok(())
     }
@@ -1863,7 +1911,10 @@ impl ProgressStyle for GearTrain {
 
 // ─── 12. E-ink page refresh ───────────────────────────────────────────────────
 
-/// Screen flashes to black, then content fills in cell-by-cell, row by row.
+/// An e-reader: bezel with page-turn buttons around a paper-white screen of
+/// justified text lines. Every page turn the whole screen flashes black, then
+/// blank, then the new page's text draws in. A location bar at the bottom of
+/// the screen fills with progress.
 struct EinkRefresh;
 impl ProgressStyle for EinkRefresh {
     fn name(&self) -> &str {
@@ -1873,73 +1924,84 @@ impl ProgressStyle for EinkRefresh {
         "gadgets"
     }
     fn describe(&self) -> &str {
-        "E-ink refresh: flashes full black then redraws content row-by-row via shade blocks"
+        "E-reader page turn: the screen flashes full black, then white, then a new page of text lines appears; the location bar fills with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (cells_w, cells_h) = grid.dimensions();
-        if cells_w == 0 || cells_h == 0 {
+        let (w, h) = draw::dot_dims(grid);
+        let (cw, ch) = grid.dimensions();
+        if w < 4 || h < 4 {
             return Ok(());
         }
-        let (w, h) = draw::dot_dims(grid);
+        let (wi, hi) = (w as i32, h as i32);
+        // Bezel, with page-turn buttons on the right.
+        draw::rect_outline(grid, 0, 0, w, h);
+        let sx1 = (wi - 6).max(2); // screen right edge (exclusive)
+        for y in 1..hi - 1 {
+            draw::dot_i(grid, sx1, y);
+        }
+        for y in [hi / 2 - 4, hi / 2 + 1] {
+            for k in 0..3 {
+                draw::dot_i(grid, sx1 + 2, y + k);
+                draw::dot_i(grid, sx1 + 3, y + k);
+            }
+        }
 
-        // Phase 0 (progress 0–0.15): flash to full black.
-        // Phase 1 (0.15–1.0): content draws in row by row, left to right.
-        let flash_phase = 0.15f32;
-
-        if ctx.eased < flash_phase {
-            // Full black (invert flash) — fill everything.
-            draw::fill_rect(grid, 0, 0, w, h);
-            let color = ctx.palette.sample(0.0);
-            draw::tint_row(grid, 0, 0, cells_w.saturating_sub(1), color);
-        } else {
-            // Normalise to the draw-in phase.
-            let draw_frac = (ctx.eased - flash_phase) / (1.0 - flash_phase);
-            let total_cells = cells_w * cells_h;
-            let cells_drawn = ((draw_frac * total_cells as f32) as usize).min(total_cells);
-
-            // Rows: complete rows first, then a partial last row.
-            let full_rows = cells_drawn / cells_w.max(1);
-            let partial_cols = cells_drawn % cells_w.max(1);
-
-            for cy in 0..full_rows.min(cells_h) {
-                for cx in 0..cells_w {
-                    // Alternating shade density based on a hash pattern —
-                    // simulates "newspaper" e-ink content.
-                    let linear = cy * cells_w + cx;
-                    let h_val = hash(linear as u32 * 13 + 7);
-                    let shade_level = match h_val % 5 {
-                        0 => 1, // ░
-                        1 => 2, // ▒
-                        2 => 3, // ▓
-                        _ => 4, // █
-                    };
-                    draw::shade(grid, cx, cy, shade_level);
-                    let t = cx as f32 / cells_w.max(1) as f32;
-                    let color = ctx.palette.sample(t * 0.6 + 0.2);
-                    draw::tint_row(grid, cy, cx, cx, color);
+        let period = 1.6;
+        let page = (ctx.time / period) as u32;
+        let u = (ctx.time / period).fract();
+        let (x0, x1, y0, y1) = (2, sx1 - 1, 2, hi - 3);
+        if u < 0.08 {
+            // Full black flash.
+            for y in 1..hi - 1 {
+                for x in 1..sx1 {
+                    draw::dot_i(grid, x, y);
                 }
             }
-            // Partial row.
-            let partial_row = full_rows.min(cells_h.saturating_sub(1));
-            if full_rows < cells_h {
-                for cx in 0..partial_cols.min(cells_w) {
-                    let linear = partial_row * cells_w + cx;
-                    let h_val = hash(linear as u32 * 13 + 7);
-                    let shade_level = (h_val % 4 + 1) as usize;
-                    draw::shade(grid, cx, partial_row, shade_level);
-                    let t = cx as f32 / cells_w.max(1) as f32;
-                    let color = ctx.palette.sample(t * 0.5 + 0.3);
-                    draw::tint_row(grid, partial_row, cx, cx, color);
+        } else if u >= 0.16 {
+            // Text lines revealed top to bottom.
+            let reveal = ((u - 0.16) / 0.2).min(1.0);
+            let rows = ((y1 - y0) / 2).max(0);
+            let shown = (reveal * rows as f32).ceil() as i32;
+            for r in 0..shown {
+                let y = y0 + r * 2;
+                if y >= y1 - 1 {
+                    break;
                 }
-                // Cursor line: a blinking single-dot underline at the draw-in edge.
-                if partial_cols < cells_w {
-                    let blink = (ctx.time * 4.0).fract() > 0.5;
-                    if blink {
-                        let (_, dot_h) = draw::dot_dims(grid);
-                        let row_y = (partial_row * 4 + 3).min(dot_h.saturating_sub(1));
-                        draw::dot(grid, partial_cols * 2, row_y);
+                // Words of varying length; last line of a paragraph short.
+                let end = if r % 4 == 3 { x0 + (x1 - x0) / 2 } else { x1 };
+                let mut x = x0 + if r % 4 == 0 { 3 } else { 0 };
+                let mut k = 0u32;
+                while x < end {
+                    let len = 2 + (hash(page * 977 + r as u32 * 31 + k) % 6) as i32;
+                    for d in 0..len.min(end - x) {
+                        draw::dot_i(grid, x + d, y);
                     }
+                    x += len + 2;
+                    k += 1;
                 }
+            }
+        }
+        // Location bar along the bottom of the screen.
+        let fill = x0 + (ctx.eased * (x1 - x0) as f32) as i32;
+        for x in x0..x1 {
+            if x <= fill || x % 2 == 0 {
+                draw::dot_i(grid, x, hi - 2);
+            }
+        }
+
+        grid.enable_color_support();
+        let flash = u < 0.08;
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let qx = cx as i32 * 2 + 1;
+                let color = if qx >= sx1 {
+                    Color::rgb(130, 132, 140) // bezel
+                } else if flash {
+                    Color::rgb(70, 70, 74)
+                } else {
+                    Color::rgb(232, 228, 214) // paper white
+                };
+                let _ = grid.set_cell_color(cx, cy, color);
             }
         }
         Ok(())

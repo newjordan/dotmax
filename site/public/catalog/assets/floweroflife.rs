@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -844,7 +879,8 @@ pub mod styles {
 //! Eleven structurally distinct styles drawn from the Flower-of-Life family:
 //! overlapping-circle constructions on a hexagonal lattice, their intersection
 //! graphs (Metatron's Cube), the Kabbalistic Tree of Life, a 64-tetrahedron
-//! triangular projection, and a time-rotating torus-flower. Every style
+//! triangular projection, and a time-rotating torus-flower. Figures fill the
+//! strip's height, most repeated as a frieze filled panel by panel. Every style
 //! reveals itself as `ctx.eased` rises from 0 → 1 and breathes or rotates
 //! via `ctx.time`.
 
@@ -892,38 +928,6 @@ fn hex_offset(ring_angle_index: usize, radius: f32) -> (f32, f32) {
     (radius * a.cos(), radius * a.sin())
 }
 
-/// The 7 Seed-of-Life circle centres: centre + 6 around it at distance `r`.
-/// Returned in order: [centre, 0°, 60°, 120°, 180°, 240°, 300°].
-fn seed_centres(cx: f32, cy: f32, r: f32) -> [(f32, f32); 7] {
-    let mut out = [(0f32, 0f32); 7];
-    out[0] = (cx, cy);
-    for i in 0..6 {
-        let (dx, dy) = hex_offset(i, r);
-        out[i + 1] = (cx + dx, cy + dy);
-    }
-    out
-}
-
-/// All 19 Flower-of-Life centres: Seed (7) + outer ring (12).
-fn flower_centres(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
-    let mut v: Vec<(f32, f32)> = Vec::with_capacity(19);
-    // Inner 7
-    for c in seed_centres(cx, cy, r) {
-        v.push(c);
-    }
-    // Outer 12: two rings of 6 each at √3·r and 2·r, offset 30°
-    for i in 0..6 {
-        let a = i as f32 * PI / 3.0 + PI / 6.0;
-        let d = 3f32.sqrt() * r;
-        v.push((cx + d * a.cos(), cy + d * a.sin()));
-    }
-    for i in 0..6 {
-        let (dx, dy) = hex_offset(i, 2.0 * r);
-        v.push((cx + dx, cy + dy));
-    }
-    v
-}
-
 /// 13 Fruit-of-Life centres: centre + 6 at r + 6 at 2r (same hex axes).
 fn fruit_centres(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
     let mut v: Vec<(f32, f32)> = Vec::with_capacity(13);
@@ -937,6 +941,70 @@ fn fruit_centres(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
         v.push((cx + dx, cy + dy));
     }
     v
+}
+
+/// Lays a frieze of full-height panels across the strip, filled left to right
+/// with progress (the first already part-drawn at the start), each tinted
+/// with its own palette stop. The callback gets `(grid, cx, cy, r,
+/// local_reveal, index)`; `local_reveal` is 0 for a panel not yet reached.
+/// `wf` is the panel pitch in radii, `gap` extra dots between panels.
+fn frieze(
+    grid: &mut BrailleGrid,
+    ctx: &BarContext,
+    wf: f32,
+    gap: f32,
+    mut panel: impl FnMut(&mut BrailleGrid, f32, f32, f32, f32, usize),
+) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if dw < 2 || dh < 2 {
+        return;
+    }
+    let r = (dw.min(dh) as f32 / 2.0 - 0.5).max(1.0);
+    let pitch = (r * wf + gap).max(2.0);
+    let n = ((dw as f32 / pitch) as usize).clamp(1, 64);
+    let off = (dw as f32 - n as f32 * pitch) / 2.0;
+    let cy = dh as f32 / 2.0 - 0.5;
+    let fill = (0.08 + ctx.eased.clamp(0.0, 1.0) * 0.92) * n as f32;
+    let (cw, ch) = grid.dimensions();
+    for i in 0..n {
+        let cx = off + pitch * (i as f32 + 0.5) - 0.5;
+        let lr = (fill - i as f32).clamp(0.0, 1.0);
+        panel(grid, cx, cy, r, lr, i);
+        let color = ctx.palette.sample(i as f32 / (n - 1).max(1) as f32);
+        let x0 = ((cx - pitch / 2.0).max(0.0) / 2.0) as usize;
+        let x1 = (((cx + pitch / 2.0).max(0.0) / 2.0) as usize).min(cw.saturating_sub(1));
+        if cw > 0 && x0 <= x1 {
+            for y in 0..ch {
+                draw::tint_row(grid, y, x0, x1, color);
+            }
+        }
+    }
+}
+
+/// Faint dotted ring: the placeholder for a frieze panel not yet reached.
+fn dotted_ring(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
+    let n = ((r * 2.0) as usize).clamp(4, 64);
+    for k in 0..n {
+        let a = 2.0 * PI * k as f32 / n as f32;
+        draw::dot_i(
+            grid,
+            (cx + r * a.cos()).round() as i32,
+            (cy + r * a.sin()).round() as i32,
+        );
+    }
+}
+
+/// Plot only the part of circle (`ox`,`oy`,`r`) lying within distance `lim`
+/// of (`cx`,`cy`).
+fn clipped_circle(grid: &mut BrailleGrid, ox: f32, oy: f32, r: f32, cx: f32, cy: f32, lim: f32) {
+    let steps = ((2.0 * PI * r).ceil() as usize * 2).clamp(8, 512);
+    for i in 0..steps {
+        let a = 2.0 * PI * i as f32 / steps as f32;
+        let (px, py) = (ox + r * a.cos(), oy + r * a.sin());
+        if (px - cx).hypot(py - cy) <= lim {
+            draw::dot_i(grid, px.round() as i32, py.round() as i32);
+        }
+    }
 }
 
 // ── All styles ─────────────────────────────────────────────────────────────
@@ -1025,7 +1093,7 @@ impl ProgressStyle for VesicaPiscis {
 
 // ── 2. Seed of Life ────────────────────────────────────────────────────────
 
-/// Central circle + 6 petals revealed one at a time; rotates with time.
+/// Seed of Life: seven equal circles, six around one, each through the centre.
 struct SeedOfLife;
 impl ProgressStyle for SeedOfLife {
     fn name(&self) -> &str {
@@ -1035,47 +1103,42 @@ impl ProgressStyle for SeedOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Seven circles of the Seed of Life appear petal-by-petal as progress rises"
+        "Seed of Life: a row of seeds, each seven equal circles — one centre \
+         and six around it, every one passing through the centre — set circle \
+         by circle and seed by seed as progress rises, slowly turning"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) * 0.38).max(1.0);
-
-        // Rotation offset from time.
-        let rot = ctx.time * 0.25;
-        // How many of the 7 circles to reveal (0 → 7).
-        let reveal = (ctx.eased * 7.0).ceil() as usize;
-
-        let centres = seed_centres(cx, cy, r);
-        for (i, &(px, py)) in centres.iter().enumerate().take(reveal.min(7)) {
-            // Rotate each petal centre around cx,cy.
-            let (ox, oy) = (px - cx, py - cy);
-            let rx_c = ox * rot.cos() - oy * rot.sin() + cx;
-            let ry_c = ox * rot.sin() + oy * rot.cos() + cy;
-            plot_circle(grid, rx_c, ry_c, r);
-
-            // Tint by petal index.
-            let t = i as f32 / 6.0;
-            let color = ctx.palette.sample(t);
-            let (cw, ch) = grid.dimensions();
-            let cell_x = (rx_c / 2.0).round() as usize;
-            let cell_y = (ry_c / 4.0).round() as usize;
-            if cell_x < cw && cell_y < ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
+            // Outer circles reach 2·rho: the seed fills the strip's height.
+            let rho = (r / 2.0).max(0.8);
+            let rot = time * 0.25 * if i % 2 == 0 { 1.0 } else { -1.0 };
+            let n = (lr * 7.0).ceil() as usize;
+            for k in 0..n.min(7) {
+                if k == 0 {
+                    plot_circle(g, cx, cy, rho);
+                } else {
+                    let a = rot + (k - 1) as f32 * PI / 3.0;
+                    plot_circle(g, cx + rho * a.cos(), cy + rho * a.sin(), rho);
+                }
+            }
+        });
         Ok(())
     }
 }
 
 // ── 3. Flower of Life ─────────────────────────────────────────────────────
 
-/// Full 19-circle pattern with boundary ring; circles added as eased rises.
+/// The Flower of Life as its true, unbounded form: equal circles on a
+/// hexagonal lattice, each passing through its six neighbours' centres.  At
+/// 16 dots tall the 19-circle medallion shrinks to a smudge, so the lattice
+/// runs as a frieze across the strip instead — circles bloom left → right
+/// with progress (the newest column growing from its centre) while the
+/// whole weave drifts slowly on `time`.
 struct FlowerOfLife;
 impl ProgressStyle for FlowerOfLife {
     fn name(&self) -> &str {
@@ -1085,37 +1148,51 @@ impl ProgressStyle for FlowerOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "All 19 overlapping circles of the Flower of Life bloom with progress, bounded by an outer ring"
+        "Flower of Life lattice: equal circles on a hexagonal grid, each through \
+         its neighbours' centres, blooming left to right as a drifting frieze"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        // Fit: 19 circles span ≈3r radius from centre; outer ring at 2r.
-        let r = (cx.min(cy) / 3.2).max(1.0);
+        let cy = dh as f32 / 2.0 - 0.5;
+        // Circle radius = lattice spacing; just over half the height keeps
+        // the petals open enough to read.
+        let r = (dh as f32 * 0.56).max(1.5);
+        let row_h = r * 3f32.sqrt() / 2.0;
+        let drift = (ctx.time * 1.5).rem_euclid(r);
+        let front = ctx.eased.clamp(0.0, 1.0) * (dw as f32 + r);
 
-        let centres = flower_centres(cx, cy, r);
-        let total = centres.len(); // 19
-        let reveal = (ctx.eased * total as f32).ceil() as usize;
-
-        for (i, &(px, py)) in centres.iter().enumerate().take(reveal.min(total)) {
-            plot_circle(grid, px, py, r);
-            let t = i as f32 / (total - 1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            let (cw, ch) = grid.dimensions();
-            let cell_x = (px / 2.0).round() as usize;
-            let cell_y = (py / 4.0).round() as usize;
-            if cell_x < cw && cell_y < ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+        let rows = (cy / row_h).ceil() as i32 + 1;
+        let cols = (dw as f32 / r).ceil() as i32 + 2;
+        for j in -rows..=rows {
+            let py = cy + j as f32 * row_h;
+            let shift = if j.rem_euclid(2) == 1 { r / 2.0 } else { 0.0 };
+            for i in -1..cols {
+                let px = i as f32 * r + shift + drift - r;
+                if px > front {
+                    continue;
+                }
+                // Circles just behind the front are still opening.
+                let grow = ((front - px) / r).clamp(0.0, 1.0);
+                plot_circle(grid, px, py, r * grow);
             }
         }
 
-        // Outer boundary circle at 2r.
-        if ctx.eased >= 0.95 {
-            plot_circle(grid, cx, cy, 2.0 * r);
+        // Palette across the bloomed region, the leading cells brightest.
+        let (cw, ch) = grid.dimensions();
+        let lit = ((front / 2.0).ceil() as usize).min(cw);
+        for cx_cell in 0..lit {
+            let t = cx_cell as f32 / cw.max(1) as f32;
+            let color = if cx_cell + 2 >= lit {
+                ctx.palette.end
+            } else {
+                ctx.palette.sample(t * 0.8)
+            };
+            for cy_cell in 0..ch {
+                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, color);
+            }
         }
         Ok(())
     }
@@ -1123,7 +1200,7 @@ impl ProgressStyle for FlowerOfLife {
 
 // ── 4. Egg of Life ────────────────────────────────────────────────────────
 
-/// 7 non-overlapping circles at alternate Flower-of-Life positions; pulses with time.
+/// Egg of Life: seven touching spheres (one centre, six around) swaying in 3-D.
 struct EggOfLife;
 impl ProgressStyle for EggOfLife {
     fn name(&self) -> &str {
@@ -1133,49 +1210,45 @@ impl ProgressStyle for EggOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Seven separated circles in egg-of-life formation; radius pulses with time as progress fills"
+        "Egg of Life: a row of seed clusters, each seven touching spheres — \
+         one centre, six around, highlighted and swaying in 3-D — set sphere \
+         by sphere and cluster by cluster as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        // Egg of life: 7 circles placed at seed positions but non-overlapping (spacing=2r).
-        let r = (cx.min(cy) * 0.22).max(1.0);
-        let spacing = r * 2.2;
-
-        let reveal = (ctx.eased * 7.0).ceil() as usize;
-        let pulse = 1.0 + 0.06 * (ctx.time * 1.8).sin();
-
-        let mut centres = [(0f32, 0f32); 7];
-        centres[0] = (cx, cy);
-        for i in 0..6 {
-            let (dx, dy) = hex_offset(i, spacing);
-            centres[i + 1] = (cx + dx, cy + dy);
-        }
-
-        for (i, &(px, py)) in centres.iter().enumerate().take(reveal.min(7)) {
-            plot_circle(grid, px, py, r * pulse);
-            // Fill inner dot for egg effect.
-            draw::dot_i(grid, px.round() as i32, py.round() as i32);
-            let t = i as f32 / 6.0;
-            let color = ctx.palette.sample(t);
-            let (cw, ch) = grid.dimensions();
-            let cell_x = (px / 2.0).round() as usize;
-            let cell_y = (py / 4.0).round() as usize;
-            if cell_x < cw && cell_y < ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
+            let rho = (r / 3.0).max(0.8);
+            let d = 2.0 * rho;
+            let sway = 0.45 * (time * 1.2 + i as f32).sin();
+            let n = (lr * 7.0).ceil() as usize;
+            for k in 0..n.min(7) {
+                let (ox, oy, z) = if k == 0 {
+                    (0.0, 0.0, 0.0)
+                } else {
+                    let a = (k - 1) as f32 * PI / 3.0 + PI / 6.0;
+                    let (x, y) = (d * a.cos(), d * a.sin());
+                    (x * sway.cos(), y, x * sway.sin())
+                };
+                let cr = rho * (1.0 + 0.15 * z / d);
+                let (px, py) = (cx + ox, cy + oy);
+                plot_circle(g, px, py, cr);
+                // Specular glint: each circle reads as a sphere.
+                let gx = (px - cr * 0.4).round() as i32;
+                let gy = (py - cr * 0.4).round() as i32;
+                draw::dot_i(g, gx, gy);
+            }
+        });
         Ok(())
     }
 }
 
 // ── 5. Fruit of Life ──────────────────────────────────────────────────────
 
-/// 13-circle pattern (the Fruit of Life); circles connected by lines as eased rises.
+/// Fruit of Life: 13 disjoint circles on the hexagonal Flower-of-Life axes.
 struct FruitOfLife;
 impl ProgressStyle for FruitOfLife {
     fn name(&self) -> &str {
@@ -1185,56 +1258,34 @@ impl ProgressStyle for FruitOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "13 circles of the Fruit of Life; connecting lines drawn between all centres with progress"
+        "Fruit of Life: a row of thirteen-circle fruits — a centre, six \
+         around and six beyond along the hexagonal axes, never touching — \
+         each set ring by ring as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) / 2.5).max(1.0);
-        let cr = (r * 0.18).max(1.0);
-
-        let centres = fruit_centres(cx, cy, r);
-        let total = centres.len(); // 13
-
-        // Phase 1 (eased 0→0.5): reveal circles one by one.
-        // Phase 2 (eased 0.5→1): draw connecting lines between all centres.
-        let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let line_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
-
-        let reveal_circles = (circle_frac * total as f32).ceil() as usize;
-        for (i, &(px, py)) in centres.iter().enumerate().take(reveal_circles.min(total)) {
-            plot_circle(grid, px, py, cr);
-            let t = i as f32 / (total - 1).max(1) as f32;
-            draw::tint_row(
-                grid,
-                (py / 4.0) as usize,
-                (px / 2.0) as usize,
-                (px / 2.0) as usize,
-                ctx.palette.sample(t),
-            );
-        }
-
-        // Connecting lines (all pairs = 78 edges).
-        let all_pairs: Vec<(usize, usize)> = (0..total)
-            .flat_map(|a| (a + 1..total).map(move |b| (a, b)))
-            .collect();
-        let reveal_lines = (line_frac * all_pairs.len() as f32).round() as usize;
-        for &(a, b) in all_pairs.iter().take(reveal_lines) {
-            let (ax, ay) = centres[a];
-            let (bx, by) = centres[b];
-            plot_line(grid, ax, ay, bx, by);
-        }
+        let time = ctx.time;
+        frieze(grid, ctx, 2.3, 3.0, |g, cx, cy, r, lr, _| {
+            let rho = (r / 4.46).max(0.6);
+            let centres = fruit_centres(cx, cy, 2.0 * rho);
+            if lr <= 0.0 {
+                for &(px, py) in &centres {
+                    draw::dot_i(g, px.round() as i32, py.round() as i32);
+                }
+                return;
+            }
+            let n = (lr * centres.len() as f32).ceil() as usize;
+            let pulse = 1.0 + 0.08 * (time * 2.0).sin();
+            for &(px, py) in centres.iter().take(n) {
+                plot_circle(g, px, py, rho * pulse);
+            }
+        });
         Ok(())
     }
 }
 
 // ── 6. Metatron's Cube ────────────────────────────────────────────────────
 
-/// 13 Fruit-of-Life centres; ALL straight lines between them drawn with eased.
+/// Metatron's Cube: the 13 Fruit-of-Life nodes joined by their key lines.
 struct MetatronsCube;
 impl ProgressStyle for MetatronsCube {
     fn name(&self) -> &str {
@@ -1244,70 +1295,58 @@ impl ProgressStyle for MetatronsCube {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Metatron's Cube: 13 nodes with all 78 connecting edges revealed progressively"
+        "Metatron's Cube: a row of cubes, each the 13 Fruit-of-Life node \
+         circles joined into outer hexagon and great hexagram, drawn \
+         family by family and cube by cube as progress rises, slowly turning"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
+        // At 16 dots the full 78-line web is a solid blot, so the two
+        // families that carry the figure are drawn in turn — outer hexagon,
+        // then the great hexagram — over the 13 node circles.
+        let mut lines: Vec<(usize, usize)> = Vec::with_capacity(12);
+        for i in 0..6 {
+            lines.push((7 + i, 7 + (i + 1) % 6));
         }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) / 2.4).max(1.0);
-        // Slow rotation via time.
-        let rot = ctx.time * 0.15;
-
-        let raw = fruit_centres(cx, cy, r);
-        // Rotate all centres around cx,cy.
-        let centres: Vec<(f32, f32)> = raw
-            .iter()
-            .map(|&(px, py)| {
-                let ox = px - cx;
-                let oy = py - cy;
-                (
-                    ox * rot.cos() - oy * rot.sin() + cx,
-                    ox * rot.sin() + oy * rot.cos() + cy,
-                )
-            })
-            .collect();
-
-        let total = centres.len();
-        let all_pairs: Vec<(usize, usize)> = (0..total)
-            .flat_map(|a| (a + 1..total).map(move |b| (a, b)))
-            .collect();
-        let reveal = (ctx.eased * all_pairs.len() as f32).round() as usize;
-
-        for &(a, b) in all_pairs.iter().take(reveal) {
-            let (ax, ay) = centres[a];
-            let (bx, by) = centres[b];
-            let t = a as f32 / (total - 1).max(1) as f32;
-            let _ = t; // color applied per row via tint below
-            plot_line(grid, ax, ay, bx, by);
+        for i in 0..6 {
+            lines.push((7 + i, 7 + (i + 2) % 6));
         }
-
-        // Draw node dots on top.
-        let cr = 1.5f32.max(r * 0.12);
-        for &(px, py) in &centres {
-            plot_circle(grid, px, py, cr);
-        }
-
-        // Gradient tint across all columns.
-        let (cw, ch) = grid.dimensions();
-        for cy_cell in 0..ch {
-            for cx_cell in 0..cw {
-                let t = cx_cell as f32 / cw.max(1) as f32;
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
+            // Outer ring of nodes sits at 2·s: the cube fills the height.
+            let nr = 1.0f32;
+            let s = ((r - nr) / 2.0).max(0.8);
+            let rot = time * 0.15 + i as f32 * PI / 6.0;
+            let nodes: Vec<(f32, f32)> = fruit_centres(cx, cy, s)
+                .iter()
+                .map(|&(px, py)| {
+                    let (ox, oy) = (px - cx, py - cy);
+                    (
+                        ox * rot.cos() - oy * rot.sin() + cx,
+                        ox * rot.sin() + oy * rot.cos() + cy,
+                    )
+                })
+                .collect();
+            let n = (lr * 1.25).min(1.0) * lines.len() as f32;
+            for &(a, b) in lines.iter().take(n.ceil() as usize) {
+                let (ax, ay) = nodes[a];
+                let (bx, by) = nodes[b];
+                plot_line(g, ax, ay, bx, by);
+            }
+            for &(px, py) in &nodes {
+                plot_circle(g, px, py, nr);
+            }
+        });
         Ok(())
     }
 }
 
 // ── 7. Germ of Life ───────────────────────────────────────────────────────
 
-/// First 7 circles of the Flower of Life with overlapping arcs shaded by eased.
-/// Distinct from Seed-of-Life: draws ONLY the interior arcs (intersection petals),
-/// not full circles — revealing the petal "germ" geometry.
+/// First 7 circles of the Flower of Life, inner petals traced bold.
 struct GermOfLife;
 impl ProgressStyle for GermOfLife {
     fn name(&self) -> &str {
@@ -1317,74 +1356,40 @@ impl ProgressStyle for GermOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Germ of Life: interior arc-petals of 7 overlapping circles fill in as progress rises"
+        "Germ of Life: a row of seven-circle germs — the six-petal flower cut \
+         cut by six circles centred on a ring, a seed at its heart and the \
+         circle centres marked — petal by petal as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) * 0.38).max(1.0);
-        let centres = seed_centres(cx, cy, r);
-
-        // For each pair of adjacent outer circles (6 pairs), draw ONLY the arc
-        // segment of circle i that lies within circle i+1. We approximate this
-        // by plotting only angle ranges where the point is inside the neighbour.
-        let reveal_petals = (ctx.eased * 6.0).ceil() as usize;
-
-        // Draw the central circle fully.
-        plot_circle(grid, cx, cy, r);
-
-        for petal in 0..reveal_petals.min(6) {
-            let (ox1, oy1) = (centres[petal + 1].0, centres[petal + 1].1);
-            // Next petal (wrapping).
-            let next = ((petal + 1) % 6) + 1;
-            let (ox2, oy2) = (centres[next].0, centres[next].1);
-
-            // Arc of circle at ox1,oy1 that passes through cx,cy region.
-            let steps = 256usize;
-            for i in 0..steps {
-                let angle = 2.0 * PI * i as f32 / steps as f32;
-                let px = ox1 + r * angle.cos();
-                let py = oy1 + r * angle.sin();
-                // Only draw if inside the central circle.
-                let dc = (px - cx).hypot(py - cy);
-                if dc <= r + 0.5 {
-                    draw::dot_i(grid, px.round() as i32, py.round() as i32);
-                }
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-
-            // Also arc of ox2 inside ox1.
-            for i in 0..steps {
-                let angle = 2.0 * PI * i as f32 / steps as f32;
-                let px = ox2 + r * angle.cos();
-                let py = oy2 + r * angle.sin();
-                let d1 = (px - ox1).hypot(py - oy1);
-                if d1 <= r + 0.5 {
-                    draw::dot_i(grid, px.round() as i32, py.round() as i32);
-                }
+            // Six circles centred on a ring, each through the centre: only
+            // their arcs inside the ring are traced, cutting the six-petal
+            // germ around a small seed circle.
+            let rho = r;
+            let rot = time * 0.2 * if i % 2 == 0 { 1.0 } else { -1.0 };
+            let n = (lr * 6.0).ceil() as usize;
+            for k in 0..n.min(6) {
+                let a = rot + k as f32 * PI / 3.0;
+                let (ox, oy) = (cx + rho * a.cos(), cy + rho * a.sin());
+                clipped_circle(g, ox, oy, rho, cx, cy, rho - 0.4);
+                draw::dot_i(g, ox.round() as i32, oy.round() as i32);
             }
-
-            let t = petal as f32 / 5.0;
-            let color = ctx.palette.sample(t);
-            let (cw, ch) = grid.dimensions();
-            let pcx = (ox1 / 2.0).round() as usize;
-            let pcy = (oy1 / 4.0).round() as usize;
-            if pcx < cw && pcy < ch {
-                draw::tint_row(grid, pcy, pcx, pcx, color);
+            if lr >= 1.0 {
+                plot_circle(g, cx, cy, (r * 0.2).max(1.0));
             }
-        }
+        });
         Ok(())
     }
 }
 
 // ── 8. Tripod of Life ─────────────────────────────────────────────────────
 
-/// Three-fold symmetry: 3 interlocking circles + 3-arm spoke structure.
-/// Structurally distinct: uses 3-fold (not 6-fold) symmetry and builds a
-/// branching tripod geometry inside the overlapping region.
+/// Tripod of Life: three mutually overlapping circles, a 3-arm spoke between.
 struct TripodOfLife;
 impl ProgressStyle for TripodOfLife {
     fn name(&self) -> &str {
@@ -1394,59 +1399,33 @@ impl ProgressStyle for TripodOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Tripod of Life: three interlocking circles with a central 3-arm spoke revealed by eased"
+        "Tripod of Life: a row of three mutually overlapping circles turning \
+         about their shared centre, a three-arm spoke joining their centres — \
+         circle by circle and tripod by tripod as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) * 0.42).max(1.0);
-
-        let rot = ctx.time * 0.3;
-
-        // 3 circle centres at 120° intervals.
-        let mut circle_centres = [(0f32, 0f32); 3];
-        for (i, centre) in circle_centres.iter_mut().enumerate() {
-            let a = rot + i as f32 * 2.0 * PI / 3.0;
-            *centre = (cx + r * 0.5 * a.cos(), cy + r * 0.5 * a.sin());
-        }
-
-        // Reveal circles (phase 1: eased 0→0.5), then spoke arms (phase 2: 0.5→1).
-        let circle_frac = (ctx.eased * 2.0).min(1.0);
-        let arm_frac = ((ctx.eased - 0.5) * 2.0).clamp(0.0, 1.0);
-
-        let reveal_circles = (circle_frac * 3.0).ceil() as usize;
-        for (i, &(px, py)) in circle_centres
-            .iter()
-            .enumerate()
-            .take(reveal_circles.min(3))
-        {
-            plot_circle(grid, px, py, r);
-            let color = ctx.palette.sample(i as f32 / 2.0);
-            let (cw, ch) = grid.dimensions();
-            let cell_x = (px / 2.0).round() as usize;
-            let cell_y = (py / 4.0).round() as usize;
-            if cell_x < cw && cell_y < ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
-
-        // Spoke arms from centre outward.
-        for i in 0..3 {
-            let a = rot + i as f32 * 2.0 * PI / 3.0;
-            let arm_r = r * arm_frac;
-            let ex = cx + arm_r * a.cos();
-            let ey = cy + arm_r * a.sin();
-            plot_line(grid, cx, cy, ex, ey);
-        }
-
-        // Central dot.
-        if ctx.eased > 0.1 {
-            draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-        }
+            let rho = r * 0.6;
+            let d = r - rho;
+            let rot = time * 0.3 + i as f32 * PI / 3.0;
+            let n = ((lr * 1.5).min(1.0) * 3.0).ceil() as usize;
+            for k in 0..3 {
+                let a = rot + k as f32 * 2.0 * PI / 3.0 - PI / 2.0;
+                let (ox, oy) = (cx + d * a.cos(), cy + d * a.sin());
+                if k < n {
+                    plot_circle(g, ox, oy, rho);
+                }
+                if lr > 0.66 {
+                    plot_line(g, cx, cy, ox, oy);
+                }
+            }
+            draw::dot_i(g, cx.round() as i32, cy.round() as i32);
+        });
         Ok(())
     }
 }
@@ -1464,7 +1443,9 @@ impl ProgressStyle for TreeOfLife {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Kabbalistic Tree of Life: 10 sephirot nodes with 22 paths revealed as eased rises"
+        "Kabbalistic Tree of Life laid on its side: 10 sephirot on three pillars, the \
+         22 paths drawn crown to kingdom with progress while the lightning flash \
+         runs the sephirot in order"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
@@ -1474,9 +1455,10 @@ impl ProgressStyle for TreeOfLife {
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
 
-        // Scale so the tree fits: spans 6 units tall, 4 wide.
-        let sx = (dw as f32 / 4.5).min(dh as f32 / 6.5).max(1.0);
-        let sy = sx;
+        // The tree lies on its side to use the wide strip: its 6-unit trunk
+        // runs left (Kether) to right (Malkuth), the pillars stacked ±1 unit.
+        let sx = ((dw as f32 - 6.0) / 6.0).max(1.0);
+        let sy = (dh as f32 / 2.0 - 2.0).max(1.0);
 
         // Sephirot positions (normalized, y increasing downward).
         // Classical layout:  1=Kether(top), 10=Malkuth(bottom).
@@ -1496,7 +1478,7 @@ impl ProgressStyle for TreeOfLife {
         // Convert to dot-space.
         let dot_nodes: Vec<(f32, f32)> = nodes
             .iter()
-            .map(|&(x, y)| (cx + x * sx, cy + y * sy))
+            .map(|&(x, y)| (cx + y * sx, cy - 0.5 + x * sy))
             .collect();
 
         // 22 paths of the Tree of Life (traditional Sefer Yetzirah connections).
@@ -1521,8 +1503,8 @@ impl ProgressStyle for TreeOfLife {
             (6, 8), // Netzach
             (7, 8), // Hod
             (8, 9), // Yesod-Malkuth
-            (1, 4),
-            (2, 3), // cross-paths (Paroketh)
+            (6, 9),
+            (7, 9), // Netzach / Hod to Malkuth
         ];
 
         let reveal = (ctx.eased * paths.len() as f32).round() as usize;
@@ -1535,7 +1517,7 @@ impl ProgressStyle for TreeOfLife {
         }
 
         // Draw sephirot nodes as small circles.
-        let nr = (sx * 0.25).max(1.0);
+        let nr = (sy * 0.25).clamp(1.0, 1.5);
         for (i, &(px, py)) in dot_nodes.iter().enumerate() {
             plot_circle(grid, px, py, nr);
             let t = i as f32 / 9.0;
@@ -1547,14 +1529,24 @@ impl ProgressStyle for TreeOfLife {
                 draw::tint_row(grid, cell_y, cell_x, cell_x, color);
             }
         }
+
+        // The lightning flash: a spark running the sephirot 1 → 10 in order.
+        let run = (ctx.time * 1.5).rem_euclid(9.0);
+        let k = (run as usize).min(8);
+        let f = run - k as f32;
+        let (ax, ay) = dot_nodes[k];
+        let (bx, by) = dot_nodes[k + 1];
+        let (fx, fy) = (ax + (bx - ax) * f, ay + (by - ay) * f);
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            draw::dot_i(grid, fx.round() as i32 + dx, fy.round() as i32 + dy);
+        }
         Ok(())
     }
 }
 
 // ── 10. 64-Tetrahedron Grid ───────────────────────────────────────────────
 
-/// 2D projection of the 64-tetrahedron grid as a triangular lattice.
-/// Structurally different: pure triangular grid, no circles.
+/// 64-tetrahedron grid seen down its axis: star tetrahedra in hexagonal tiles.
 struct TetraGrid;
 impl ProgressStyle for TetraGrid {
     fn name(&self) -> &str {
@@ -1564,89 +1556,54 @@ impl ProgressStyle for TetraGrid {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "64-tetrahedron grid: equilateral triangular lattice revealed by progress, sweeping in from left"
+        "64-tetrahedron grid: the lattice seen down its axis as a row of \
+         edge-sharing hexagons, each filled with a star tetrahedron (two \
+         interlocking triangles), its axes and core — tile by tile with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-
-        // Triangular lattice basis vectors (equilateral triangles).
-        // a = (1, 0), b = (0.5, √3/2), scaled to fit.
-        let cell_size = (dw.min(dh) as f32 / 8.0).max(2.0);
-        let ax = cell_size;
-        let ay = 0.0f32;
-        let bx = cell_size * 0.5;
-        let by = cell_size * (3f32.sqrt() / 2.0);
-
-        // Generate lattice points in a grid range.
-        let range = 6i32;
-        let mut points: Vec<(f32, f32)> = Vec::new();
-        for i in -range..=range {
-            for j in -range..=range {
-                let px = cx + i as f32 * ax + j as f32 * bx;
-                let py = cy + i as f32 * ay + j as f32 * by;
-                // Only keep if within dot bounds.
-                if px >= 0.0 && px < dw as f32 && py >= 0.0 && py < dh as f32 {
-                    points.push((px, py));
+        let time = ctx.time;
+        frieze(grid, ctx, 3f32.sqrt(), 0.0, |g, cx, cy, r, lr, _| {
+            let v: Vec<(f32, f32)> = (0..6)
+                .map(|k| {
+                    let a = -PI / 2.0 + k as f32 * PI / 3.0;
+                    (cx + r * a.cos(), cy + r * a.sin())
+                })
+                .collect();
+            for k in 0..6 {
+                let (a, b) = (v[k], v[(k + 1) % 6]);
+                plot_line(g, a.0, a.1, b.0, b.1);
+            }
+            if lr <= 0.0 {
+                return;
+            }
+            // Upward tetrahedron, then axes, then the downward one.
+            for k in [0usize, 2, 4] {
+                let (a, b) = (v[k], v[(k + 2) % 6]);
+                plot_line(g, a.0, a.1, b.0, b.1);
+            }
+            if lr > 0.33 {
+                for k in 0..3 {
+                    let (a, b) = (v[k], v[k + 3]);
+                    plot_line(g, a.0, a.1, b.0, b.1);
                 }
             }
-        }
-
-        // Reveal point by point from left to right (x-sorted).
-        points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        let reveal = (ctx.eased * points.len() as f32).round() as usize;
-
-        // Draw the triangular edges between adjacent lattice points.
-        // For each revealed point, draw edges to its right-neighbours.
-        for &(px, py) in points.iter().take(reveal) {
-            // The six neighbour offsets in triangular lattice.
-            let neighbors: [(f32, f32); 6] = [
-                (ax, ay),
-                (-ax, -ay),
-                (bx, by),
-                (-bx, -by),
-                (ax - bx, ay - by),
-                (-(ax - bx), -(ay - by)),
-            ];
-            draw::dot_i(grid, px.round() as i32, py.round() as i32);
-            for (dx, dy) in neighbors {
-                let nx = px + dx;
-                let ny = py + dy;
-                if nx >= 0.0 && nx < dw as f32 && ny >= 0.0 && ny < dh as f32 {
-                    // Only draw if neighbour is also revealed.
-                    let idx = points.partition_point(|&(qx, _)| qx < nx - 0.5);
-                    let in_revealed = points[..idx.min(reveal)]
-                        .iter()
-                        .any(|&(qx, qy)| (qx - nx).abs() < 1.0 && (qy - ny).abs() < 1.0);
-                    if in_revealed {
-                        plot_line(grid, px, py, nx, ny);
-                    }
+            if lr > 0.66 {
+                for k in [1usize, 3, 5] {
+                    let (a, b) = (v[k], v[(k + 2) % 6]);
+                    plot_line(g, a.0, a.1, b.0, b.1);
                 }
             }
-        }
-
-        // Color gradient left-to-right.
-        let (cw, ch) = grid.dimensions();
-        for cy_cell in 0..ch {
-            for cx_cell in 0..cw {
-                let t = cx_cell as f32 / cw.max(1) as f32;
-                draw::tint_row(grid, cy_cell, cx_cell, cx_cell, ctx.palette.sample(t));
+            if lr >= 1.0 && (time * 3.0).sin() > -0.6 {
+                plot_circle(g, cx, cy, (r * 0.2).max(1.0));
             }
-        }
+        });
         Ok(())
     }
 }
 
 // ── 11. Torus Flower ──────────────────────────────────────────────────────
 
-/// Flower-of-Life circles warped onto a toroidal projection, rotating with time.
-/// Structurally distinct: each circle centre is displaced by a sinusoidal
-/// torus-warp offset derived from its lattice angle, creating a rolling,
-/// depth-suggesting motion entirely absent from the flat flower.
+/// Torus flower: circles rotated about a centre, sweeping out a torus.
 struct TorusFlower;
 impl ProgressStyle for TorusFlower {
     fn name(&self) -> &str {
@@ -1656,61 +1613,28 @@ impl ProgressStyle for TorusFlower {
         "floweroflife"
     }
     fn describe(&self) -> &str {
-        "Flower-of-Life circles warped onto a torus surface; the whole pattern rolls with time"
+        "Torus flower: a row of tori, each eight tube circles rotated about \
+         an open centre into a ring, turning with time — \
+         circle by circle and torus by torus as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        if dw == 0 || dh == 0 {
-            return Ok(());
-        }
-        let cx = dw as f32 / 2.0;
-        let cy = dh as f32 / 2.0;
-        let r = (cx.min(cy) / 3.2).max(1.0);
-
-        // Torus parameters: major radius R (from centre to tube centre),
-        // minor radius ru (tube radius).
-        let big_r = cx.min(cy) * 0.55;
-        let small_r = cx.min(cy) * 0.2;
-
-        // Time drives toroidal rotation angle phi.
-        let phi = ctx.time * 0.5;
-
-        let raw = flower_centres(cx, cy, r);
-        let total = raw.len();
-        let reveal = (ctx.eased * total as f32).ceil() as usize;
-
-        for (i, &(px, py)) in raw.iter().enumerate().take(reveal.min(total)) {
-            // Map flat (px,py) → polar angle θ relative to centre.
-            let theta = (py - cy).atan2(px - cx);
-            let dist_frac = (px - cx).hypot(py - cy) / (2.0 * r).max(1.0);
-
-            // Torus warp: displace each centre by a depth offset derived from
-            // mapping theta → torus surface.
-            let torus_x_offset = big_r
-                * (theta + phi).cos()
-                * (1.0 - small_r / big_r * (dist_frac * PI * 2.0 + phi).cos());
-            let torus_y_offset = small_r * (dist_frac * PI * 2.0 + phi).sin();
-
-            // Blend the flat position with the torus-warped position.
-            let warp = 0.3;
-            let wpx = (1.0 - warp) * px + warp * (cx + torus_x_offset * (r / big_r.max(1.0)));
-            let wpy = (1.0 - warp) * py + warp * (cy + torus_y_offset * 2.0);
-
-            // Scale circle radius by apparent depth (simulating perspective).
-            let depth = 1.0 + 0.25 * (dist_frac * PI * 2.0 + phi).cos();
-            let cr = (r * depth).max(1.0);
-
-            plot_circle(grid, wpx, wpy, cr);
-
-            let t = i as f32 / (total - 1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            let (cw, ch) = grid.dimensions();
-            let cell_x = (wpx / 2.0).round() as usize;
-            let cell_y = (wpy / 4.0).round() as usize;
-            if cell_x < cw && cell_y < ch {
-                draw::tint_row(grid, cell_y, cell_x, cell_x, color);
+        let time = ctx.time;
+        frieze(grid, ctx, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
+            // Tube circles ringed round an open hole: a donut of circles.
+            let rho = r * 0.36;
+            let d = r - rho;
+            let dir = if i % 2 == 0 { 1.0 } else { -1.0 };
+            let rot = dir * time * 0.35;
+            let n = (lr * 8.0).ceil() as usize;
+            for k in 0..n.min(8) {
+                let a = rot + k as f32 * PI / 4.0;
+                plot_circle(g, cx + d * a.cos(), cy + d * a.sin(), rho);
+            }
+        });
         Ok(())
     }
 }

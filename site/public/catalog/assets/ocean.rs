@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -841,19 +876,19 @@ pub mod styles {
     pub mod ocean {
 //! Ocean / aquatic progress bars.
 //!
-//! Ten animated braille bars inspired by the sea: tides, waves, bubbles,
-//! fish, sonar, jellyfish, coral, seaweed, ripple interference, and a
-//! deep-ocean depth gauge. Every bar uses `ctx.time` for continuous animation
+//! Eleven animated braille bars inspired by the sea: tides, waves, bubbles,
+//! a fish, a sonar submarine, a jellyfish, a coral reef, kelp, ripple
+//! interference, a deep-ocean depth gauge and a spouting whale. Every bar uses `ctx.time` for continuous animation
 //! and `ctx.eased` for fill/advance driven by progress.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 /// All styles in the `ocean` theme.
 ///
-/// Returns ten boxed ocean-themed bars ready to be mixed into any registry
+/// Returns eleven boxed ocean-themed bars ready to be mixed into any registry
 /// or rendered directly via [`ProgressStyle::render`].
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
@@ -867,6 +902,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(CoralReef),
         Box::new(Seaweed),
         Box::new(RippleInterference),
+        Box::new(WhaleSpout),
     ]
 }
 
@@ -928,7 +964,8 @@ impl ProgressStyle for RisingTide {
 // ---------------------------------------------------------------------------
 // 2. Bubbles Rising
 // ---------------------------------------------------------------------------
-// Bubbles float upward with sinusoidal lateral wobble; spawn density ∝ progress.
+// Hollow round bubbles of three sizes float upward with sinusoidal lateral
+// wobble; spawn density ∝ progress.
 
 struct BubblesRising;
 impl ProgressStyle for BubblesRising {
@@ -939,7 +976,7 @@ impl ProgressStyle for BubblesRising {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "Bubbles float upward with wobble; spawn density scales with progress"
+        "Round, glinting bubbles of three sizes wobble upward; more bubbles rise as progress grows"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -966,11 +1003,20 @@ impl ProgressStyle for BubblesRising {
             // Lateral sine wobble.
             let wobble = ((ctx.time * 1.8 + i as f32 * 0.9).sin() * 2.0).round() as i32;
             let bx = base_x as i32 + wobble;
-            // Draw a tiny 2×2 bubble circle (four corners).
-            draw::dot_i(grid, bx, y as i32);
-            draw::dot_i(grid, bx + 1, y as i32);
-            draw::dot_i(grid, bx, y as i32 + 1);
-            draw::dot_i(grid, bx + 1, y as i32 + 1);
+            // Hollow round bubble (radius 1–3) with a glint inside.
+            let r = 1 + (i % 3) as i32;
+            let y = y as i32;
+            for s in 0..(r * 8) {
+                let a = s as f32 / (r * 8) as f32 * 2.0 * PI;
+                draw::dot_i(
+                    grid,
+                    bx + (a.cos() * r as f32).round() as i32,
+                    y + (a.sin() * r as f32).round() as i32,
+                );
+            }
+            if r > 1 {
+                draw::dot_i(grid, bx - 1, y - 1);
+            }
         }
 
         // Tint the whole grid with a soft deep-ocean gradient.
@@ -988,7 +1034,9 @@ impl ProgressStyle for BubblesRising {
 // ---------------------------------------------------------------------------
 // 3. Fish Swimming
 // ---------------------------------------------------------------------------
-// A fish advances with eased progress; its tail flicks with time.
+// A side-view fish — oval body, open eye, gill slit, dorsal fin and a forked
+// tail — swims across with eased progress. `time` wags the tail, bobs the
+// body and puffs bubbles from its mouth.
 
 struct FishSwim;
 impl ProgressStyle for FishSwim {
@@ -999,77 +1047,92 @@ impl ProgressStyle for FishSwim {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "A fish swims across with a flickering tail driven by time"
+        "A fish with eye, gill, dorsal fin and forked wagging tail swims across with progress, puffing bubbles"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 8 {
+            draw::fill_rect(grid, 0, 0, (ctx.eased * w as f32) as usize, h);
             return Ok(());
         }
+        let hf = h as f32;
+        let rx = (hf * 0.55).max(3.0);
+        let ry = (hf * 0.3).max(2.0);
+        let tail = (rx * 0.7).round() as i32;
+        let span = rx * 2.0 + tail as f32 + 4.0;
+        let fx = rx + tail as f32 + 1.0 + ctx.eased * (w as f32 - span).max(0.0);
+        let fy = hf * 0.5 + (ctx.time * 2.0).sin() * 1.0;
+        let (cx, cy) = (fx.round() as i32, fy.round() as i32);
+        let eye = (cx + (rx * 0.5) as i32, cy - (ry * 0.35).round() as i32);
 
-        let mid = (h / 2) as i32;
-        // Fish nose position.
-        let head_x = (ctx.eased * w as f32).round() as i32;
-        // Body length proportional to grid width, capped.
-        let body_len = ((w as f32 * 0.25) as i32).max(4).min(w as i32 / 2);
+        // Body: filled oval with a negative-space eye and gill slit.
+        let rxi = rx as i32;
+        for dx in -rxi..=rxi {
+            let half = ry * (1.0 - (dx as f32 / rx).powi(2)).max(0.0).sqrt();
+            let half = half.round() as i32;
+            for dy in -half..=half {
+                let (x, y) = (cx + dx, cy + dy);
+                let in_eye = (x - eye.0).abs() <= 1
+                    && (y - eye.1).abs() <= 1
+                    && !(x == eye.0 + 1 && y == eye.1);
+                let gill = dx == -1 + dy.abs() / 3 && dy.abs() < half - 1;
+                let mouth = dx == rxi && dy == 1;
+                if !(in_eye || gill || mouth) {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        // Pupil inside the eye ring.
+        draw::dot_i(grid, eye.0 + 1, eye.1);
 
-        // Body: an ellipse-ish blob of dots (tall center, narrow ends).
-        for bx in 0..body_len {
-            let frac = bx as f32 / body_len.max(1) as f32;
-            // Elliptical half-height: peaks at 0.5, tapers to 0 at ends.
-            let half_h = ((frac * PI).sin() * (h as f32 * 0.35)).round() as i32;
-            let dx = head_x - bx;
+        // Dorsal fin: a swept triangle on the back.
+        let top = cy - ry.round() as i32;
+        for i in 0..5 {
             draw::vline(
                 grid,
-                dx.max(0) as usize,
-                (mid - half_h).max(0) as usize,
-                (mid + half_h).min(h as i32 - 1) as usize,
+                (cx - 3 + i).max(0) as usize,
+                (top - 3 + i / 2).max(0) as usize,
+                top.max(0) as usize,
             );
         }
 
-        // Eye: single dot near the nose.
-        draw::dot_i(grid, head_x - 1, mid - 1);
-
-        // Tail: two angled lines that flick with time.
-        let flick = (ctx.time * 6.0).sin() * (h as f32 * 0.25);
-        let tail_x = head_x - body_len;
-        let tail_tip_up = (mid - flick.round() as i32).clamp(0, h as i32 - 1);
-        let tail_tip_dn = (mid + flick.round() as i32).clamp(0, h as i32 - 1);
-        draw::vline(
-            grid,
-            tail_x.max(0) as usize,
-            tail_tip_up as usize,
-            mid as usize,
-        );
-        draw::vline(
-            grid,
-            tail_x.max(0) as usize,
-            mid as usize,
-            tail_tip_dn as usize,
-        );
-
-        // Wake bubbles trailing behind.
-        if tail_x > 2 {
-            for i in 0..3usize {
-                let wt = (ctx.time * 3.0 + i as f32 * 1.1).fract();
-                let wx = tail_x - 2 - (wt * 4.0) as i32;
-                let wy = mid + ((ctx.time * 4.0 + i as f32).sin() * 1.5).round() as i32;
-                draw::dot_i(grid, wx, wy);
+        // Forked tail: two lobes splaying from the wrist, wagging with time.
+        let wag = (ctx.time * 7.0).sin() * 1.5;
+        let wrist = cx - rxi;
+        for t in 0..=tail {
+            let k = t as f32 / tail.max(1) as f32;
+            let off = (wag * k).round() as i32;
+            let spread = (k * ry * 1.2).round() as i32;
+            let x = wrist - t;
+            for y in (cy - spread)..=(cy - spread / 3) {
+                draw::dot_i(grid, x, y + off);
+            }
+            for y in (cy + spread / 3)..=(cy + spread) {
+                draw::dot_i(grid, x, y + off);
             }
         }
 
-        // Tint with palette across cell rows.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
+        // Bubbles puffed from the mouth drift up and back.
+        for i in 0..3 {
+            let ph = (ctx.time * 0.8 + i as f32 / 3.0).fract();
+            let bx = cx + rxi + 2 - (ph * 4.0) as i32;
+            let by = cy - (ph * hf * 0.6) as i32;
+            draw::dot_i(grid, bx, by);
+            draw::dot_i(grid, bx + 1, by - 1);
+        }
+
+        let (cells_w, cells_h) = grid.dimensions();
+        for r in 0..cells_h {
             draw::tint_row(
                 grid,
-                cy,
+                r,
                 0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(r as f32 / cells_h as f32),
             );
         }
+        paint(grid, cx - rxi, top - 3, cx + rxi, cy + ry as i32, FISH);
+        paint(grid, wrist - tail - 1, 0, wrist - 1, h as i32, FIN);
 
         Ok(())
     }
@@ -1149,7 +1212,8 @@ impl ProgressStyle for WaveCrest {
 // ---------------------------------------------------------------------------
 // 5. Sonar Ping
 // ---------------------------------------------------------------------------
-// Concentric arcs expand from the left edge; arc count tracks eased progress.
+// A little yellow submarine on the left sends sonar arcs rippling out from
+// its bow; arc count tracks eased progress, `time` expands the rings.
 
 struct SonarPing;
 impl ProgressStyle for SonarPing {
@@ -1160,7 +1224,7 @@ impl ProgressStyle for SonarPing {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "Expanding sonar arcs; ring count scales with eased progress"
+        "A yellow submarine sends sonar arcs rippling out from its bow; ring count scales with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1168,8 +1232,9 @@ impl ProgressStyle for SonarPing {
             return Ok(());
         }
 
-        let cx = 0i32;
         let cy = (h / 2) as i32;
+        let big = h >= 12 && w >= 30;
+        let cx = if big { SUB[0].len() as i32 } else { 0 };
         // Number of active rings — progress controls how many appear.
         let max_rings = 6usize;
         let active_rings = ((ctx.eased * max_rings as f32).round() as usize).max(1);
@@ -1190,9 +1255,19 @@ impl ProgressStyle for SonarPing {
             }
         }
 
-        // Origin blip.
-        draw::dot_i(grid, cx, cy);
-        draw::dot_i(grid, cx + 1, cy);
+        // Origin: the submarine itself, or a blip on tiny grids.
+        if big {
+            for (ry, row) in SUB.iter().enumerate() {
+                for (rx, ch) in row.bytes().enumerate() {
+                    if ch == b'#' {
+                        draw::dot_i(grid, rx as i32, cy - 5 + ry as i32);
+                    }
+                }
+            }
+        } else {
+            draw::dot_i(grid, cx, cy);
+            draw::dot_i(grid, cx + 1, cy);
+        }
 
         // Palette tint across rows.
         let (_, cells_h) = grid.dimensions();
@@ -1205,6 +1280,9 @@ impl ProgressStyle for SonarPing {
                 ctx.width.saturating_sub(1),
                 ctx.palette.sample(t * 0.7),
             );
+        }
+        if big {
+            paint(grid, 0, cy - 5, cx, cy + 3, SUB_HULL);
         }
 
         Ok(())
@@ -1273,8 +1351,9 @@ impl ProgressStyle for DepthGauge {
 // ---------------------------------------------------------------------------
 // 7. Jellyfish Pulse
 // ---------------------------------------------------------------------------
-// A jellyfish bell expands and contracts via time; it drifts upward with
-// eased progress. Trailing tentacles sway with sine.
+// A domed jellyfish bell with a scalloped rim trails wavy tentacles and two
+// frilly oral arms. `time` pulses the bell (squeeze = a little hop upward)
+// and ripples the tentacles; `eased` drifts the jellyfish across the bar.
 
 struct JellyfishPulse;
 impl ProgressStyle for JellyfishPulse {
@@ -1285,76 +1364,78 @@ impl ProgressStyle for JellyfishPulse {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "A pulsing jellyfish bell drifts upward; tentacles sway in the current"
+        "A domed, pulsing jellyfish trailing wavy tentacles drifts across with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 8 {
+            draw::fill_rect(grid, 0, 0, (ctx.eased * w as f32) as usize, h);
             return Ok(());
         }
+        let hi = h as i32;
+        let pulse = (ctx.time * 3.0).sin();
+        let rxb = (h as f32 * 0.42 * (1.0 - 0.12 * pulse)).max(3.0);
+        let bh = (h as f32 * 0.38).max(2.0) as i32;
+        let jx = (rxb + 2.0 + ctx.eased * (w as f32 - 2.0 * rxb - 4.0).max(0.0)) as i32;
+        let top = (1.0 + pulse.max(0.0)).round() as i32;
+        let rim = top + bh;
 
-        let cx = (w / 2) as i32;
-        // Bell center y: starts near bottom, rises with progress.
-        let bell_y = (h as f32 * (1.0 - ctx.eased * 0.85)).round() as i32;
-        // Bell radius pulses with time.
-        let base_r = (w.min(h) as f32 * 0.22).max(3.0);
-        let pulse = 1.0 + 0.25 * (ctx.time * 3.5).sin();
-        let r = (base_r * pulse).round() as i32;
-        let r_half = (r as f32 * 0.55).round() as i32;
-
-        // Draw the dome (upper semicircle arc).
-        let steps = (r * 6).max(12) as usize;
-        for s in 0..=steps {
-            let angle = s as f32 / steps as f32 * PI; // 0..=π (top half)
-            let ax = cx + (angle.cos() * r as f32).round() as i32;
-            let ay = bell_y - (angle.sin() * r_half as f32).round() as i32;
-            draw::dot_i(grid, ax, ay);
+        // Bell: a dome with a hollow ring pattern inside.
+        for y in top..=rim {
+            let k = (rim - y) as f32 / bh.max(1) as f32;
+            let half = (rxb * (1.0 - k * k).max(0.0).sqrt()).round() as i32;
+            for x in (jx - half)..=(jx + half) {
+                let d = ((x - jx) as f32 / (rxb * 0.45)).powi(2)
+                    + ((y - rim + 1) as f32 / (bh as f32 * 0.55)).powi(2);
+                if !(0.75..1.1).contains(&d) {
+                    draw::dot_i(grid, x, y);
+                }
+            }
         }
-        // Flat base of bell.
-        draw::hline(
-            grid,
-            (cx - r).max(0) as usize,
-            (cx + r).min(w as i32 - 1) as usize,
-            bell_y as usize,
-        );
-
-        // Interior pulsing fill (inner arc a bit smaller).
-        let r2 = (r as f32 * 0.6).round() as i32;
-        for s in 0..=steps {
-            let angle = s as f32 / steps as f32 * PI;
-            let ax = cx + (angle.cos() * r2 as f32).round() as i32;
-            let ay = bell_y - (angle.sin() * (r_half as f32 * 0.6)).round() as i32;
-            draw::dot_i(grid, ax, ay);
-        }
-
-        // Tentacles hanging below the bell base.
-        let n_tent = 5usize;
-        for t_idx in 0..n_tent {
-            let tx_base = cx - r + (t_idx as i32 * (r * 2) / n_tent.max(1) as i32);
-            let sway_amp = 2.0f32;
-            let sway_freq = 1.8 + t_idx as f32 * 0.3;
-            let tent_len = (h as f32 * 0.35).round() as i32;
-            for seg in 0..tent_len {
-                let sway =
-                    (ctx.time * sway_freq + seg as f32 * 0.3 + t_idx as f32).sin() * sway_amp;
-                let tx = tx_base + sway.round() as i32;
-                let ty = bell_y + 1 + seg;
-                draw::dot_i(grid, tx, ty);
+        // Scalloped rim.
+        let rxi = rxb as i32;
+        for x in (jx - rxi)..=(jx + rxi) {
+            if (x - jx).rem_euclid(3) != 0 {
+                draw::dot_i(grid, x, rim + 1);
             }
         }
 
-        // Soft bioluminescence tint — shifting through the palette with time.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = ((cy as f32 / cells_h.max(1) as f32) + ctx.time * 0.05) % 1.0;
+        // Tentacles ripple down to the bottom; two frilly oral arms in the middle.
+        for i in 0..6 {
+            let tx = jx - rxi + 1 + i * (2 * rxi - 2) / 5;
+            let len = hi - rim - 2 - (i % 2) * 2;
+            for d in 0..len {
+                let y = rim + 2 + d;
+                let x = tx
+                    + ((y as f32 * 0.6 - ctx.time * 4.0 + i as f32).sin() * (1.0 + d as f32 * 0.08))
+                        .round() as i32;
+                if d % 4 != 3 || i % 2 == 0 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        for side in [-1, 1] {
+            for d in 0..(hi - rim - 4).max(0) {
+                let y = rim + 2 + d;
+                let x =
+                    jx + side * 2 + ((y as f32 * 0.9 - ctx.time * 3.0).sin() * 1.2).round() as i32;
+                draw::dot_i(grid, x, y);
+                draw::dot_i(grid, x + side, y);
+            }
+        }
+
+        let (cells_w, cells_h) = grid.dimensions();
+        for r in 0..cells_h {
             draw::tint_row(
                 grid,
-                cy,
+                r,
                 0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(0.4 + 0.6 * r as f32 / cells_h as f32),
             );
         }
+        paint(grid, jx - rxi - 2, rim + 2, jx + rxi + 2, hi - 1, TENTACLE);
+        paint(grid, jx - rxi, top, jx + rxi, rim + 1, JELLY);
 
         Ok(())
     }
@@ -1363,8 +1444,10 @@ impl ProgressStyle for JellyfishPulse {
 // ---------------------------------------------------------------------------
 // 8. Coral Reef
 // ---------------------------------------------------------------------------
-// Branching coral grows upward from the seafloor; branch count ∝ progress.
-// Fronds sway gently with time.
+// A reef assembles left to right on a sandy bed as progress grows: branching
+// staghorn, a grooved brain-coral dome, a fan coral and a cluster of tube
+// coral repeat across the bar, each in its own colour. Corals grow up out of
+// the sand as they arrive; `time` sways branch tips and fan edges.
 
 struct CoralReef;
 impl ProgressStyle for CoralReef {
@@ -1375,73 +1458,101 @@ impl ProgressStyle for CoralReef {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "Coral branches grow from the seafloor; sway and growth track progress"
+        "A colourful reef of staghorn, brain, fan and tube corals grows out of the sand left to right with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 8 || h < 8 {
+            draw::fill_rect(grid, 0, 0, (ctx.eased * w as f32) as usize, h);
             return Ok(());
         }
-
-        // Seafloor baseline.
-        draw::hline(grid, 0, w - 1, h - 1);
-
-        // Number of coral stalks from 1 up to ~10 based on progress.
-        let n_stalks = ((ctx.eased * 10.0).round() as usize).max(1);
-
-        for s in 0..n_stalks {
-            let sx = (s * w) / n_stalks + w / (n_stalks * 2).max(1);
-            // Each stalk height proportional to progress and staggered.
-            let height_frac = ctx.eased * (0.5 + (s as f32 * 0.23) % 0.5);
-            let stalk_h = (height_frac * h as f32 * 0.85).round() as usize;
-            let stalk_base = h - 1;
-            let stalk_top = stalk_base.saturating_sub(stalk_h);
-
-            // Sway: gentle lateral sine on the whole stalk.
-            let sway_phase = ctx.time * 1.2 + s as f32 * 0.8;
-
-            for seg in 0..stalk_h {
-                let seg_y = stalk_base - seg;
-                let sway =
-                    ((sway_phase + seg as f32 * 0.15).sin() * seg as f32 * 0.06).round() as i32;
-                draw::dot_i(grid, sx as i32 + sway, seg_y as i32);
-            }
-
-            // Branch fronds at 1/3 and 2/3 of stalk height.
-            for &branch_frac in &[0.33f32, 0.66] {
-                let bseg = (stalk_h as f32 * branch_frac).round() as usize;
-                if bseg == 0 {
-                    continue;
-                }
-                let by = stalk_base.saturating_sub(bseg);
-                let bsway =
-                    ((sway_phase + bseg as f32 * 0.15).sin() * bseg as f32 * 0.06).round() as i32;
-                let bx = sx as i32 + bsway;
-                let branch_len = (stalk_h as f32 * 0.25).round() as i32;
-                // Left and right branches.
-                for bl in 1..=branch_len {
-                    draw::dot_i(grid, bx - bl, by as i32 - bl / 2);
-                    draw::dot_i(grid, bx + bl, by as i32 - bl / 2);
-                }
-            }
-
-            // Tip dot.
-            let sway_tip =
-                ((sway_phase + stalk_h as f32 * 0.15).sin() * stalk_h as f32 * 0.06).round() as i32;
-            draw::dot_i(grid, sx as i32 + sway_tip, stalk_top as i32);
+        let (wi, hi) = (w as i32, h as i32);
+        let bed = hi - 1;
+        // Sandy bed: dotted, full width.
+        for x in (0..wi).step_by(2) {
+            draw::dot_i(grid, x, bed);
         }
-
-        // Warm reef tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = 1.0 - cy as f32 / cells_h.max(1) as f32; // deeper = more saturated
+        let slot = 12;
+        let n = (wi / slot).max(1);
+        let (cells_w, cells_h) = grid.dimensions();
+        for r in 0..cells_h {
             draw::tint_row(
                 grid,
-                cy,
+                r,
                 0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t * 0.8),
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(r as f32 / cells_h as f32),
             );
+        }
+        for i in 0..n {
+            let g = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            if g <= 0.0 {
+                continue;
+            }
+            let x0 = i * slot + 1;
+            let mid = x0 + slot / 2 - 1;
+            let full = (hi - 2) as f32;
+            let tall = (full * g).round() as i32;
+            let sway = ((ctx.time * 1.5 + i as f32).sin() * 1.2).round() as i32;
+            let kind = i % 4;
+            match kind {
+                0 => {
+                    // Staghorn: a trunk forking twice into antler tips.
+                    for d in 0..tall {
+                        draw::dot_i(grid, mid, bed - 1 - d);
+                    }
+                    for (side, at) in [(-1, 0.3f32), (1, 0.5), (-1, 0.7)] {
+                        let y0 = bed - 1 - (tall as f32 * at) as i32;
+                        let arm = (tall as f32 * 0.6) as i32;
+                        for d in 0..arm {
+                            let x = mid + side * (d / 2 + 1) + if d > arm / 2 { sway } else { 0 };
+                            draw::dot_i(grid, x, y0 - d);
+                        }
+                    }
+                }
+                1 => {
+                    // Brain coral: a grooved dome.
+                    let ry = (full * 0.6 * g).max(1.0);
+                    let rx = (slot as f32 * 0.5).max(2.0);
+                    for x in (mid - rx as i32)..=(mid + rx as i32) {
+                        let k = (x - mid) as f32 / rx;
+                        let top = bed - 1 - (ry * (1.0 - k * k).max(0.0).sqrt()) as i32;
+                        for y in top..bed {
+                            if ((x as f32 * 1.4).sin() + (y as f32 * 1.1).cos()).abs() > 0.35 {
+                                draw::dot_i(grid, x, y);
+                            }
+                        }
+                    }
+                }
+                2 => {
+                    // Fan coral: ribs radiating from a stalk, joined by a mesh.
+                    let base = (mid, bed - 1);
+                    for rib in 0..7 {
+                        let a = PI * (0.2 + rib as f32 * 0.1) + sway as f32 * 0.05;
+                        for d in 0..tall {
+                            let x = base.0 - (a.cos() * d as f32 * 0.9) as i32;
+                            let y = base.1 - (a.sin() * d as f32) as i32;
+                            if d % 3 != 2 || rib % 2 == 0 {
+                                draw::dot_i(grid, x, y);
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Tube coral: open-topped pipes of differing heights.
+                    for (j, frac) in [0.7f32, 1.0, 0.55].iter().enumerate() {
+                        let tx = mid - 4 + j as i32 * 3;
+                        let th = (tall as f32 * frac) as i32;
+                        for d in 0..th {
+                            draw::dot_i(grid, tx, bed - 1 - d);
+                            draw::dot_i(grid, tx + 2, bed - 1 - d);
+                        }
+                        draw::dot_i(grid, tx + 1, bed - 1);
+                        draw::dot_i(grid, tx - 1 + sway.signum(), bed - th);
+                    }
+                }
+            }
+            paint(grid, x0, 0, x0 + slot - 2, bed - 1, CORALS[kind as usize]);
         }
 
         Ok(())
@@ -1451,8 +1562,10 @@ impl ProgressStyle for CoralReef {
 // ---------------------------------------------------------------------------
 // 9. Seaweed
 // ---------------------------------------------------------------------------
-// Vertical fronds grow from the seafloor, swaying with time; filled width
-// tracks eased progress.
+// Kelp sprouts from a sandy seafloor, one strand at a time from the left as
+// progress grows. Each strand is a swaying stalk with long leaf blades
+// alternating off each side and little air bladders; `time` sways the tips
+// further than the roots.
 
 struct Seaweed;
 impl ProgressStyle for Seaweed {
@@ -1463,58 +1576,69 @@ impl ProgressStyle for Seaweed {
         "ocean"
     }
     fn describe(&self) -> &str {
-        "Seaweed fronds grow and sway; column fill tracks eased progress"
+        "Green kelp strands with leaf blades sprout from the sand left to right with progress and sway in the current"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
+        let hi = h as i32;
+        let floor = hi - 1;
 
-        // Number of fronds filling from left.
-        let filled_w = (ctx.eased * w as f32).round() as usize;
-        let n_fronds = (filled_w / 2).max(usize::from(ctx.progress > 0.0));
-
-        for fi in 0..n_fronds {
-            let fx = (fi * filled_w) / n_fronds.max(1);
-            let sway_freq = 1.0 + (fi as f32 * 0.31) % 0.8;
-            let height_frac = 0.5 + (fi as f32 * 0.19) % 0.5;
-            let frond_h = (height_frac * h as f32).round() as usize;
-
-            for seg in 0..frond_h {
-                let seg_y = h - 1 - seg;
-                // Sway increases toward tip.
-                let sway_amp = seg as f32 / frond_h.max(1) as f32 * 3.0;
-                let sway = ((ctx.time * sway_freq + fi as f32 * 0.7 + seg as f32 * 0.2).sin()
-                    * sway_amp)
-                    .round() as i32;
-                draw::dot_i(grid, fx as i32 + sway, seg_y as i32);
-
-                // Alternating side leaflets every 4 segments.
-                if seg % 4 == 2 {
-                    let leaf_side: i32 = if seg % 8 < 4 { 1 } else { -1 };
-                    draw::dot_i(grid, fx as i32 + sway + leaf_side, seg_y as i32 - 1);
-                }
+        // Sandy floor, pebbled.
+        for x in 0..w as i32 {
+            if x % 3 != 1 {
+                draw::dot_i(grid, x, floor);
             }
         }
-
-        // Seafloor.
-        draw::hline(grid, 0, filled_w.min(w - 1), h - 1);
-
-        // Tint only the filled portion.
-        let (_, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * ctx.width as f32).round() as usize;
+        let (cells_w, cells_h) = grid.dimensions();
         for cy in 0..cells_h {
             let t = cy as f32 / cells_h.max(1) as f32;
-            if filled_cells > 0 {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    0,
-                    filled_cells.saturating_sub(1),
-                    ctx.palette.sample(0.3 + t * 0.5),
-                );
+            draw::tint_row(
+                grid,
+                cy,
+                0,
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(0.3 + t * 0.5),
+            );
+        }
+
+        let gap = 7;
+        let n = (w as i32 / gap).max(1);
+        let grown = ctx.eased * n as f32;
+        for fi in 0..n {
+            let g = (grown - fi as f32).clamp(0.0, 1.0);
+            if g <= 0.0 {
+                continue;
             }
+            let fx = fi * gap + gap / 2;
+            let height_frac = 0.6 + (fi as f32 * 0.37) % 0.4;
+            let frond_h = ((hi - 1) as f32 * height_frac * g).round() as i32;
+            let freq = 1.2 + (fi as f32 * 0.31) % 0.8;
+            for seg in 0..frond_h {
+                let y = floor - 1 - seg;
+                let amp = seg as f32 / frond_h.max(1) as f32 * 2.5;
+                let x = fx
+                    + ((ctx.time * freq + fi as f32 * 0.7 - seg as f32 * 0.25).sin() * amp).round()
+                        as i32;
+                draw::dot_i(grid, x, y);
+                // Leaf blades angle up and out, alternating sides.
+                if seg % 4 == 1 && seg + 2 < frond_h {
+                    let side = if seg % 8 == 1 { 1 } else { -1 };
+                    draw::dot_i(grid, x + side, y - 1);
+                    draw::dot_i(grid, x + side * 2, y - 2);
+                    draw::dot_i(grid, x + side * 2, y - 1);
+                }
+            }
+            paint(
+                grid,
+                fx - 3,
+                floor - frond_h,
+                fx + 3,
+                floor - 1,
+                KELP[(fi % 2) as usize],
+            );
         }
 
         Ok(())
@@ -1581,6 +1705,176 @@ impl ProgressStyle for RippleInterference {
         }
 
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 11. Whale Spout
+// ---------------------------------------------------------------------------
+// A big whale cruises right along the surface with progress: rounded head,
+// eye and mouth line, a pectoral flipper, a tapering tail stock ending in a
+// wagging fluke, and a fountain spout that bursts from the blowhole every few
+// seconds. Small waves roll beneath it.
+
+struct WhaleSpout;
+impl ProgressStyle for WhaleSpout {
+    fn name(&self) -> &str {
+        "whale-spout"
+    }
+    fn theme(&self) -> &str {
+        "ocean"
+    }
+    fn describe(&self) -> &str {
+        "A whale with flipper and wagging fluke swims right with progress, blowing a fountain spout"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 8 || h < 8 {
+            draw::fill_rect(grid, 0, 0, (ctx.eased * w as f32) as usize, h);
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+        let rx = (h as f32 * 0.85).max(4.0);
+        let ry = (h as f32 * 0.28).max(2.0);
+        let stock = (rx * 0.7) as i32;
+        let span = 2.0 * rx + stock as f32 + 6.0;
+        let cx = (rx + stock as f32 + 5.0 + ctx.eased * (w as f32 - span).max(0.0)) as i32;
+        let cy = hi - 1 - ry as i32 - ((ctx.time * 1.5).sin() * 0.6).round() as i32;
+        let rxi = rx as i32;
+
+        // Waves rolling beneath.
+        for x in 0..wi {
+            let y = hi - 1 - ((x as f32 * 0.4 - ctx.time * 3.0).sin() + 1.0).round() as i32 / 2;
+            if x % 2 == 0 {
+                draw::dot_i(grid, x, y);
+            }
+        }
+
+        // Body: an egg shape, fuller toward the head, with an eye and mouth.
+        let eye = (cx + rxi * 6 / 10, cy);
+        for dx in -rxi..=rxi {
+            let u = dx as f32 / rx;
+            let top = (ry * (1.0 - u * u).max(0.0).sqrt() * (1.1 + 0.2 * u)).round() as i32;
+            let bot = (ry * (1.0 - u * u).max(0.0).sqrt() * 0.9).round() as i32;
+            for dy in -top..=bot {
+                let (x, y) = (cx + dx, cy + dy);
+                let mouth = dx > rxi / 3 && dy == 2 && dx < rxi;
+                if !(mouth || (x == eye.0 && y == eye.1)) {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        // Pectoral flipper sweeping back under the body.
+        for i in 0..4 {
+            draw::dot_i(grid, cx + rxi / 3 - i, cy + (ry * 0.9) as i32 + i / 2);
+            draw::dot_i(grid, cx + rxi / 3 - i - 1, cy + (ry * 0.9) as i32 + i / 2);
+        }
+
+        // Tail stock tapering back, then a fluke that wags up and down.
+        let wag = (ctx.time * 3.0).sin();
+        let lift =
+            |t: i32| (wag * t as f32 * t as f32 / (stock * stock).max(1) as f32 * 3.0) as i32;
+        for t in 0..stock {
+            let half = ((1.0 - t as f32 / stock as f32) * ry * 0.6).round() as i32;
+            let x = cx - rxi - t;
+            for dy in -half..=half {
+                draw::dot_i(grid, x, cy - 1 + dy - lift(t));
+            }
+        }
+        let fx = cx - rxi - stock;
+        let fy = cy - 1 - lift(stock);
+        for i in 0..4 {
+            draw::vline(
+                grid,
+                (fx - i).max(0) as usize,
+                (fy - 1 - i).max(0) as usize,
+                (fy + 1 + i).max(0) as usize,
+            );
+        }
+
+        // Spout: bursts from the blowhole for part of every cycle.
+        let ph = (ctx.time * 0.5).fract();
+        let blow = if ph < 0.5 { (ph / 0.5 * PI).sin() } else { 0.0 };
+        let hole = (cx + rxi / 4, cy - (ry * 1.1) as i32 - 1);
+        let tall = (blow * (hole.1 - 1).max(0) as f32) as i32;
+        for d in 0..tall {
+            draw::dot_i(grid, hole.0, hole.1 - d);
+        }
+        if tall > 1 {
+            for i in 1..4 {
+                let spread = i * 2;
+                draw::dot_i(grid, hole.0 - spread, hole.1 - tall + i);
+                draw::dot_i(grid, hole.0 + spread, hole.1 - tall + i);
+            }
+        }
+
+        let (cells_w, cells_h) = grid.dimensions();
+        for r in 0..cells_h {
+            draw::tint_row(
+                grid,
+                r,
+                0,
+                cells_w.saturating_sub(1),
+                ctx.palette.sample(r as f32 / cells_h as f32),
+            );
+        }
+        paint(grid, fx - 4, cy - ry as i32 - 3, cx + rxi, hi - 2, WHALE);
+        if tall > 1 {
+            paint(grid, hole.0 - 6, 0, hole.0 + 6, hole.1, SPOUT);
+        }
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/// Cell colours for the pictorial bars.
+/// Side-view submarine: periscope, conning tower, hull with portholes.
+const SUB: [&str; 9] = [
+    "..........##......",
+    "..........#.......",
+    ".........####.....",
+    ".........####.....",
+    "...##############.",
+    "..################",
+    "#.##.##.##.##.####",
+    "..################",
+    "...#############..",
+];
+const SUB_HULL: Color = Color::rgb(245, 205, 60);
+const KELP: [Color; 2] = [Color::rgb(90, 200, 90), Color::rgb(160, 210, 70)];
+const WHALE: Color = Color::rgb(110, 150, 230);
+const SPOUT: Color = Color::rgb(225, 240, 255);
+const FISH: Color = Color::rgb(255, 140, 50);
+const FIN: Color = Color::rgb(255, 200, 80);
+const JELLY: Color = Color::rgb(240, 130, 220);
+const TENTACLE: Color = Color::rgb(190, 160, 255);
+const CORALS: [Color; 4] = [
+    Color::rgb(255, 110, 150),
+    Color::rgb(255, 170, 70),
+    Color::rgb(180, 120, 255),
+    Color::rgb(240, 220, 90),
+];
+
+/// Colour every cell overlapping the dot rectangle `[x0, x1] × [y0, y1]`.
+fn paint(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+    grid.enable_color_support();
+    let (cw, ch) = grid.dimensions();
+    if cw == 0 || ch == 0 || x1 < 0 || y1 < 0 || x1 < x0 || y1 < y0 {
+        return;
+    }
+    let (cx0, cy0) = ((x0.max(0) / 2) as usize, (y0.max(0) / 4) as usize);
+    let (cx1, cy1) = (
+        ((x1 / 2) as usize).min(cw - 1),
+        ((y1 / 4) as usize).min(ch - 1),
+    );
+    for cy in cy0..=cy1 {
+        for cx in cx0..=cx1 {
+            let _ = grid.set_cell_color(cx, cy, color);
+        }
     }
 }
 

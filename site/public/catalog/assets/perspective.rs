@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -852,15 +887,15 @@ pub mod styles {
 //! |---|---|
 //! | `vp-tunnel`        | Concentric rectangles → you fly in; rings scale and exit |
 //! | `road-horizon`     | Two rails converging at a horizon; dashed center line scrolls |
-//! | `starfield-dive`   | Stars streak from center outward; streak ∝ warp speed |
+//! | `starfield-dive`   | 3-D stars stream from the VP; destination planet grows with progress |
 //! | `wire-corridor`    | Floor + ceiling grid lines converging to vanishing point |
 //! | `checker-floor`    | Receding perspective checkerboard scrolling toward viewer |
 //! | `infinite-hallway` | Doorframe rectangles at increasing depth; pass one per step |
 //! | `mine-shaft`       | Descending shaft with horizontal floor markers |
 //! | `depth-brackets`   | `[ [ [ > ] ] ]` nesting zooms to communicate depth |
 //! | `approach-gate`    | A ring grows from the vanishing point until it fills the screen |
-//! | `pipe-wormhole`    | Circular tunnel with radial spokes rotating as you travel |
-//! | `parallax-layers`  | 3 horizontal line-layers scrolling at 3× different speeds |
+//! | `pipe-wormhole`    | Pipe rings rush out of the VP past you; exit mouth opens with progress |
+//! | `parallax-layers`  | Mountains / hills / pines scroll at 3 speeds; moon crosses with progress |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -986,7 +1021,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(Tinted(DepthBrackets)),
         Box::new(Tinted(ApproachGate)),
         Box::new(Tinted(PipeWormhole)),
-        Box::new(Tinted(ParallaxLayers)),
+        Box::new(ParallaxLayers),
     ]
 }
 
@@ -1155,9 +1190,11 @@ impl ProgressStyle for RoadHorizon {
 // 3. Starfield dive
 // ────────────────────────────────────────────────────────────────────────────
 //
-// Stars stream outward from the center; each star has a fixed angle and a
-// radial position that scrolls with time.  Streak length grows with eased
-// (= warp intensity).  Progress maps to how many stars are active.
+// True 3-D starfield: each star has a fixed (x, y) and a depth z that falls
+// toward the camera with time, so it is projected as `x / z` — born at the
+// vanishing point, accelerating outward, leaving a streak back toward the
+// centre.  Progress is the destination planet growing at the vanishing point
+// (you are arriving) and the warp speed / streak length rising.
 
 struct StarfieldDive;
 impl ProgressStyle for StarfieldDive {
@@ -1168,49 +1205,63 @@ impl ProgressStyle for StarfieldDive {
         "perspective"
     }
     fn describe(&self) -> &str {
-        "Stars stream from the center vanishing point outward; streak length = \
-         warp speed from eased; active-star count grows with progress"
+        "Warp-speed starfield: stars stream out of the vanishing point and \
+         streak past the edges while the destination planet swells ahead"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
-        let max_r = cx.min(cy * 1.5).max(1.0);
+        // Focal length: a star at z = 1 sits ~quarter-height from the centre.
+        let f = (dh as f32 * 0.25).max(1.0);
+        let aspect = (dw as f32 / dh as f32).max(1.0);
 
-        // Stars: fixed angle per index, radial position scrolls with time.
-        let num_stars: u32 = 60;
-        let active = ((ctx.eased * num_stars as f32).ceil() as u32).clamp(1, num_stars);
-        // Warp intensity: longer streaks as progress grows.
-        let streak_len = (ctx.eased * 12.0 + 1.0) as i32;
-        let speed = 0.6 + ctx.eased * 1.8;
-
-        for i in 0..active {
-            let angle = hf(i) * 2.0 * PI;
-            let phase = hf(i + 100);
-            // Radial phase scrolls outward, wraps at 1.
-            let r_frac = ((phase + ctx.time * speed * 0.07).fract()).clamp(0.0, 1.0);
-            // Use quadratic growth for perspective (slow near center, fast at edge).
-            let r = r_frac * r_frac * max_r;
-
-            let px = cx + angle.cos() * r;
-            // Vertical squish so stars don't look circular in wide terminals.
-            let py = cy + angle.sin() * r * 0.55;
-
-            // Streak: draw dots between the current and inward position.
-            for s in 0..streak_len {
-                let sr = (r - s as f32 * 0.8 * r_frac).max(0.0);
-                let sx = cx + angle.cos() * sr;
-                let sy = cy + angle.sin() * sr * 0.55;
-                draw::dot_i(grid, sx as i32, sy as i32);
+        // Destination planet at the vanishing point — radius grows with eased.
+        let pr = 0.6 + ctx.eased * dh as f32 * 0.42;
+        let ri = pr.ceil() as i32;
+        for dy in -ri..=ri {
+            for dx in -ri..=ri {
+                let d2 = (dx * dx + dy * dy) as f32;
+                if d2 <= pr * pr {
+                    // Terminator: the right-hand crescent stays dark.
+                    let sx = dx as f32 - pr * 0.45;
+                    let lit = sx * sx + (dy * dy) as f32 > pr * pr * 0.55 || pr < 2.0;
+                    if lit || d2 > (pr - 1.0) * (pr - 1.0) {
+                        draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
+                    }
+                }
             }
-            // Bright head.
-            draw::dot_i(grid, px as i32, py as i32);
         }
 
+        let speed = 0.35 + ctx.eased * 0.9;
+        let trail = 0.06 + ctx.eased * 0.22;
+        for i in 0..64u32 {
+            let x = (hf(i) * 2.0 - 1.0) * aspect;
+            let y = hf(i + 500) * 2.0 - 1.0;
+            if x.abs() < 0.08 && y.abs() < 0.08 {
+                continue;
+            }
+            let z = (1.0 - (hf(i + 900) + ctx.time * speed).fract()).max(0.06);
+            let z_tail = z + trail;
+            let hx = cx + x * f / z;
+            let hy = cy + y * f / z;
+            let tx = cx + x * f / z_tail;
+            let ty = cy + y * f / z_tail;
+            // Stars behind the planet's disc are hidden.
+            let (ox, oy) = (tx - cx, ty - cy);
+            if ox * ox + oy * oy <= pr * pr {
+                continue;
+            }
+            line(grid, tx as i32, ty as i32, hx as i32, hy as i32);
+            // Near stars get a fat head.
+            if z < 0.3 {
+                draw::dot_i(grid, hx as i32 + 1, hy as i32);
+                draw::dot_i(grid, hx as i32, hy as i32 + 1);
+            }
+        }
         Ok(())
     }
 }
@@ -1707,9 +1758,11 @@ impl ProgressStyle for ApproachGate {
 // 10. Pipe / wormhole
 // ────────────────────────────────────────────────────────────────────────────
 //
-// A circular tunnel cross-section with radial spokes.  Spokes rotate with
-// time (you're spinning through the pipe).  Multiple concentric circles give
-// depth; eased controls how many depth rings are visible.
+// Head-on view down a circular pipe.  Ring k sits at depth z = fract(k/N −
+// t·v) and is projected with radius ∝ 1/z, so rings are born as a pin-prick
+// at the vanishing point and accelerate outward until they rush past the
+// frame.  Longitudinal seams twist slowly.  Progress is the exit mouth at
+// the far end, opening wider the closer you get.
 
 struct PipeWormhole;
 impl ProgressStyle for PipeWormhole {
@@ -1720,57 +1773,75 @@ impl ProgressStyle for PipeWormhole {
         "perspective"
     }
     fn describe(&self) -> &str {
-        "Circular pipe tunnel with radial spokes; spokes rotate with time as \
-         you travel through — rings fill in with eased for depth"
+        "Flying down a circular pipe: concentric rings rush out of the \
+         vanishing point past you along twisting seams; the exit opens with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
         let cx = dw as f32 / 2.0;
         let cy = dh as f32 / 2.0;
-        let max_r = cx.min(cy).max(1.0);
+        // Ellipse stretch so the pipe fills a wide bar; r0 = radius at z = 1.
+        let stretch = (dw as f32 / dh as f32).clamp(1.0, 2.6);
+        let r0 = (dh as f32 * 0.22).max(0.5);
+        let z_near = 0.12;
 
-        // Number of depth rings.
-        let n_rings = 6usize;
-        let visible = ((ctx.eased * n_rings as f32).ceil() as usize)
-            .min(n_rings)
-            .max(1);
+        // Exit mouth at the far end: a filled glow, radius grows with eased.
+        let er = 0.5 + ctx.eased * dh as f32 * 0.3;
+        let eri = (er * stretch).ceil() as i32;
+        let erj = er.ceil() as i32;
+        for dy in -erj..=erj {
+            for dx in -eri..=eri {
+                let nx = dx as f32 / stretch;
+                if nx * nx + (dy * dy) as f32 <= er * er {
+                    draw::dot_i(grid, cx as i32 + dx, cy as i32 + dy);
+                }
+            }
+        }
+        let exit_r = er + 1.5;
 
-        // Draw concentric circles from inside out.
-        for r_idx in 0..visible {
-            let t = (r_idx + 1) as f32 / n_rings as f32;
-            let r = max_r * t;
-            let steps = ((r * 2.0 * PI).max(8.0)) as usize;
+        // Rings flying toward the camera.
+        let n_rings = 7usize;
+        let speed = 0.35 + ctx.eased * 0.5;
+        for k in 0..n_rings {
+            let z = 1.0 - (k as f32 / n_rings as f32 + ctx.time * speed).fract();
+            let r = r0 / z.max(z_near);
+            if r < exit_r {
+                continue;
+            }
+            let steps = ((r * stretch * 4.0) as usize).clamp(12, 400);
             let mut prev: Option<(i32, i32)> = None;
             for s in 0..=steps {
-                let angle = s as f32 / steps as f32 * 2.0 * PI;
-                let px = (cx + r * angle.cos()) as i32;
-                // Vertical squish so it looks more circular in tall-font terminals.
-                let py = (cy + r * angle.sin() * 0.55) as i32;
-                if let Some((ppx, ppy)) = prev {
-                    line(grid, ppx, ppy, px, py);
+                let a = s as f32 / steps as f32 * 2.0 * PI;
+                let p = (
+                    (cx + r * stretch * a.cos()) as i32,
+                    (cy + r * a.sin()) as i32,
+                );
+                if let Some(q) = prev {
+                    line(grid, q.0, q.1, p.0, p.1);
                 }
-                prev = Some((px, py));
+                prev = Some(p);
             }
         }
 
-        // Radial spokes from center to outer ring, rotating with time.
-        let spoke_count = 8usize;
-        let rot = ctx.time * 0.8;
-        let outer_r = max_r * (visible as f32 / n_rings as f32);
-
-        for s in 0..spoke_count {
-            let angle = rot + s as f32 * 2.0 * PI / spoke_count as f32;
-            let x1 = (cx + outer_r * angle.cos()) as i32;
-            let y1 = (cy + outer_r * angle.sin() * 0.55) as i32;
-            line(grid, cx as i32, cy as i32, x1, y1);
+        // Twisting seams along the pipe wall, dotted at even depth steps.
+        let twist = ctx.time * 0.6;
+        for s in 0..8 {
+            let a = twist + s as f32 * PI / 4.0;
+            // 0.86^14 ≈ z_near: fifteen depth steps from z = 1 to the far end.
+            for n in 0..15 {
+                let r = r0 / 0.86f32.powi(n);
+                if r >= exit_r {
+                    draw::dot_i(
+                        grid,
+                        (cx + r * stretch * a.cos()) as i32,
+                        (cy + r * a.sin()) as i32,
+                    );
+                }
+            }
         }
-
-        // Center dot.
-        draw::dot_i(grid, cx as i32, cy as i32);
         Ok(())
     }
 }
@@ -1779,12 +1850,21 @@ impl ProgressStyle for PipeWormhole {
 // 11. Parallax layers
 // ────────────────────────────────────────────────────────────────────────────
 //
-// Three distinct horizontal-line "planes" — foreground, midground, background
-// — each scrolling horizontally at a different speed (3× ratio).  Broken
-// lines give the impression of objects at different depths.  Eased controls
-// how many planes are active; time drives all scroll speeds.
+// A side-scrolling landscape in three depth planes: a far mountain ridge
+// (outline + snow caps, slowest), rolling dithered hills (medium) and a row
+// of solid pine trees on the ground (fastest).  Each plane gets its own
+// colour, frontmost layer winning a cell.  Progress is the moon crossing the
+// sky from left to right above the ridge.
 
 struct ParallaxLayers;
+
+/// Mountain ridge height (dots above the bottom) at world x.
+fn ridge(x: f32, dh: f32) -> f32 {
+    let a = (x * 0.11).sin() * 0.5 + (x * 0.047 + 1.3).sin() * 0.35 + (x * 0.23).sin() * 0.15;
+    // Fold into peaks: |sin| gives sharp valleys turned upside down.
+    dh * (0.48 + 0.28 * a)
+}
+
 impl ProgressStyle for ParallaxLayers {
     fn name(&self) -> &str {
         "parallax-layers"
@@ -1793,78 +1873,124 @@ impl ProgressStyle for ParallaxLayers {
         "perspective"
     }
     fn describe(&self) -> &str {
-        "Three line-layers scroll at 3× speed ratios — background, midground, \
-         foreground — giving pure parallax depth; layer count = eased"
+        "Side-scrolling landscape: far mountains, rolling hills and near pine \
+         trees glide at three speeds while the moon crosses the sky with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
         if dw == 0 || dh == 0 {
             return Ok(());
         }
-
-        // How many layers are active.
-        let n_layers = 3usize;
-        let active = ((ctx.eased * n_layers as f32).ceil() as usize)
-            .min(n_layers)
-            .max(1);
-
-        // Layer definitions: (y_fraction, speed_multiplier, dash_period_dots, dash_on_dots)
-        // Background = slow, few dashes; foreground = fast, many dashes.
-        let layers: [(f32, f32, usize, usize); 3] = [
-            (0.25, 0.3, 8, 3), // background (top third)
-            (0.55, 0.9, 6, 4), // midground
-            (0.85, 2.2, 4, 3), // foreground (bottom)
-        ];
-
-        for (idx, &(y_frac, speed, period, on)) in layers.iter().enumerate() {
-            if idx >= active {
-                break;
-            }
-
-            let y = (dh as f32 * y_frac) as usize;
-            if y >= dh {
-                continue;
-            }
-
-            // Horizontal scroll offset in dots.
-            let offset = ((ctx.time * speed * dw as f32 * 0.1) as usize) % period.max(1);
-
-            for x in 0..dw {
-                let phase = (x + offset) % period.max(1);
-                if phase < on {
-                    draw::dot(grid, x, y);
-                    // Foreground layer gets a thicker line.
-                    if idx == 2 && y + 1 < dh {
-                        draw::dot(grid, x, y + 1);
-                    }
+        let (cw, ch) = grid.dimensions();
+        // Layer owning each cell: 0 none, 1 moon, 2 mountains, 3 hills, 4 trees.
+        let mut owner = vec![0u8; cw * ch];
+        let mark = |owner: &mut [u8], x: i32, y: i32, layer: u8| {
+            if x >= 0 && y >= 0 && (x as usize) < dw && (y as usize) < dh {
+                let i = (y as usize / 4) * cw + x as usize / 2;
+                if layer > owner[i] {
+                    owner[i] = layer;
                 }
             }
+        };
+        let hf_ = dh as f32;
+        let t = ctx.time;
 
-            // Short vertical marks (parallax poles) at intervals — different
-            // depths get different mark heights.
-            let pole_h = match idx {
-                0 => 1usize,
-                1 => 2,
-                _ => 3,
-            };
-            let pole_spacing = dw / (idx * 3 + 4).max(1);
-            let pole_offset = ((ctx.time * speed * 0.5) as usize * pole_spacing / dw.max(1))
-                % pole_spacing.max(1);
-            let mut px = pole_offset;
-            while px < dw {
-                for py in 0..pole_h {
-                    let dot_y = y + py + 1;
-                    if dot_y < dh {
-                        draw::dot(grid, px, dot_y);
-                    }
-                    if y > py {
-                        draw::dot(grid, px, y - py - 1);
+        // Far mountains: ridge outline with snow on the high peaks.
+        let off_m = t * 2.0;
+        let ridge_y: Vec<i32> = (0..dw)
+            .map(|x| (hf_ - ridge(x as f32 + off_m, hf_)).round() as i32)
+            .collect();
+
+        // Moon: crosses the sky with progress, hidden behind the ridge.
+        let mr = (hf_ * 0.16).clamp(1.0, 4.0);
+        let mx = mr + 1.0 + ctx.eased * (dw as f32 - 2.0 * mr - 2.0).max(0.0);
+        let my = mr + 0.5;
+        let mri = mr.ceil() as i32;
+        for dy in -mri..=mri {
+            for dx in -mri..=mri {
+                if (dx * dx + dy * dy) as f32 <= mr * mr {
+                    let (x, y) = (mx as i32 + dx, my as i32 + dy);
+                    let behind = x >= 0 && (x as usize) < dw && y >= ridge_y[x as usize];
+                    if !behind {
+                        draw::dot_i(grid, x, y);
+                        mark(&mut owner, x, y, 1);
                     }
                 }
-                px += pole_spacing.max(1);
             }
         }
 
+        for (x, &ry) in ridge_y.iter().enumerate() {
+            let x = x as i32;
+            draw::dot_i(grid, x, ry);
+            mark(&mut owner, x, ry, 2);
+            if (ry as f32) < hf_ * 0.32 {
+                // Snow cap: fill a little under the high ridge.
+                draw::dot_i(grid, x, ry + 1);
+                mark(&mut owner, x, ry + 1, 2);
+            }
+        }
+
+        // Mid hills: smooth swells, sparse stipple fill.
+        let off_h = t * 6.0;
+        for x in 0..dw as i32 {
+            let wx = x as f32 + off_h;
+            let top = hf_ * (0.72 - 0.16 * (wx * 0.07).sin() - 0.06 * (wx * 0.19).sin());
+            let top = top.round() as i32;
+            draw::dot_i(grid, x, top);
+            mark(&mut owner, x, top, 3);
+            for y in top + 1..dh as i32 {
+                if (x + 2 * y) % 5 == 0 {
+                    draw::dot_i(grid, x, y);
+                    mark(&mut owner, x, y, 3);
+                }
+            }
+        }
+
+        // Near trees: solid pines on a ground line, fastest.
+        let gy = dh as i32 - 1;
+        let off_t = (t * 14.0) as i32;
+        let spacing = 19i32;
+        let tree_h = (hf_ * 0.7).max(3.0) as i32;
+        for x in 0..dw as i32 {
+            draw::dot_i(grid, x, gy);
+            mark(&mut owner, x, gy, 4);
+        }
+        let first = -(off_t.rem_euclid(spacing));
+        let mut k = 0i32;
+        let mut tx = first;
+        while tx < dw as i32 + spacing {
+            // Vary height per tree from its world index.
+            let idx = (off_t.div_euclid(spacing) + k) as u32;
+            let th = tree_h - (hf(idx) * hf_ * 0.25) as i32;
+            let top = gy - th;
+            for y in top..gy {
+                // Canopy widens downward; short trunk at the base.
+                let depth = y - top;
+                let half = if y >= gy - 2 {
+                    0
+                } else {
+                    (depth * 2 / 5).min(4)
+                };
+                for dx in -half..=half {
+                    draw::dot_i(grid, tx + dx, y);
+                    mark(&mut owner, tx + dx, y, 4);
+                }
+            }
+            tx += spacing;
+            k += 1;
+        }
+
+        grid.enable_color_support();
+        for (i, &o) in owner.iter().enumerate() {
+            let c = match o {
+                1 => Color::rgb(250, 236, 180),
+                2 => Color::rgb(110, 128, 200),
+                3 => Color::rgb(176, 104, 214),
+                4 => Color::rgb(236, 92, 170),
+                _ => continue,
+            };
+            let _ = grid.set_cell_color(i % cw, i / cw, c);
+        }
         Ok(())
     }
 }

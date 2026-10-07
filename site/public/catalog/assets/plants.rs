@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -844,24 +879,25 @@ pub mod styles {
 //! Ten structurally distinct styles, each driven by `ctx.eased` for growth
 //! stage and `ctx.time` for sway / breeze animation. Every style uses a
 //! completely different rendering algorithm: no two share the same structural
-//! approach, differing only in palette.
+//! approach. Each paints its own natural colours (greens, earth, petals)
+//! cell by cell rather than using the bar palette.
 //!
-//! | Name              | Mechanism                                              |
-//! |-------------------|--------------------------------------------------------|
-//! | `seedling`        | Discrete seed→sprout→stem→leaf→flower growth stages   |
-//! | `fern-fiddlehead` | Logarithmic spiral unrolling (fiddlehead uncurling)    |
-//! | `bamboo-shoot`    | Vertical segments shooting up one by one               |
-//! | `ivy-trellis`     | Vine climbing a grid trellis with curling tendrils     |
-//! | `cactus-arms`     | Trunk grows then arms branch out at thresholds         |
-//! | `sunflower-seeds` | Disc fills with golden-angle phyllotaxis seed dots     |
-//! | `mushroom-cap`    | Cap rises and expands as stalk grows upward            |
-//! | `succulent`       | Radial rosette: leaves open from centre outward        |
-//! | `root-system`     | Fractal root branches growing downward                 |
-//! | `bonsai`          | Trunk → recursive branches → dot canopy               |
+//! | Name                | Mechanism                                              |
+//! |---------------------|--------------------------------------------------------|
+//! | `seedling`          | Seed tray sprouting: hooked shoot → two seed leaves    |
+//! | `fern-fiddlehead`   | Logarithmic spiral unrolling (fiddlehead uncurling)    |
+//! | `bamboo-shoot`      | Vertical segments shooting up one by one               |
+//! | `ivy-trellis`       | Ivy with three-lobed leaves winding over a lattice     |
+//! | `cactus-arms`       | Saguaros grow in turn, sprout arms and a crown flower  |
+//! | `sunflower-seeds`   | Sunflowers open: petal ring round a phyllotaxis disc   |
+//! | `mushroom-cap`      | Red spotted toadstools pop up one after another        |
+//! | `succulent-rosette` | Potted echeveria: plump leaves fan outward in pairs    |
+//! | `root-system`       | Soil cutaway: roots snake right, forking rootlets      |
+//! | `bonsai`            | Potted S-trunk → branches → swelling cloud-pad foliage |
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 // ── registry ─────────────────────────────────────────────────────────────────
@@ -893,14 +929,35 @@ fn isin(angle: f32, amplitude: f32) -> i32 {
     (angle.sin() * amplitude).round() as i32
 }
 
-// ── 1. Seedling — discrete growth stages ─────────────────────────────────────
+/// Tint the cell containing dot `(x, y)`; out-of-range dots are ignored.
+fn tint_at(grid: &mut BrailleGrid, x: i32, y: i32, color: Color) {
+    if x >= 0 && y >= 0 {
+        let (cx, cy) = (x as usize / 2, y as usize / 4);
+        draw::tint_row(grid, cy, cx, cx, color);
+    }
+}
+
+/// Leaf green ramp: `0.0` deep forest green → `1.0` fresh yellow-green.
+fn leafy(t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    Color::rgb(
+        (40.0 + 130.0 * t) as u8,
+        (130.0 + 90.0 * t) as u8,
+        (50.0 + 30.0 * t) as u8,
+    )
+}
+
+/// Set a dot and tint its cell in one go.
+fn paint(grid: &mut BrailleGrid, x: i32, y: i32, color: Color) {
+    draw::dot_i(grid, x, y);
+    tint_at(grid, x, y, color);
+}
+
+// ── 1. Seedling — a seed tray sprouting in turn ──────────────────────────────
 //
-// eased maps to five visible stages:
-//   0.00–0.20  seed dot (underground bulge)
-//   0.20–0.40  sprout curl emerging from soil
-//   0.40–0.60  single stem rising
-//   0.60–0.80  two side leaves appear
-//   0.80–1.00  flower petals open at the tip
+// A row of seeds in a soil bed germinate left to right. Each one swells,
+// pushes up a hooked shoot, straightens, and opens two rounded seed leaves
+// (cotyledons) that sway in the breeze.
 
 struct Seedling;
 impl ProgressStyle for Seedling {
@@ -911,7 +968,7 @@ impl ProgressStyle for Seedling {
         "plants"
     }
     fn describe(&self) -> &str {
-        "Five discrete growth stages: seed → sprout → stem → leaves → flower, driven by progress"
+        "Seeds in a soil bed sprout left to right: a hooked shoot straightens and opens two swaying seed leaves"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -919,90 +976,63 @@ impl ProgressStyle for Seedling {
             return Ok(());
         }
 
-        let stage = ctx.eased;
-        let cx = (w / 2) as i32;
-        let ground = h.saturating_sub(2) as i32;
-        // Sway all above-ground parts with a gentle breeze.
-        let sway = isin(ctx.time * 1.4, (w as f32 * 0.04).max(1.0));
+        let soil = Color::rgb(120, 80, 45);
+        let seed_c = Color::rgb(215, 180, 110);
+        let stem_c = Color::rgb(150, 215, 90);
+        let leaf_c = Color::rgb(70, 185, 70);
+        let ground = h as i32 - 2;
 
-        // Stage 1: seed — a small oval underground.
-        if stage >= 0.0 {
-            // Seed sits at ground level.
-            draw::dot_i(grid, cx, ground);
-            draw::dot_i(grid, cx + 1, ground);
-            draw::dot_i(grid, cx, ground + 1);
-            draw::dot_i(grid, cx + 1, ground + 1);
-        }
-
-        // Stage 2: sprout hook emerging above ground (eased 0.20+).
-        if stage >= 0.20 {
-            // Hook: a short upward line that curves over.
-            let sprout_h = ((stage - 0.20) / 0.20 * h as f32 * 0.25).round() as i32;
-            for dy in 0..=sprout_h {
-                draw::dot_i(grid, cx + sway / 2, ground - dy);
-            }
-            // Curved tip — the cotyledon loop.
-            draw::dot_i(grid, cx + sway / 2 + 1, ground - sprout_h);
-            draw::dot_i(grid, cx + sway / 2 + 1, ground - sprout_h + 1);
-        }
-
-        // Stage 3: full stem (eased 0.40+).
-        if stage >= 0.40 {
-            let stem_h = ((stage - 0.40) / 0.20 * h as f32 * 0.50).round() as i32;
-            let stem_h = stem_h.min(ground);
-            for dy in 0..=stem_h {
-                let lean = isin(ctx.time * 1.4 + dy as f32 * 0.2, (w as f32 * 0.04).max(1.0));
-                draw::dot_i(grid, cx + lean, ground - dy);
+        // Soil bed: a solid crust line with crumbs underneath.
+        for x in 0..w as i32 {
+            paint(grid, x, ground, soil);
+            if x % 3 == 0 {
+                paint(grid, x, ground + 1, soil);
             }
         }
 
-        // Stage 4: two leaves at mid-stem (eased 0.60+).
-        if stage >= 0.60 {
-            let stem_h = (h as f32 * 0.50).round() as i32;
-            let leaf_y = ground - stem_h / 2;
-            let leaf_reach = ((stage - 0.60) / 0.20 * w as f32 * 0.20).round() as i32;
-            for lx in 1..=leaf_reach {
-                // Left leaf curves up-left, right leaf up-right.
-                let curve = (lx as f32 / leaf_reach.max(1) as f32 * PI * 0.5).sin();
-                let dy = -(curve * 2.0).round() as i32;
-                draw::dot_i(grid, cx + sway - lx, leaf_y + dy);
-                draw::dot_i(grid, cx + sway + lx, leaf_y + dy);
+        let n = (w / 14).max(1);
+        let spacing = w as f32 / n as f32;
+        for i in 0..n {
+            let local = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            let x = (spacing * (i as f32 + 0.5)) as i32;
+            if local < 0.15 {
+                // A dormant seed resting on the soil.
+                paint(grid, x, ground - 1, seed_c);
+                paint(grid, x + 1, ground - 1, seed_c);
+                continue;
             }
-        }
-
-        // Stage 5: flower petals (eased 0.80+).
-        if stage >= 0.80 {
-            let stem_h = (h as f32 * 0.50).round() as i32;
-            let tip_y = ground - stem_h;
-            let petals = 6usize;
-            let petal_len = ((stage - 0.80) / 0.20 * (w as f32 * 0.12).max(2.0)).max(0.0);
-            for p in 0..petals {
-                let angle = (p as f32 / petals as f32) * 2.0 * PI + ctx.time * 0.4;
-                let steps = petal_len.round() as usize;
-                for s in 1..=steps {
-                    let r = s as f32;
-                    draw::dot_i(
-                        grid,
-                        cx + sway + (angle.cos() * r).round() as i32,
-                        tip_y + (angle.sin() * r).round() as i32,
-                    );
+            let sway = isin(ctx.time * 1.5 + i as f32, 1.0);
+            let rise = ((local - 0.15) / 0.45).min(1.0);
+            let height = (1.0 + (h as f32 * 0.4) * rise) as i32;
+            let top = ground - height;
+            for y in top..ground {
+                let dx = if y < ground - height / 2 { sway } else { 0 };
+                paint(grid, x + dx, y, stem_c);
+            }
+            if local < 0.6 {
+                // Hooked shoot: the tip still bent over.
+                paint(grid, x + sway + 1, top, stem_c);
+                paint(grid, x + sway + 2, top + 1, stem_c);
+                continue;
+            }
+            // Two seed leaves opening into rounded ovals.
+            let open = ((local - 0.6) / 0.4).min(1.0);
+            let rx = 1.0 + 1.2 * open;
+            let ry = 0.7 + 0.5 * open;
+            for side in [-1.0f32, 1.0] {
+                let lcx = (x + sway) as f32 + side * (rx + 0.5);
+                let lcy = top as f32 - open;
+                for yy in (lcy - ry - 2.0) as i32..=(lcy + ry + 2.0) as i32 {
+                    for xx in (lcx - rx - 1.0) as i32..=(lcx + rx + 1.0) as i32 {
+                        let fx = (xx as f32 - lcx) / rx;
+                        // Leaves tilt upward away from the stem.
+                        let fy = (yy as f32 - lcy + fx * side * 1.6) / ry;
+                        if fx * fx + fy * fy <= 1.0 {
+                            paint(grid, xx, yy, leaf_c);
+                        }
+                    }
                 }
             }
-            // Centre of flower.
-            draw::dot_i(grid, cx + sway, tip_y);
-        }
-
-        // Tint: soil brown at bottom, green in the middle, gold at tip.
-        let (cw, ch) = grid.dimensions();
-        use crate::Color;
-        for cy in 0..ch {
-            let t = 1.0 - cy as f32 / ch.saturating_sub(1).max(1) as f32; // 0 = top, 1 = bottom
-            let color = if t > 0.85 {
-                Color::rgb(101, 67, 33) // soil
-            } else {
-                ctx.palette.sample(1.0 - t)
-            };
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
         }
 
         Ok(())
@@ -1119,7 +1149,7 @@ impl ProgressStyle for FernFiddlehead {
         let (cw, ch) = grid.dimensions();
         for row in 0..ch {
             let t = row as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased);
+            let color = leafy(1.0 - t);
             draw::tint_row(grid, row, 0, cw.saturating_sub(1), color);
         }
 
@@ -1215,7 +1245,7 @@ impl ProgressStyle for BambooShoot {
         // Gradient tint: deep green at base, yellow-green at tip.
         for cy in 0..ch {
             let t = 1.0 - cy as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased);
+            let color = leafy(t);
             draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
         }
 
@@ -1223,11 +1253,11 @@ impl ProgressStyle for BambooShoot {
     }
 }
 
-// ── 4. Ivy Trellis — vine climbing a grid trellis with tendrils ──────────────
+// ── 4. Ivy Trellis — ivy climbing a diamond-lattice garden trellis ──────────
 //
-// The trellis is a fixed dot-grid. The vine advances along the trellis
-// left→right (progress). At intervals, curling tendrils spiral off the vine.
-// ctx.time animates the tendril curl continuously.
+// A wooden lattice of crossed diagonal slats spans the bar. An ivy vine
+// winds along it left→right with progress, sprouting three-lobed leaves on
+// alternate sides; the leaves flutter between two poses with ctx.time.
 
 struct IvyTrellis;
 impl ProgressStyle for IvyTrellis {
@@ -1238,7 +1268,7 @@ impl ProgressStyle for IvyTrellis {
         "plants"
     }
     fn describe(&self) -> &str {
-        "Ivy climbs a dot-grid trellis left-to-right; curling tendrils spiral off the vine"
+        "Ivy winds left to right across a wooden diamond-lattice trellis, sprouting fluttering three-lobed leaves"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1246,90 +1276,69 @@ impl ProgressStyle for IvyTrellis {
             return Ok(());
         }
 
-        // Draw trellis: vertical posts every 8 dots, two horizontal rails.
-        let post_spacing = 8usize;
-        let rail1 = h / 4;
-        let rail2 = 3 * h / 4;
-        // Top rail.
-        draw::hline(grid, 0, w.saturating_sub(1), rail1);
-        // Bottom rail.
-        draw::hline(grid, 0, w.saturating_sub(1), rail2);
-        // Vertical posts.
-        let posts = w / post_spacing;
-        for p in 0..=posts {
-            let px = p * post_spacing;
-            draw::vline(grid, px.min(w.saturating_sub(1)), rail1, rail2);
-        }
+        let wood = Color::rgb(160, 115, 70);
+        let vine = leafy(0.2);
+        let hh = h as i32;
 
-        // Vine: travels along the bottom rail, then climbs up each post, then along top rail.
-        // The vine path is parameterized in [0,1] → (x,y) dot coordinates.
-        // Phase 0–0.5: bottom rail left→right
-        // Phase 0.5–1.0: top rail left→right (climbs posts along the way)
-        let reach = ctx.eased;
-        let vine_end_dot = (reach * w as f32) as usize;
-
-        // Bottom rail vine.
-        let bottom_reach = (reach * 2.0).min(1.0);
-        let brd = (bottom_reach * w as f32) as usize;
-        for x in 0..brd.min(w) {
-            let sway = isin(x as f32 * 0.5 + ctx.time * 1.2, 1.0);
-            draw::dot_i(grid, x as i32, rail2 as i32 + sway);
-        }
-
-        // Top rail vine only appears in second half of progress.
-        if reach > 0.5 {
-            let top_reach = (reach - 0.5) * 2.0;
-            let trd = (top_reach * w as f32) as usize;
-            for x in 0..trd.min(w) {
-                let sway = isin(x as f32 * 0.5 + ctx.time * 1.2, 1.0);
-                draw::dot_i(grid, x as i32, rail1 as i32 + sway);
+        // Lattice: two families of diagonal slats crossing into diamonds.
+        for y in 0..hh {
+            for x in 0..w as i32 {
+                if (x + y).rem_euclid(10) == 0 || (x - y).rem_euclid(10) == 0 {
+                    paint(grid, x, y, wood);
+                }
             }
         }
 
-        // Tendrils: small clockwise spirals hanging off the bottom vine.
-        let tendril_spacing = 12usize;
-        let tendril_count = vine_end_dot / tendril_spacing;
-        for t_idx in 0..tendril_count {
-            let tx = (t_idx * tendril_spacing + tendril_spacing / 2).min(w.saturating_sub(1));
-            // Tendril curls below the rail.
-            let curl_turns = 1.5f32;
-            let tendril_r = (h as f32 * 0.08).max(2.0);
-            let phase_offset = ctx.time * 1.5 + t_idx as f32 * 0.8;
-            let curl_steps = 24usize;
-            for s in 0..=curl_steps {
-                let theta = s as f32 / curl_steps as f32 * curl_turns * 2.0 * PI + phase_offset;
-                let r = tendril_r * (1.0 - s as f32 / curl_steps.max(1) as f32 * 0.7);
-                let px = tx as i32 + (theta.cos() * r).round() as i32;
-                let py = rail2 as i32 + 2 + (theta.sin() * r).round() as i32;
-                draw::dot_i(grid, px, py);
-            }
+        // Vine: a winding stem out to `reach`.
+        let reach = (ctx.eased * w as f32) as i32;
+        let mid = hh as f32 / 2.0;
+        let stem_y = |x: i32| (mid + (x as f32 * 0.2).sin() * (hh as f32 * 0.22)) as i32;
+        for x in 0..reach {
+            paint(grid, x, stem_y(x), vine);
         }
 
-        // Tint the filled region.
-        let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32).round() as usize;
-        for cx in 0..filled_cells.min(cw) {
-            let t = if cw <= 1 {
-                0.0
+        // Leaves on alternate sides; the newest ones near the tip are small.
+        let mut i = 0;
+        let mut x = 3;
+        while x < reach {
+            let up = i % 2 == 0;
+            let sy = stem_y(x);
+            let big = reach - x > 4;
+            let flap = (ctx.time * 3.0 + i as f32 * 1.3).sin() > 0.0;
+            let dir = if up { -1 } else { 1 };
+            let c = leafy(if i % 3 == 0 { 0.5 } else { 0.25 });
+            // Petiole from the stem to the leaf.
+            paint(grid, x, sy + dir, c);
+            let ly = sy + dir * 2;
+            if big {
+                // Three-lobed ivy leaf: a broad body with two side lobes.
+                let lobe = if flap { 0 } else { dir };
+                for dx in -2..=2 {
+                    paint(grid, x + dx, ly, c);
+                }
+                for dx in -1..=1 {
+                    paint(grid, x + dx, ly + dir, c);
+                }
+                paint(grid, x, ly + dir * 2, c);
+                paint(grid, x - 2, ly - dir + lobe, c);
+                paint(grid, x + 2, ly - dir + lobe, c);
             } else {
-                cx as f32 / (cw - 1) as f32
-            };
-            let color = ctx.palette.sample(t);
-            for cy in 0..ch {
-                draw::tint_row(grid, cy, cx, cx, color);
+                paint(grid, x, ly, c);
+                paint(grid, x + 1, ly, c);
             }
+            i += 1;
+            x += 5;
         }
 
         Ok(())
     }
 }
 
-// ── 5. Cactus Arms — trunk grows then lateral arms branch out ────────────────
+// ── 5. Cactus Arms — saguaros grow, arms branch, a flower crowns them ───────
 //
-// The trunk (a solid vline) grows from the bottom up as eased → 0.5.
-// At eased = 0.5, left arm appears; at eased = 0.75, right arm.
-// At eased = 1.0, arms grow spines (small perpendicular dots).
-// ctx.time gives a slow pulse (very slight trunk width change).
+// Three saguaros on a sandy floor grow in turn. Each trunk rises with a
+// rounded top, then its elbowed arms sprout at thresholds, and a pink flower
+// opens on the crown once it is fully grown. A tumbleweed rolls past on time.
 
 struct CactusArms;
 impl ProgressStyle for CactusArms {
@@ -1340,7 +1349,7 @@ impl ProgressStyle for CactusArms {
         "plants"
     }
     fn describe(&self) -> &str {
-        "A cactus trunk rises then sprouts a left arm, right arm, and finally spines at full growth"
+        "Three saguaro cacti rise in turn, sprout elbowed arms and a pink crown flower while a tumbleweed rolls by"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1348,92 +1357,101 @@ impl ProgressStyle for CactusArms {
             return Ok(());
         }
 
-        let cx = (w / 2) as i32;
-        let base_y = h.saturating_sub(1) as i32;
+        let green = Color::rgb(60, 170, 80);
+        let sand = Color::rgb(210, 170, 100);
+        let pink = Color::rgb(255, 110, 170);
+        let weed = Color::rgb(150, 110, 60);
+        let ground = h as i32 - 1;
 
-        // Trunk grows from base upward — first 50% of eased.
-        let trunk_frac = (ctx.eased / 0.5).min(1.0);
-        let trunk_h = (trunk_frac * h as f32 * 0.80).round() as i32;
-        let trunk_top = base_y - trunk_h;
-
-        // Draw trunk as 2-wide column.
-        for dy in 0..=trunk_h {
-            let y = base_y - dy;
-            draw::dot_i(grid, cx, y);
-            draw::dot_i(grid, cx + 1, y);
-        }
-
-        // Slow pulse width (purely cosmetic, time-driven).
-        let pulse = ((ctx.time * 0.8).sin() * 0.5 + 0.5) > 0.5;
-        if pulse && trunk_h > 4 {
-            for dy in 2..=trunk_h - 2 {
-                draw::dot_i(grid, cx - 1, base_y - dy);
+        // Sandy floor: a dotted dune line.
+        for x in 0..w as i32 {
+            if x % 3 != 1 {
+                paint(grid, x, ground, sand);
             }
         }
 
-        // Left arm appears at eased 0.50–0.75.
-        if ctx.eased >= 0.50 {
-            let arm_frac = ((ctx.eased - 0.50) / 0.25).min(1.0);
-            let arm_attach_y = trunk_top + trunk_h / 3;
-            let arm_w = (arm_frac * w as f32 * 0.25).round() as i32;
-            // Horizontal run out, then up.
-            for dx in 0..=arm_w {
-                draw::dot_i(grid, cx - dx, arm_attach_y);
-            }
-            let arm_up = (arm_frac * h as f32 * 0.15).round() as i32;
-            for dy in 0..=arm_up {
-                draw::dot_i(grid, cx - arm_w, arm_attach_y - dy);
-            }
+        // Tumbleweed: a little scribbled wheel rolling and bouncing (drawn
+        // first so the cacti stay green when it rolls behind them).
+        let span = w as f32 + 8.0;
+        let tx = (ctx.time * 9.0).rem_euclid(span) - 4.0;
+        let ty = ground as f32 - 2.0 - (ctx.time * 6.0).sin().abs() * 1.5;
+        for k in 0..8 {
+            let a = k as f32 / 8.0 * 2.0 * PI + ctx.time * 5.0;
+            let rr = if k % 2 == 0 { 2.0 } else { 1.2 };
+            paint(
+                grid,
+                (tx + a.cos() * rr * 1.2).round() as i32,
+                (ty + a.sin() * rr).round() as i32,
+                weed,
+            );
         }
 
-        // Right arm appears at eased 0.75–1.00.
-        if ctx.eased >= 0.75 {
-            let arm_frac = ((ctx.eased - 0.75) / 0.25).min(1.0);
-            let arm_attach_y = trunk_top + trunk_h / 5;
-            let arm_w = (arm_frac * w as f32 * 0.22).round() as i32;
-            for dx in 0..=arm_w {
-                draw::dot_i(grid, cx + 1 + dx, arm_attach_y);
+        let n = 3usize;
+        let full_h = (h as f32 - 2.0).max(1.0);
+        for i in 0..n {
+            let local = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                continue;
             }
-            let arm_up = (arm_frac * h as f32 * 0.12).round() as i32;
-            for dy in 0..=arm_up {
-                draw::dot_i(grid, cx + 1 + arm_w, arm_attach_y - dy);
+            let cx = (w as f32 * (0.18 + 0.32 * i as f32)) as i32;
+            let height = (full_h * (local / 0.55).min(1.0)).max(1.0) as i32;
+            let top = ground - height;
+            // Trunk: 4 dots wide with a rounded crown and a rib groove.
+            for y in top..ground {
+                let crown = y == top;
+                for dx in -2..=1 {
+                    if crown && (dx == -2 || dx == 1) {
+                        continue;
+                    }
+                    if dx == 0 && y > top + 1 && (y + i as i32) % 3 == 0 {
+                        continue;
+                    }
+                    paint(grid, cx + dx, y, green);
+                }
             }
-        }
-
-        // Spines: small perpendicular dots along trunk at full growth.
-        if ctx.eased >= 0.95 {
-            let spine_spacing = 4i32;
-            let mut y = base_y - spine_spacing;
-            while y > trunk_top {
-                // Alternating left/right spines.
-                let side = if (y / spine_spacing) % 2 == 0 {
-                    3i32
+            // Arms: out sideways, then up — left at 60%, right at 80%.
+            let arms = [(0.6, -1, 0.55), (0.8, 1, 0.4)];
+            for (k, &(at, side, frac)) in arms.iter().enumerate() {
+                if local < at {
+                    continue;
+                }
+                let grow = ((local - at) / 0.15).min(1.0);
+                let elbow_y = ground - (full_h * frac) as i32;
+                let reach = 3;
+                let x_out = if side < 0 {
+                    cx - 2 - reach
                 } else {
-                    -3i32
+                    cx + 1 + reach
                 };
-                draw::dot_i(grid, cx + side, y);
-                draw::dot_i(grid, cx + side / 2, y - 1);
-                y -= spine_spacing;
+                for s in 1..=reach {
+                    let x = if side < 0 { cx - 2 - s } else { cx + 1 + s };
+                    paint(grid, x, elbow_y, green);
+                    paint(grid, x, elbow_y - 1, green);
+                }
+                let up = ((3.0 + k as f32) * grow).round() as i32;
+                for y in (elbow_y - 1 - up)..elbow_y {
+                    paint(grid, x_out, y, green);
+                    paint(grid, x_out - side, y, green);
+                }
             }
-        }
-
-        // Cactus green tint.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = cy as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(1.0 - t * 0.5);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+            // Flower crown once fully grown.
+            if local >= 0.98 {
+                paint(grid, cx - 1, top - 1, pink);
+                paint(grid, cx, top - 1, pink);
+                paint(grid, cx - 2, top - 2, pink);
+                paint(grid, cx + 1, top - 2, pink);
+            }
         }
 
         Ok(())
     }
 }
 
-// ── 6. Sunflower Seeds — golden-angle phyllotaxis ────────────────────────────
+// ── 6. Sunflower Seeds — a field of sunflowers opening in turn ──────────────
 //
-// The disc is filled with seeds placed at golden-angle increments.
-// eased controls how many seeds are visible (from centre outward).
-// ctx.time causes the whole disc to rotate slowly.
+// Each sunflower grows its stem, then opens: a ring of yellow petals spreads
+// round a brown disc that fills with golden-angle (phyllotaxis) seeds.
+// Flowers open left to right with progress; heads nod in the breeze.
 
 struct SunflowerSeeds;
 impl ProgressStyle for SunflowerSeeds {
@@ -1444,7 +1462,7 @@ impl ProgressStyle for SunflowerSeeds {
         "plants"
     }
     fn describe(&self) -> &str {
-        "Sunflower disc fills with golden-angle phyllotaxis seeds radiating from the centre"
+        "A row of sunflowers opens left to right: yellow petals ring a brown disc packed with spiral seeds"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1452,62 +1470,81 @@ impl ProgressStyle for SunflowerSeeds {
             return Ok(());
         }
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let max_r = (w.min(h) / 2).saturating_sub(1) as f32;
+        let stem = Color::rgb(70, 170, 60);
+        let petal = Color::rgb(255, 205, 30);
+        let seed = Color::rgb(130, 75, 30);
+        let ground = h as i32 - 1;
+        let n = (w / 15).max(1);
+        let spacing = w as f32 / n as f32;
+        let hy = h as f32 * 0.36;
+        let r_out = (h as f32 * 0.34).min(spacing * 0.4).max(1.0);
+        let r_disc = (r_out * 0.45).max(1.0);
+        const GOLDEN: f32 = 2.399_963;
 
-        // Total seeds scales with area; use a fixed cap for fast rendering.
-        let max_seeds = 200usize;
-        let visible = (ctx.eased * max_seeds as f32).round() as usize;
-
-        // Golden angle in radians.
-        let golden_angle = PI * (3.0 - 5.0_f32.sqrt());
-        let rotation_offset = ctx.time * 0.2;
-
-        for n in 0..visible.min(max_seeds) {
-            let r = max_r * (n as f32 / max_seeds as f32).sqrt();
-            let theta = n as f32 * golden_angle + rotation_offset;
-            let sx = cx + (r * theta.cos()).round() as i32;
-            let sy = cy + (r * theta.sin()).round() as i32;
-            draw::dot_i(grid, sx, sy);
-            // Slightly thicker seeds in the outer half.
-            if r > max_r * 0.5 {
-                draw::dot_i(grid, sx + 1, sy);
+        for i in 0..n {
+            let local = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            let base_x = spacing * (i as f32 + 0.5);
+            if local <= 0.0 {
+                // Unsprouted: a seed in the soil.
+                paint(grid, base_x as i32, ground, seed);
+                continue;
             }
-        }
-
-        // Outer ring (flower receptacle edge).
-        if ctx.eased > 0.1 {
-            let rim_r = (max_r * ctx.eased.sqrt()).round() as i32;
-            let rim_r = rim_r.max(1);
-            let steps = (2.0 * PI * rim_r as f32).round() as usize + 4;
-            for s in 0..steps {
-                let angle = s as f32 / steps as f32 * 2.0 * PI;
-                draw::dot_i(
+            let nod = (ctx.time * 1.3 + i as f32 * 1.1).sin() * 0.8;
+            let hx = base_x + nod;
+            let grow = (local * 2.0).min(1.0);
+            let bloom = ((local - 0.5) * 2.0).clamp(0.0, 1.0);
+            let top = ground as f32 - (ground as f32 - hy) * grow;
+            for y in top as i32..=ground {
+                paint(grid, base_x.round() as i32, y, stem);
+            }
+            // Two leaves on the stem.
+            if grow > 0.6 {
+                let ly = ground - 3;
+                paint(grid, base_x as i32 - 1, ly, stem);
+                paint(grid, base_x as i32 - 2, ly - 1, stem);
+                paint(grid, base_x as i32 + 1, ly + 1, stem);
+                paint(grid, base_x as i32 + 2, ly, stem);
+            }
+            if grow < 1.0 {
+                continue;
+            }
+            // Petals: 12 rays that lengthen as the head opens, turning slowly.
+            let len = r_disc + 0.5 + (r_out - r_disc) * (0.3 + 0.7 * bloom);
+            for k in 0..12 {
+                let a = k as f32 / 12.0 * 2.0 * PI + ctx.time * 0.2;
+                for step in 0..=((len - r_disc) * 2.0) as i32 {
+                    let d = r_disc + step as f32 * 0.5;
+                    paint(
+                        grid,
+                        (hx + a.cos() * d * 1.25).round() as i32,
+                        (hy + a.sin() * d).round() as i32,
+                        petal,
+                    );
+                }
+            }
+            // Seed disc: phyllotaxis spiral fills in as the head matures.
+            let seeds = 6 + (bloom * 40.0) as i32;
+            for k in 0..seeds {
+                let rr = r_disc * (k as f32 / 46.0).sqrt();
+                let a = k as f32 * GOLDEN;
+                paint(
                     grid,
-                    cx + (rim_r as f32 * angle.cos()).round() as i32,
-                    cy + (rim_r as f32 * angle.sin()).round() as i32,
+                    (hx + a.cos() * rr * 1.25).round() as i32,
+                    (hy + a.sin() * rr).round() as i32,
+                    seed,
                 );
             }
-        }
-
-        // Warm yellow-brown centre tint.
-        let (cw, ch) = grid.dimensions();
-        for row in 0..ch {
-            let t = row as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased);
-            draw::tint_row(grid, row, 0, cw.saturating_sub(1), color);
         }
 
         Ok(())
     }
 }
 
-// ── 7. Mushroom Cap — stalk rises, cap expands ───────────────────────────────
+// ── 7. Mushroom Cap — toadstools pop up one after another ────────────────────
 //
-// eased 0–0.5: stalk grows upward from the ground (vline, 2-wide).
-// eased 0.5–1.0: dome cap arc widens from a dot to a full hemisphere.
-// ctx.time causes subtle cap wobble and spore dots fall below the cap.
+// A row of fly-agaric toadstools: each pushes up a cream stalk, then its red
+// domed cap swells, punched with white spots (negative space). Toadstools
+// appear left to right with progress; the newest one breathes and puffs spores.
 
 struct MushroomCap;
 impl ProgressStyle for MushroomCap {
@@ -1518,7 +1555,7 @@ impl ProgressStyle for MushroomCap {
         "plants"
     }
     fn describe(&self) -> &str {
-        "A mushroom stalk rises then its dome cap expands; spore dots drift downward"
+        "Red spotted toadstools pop up left to right: a cream stalk rises, then the domed cap swells and puffs spores"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1526,87 +1563,83 @@ impl ProgressStyle for MushroomCap {
             return Ok(());
         }
 
-        let cx = (w / 2) as i32;
-        let ground = h.saturating_sub(1) as i32;
+        let cap_c = Color::rgb(225, 45, 45);
+        let stalk_c = Color::rgb(240, 225, 195);
+        let spore_c = Color::rgb(200, 190, 160);
+        let ground = h as i32 - 1;
+        let n = (w / 18).max(1);
+        let spacing = w as f32 / n as f32;
+        let cap_base = (h as f32 * 0.7) as i32;
 
-        // Stalk grows from ground up during first 50%.
-        let stalk_frac = (ctx.eased / 0.5).min(1.0);
-        let stalk_h = (stalk_frac * h as f32 * 0.55).round() as i32;
-        for dy in 0..=stalk_h {
-            let y = ground - dy;
-            draw::dot_i(grid, cx, y);
-            draw::dot_i(grid, cx + 1, y);
-        }
+        for i in 0..n {
+            let local = (ctx.eased * n as f32 - i as f32).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                continue;
+            }
+            let cx = (spacing * (i as f32 + 0.5)) as i32;
+            // Stalk rises in the first 30%, cap swells for the rest.
+            let rise = (local / 0.3).min(1.0);
+            let swell = ((local - 0.2) / 0.8).clamp(0.0, 1.0);
+            let breathe = if local < 1.0 || i + 1 == n {
+                (ctx.time * 3.0 + i as f32).sin() * 0.3
+            } else {
+                0.0
+            };
+            let base_y = ground - ((ground - cap_base) as f32 * rise) as i32;
+            for y in base_y..=ground {
+                for dx in -1..=1 {
+                    paint(grid, cx + dx, y, stalk_c);
+                }
+            }
+            // Skirt ring under the cap.
+            if swell > 0.3 {
+                paint(grid, cx - 2, base_y + 1, stalk_c);
+                paint(grid, cx + 2, base_y + 1, stalk_c);
+            }
 
-        // Stalk top position.
-        let stalk_top = ground - stalk_h;
-
-        // Cap: dome arc (upper semi-ellipse) centred above the stalk.
-        if ctx.eased >= 0.5 {
-            let cap_frac = ((ctx.eased - 0.5) / 0.5).min(1.0);
-            // Wobble with time.
-            let wobble = (ctx.time * 2.3).sin() * cap_frac * 1.0;
-            let cap_rx = ((cap_frac * w as f32 * 0.40) + wobble).max(1.0) as i32;
-            let cap_ry = (cap_frac * h as f32 * 0.35).max(1.0) as i32;
-            let cap_cy = stalk_top;
-
-            // Draw filled upper semi-ellipse.
-            for dy in 0..=cap_ry {
-                // Horizontal half-width at this row (ellipse formula).
-                let row_w = if cap_ry == 0 {
-                    0
-                } else {
-                    (cap_rx as f32 * (1.0 - (dy as f32 / cap_ry as f32).powi(2)).sqrt()).round()
-                        as i32
-                };
-                let y = cap_cy - dy;
-                for dx in -row_w..=row_w {
-                    draw::dot_i(grid, cx + dx, y);
+            let rx = (1.5 + (spacing * 0.36 - 1.5).max(0.0) * swell + breathe).max(1.0);
+            let ry = (1.0 + (h as f32 * 0.5 - 1.0) * swell + breathe).max(1.0);
+            let cyf = base_y as f32;
+            // White spots, as fractions of the cap radii.
+            let spots = [(-0.5, -0.45), (0.15, -0.75), (0.55, -0.35), (-0.1, -0.25)];
+            for y in (cyf - ry).floor() as i32..=base_y {
+                for x in (cx as f32 - rx).floor() as i32..=(cx as f32 + rx).ceil() as i32 {
+                    let fx = (x - cx) as f32 / rx;
+                    let fy = (y as f32 - cyf) / ry;
+                    if fx * fx + fy * fy > 1.0 {
+                        continue;
+                    }
+                    let spot = swell > 0.5
+                        && spots.iter().any(|&(sx, sy)| {
+                            ((fx - sx) * rx).abs() < 1.0 && ((fy - sy) * ry).abs() < 1.0
+                        });
+                    if !spot {
+                        paint(grid, x, y, cap_c);
+                    }
                 }
             }
 
-            // Spots on the cap (Amanita-style) — fixed polar positions.
-            let spots = [(0.3f32, 0.4f32), (-0.35, 0.55), (0.55, 0.65), (-0.1, 0.75)];
-            for &(sx_frac, sy_frac) in &spots {
-                let sx = cx + (sx_frac * cap_rx as f32).round() as i32;
-                let sy = cap_cy - (sy_frac * cap_ry as f32).round() as i32;
-                draw::dot_i(grid, sx, sy);
-                draw::dot_i(grid, sx + 1, sy);
+            // Spores drift up off the newest cap.
+            if i + 1 == ((ctx.eased * n as f32).ceil() as usize).min(n) && swell > 0.5 {
+                for k in 0..3 {
+                    let t = (ctx.time * 0.8 + k as f32 / 3.0).fract();
+                    let sx = cx + isin(ctx.time * 2.0 + k as f32 * 2.0, 3.0) + (k - 1) * 3;
+                    let sy = (cyf - ry - 1.0 - t * 4.0) as i32;
+                    paint(grid, sx, sy, spore_c);
+                }
             }
-
-            // Spore fall: dots below the cap edge drift downward.
-            let spore_count = 5usize;
-            for s in 0..spore_count {
-                let phase = s as f32 / spore_count as f32;
-                let spore_x = cx + ((phase - 0.5) * cap_rx as f32 * 1.8).round() as i32;
-                let drop = ((ctx.time * 0.8 + phase).fract() * (ground - stalk_top) as f32) as i32;
-                let spore_y = stalk_top + drop;
-                draw::dot_i(grid, spore_x, spore_y);
-            }
-        }
-
-        // Tint: earthy warm for stalk, red/orange cap above.
-        let (cw, ch) = grid.dimensions();
-        let stalk_cell = (stalk_top.max(0) as usize / 4).min(ch.saturating_sub(1));
-        for cy in 0..ch {
-            let t = if cy < stalk_cell {
-                ctx.palette.sample(0.9)
-            } else {
-                ctx.palette
-                    .sample(0.3 + cy as f32 / ch.saturating_sub(1).max(1) as f32 * 0.6)
-            };
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), t);
         }
 
         Ok(())
     }
 }
 
-// ── 8. Succulent Rosette — radial leaves open from centre ────────────────────
+// ── 8. Succulent Rosette — fleshy leaves fan open from a potted rosette ─────
 //
-// eased controls how many leaves are visible AND their opening angle.
-// Leaves are rendered as filled wedge arcs growing outward from the centre.
-// ctx.time rotates the whole rosette slowly (succulents track the sun).
+// Side view of an echeveria in a terracotta pot. Upright inner leaves appear
+// first; with progress the rosette fans outward, each new leaf longer and
+// lower, until the outermost leaves spread almost flat. Pink-blushed tips,
+// and the whole rosette breathes gently with time.
 
 struct Succulent;
 impl ProgressStyle for Succulent {
@@ -1617,7 +1650,7 @@ impl ProgressStyle for Succulent {
         "plants"
     }
     fn describe(&self) -> &str {
-        "A succulent rosette opens radially; leaves widen and extend as progress advances"
+        "A potted echeveria fans open: plump sage-green leaves with pink tips spread outward from the centre"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1625,80 +1658,66 @@ impl ProgressStyle for Succulent {
             return Ok(());
         }
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let max_r = (w.min(h) / 2).saturating_sub(1) as f32;
+        let pot = Color::rgb(190, 95, 60);
+        let leaf_c = Color::rgb(120, 190, 150);
+        let tip_c = Color::rgb(235, 120, 160);
+        let cx = w as f32 / 2.0;
+        let ground = h as i32 - 1;
+        let base_y = (h as f32 - 4.0).max(0.0);
 
-        let total_leaves = 12usize;
-        // Leaves appear in order as progress increases.
-        let leaves_open = (ctx.eased * total_leaves as f32).ceil() as usize;
-
-        // Rotate slowly with time.
-        let rotation = ctx.time * 0.15;
-
-        for leaf in 0..leaves_open.min(total_leaves) {
-            let base_angle = (leaf as f32 / total_leaves as f32) * 2.0 * PI + rotation;
-
-            // This leaf's opening fraction (newest leaf partially open, others full).
-            let leaf_frac = if leaf + 1 < leaves_open {
-                1.0f32
-            } else {
-                let base = leaf as f32 / total_leaves as f32;
-                ((ctx.eased - base) * total_leaves as f32).clamp(0.0, 1.0)
-            };
-
-            let leaf_r = (leaf_frac * max_r * 0.85).max(0.0);
-            // Half-angular width of each leaf (wedge).
-            let half_w = leaf_frac * PI / (total_leaves as f32) * 2.5;
-
-            // Fill the wedge arc with dot samples.
-            let arc_steps = (leaf_r * 4.0).round() as usize + 4;
-            let r_steps = (leaf_r * 0.5).round() as usize + 2;
-            for rs in 1..=r_steps {
-                let r = leaf_r * rs as f32 / r_steps as f32;
-                for a in 0..=arc_steps {
-                    let angle_off = (a as f32 / arc_steps as f32 - 0.5) * 2.0 * half_w;
-                    let angle = base_angle + angle_off;
-                    let px = cx + (r * angle.cos()).round() as i32;
-                    let py = cy + (r * angle.sin()).round() as i32;
-                    draw::dot_i(grid, px, py);
-                }
-            }
-
-            // Midrib line (leaf vein).
-            let vein_steps = (leaf_r * 0.9).round() as usize;
-            for s in 0..=vein_steps {
-                let r = leaf_r * s as f32 / vein_steps.max(1) as f32;
-                draw::dot_i(
-                    grid,
-                    cx + (base_angle.cos() * r).round() as i32,
-                    cy + (base_angle.sin() * r).round() as i32,
-                );
+        // Pot: rim plus a tapering body.
+        let half = (w as f32 * 0.12).max(2.0) as i32;
+        for y in (ground - 2)..=ground {
+            let inset = (y - ground + 2) * 2;
+            for x in (cx as i32 - half + inset)..=(cx as i32 + half - inset) {
+                paint(grid, x, y, pot);
             }
         }
 
-        // Centre dome.
-        draw::dot_i(grid, cx, cy);
-        draw::dot_i(grid, cx + 1, cy);
-        draw::dot_i(grid, cx, cy + 1);
-
-        // Tint concentric rings.
-        let (cw, ch) = grid.dimensions();
-        for row in 0..ch {
-            let t = row as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t);
-            draw::tint_row(grid, row, 0, cw.saturating_sub(1), color);
+        // Leaves pair up symmetrically: ring 0 is upright, ring 4 nearly flat.
+        let rings = 5;
+        let shown = ctx.eased * rings as f32;
+        let breathe = (ctx.time * 1.8).sin() * 0.3;
+        for ring in (0..rings).rev() {
+            let grow = (shown - ring as f32).clamp(0.0, 1.0);
+            if grow <= 0.0 {
+                continue;
+            }
+            let tilt = 0.15 + ring as f32 * 0.32; // radians from vertical
+            let len = (h as f32 * (0.55 + ring as f32 * 0.12) * grow + breathe).max(1.0);
+            for side in [-1.0f32, 1.0] {
+                let a = tilt * side;
+                let (dx, dy) = (a.sin() * 2.2, -a.cos());
+                for step in 0..=(len * 2.0) as i32 {
+                    let s = step as f32 * 0.5;
+                    let f = s / len;
+                    // Plump leaf: widest a third of the way out, pointed tip.
+                    let half_w = (1.1 * (1.0 - (f - 0.3).abs() * 1.3)).max(0.25);
+                    let (px, py) = (cx + dx * s, base_y + dy * s);
+                    let c = if f > 0.85 { tip_c } else { leaf_c };
+                    for kk in 0..=(half_w * 4.0) as i32 {
+                        let k = -half_w + kk as f32 * 0.5;
+                        // Offset across the leaf, perpendicular to its axis.
+                        paint(
+                            grid,
+                            (px - dy * k * 1.3).round() as i32,
+                            (py + a.sin() * k).round() as i32,
+                            c,
+                        );
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 }
 
-// ── 9. Root System — fractal branching downward ───────────────────────────────
+// ── 9. Root System — a cutaway of roots spreading through the soil ──────────
 //
-// Grows roots downward from a horizontal taproot line at the top.
-// eased controls how deep / how many branch generations appear.
-// ctx.time causes slight lateral tremor (root seeking moisture).
+// A sprout stands on the soil surface at the left. Below ground, in a
+// speckled cutaway, its taproot dives down and a main root snakes right with
+// progress, forking rootlets up and down whose fine tips wriggle with time.
 
 struct RootSystem;
 impl ProgressStyle for RootSystem {
@@ -1709,7 +1728,7 @@ impl ProgressStyle for RootSystem {
         "plants"
     }
     fn describe(&self) -> &str {
-        "Fractal root branches grow downward from a taproot; depth and density increase with progress"
+        "Soil cutaway under a sprout: cream roots snake right through speckled earth, forking rootlets with wriggling tips"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1717,75 +1736,80 @@ impl ProgressStyle for RootSystem {
             return Ok(());
         }
 
-        // Taproot horizontal line at top.
-        let troot_y = 1usize;
-        draw::hline(grid, 0, w.saturating_sub(1), troot_y);
+        let soil = Color::rgb(120, 80, 45);
+        let root = Color::rgb(235, 210, 160);
+        let hh = h as i32;
+        let surface = (hh / 4).max(1) - 1;
+        let px = 6i32;
 
-        // Number of branch generations shown.
-        let max_depth = 5usize;
-        let depth = (ctx.eased * max_depth as f32).ceil() as usize;
-
-        // Recursive branch drawer (iterative via stack to avoid recursion limits).
-        // Stack: (x, y, angle, length, generation)
-        let mut stack: Vec<(i32, i32, f32, f32, usize)> = Vec::new();
-
-        // Seed with 3 primary roots evenly spaced.
-        let num_primaries = 3usize;
-        for p in 0..num_primaries {
-            let px = (p as f32 / (num_primaries - 1).max(1) as f32 * (w.saturating_sub(1)) as f32)
-                as i32;
-            stack.push((px, troot_y as i32, PI / 2.0, h as f32 * 0.35, 0));
+        // Soil: surface crust plus scattered speckles and pebbles.
+        for x in 0..w as i32 {
+            paint(grid, x, surface + 1, soil);
+            for y in surface + 2..hh {
+                if (x.wrapping_mul(7919) ^ y.wrapping_mul(104_729)).rem_euclid(23) == 0 {
+                    paint(grid, x, y, soil);
+                }
+            }
         }
 
-        while let Some((x0, y0, angle, length, gen)) = stack.pop() {
-            if gen >= depth {
-                continue;
+        // The sprout above ground: a stem with two leaves that sway.
+        let sway = isin(ctx.time * 1.5, 1.0);
+        for y in 0..=surface {
+            paint(grid, px, y, leafy(0.6));
+        }
+        paint(grid, px - 1 + sway, 0, leafy(0.8));
+        paint(grid, px - 2 + sway, 0, leafy(0.8));
+        paint(grid, px + 1 + sway, 0, leafy(0.8));
+        paint(grid, px + 2 + sway, 0, leafy(0.8));
+
+        // Taproot down, then the main root snaking right out to `reach`.
+        let depth = surface + 6;
+        let reach = px + (ctx.eased * (w as f32 - px as f32 - 1.0)) as i32;
+        for y in surface + 2..=depth {
+            paint(grid, px, y, root);
+            paint(grid, px + 1, y, root);
+        }
+        let main_y = |x: i32| depth + ((x as f32 * 0.18).sin() * 1.2) as i32;
+        for x in px..=reach {
+            paint(grid, x, main_y(x), root);
+            // Thicker near the plant, thinning towards the tip.
+            if x < px + (reach - px) / 2 {
+                paint(grid, x, main_y(x) + 1, root);
             }
-            if length < 1.5 {
-                continue;
-            }
-
-            let tremor = (ctx.time * 2.0 + gen as f32 * 1.3 + x0 as f32 * 0.1).sin() * 0.08;
-            let actual_angle = angle + tremor;
-
-            let x1 = x0 + (actual_angle.cos() * length).round() as i32;
-            let y1 = y0 + (actual_angle.sin() * length).round() as i32;
-
-            // Draw this segment.
-            let steps = length.round() as usize + 1;
-            for s in 0..=steps {
-                let t = s as f32 / steps as f32;
-                let bx = x0 + ((x1 - x0) as f32 * t).round() as i32;
-                let by = y0 + ((y1 - y0) as f32 * t).round() as i32;
-                draw::dot_i(grid, bx, by);
-            }
-
-            // Branch into two children, spread by ~30 degrees.
-            let child_len = length * 0.62;
-            let spread = PI / 6.0;
-            stack.push((x1, y1, actual_angle - spread, child_len, gen + 1));
-            stack.push((x1, y1, actual_angle + spread, child_len, gen + 1));
         }
 
-        // Earthy tint: dark at top roots, lighter at fine root tips below.
-        let (cw, ch) = grid.dimensions();
-        for cy in 0..ch {
-            let t = cy as f32 / ch.saturating_sub(1).max(1) as f32;
-            let color = ctx.palette.sample(t * ctx.eased);
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
+        // Rootlets: fork downward every few dots, alternating steep and shallow.
+        let mut k = 0;
+        let mut x = px + 5;
+        while x < reach - 1 {
+            let steep = k % 2 == 0;
+            let len = ((reach - x) / 3).clamp(1, 6);
+            let y0 = main_y(x);
+            let (mut rx, mut ry) = (x, y0);
+            for s in 1..=len {
+                rx = x + s;
+                ry = if steep { y0 + s } else { y0 + (s + 1) / 2 };
+                if ry >= hh {
+                    break;
+                }
+                paint(grid, rx, ry, root);
+            }
+            // Fine root hair at the tip, wriggling.
+            let wig = isin(ctx.time * 4.0 + x as f32, 1.0);
+            paint(grid, rx + 1, ry + wig, root);
+            k += 1;
+            x += 6;
         }
 
         Ok(())
     }
 }
 
-// ── 10. Bonsai — trunk → recursive branches → dot canopy ─────────────────────
+// ── 10. Bonsai — potted tree: trunk, branches, cloud-pad canopy ──────────────
 //
-// eased 0–0.40: trunk rises from bottom, slightly tapered.
-// eased 0.40–0.70: two main branches fork from near the top.
-// eased 0.70–0.90: secondary branches fork again.
-// eased 0.90–1.00: canopy dots fill in around the branch tips.
-// ctx.time: gentle breeze sways the canopy.
+// A shallow terracotta pot holds a twisting trunk. Progress grows the trunk
+// first, then reaches out the branches, then swells the flat cloud-like
+// foliage pads at each branch tip. Pads drift slightly in the breeze.
 
 struct Bonsai;
 impl ProgressStyle for Bonsai {
@@ -1796,7 +1820,7 @@ impl ProgressStyle for Bonsai {
         "plants"
     }
     fn describe(&self) -> &str {
-        "A bonsai forms: trunk rises, branches fork in tiers, then canopy foliage fills in"
+        "A bonsai in a terracotta pot: the twisting trunk grows, branches reach out and cloud-pad foliage swells"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
@@ -1804,125 +1828,85 @@ impl ProgressStyle for Bonsai {
             return Ok(());
         }
 
+        let pot = Color::rgb(190, 90, 55);
+        let bark = Color::rgb(140, 95, 55);
+        let leaf = Color::rgb(70, 175, 75);
+        let leaf_hi = Color::rgb(140, 215, 90);
+        let p = ctx.eased;
         let cx = (w / 2) as i32;
-        let ground = h.saturating_sub(1) as i32;
+        let hh = h as i32;
+        let ground = hh - 1;
 
-        // ── Trunk ──────────────────────────────────────────────────────────
-        let trunk_frac = (ctx.eased / 0.40).min(1.0);
-        let trunk_h = (trunk_frac * h as f32 * 0.55).round() as i32;
-        for dy in 0..=trunk_h {
-            let y = ground - dy;
-            // Taper: 3 wide at base, 1 wide at top.
-            let width = if dy < trunk_h / 3 {
-                3i32
-            } else if dy < 2 * trunk_h / 3 {
-                2i32
-            } else {
-                1i32
-            };
-            for dx in 0..width {
-                draw::dot_i(grid, cx - width / 2 + dx, y);
+        // Pot: a wide rim over a tapering body.
+        let pot_top = ground - 2;
+        let half = (w as i32 / 7).max(2);
+        for y in pot_top..=ground {
+            let inset = (y - pot_top) * 2;
+            for x in (cx - half - 2 + inset)..=(cx + half + 2 - inset) {
+                if y != pot_top || (x - cx).abs() <= half + 2 {
+                    paint(grid, x, y, pot);
+                }
             }
         }
 
-        let fork_y = ground - trunk_h; // where branches begin
-
-        // ── Primary branches ───────────────────────────────────────────────
-        if ctx.eased >= 0.40 {
-            let br_frac = ((ctx.eased - 0.40) / 0.30).min(1.0);
-            let br_len = (br_frac * w as f32 * 0.28).round() as i32;
-            let br_rise = (br_frac * h as f32 * 0.20).round() as i32;
-            // Left branch.
-            for s in 0..=br_len {
-                let t = s as f32 / br_len.max(1) as f32;
-                let bx = cx - s;
-                let by = fork_y - (t * br_rise as f32).round() as i32;
-                draw::dot_i(grid, bx, by);
+        // Trunk: an S-curve from the soil up to the crown, 2 dots thick.
+        let trunk_h = (hh - 7).max(1);
+        let grown = ((p / 0.35).min(1.0) * trunk_h as f32) as i32;
+        let trunk_x = |y: i32| -> i32 {
+            let f = (pot_top - y) as f32 / trunk_h as f32;
+            cx + ((f * PI * 1.4).sin() * (hh as f32 * 0.22)) as i32
+        };
+        for y in (pot_top - grown)..pot_top {
+            let x = trunk_x(y);
+            let thick = if y > pot_top - trunk_h / 2 { 3 } else { 2 };
+            for k in 0..thick {
+                paint(grid, x + k - 1, y, bark);
             }
-            // Right branch.
-            for s in 0..=br_len {
-                let t = s as f32 / br_len.max(1) as f32;
-                let bx = cx + s;
-                let by = fork_y - (t * br_rise as f32 * 0.8).round() as i32;
-                draw::dot_i(grid, bx, by);
+        }
+        if p < 0.3 {
+            return Ok(());
+        }
+
+        // Branches and their pads: (height fraction, reach in dots, pad size).
+        let unit = (w as f32 / 12.0).max(1.0);
+        let branches = [
+            (0.45, -2.6, 1.0),
+            (0.62, 2.4, 0.9),
+            (0.85, -1.2, 0.8),
+            (1.0, 1.0, 1.1),
+        ];
+        let reach = ((p - 0.3) / 0.25).clamp(0.0, 1.0);
+        let swell = ((p - 0.45) / 0.55).clamp(0.0, 1.0);
+        for (k, &(fh, dir, size)) in branches.iter().enumerate() {
+            let by = pot_top - (trunk_h as f32 * fh) as i32;
+            let bx = trunk_x(by);
+            let ex = bx + (dir * unit * reach) as i32;
+            let ey = by - 1;
+            let steps = (ex - bx).abs().max(1);
+            for s in 0..=steps {
+                let x = bx + (ex - bx) * s / steps;
+                let y = by - s / 4;
+                paint(grid, x, y, bark);
             }
-
-            // ── Secondary branches ─────────────────────────────────────────
-            if ctx.eased >= 0.70 {
-                let sb_frac = ((ctx.eased - 0.70) / 0.20).min(1.0);
-                let sb_len = (sb_frac * w as f32 * 0.15).round() as i32;
-                let sb_rise = (sb_frac * h as f32 * 0.12).round() as i32;
-                // Tips of primary branches.
-                let left_tip_x = cx - br_len;
-                let left_tip_y = fork_y - br_rise;
-                let right_tip_x = cx + br_len;
-                let right_tip_y = fork_y - (br_rise as f32 * 0.8).round() as i32;
-
-                for s in 0..=sb_len {
-                    let t = s as f32 / sb_len.max(1) as f32;
-                    // From left tip: branch further left and up.
-                    draw::dot_i(
-                        grid,
-                        left_tip_x - s,
-                        left_tip_y - (t * sb_rise as f32).round() as i32,
-                    );
-                    // From left tip: branch up-right.
-                    draw::dot_i(
-                        grid,
-                        left_tip_x + s / 2,
-                        left_tip_y - (t * sb_rise as f32 * 1.2).round() as i32,
-                    );
-                    // From right tip: branch right and up.
-                    draw::dot_i(
-                        grid,
-                        right_tip_x + s,
-                        right_tip_y - (t * sb_rise as f32).round() as i32,
-                    );
-                    // From right tip: branch up-left.
-                    draw::dot_i(
-                        grid,
-                        right_tip_x - s / 2,
-                        right_tip_y - (t * sb_rise as f32 * 1.1).round() as i32,
-                    );
-                }
-
-                // ── Canopy foliage dots ────────────────────────────────────
-                if ctx.eased >= 0.90 {
-                    let canopy_frac = ((ctx.eased - 0.90) / 0.10).min(1.0);
-                    // Scatter foliage dots around branch tips using time-driven noise.
-                    let dot_count = (canopy_frac * 40.0).round() as usize;
-                    let canopy_cx = cx;
-                    let canopy_cy = (fork_y - br_rise - sb_rise).max(0);
-                    let canopy_rx = (br_len + sb_len).max(1) as f32;
-                    let canopy_ry = (br_rise + sb_rise).max(1) as f32;
-
-                    for d in 0..dot_count {
-                        // Deterministic scatter via golden angle + time sway.
-                        let theta = d as f32 * 2.399 + ctx.time * 0.5; // 2.399 ≈ golden angle
-                        let r_frac = (d as f32 / dot_count.max(1) as f32).sqrt();
-                        let sway = (ctx.time * 1.3 + d as f32 * 0.3).sin() * 1.5;
-                        let dx = (theta.cos() * canopy_rx * r_frac + sway).round() as i32;
-                        let dy = (theta.sin() * canopy_ry * r_frac).round() as i32;
-                        draw::dot_i(grid, canopy_cx + dx, canopy_cy + dy);
+            if swell <= 0.0 {
+                continue;
+            }
+            // Cloud pad: a flat ellipse, wider than tall, drifting gently.
+            let drift = (ctx.time * 1.2 + k as f32).sin() * 0.6;
+            let rx = (unit * 1.3 * size * swell).max(1.0);
+            let ry = (hh as f32 * 0.15 * size * swell).max(0.8);
+            let pcx = ex as f32 + drift;
+            let pcy = ey as f32 - ry * 0.4;
+            for y in (pcy - ry).floor() as i32..=(pcy + ry).ceil() as i32 {
+                for x in (pcx - rx).floor() as i32..=(pcx + rx).ceil() as i32 {
+                    let fx = (x as f32 - pcx) / rx;
+                    let fy = (y as f32 - pcy) / ry;
+                    if fx * fx + fy * fy <= 1.0 {
+                        let c = if fy < -0.3 { leaf_hi } else { leaf };
+                        paint(grid, x, y, c);
                     }
                 }
             }
-        }
-
-        // Soil line at very bottom.
-        draw::hline(grid, 0, w.saturating_sub(1), ground as usize);
-
-        // Tint: brown trunk base → green foliage top.
-        let (cw, ch) = grid.dimensions();
-        let trunk_cell_top = (fork_y.max(0) as usize / 4).min(ch.saturating_sub(1));
-        for cy in 0..ch {
-            let color = if cy >= trunk_cell_top {
-                ctx.palette.sample(0.85) // trunk: warm brown-ish
-            } else {
-                ctx.palette
-                    .sample(cy as f32 / trunk_cell_top.max(1) as f32 * 0.7)
-            };
-            draw::tint_row(grid, cy, 0, cw.saturating_sub(1), color);
         }
 
         Ok(())

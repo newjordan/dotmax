@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -845,17 +880,17 @@ pub mod styles {
 //! braille dots via `draw::dot_i` and the Bresenham line helper defined below.
 //! Each style has a unique construction principle:
 //!
-//! - `sri-yantra`            — 9 interlocking triangles + lotus + bhupura gates
-//! - `lotus-mandala`         — concentric rings of opening lotus petals (arc pairs)
-//! - `rose-window`           — Gothic cathedral radial tracery with foil cusps
-//! - `bagua`                 — eight trigrams around a yin-yang center
+//! - `sri-yantra`            — interlocking Shiva/Shakti triangles in a circle within the bhupura gate
+//! - `lotus-mandala`         — eight outer and eight inner pointed petals around a seed pod
+//! - `rose-window`           — a row of Gothic roses: rim, hub, lancet mullions, foiled oculi
+//! - `bagua`                 — eight trigrams in Fu Xi order either side of a turning yin-yang
 //! - `enneagram`             — 9-point star (1-4-2-8-5-7 cycle + triangle)
-//! - `rangoli`               — dot-grid kolam with loops around pulli points
-//! - `chartres-labyrinth`    — 11-circuit circular labyrinth path winding inward
-//! - `mandala-tessellation`  — n-fold rotational tiling growing outward with progress
-//! - `dharma-wheel`          — 8-spoked wheel with hub, rim and decorative felloes
-//! - `vesica-rosette`        — 6-petal rosette from overlapping vesica piscis arcs
-//! - `star-of-david`         — Star of David hexagram nested with concentric circles
+//! - `rangoli`               — a row of kolams: pulli-dot diamonds looped by a travelling pen
+//! - `chartres-labyrinth`    — floor labyrinth in perspective, a walker tracing its circuits
+//! - `mandala-tessellation`  — edge-sharing hexagonal mandala tiles filled tile by tile
+//! - `dharma-wheel`          — 8-spoked knobbed wheel rolling along its path
+//! - `vesica-rosette`        — a row of 6-petal compass rosettes cut by vesica arcs
+//! - `star-of-david`         — two interlocking equilateral triangles, inked edge by edge
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -951,14 +986,6 @@ fn center(dw: usize, dh: usize) -> (f32, f32) {
     (dw as f32 / 2.0, dh as f32 / 2.0)
 }
 
-/// Largest radius that fits within the dot grid with 1-dot padding.
-#[inline]
-fn fit_radius(dw: usize, dh: usize) -> f32 {
-    let hw = (dw as f32 / 2.0 - 1.0).max(1.0);
-    let hh = (dh as f32 / 2.0 - 1.0).max(1.0);
-    hw.min(hh)
-}
-
 /// Convert polar coordinates centered at (cx, cy) to dot-space integers.
 #[inline]
 fn polar(cx: f32, cy: f32, r: f32, angle: f32) -> (i32, i32) {
@@ -1032,9 +1059,87 @@ fn triangle(grid: &mut BrailleGrid, ax: i32, ay: i32, bx: i32, by: i32, cx: i32,
     line(grid, cx, cy, ax, ay);
 }
 
+/// Faint dotted ring: the placeholder for a frieze panel not yet reached.
+fn dotted_ring(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
+    let n = ((r * 2.0) as usize).clamp(4, 64);
+    for k in 0..n {
+        let (x, y) = polar(cx, cy, r, 2.0 * PI * k as f32 / n as f32);
+        draw::dot_i(grid, x, y);
+    }
+}
+
+/// Lays a frieze of full-height panels across the strip, filled left to right
+/// with progress (the first already part-drawn at the start). The callback
+/// gets `(grid, cx, cy, r, local_reveal, index)`; `local_reveal` is 0 for a
+/// panel not yet reached. `wf` is the panel pitch in radii, `gap` extra dots.
+fn frieze(
+    grid: &mut BrailleGrid,
+    eased: f32,
+    wf: f32,
+    gap: f32,
+    mut panel: impl FnMut(&mut BrailleGrid, f32, f32, f32, f32, usize),
+) {
+    let (dw, dh) = draw::dot_dims(grid);
+    if dw < 2 || dh < 2 {
+        return;
+    }
+    let r = (dw.min(dh) as f32 / 2.0 - 0.5).max(1.0);
+    let pitch = (r * wf + gap).max(2.0);
+    let n = ((dw as f32 / pitch) as usize).clamp(1, 64);
+    let off = (dw as f32 - n as f32 * pitch) / 2.0;
+    let cy = dh as f32 / 2.0 - 0.5;
+    let fill = (0.08 + eased.clamp(0.0, 1.0) * 0.92) * n as f32;
+    for i in 0..n {
+        let cx = off + pitch * (i as f32 + 0.5) - 0.5;
+        let lr = (fill - i as f32).clamp(0.0, 1.0);
+        panel(grid, cx, cy, r, lr, i);
+    }
+}
+
+/// Elliptical arc (screen y-down: `a = PI/2` is the bottom of the ellipse).
+fn ell_arc(grid: &mut BrailleGrid, cx: f32, cy: f32, rx: f32, ry: f32, a0: f32, a1: f32) {
+    let steps = (((rx + ry) * (a1 - a0).abs()).ceil() as usize).clamp(4, 1024);
+    for i in 0..=steps {
+        let a = a0 + (a1 - a0) * i as f32 / steps as f32;
+        draw::dot_i(
+            grid,
+            (cx + rx * a.cos()).round() as i32,
+            (cy + ry * a.sin()).round() as i32,
+        );
+    }
+}
+
+/// Progress rail along row `y`, skipping the figure's span `[skip_lo, skip_hi]`:
+/// solid up to `frac` of the width, a dotted path marching on `time` beyond.
+fn rail(grid: &mut BrailleGrid, y: i32, skip_lo: i32, skip_hi: i32, frac: f32, time: f32) {
+    let (dw, _) = draw::dot_dims(grid);
+    let lit = (frac.clamp(0.0, 1.0) * dw as f32).round() as i32;
+    let phase = (time * 6.0) as i32;
+    for x in 0..dw as i32 {
+        if x >= skip_lo && x <= skip_hi {
+            continue;
+        }
+        if x < lit || (x + phase).rem_euclid(3) == 0 {
+            draw::dot_i(grid, x, y);
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Sri Yantra
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Sri Yantra triangles in unit-circle space (y up): `(base_y, apex_y)`.
+/// Down-pointing (Shakti) triangles have their base above the apex.  At 16
+/// dots tall the full nine collapse into a smudge, so the five outermost —
+/// the ones that give the yantra its silhouette — are drawn, interlocking.
+const SRI_TRIS: [(f32, f32); 5] = [
+    (0.80, -1.00), // Shakti 1 — apex on the circle
+    (-0.80, 1.00), // Shiva 1 — apex on the circle
+    (0.50, -0.62), // Shakti 2
+    (-0.50, 0.62), // Shiva 2
+    (0.12, -0.30), // Shakti 3 — cradling the bindu
+];
 
 struct SriYantra;
 impl ProgressStyle for SriYantra {
@@ -1045,97 +1150,56 @@ impl ProgressStyle for SriYantra {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Sri Yantra: 9 interlocking triangles (4 upward Shiva + 5 downward Shakti) \
-         forming 43 small triangles, with an outer lotus ring and square bhupura gates — \
-         the triangles are revealed layer by layer as progress rises"
+        "Sri Yantra: square gate with four doors, enclosing circle, and the \
+         interlocking Shiva (up) and Shakti (down) triangles laid one by one around \
+         a pulsing bindu, flanked by a progress path"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.15;
+        let half = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let r = (half - 1.5).max(1.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
 
-        // 9 triangles defined as (apex_angle, base_angle_L, base_angle_R, radius_scale)
-        // Upward triangles (Shiva) point up (apex at top = PI/2), alternating angles.
-        // Downward triangles (Shakti) apex at bottom (= -PI/2).
-        // We approximate the classic proportions with 5 size levels.
-        let triangles: &[(f32, f32, f32)] = &[
-            // (apex_angle from center, base half-angle_spread, radius_fraction)
-            // 4 upward (apex = PI/2):
-            (PI / 2.0, 0.95, 1.00), // T1 largest upward
-            (PI / 2.0, 0.70, 0.75), // T2
-            (PI / 2.0, 0.50, 0.55), // T3
-            (PI / 2.0, 0.30, 0.35), // T4 smallest upward
-            // 5 downward (apex = -PI/2):
-            (-PI / 2.0, 0.88, 0.92), // T5 largest downward
-            (-PI / 2.0, 0.65, 0.68), // T6
-            (-PI / 2.0, 0.45, 0.48), // T7
-            (-PI / 2.0, 0.28, 0.30), // T8
-            (-PI / 2.0, 0.15, 0.16), // T9 smallest downward
-        ];
-
-        let total = triangles.len();
-        let reveal = (ctx.eased * (total + 6) as f32).round() as usize; // +6 for lotus+bhupura
-
-        // Draw bhupura (square gates) — three nested squares
-        if reveal >= total + 3 {
-            for k in 0..3usize {
-                let s = r * (1.15 + k as f32 * 0.10);
-                // Square corners
-                let corners = [
-                    (cx - s, cy - s * 0.5),
-                    (cx + s, cy - s * 0.5),
-                    (cx + s, cy + s * 0.5),
-                    (cx - s, cy + s * 0.5),
-                ];
-                for i in 0..4 {
-                    let (ax, ay) = corners[i];
-                    let (bx, by) = corners[(i + 1) % 4];
-                    line(
-                        grid,
-                        ax.round() as i32,
-                        ay.round() as i32,
-                        bx.round() as i32,
-                        by.round() as i32,
-                    );
-                }
+        // Bhupura: the square gate, a door gap centred on each side.
+        let (x0, x1) = ((cx - half).round() as i32, (cx + half).round() as i32);
+        let (y0, y1) = ((cy - half).round() as i32, (cy + half - 1.0).round() as i32);
+        let door = (half * 0.3).round() as i32;
+        let (mx, my) = (cx.round() as i32, cy.round() as i32);
+        for x in x0..=x1 {
+            if (x - mx).abs() > door {
+                draw::dot_i(grid, x, y0);
+                draw::dot_i(grid, x, y1);
             }
         }
-
-        // Draw outer lotus ring (8 petals as arcs)
-        if reveal > total {
-            let petal_r = r * 0.18;
-            let ring_r = r * 1.05;
-            let n_petals = 8usize;
-            for k in 0..n_petals {
-                let angle = rot + 2.0 * PI * k as f32 / n_petals as f32;
-                let pcx = cx + ring_r * angle.cos();
-                let pcy = cy - ring_r * angle.sin();
-                arc(grid, pcx, pcy, petal_r, angle + PI * 0.3, angle + PI * 1.7);
+        for y in y0..=y1 {
+            if (y - my).abs() > door {
+                draw::dot_i(grid, x0, y);
+                draw::dot_i(grid, x1, y);
             }
         }
+        rail(grid, my, x0 - 2, x1 + 2, e, ctx.time);
 
-        // Enclosing circle
-        if reveal >= total {
-            circle(grid, cx, cy, r);
+        // Enclosing circle, then the triangles in sequence (outer first).
+        circle(grid, cx, cy, r);
+        let n = ((0.15 + e * 1.3).min(1.0) * SRI_TRIS.len() as f32).ceil() as usize;
+        for &(by, ay) in SRI_TRIS.iter().take(n) {
+            let hw = ((ay - by).abs() * 0.78).min((1.0 - by * by).max(0.0).sqrt());
+            let bx_l = (cx - hw * r).round() as i32;
+            let bx_r = (cx + hw * r).round() as i32;
+            let byd = (cy - by * r).round() as i32;
+            let ayd = (cy - ay * r).round() as i32;
+            triangle(grid, bx_l, byd, bx_r, byd, mx, ayd);
         }
 
-        // Draw triangles (revealed one at a time with eased)
-        for (idx, &(apex_a, half_spread, rfrac)) in triangles.iter().enumerate() {
-            if idx >= reveal {
-                break;
-            }
-            let tr = r * rfrac;
-            let apex_a = apex_a + rot;
-            let (ax, ay) = polar(cx, cy, tr, apex_a);
-            let (bx, by) = polar(cx, cy, tr * 0.7, apex_a + PI - half_spread);
-            let (dx, dy) = polar(cx, cy, tr * 0.7, apex_a + PI + half_spread);
-            triangle(grid, ax, ay, bx, by, dx, dy);
+        // Bindu: the seed point, breathing on time.
+        if (ctx.time * 2.0).sin() > -0.3 {
+            draw::dot_i(grid, mx, my);
+            draw::dot_i(grid, mx - 1, my);
         }
-
-        // Bindu (central dot)
-        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-
         Ok(())
     }
 }
@@ -1153,83 +1217,60 @@ impl ProgressStyle for LotusMandala {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Lotus mandala: concentric rings of lotus petals drawn as paired arcs, \
-         opening outward petal-by-petal as progress rises — inner buds swell \
-         into full blooms, outer rings shimmer with time"
+        "Lotus mandala: eight pointed outer petals and eight inner petals around a \
+         seed-pod ring, opening petal by petal and slowly turning between two \
+         progress paths"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        let r_max = fit_radius(dw, dh);
-        let rot = ctx.time * 0.12;
+        let cy = cy - 0.5;
+        let big = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let pod = (big * 0.28).max(1.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let half = big.ceil() as i32 + 2;
+        rail(
+            grid,
+            cy.round() as i32,
+            cx as i32 - half,
+            cx as i32 + half,
+            e,
+            ctx.time,
+        );
+        circle(grid, cx, cy, pod);
 
-        // Concentric rings of petals: (n_petals, ring_frac, petal_open_frac)
-        let rings: &[(usize, f32)] = &[
-            (1, 0.0), // center bindu
-            (8, 0.25),
-            (12, 0.50),
-            (16, 0.75),
-            (24, 1.00),
-        ];
-
-        let total_rings = rings.len();
-        let reveal_frac = ctx.eased;
-
-        for (ri, &(n_petals, ring_frac)) in rings.iter().enumerate() {
-            // Each ring appears after a fraction of progress
-            let ring_threshold = ri as f32 / total_rings as f32;
-            if reveal_frac < ring_threshold {
+        // A petal: two sides swelling out from the pod and meeting in a point.
+        let petal = |grid: &mut BrailleGrid, axis: f32, len: f32, width: f32| {
+            let steps = (len * 3.0).ceil() as usize + 2;
+            for side in [-1.0f32, 1.0] {
+                let mut prev = polar(cx, cy, pod, axis + side * width * 0.6);
+                for i in 1..=steps {
+                    let t = i as f32 / steps as f32;
+                    let r = pod + (len - pod) * t;
+                    let spread = width * (PI * t).sin().max(0.0).powf(0.7) * (1.0 - t * 0.35);
+                    let p = polar(cx, cy, r, axis + side * spread / r.max(1.0) * pod * 1.6);
+                    line(grid, prev.0, prev.1, p.0, p.1);
+                    prev = p;
+                }
+            }
+        };
+        let spin = ctx.time * 0.15 + PI / 2.0;
+        // Petals open in turn: eight outer, then eight inner between them.
+        let open = (0.15 + e * 1.4).min(1.0) * 16.0;
+        for k in 0..16 {
+            if (k as f32) >= open {
                 break;
             }
-            // How far this ring is "open"
-            let ring_open = ((reveal_frac - ring_threshold) * total_rings as f32).min(1.0);
-
-            if n_petals == 1 {
-                // Bindu
-                draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-                continue;
-            }
-
-            let ring_r = r_max * ring_frac;
-            let petal_r = ring_r * 0.35;
-            // Time shimmer offset per ring
-            let shimmer = rot * (1.0 + ri as f32 * 0.3);
-
-            for k in 0..n_petals {
-                // Reveal petals one by one within the ring
-                let petal_thresh = k as f32 / n_petals as f32;
-                if ring_open < petal_thresh {
-                    break;
-                }
-                let petal_open = ((ring_open - petal_thresh) * n_petals as f32).min(1.0);
-
-                let base_angle = 2.0 * PI * k as f32 / n_petals as f32 + shimmer;
-                let pcx = cx + ring_r * base_angle.cos();
-                let pcy = cy - ring_r * base_angle.sin();
-
-                // Two arcs per petal (left and right lobe) opening symmetrically
-                let half_span = PI * 0.45 * petal_open;
-                arc(
-                    grid,
-                    pcx,
-                    pcy,
-                    petal_r,
-                    base_angle + PI - half_span,
-                    base_angle + PI + half_span,
-                );
-                // Inner arc (cusp line back toward center)
-                let inner_r = petal_r * 0.5 * petal_open;
-                arc(
-                    grid,
-                    cx,
-                    cy,
-                    ring_r - inner_r,
-                    base_angle - half_span * 0.4,
-                    base_angle + half_span * 0.4,
-                );
+            if k < 8 {
+                petal(grid, spin + k as f32 * PI / 4.0, big, 0.55);
+            } else {
+                let axis = spin + (k - 8) as f32 * PI / 4.0 + PI / 8.0;
+                petal(grid, axis, big * 0.62, 0.45);
             }
         }
-
         Ok(())
     }
 }
@@ -1247,64 +1288,38 @@ impl ProgressStyle for RoseWindow {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Rose window: Gothic cathedral radial tracery — spokes divide the circle \
-         into 12 lancets each filled with trefoil cusps, the tracery spun by \
-         time while progress reveals ring after ring of foils"
+        "Rose windows: a row of Gothic roses, each a stone rim and hub with \
+         eight radiating lancet mullions and a ring of foiled oculi between \
+         them, the tracery glazed window by window as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.10;
-
-        let n_spokes = 12usize;
-        let reveal = ctx.eased;
-
-        // Outer rim
-        if reveal > 0.0 {
-            circle(grid, cx, cy, r);
-        }
-
-        // Hub circle
-        let hub_r = r * 0.12;
-        if reveal > 0.05 {
-            circle(grid, cx, cy, hub_r);
-        }
-
-        // Radial spokes
-        let spoke_count = (reveal * n_spokes as f32).ceil() as usize;
-        for k in 0..spoke_count.min(n_spokes) {
-            let a = rot + 2.0 * PI * k as f32 / n_spokes as f32;
-            let (x0, y0) = polar(cx, cy, hub_r, a);
-            let (x1, y1) = polar(cx, cy, r, a);
-            line(grid, x0, y0, x1, y1);
-        }
-
-        // Concentric rings of trefoil foils at 3 radii
-        let foil_radii = [0.40, 0.65, 0.87];
-        let foil_counts = [6usize, 12, 24];
-        for (fi, (&fr, &fc)) in foil_radii.iter().zip(foil_counts.iter()).enumerate() {
-            let ring_thresh = (fi as f32 + 1.0) / 4.0;
-            if reveal < ring_thresh {
-                continue;
+        let time = ctx.time;
+        frieze(grid, ctx.eased, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-            let ring_r = r * fr;
-            let foil_r = r * 0.10;
-            let shimmer = rot * (1.0 + fi as f32 * 0.5);
-            for k in 0..fc {
-                let a = shimmer + 2.0 * PI * k as f32 / fc as f32;
-                let fx = cx + ring_r * a.cos();
-                let fy = cy - ring_r * a.sin();
-                // Trefoil = three small circles at 120° offsets
-                for leaf in 0..3usize {
-                    let la = a + 2.0 * PI * leaf as f32 / 3.0;
-                    let lx = fx + foil_r * 0.55 * la.cos();
-                    let ly = fy - foil_r * 0.55 * la.sin();
-                    circle(grid, lx, ly, foil_r * 0.45);
-                }
+            let rot = time * 0.12 + i as f32 * 0.2;
+            circle(g, cx, cy, r);
+            let hub = (r * 0.26).max(1.0);
+            circle(g, cx, cy, hub);
+            // Lancets: eight mullions radiating from hub to rim.
+            let spokes = ((lr * 1.6).min(1.0) * 8.0).ceil() as usize;
+            for k in 0..spokes.min(8) {
+                let a = rot + k as f32 * PI / 4.0;
+                let (x0, y0) = polar(cx, cy, hub, a);
+                let (x1, y1) = polar(cx, cy, r, a);
+                line(g, x0, y0, x1, y1);
             }
-        }
-
+            // Foils: an oculus in each light between the mullions.
+            let foils = (((lr - 0.4) / 0.6).clamp(0.0, 1.0) * 8.0).ceil() as usize;
+            for k in 0..foils.min(8) {
+                let a = rot + (k as f32 + 0.5) * PI / 4.0;
+                let fx = cx + r * 0.64 * a.cos();
+                let fy = cy - r * 0.64 * a.sin();
+                circle(g, fx, fy, (r * 0.2).max(1.0));
+            }
+        });
         Ok(())
     }
 }
@@ -1322,81 +1337,81 @@ impl ProgressStyle for Bagua {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Bagua: the eight trigrams of the I-Ching arranged around a yin-yang \
-         center — each trigram is three parallel lines (broken or solid) appearing \
-         as progress rises, slowly rotating with time"
+        "Bagua: the eight I-Ching trigrams in Fu Xi order (☰ ☱ ☲ ☳ | ☴ ☵ ☶ ☷), \
+         solid and broken bars appearing one by one either side of a turning \
+         yin-yang"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.08;
+        let cy = cy - 0.5;
+        let r = (dh as f32 / 2.0 - 0.5).max(1.0);
 
-        // Eight trigrams: bit pattern (3 bits, MSB = top line), 0=broken 1=solid.
-        // King Wen arrangement: Qian(7) Dui(6) Li(5) Zhen(4) Xun(3) Kan(2) Gen(1) Kun(0)
-        let trigrams: [u8; 8] = [7, 6, 5, 4, 3, 2, 1, 0];
-        let reveal_count = (ctx.eased * 8.0).ceil() as usize;
-
-        // Yin-yang circle (two arcs + S-curve)
-        let yy_r = r * 0.18;
-        if ctx.eased > 0.0 {
-            circle(grid, cx, cy, yy_r);
-            // Upper half: small filled circle
-            circle(grid, cx, cy - yy_r * 0.5, yy_r * 0.25);
-            // Lower half: small empty circle
-            circle(grid, cx, cy + yy_r * 0.5, yy_r * 0.25);
-            // S-curve: two arcs through center
-            arc(grid, cx, cy - yy_r * 0.5, yy_r * 0.5, -PI / 2.0, PI / 2.0);
-            arc(
-                grid,
-                cx,
-                cy + yy_r * 0.5,
-                yy_r * 0.5,
-                PI / 2.0,
-                3.0 * PI / 2.0,
-            );
+        // Taiji: outer circle, the S of two half-circles, and the two eyes,
+        // all turning on time.
+        let spin = ctx.time * 0.8;
+        circle(grid, cx, cy, r);
+        let (c1x, c1y) = (
+            cx + r / 2.0 * (spin + PI / 2.0).cos(),
+            cy - r / 2.0 * (spin + PI / 2.0).sin(),
+        );
+        let (c2x, c2y) = (
+            cx + r / 2.0 * (spin - PI / 2.0).cos(),
+            cy - r / 2.0 * (spin - PI / 2.0).sin(),
+        );
+        arc(grid, c1x, c1y, r / 2.0, spin - PI / 2.0, spin + PI / 2.0);
+        arc(
+            grid,
+            c2x,
+            c2y,
+            r / 2.0,
+            spin + PI / 2.0,
+            spin + 3.0 * PI / 2.0,
+        );
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            draw::dot_i(grid, c1x.round() as i32 + dx, c1y.round() as i32 + dy);
         }
+        circle(grid, c2x, c2y, (r * 0.15).max(1.0));
 
-        // Outer ring
-        if ctx.eased > 0.05 {
-            circle(grid, cx, cy, r * 0.85);
-        }
-
-        for (idx, &bits) in trigrams.iter().enumerate() {
-            if idx >= reveal_count {
-                break;
-            }
-            let angle = rot + 2.0 * PI * idx as f32 / 8.0 - PI / 2.0;
-
-            // Position trigram at outer ring
-            let tr_cx = cx + r * 0.68 * angle.cos();
-            let tr_cy = cy - r * 0.68 * angle.sin();
-
-            // Three lines per trigram, stacked perpendicular to the radial direction
-            let perp = angle + PI / 2.0; // perpendicular direction
-            let line_len = r * 0.10;
-            let line_gap = r * 0.08;
-
-            for line_idx in 0..3usize {
-                let offset = (line_idx as f32 - 1.0) * line_gap;
-                let lx = tr_cx + offset * angle.cos();
-                let ly = tr_cy - offset * angle.sin();
-                let solid = (bits >> (2 - line_idx)) & 1 == 1;
-
-                let (x0, y0) = polar(lx, ly, line_len, perp);
-                let (x1, y1) = polar(lx, ly, line_len, perp + PI);
-                if solid {
-                    line(grid, x0, y0, x1, y1);
-                } else {
-                    // Broken line: two halves with gap
-                    let (xm0, ym0) = polar(lx, ly, line_len * 0.3, perp);
-                    let (xm1, ym1) = polar(lx, ly, line_len * 0.3, perp + PI);
-                    line(grid, x0, y0, xm0, ym0);
-                    line(grid, x1, y1, xm1, ym1);
+        // Fu Xi sequence, lines listed bottom → top (true = solid yang).
+        const TRIGRAMS: [[bool; 3]; 8] = [
+            [true, true, true],    // ☰ Qian — heaven
+            [true, true, false],   // ☱ Dui — lake
+            [true, false, true],   // ☲ Li — fire
+            [true, false, false],  // ☳ Zhen — thunder
+            [false, true, true],   // ☴ Xun — wind
+            [false, true, false],  // ☵ Kan — water
+            [false, false, true],  // ☶ Gen — mountain
+            [false, false, false], // ☷ Kun — earth
+        ];
+        // Four trigrams each side of the taiji, sized to the free width.
+        let side = ((cx - r - 3.0) / 4.0).max(3.0);
+        let bar_w = (side * 0.75).round().max(3.0) as i32;
+        let pitch = (dh as f32 / 4.0).max(1.0);
+        let shown = ((0.1 + ctx.eased.clamp(0.0, 1.0) * 1.3).min(1.0) * 8.0).ceil() as usize;
+        for (i, tri) in TRIGRAMS.iter().enumerate().take(shown.min(8)) {
+            let slot = i as f32;
+            let x0 = if i < 4 {
+                (cx - r - 3.0 - (4.0 - slot) * side + (side - bar_w as f32) / 2.0).round() as i32
+            } else {
+                (cx + r + 3.0 + (slot - 4.0) * side + (side - bar_w as f32) / 2.0).round() as i32
+            };
+            for (l, &solid) in tri.iter().enumerate() {
+                // Bottom line lowest on screen.
+                let y = (cy + (1.0 - l as f32) * pitch).round() as i32;
+                let gap = bar_w / 3;
+                for x in 0..bar_w {
+                    let mid = x >= gap && x < bar_w - gap;
+                    if solid || !mid {
+                        draw::dot_i(grid, x0 + x, y);
+                        draw::dot_i(grid, x0 + x, y + 1);
+                    }
                 }
             }
         }
-
         Ok(())
     }
 }
@@ -1414,58 +1429,59 @@ impl ProgressStyle for Enneagram {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Enneagram: 9 points on a circle connected by the 1-4-2-8-5-7 hexad \
-         and a separate 3-6-9 triangle — two interlocked figures appear chord \
-         by chord as progress rises, spinning slowly with time"
+        "Enneagram: nine points on a circle, the 9-3-6 triangle and the \
+         1-4-2-8-5-7 hexad traced line by line with progress, a spark running \
+         the hexad's cycle"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.10 - PI / 2.0; // apex at top
-
-        // 9 evenly spaced vertices
-        let verts: Vec<(i32, i32)> = (0..9)
-            .map(|k| polar(cx, cy, r, rot + 2.0 * PI * k as f32 / 9.0))
-            .collect();
-
-        // Enclosing circle
-        if ctx.eased > 0.0 {
-            circle(grid, cx, cy, r);
-        }
-
-        // Hexad sequence: 1→4→2→8→5→7→1 (0-indexed: 0→3→1→7→4→6→0)
-        let hexad: &[usize] = &[0, 3, 1, 7, 4, 6, 0];
-        let hexad_chords = hexad.len() - 1;
-
-        // Triangle: 3-6-9 → 0-indexed 2,5,8
-        let tri: &[usize] = &[2, 5, 8, 2];
-        let tri_chords = tri.len() - 1;
-
-        let total_chords = hexad_chords + tri_chords;
-        let reveal = (ctx.eased * total_chords as f32).round() as usize;
-
-        // Draw hexad chords
-        for i in 0..hexad_chords.min(reveal) {
-            let (ax, ay) = verts[hexad[i]];
-            let (bx, by) = verts[hexad[i + 1]];
+        let cy = cy - 0.5;
+        let r = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let half = r.ceil() as i32 + 2;
+        rail(
+            grid,
+            cy.round() as i32,
+            cx as i32 - half,
+            cx as i32 + half,
+            e,
+            ctx.time,
+        );
+        circle(grid, cx, cy, r);
+        // Point 9 at the top, numbering clockwise.
+        let pt = |n: usize| polar(cx, cy, r, PI / 2.0 - n as f32 * 2.0 * PI / 9.0);
+        let seq: [(usize, usize); 9] = [
+            (9, 3),
+            (3, 6),
+            (6, 9),
+            (1, 4),
+            (4, 2),
+            (2, 8),
+            (8, 5),
+            (5, 7),
+            (7, 1),
+        ];
+        let n = ((0.15 + e * 1.3).min(1.0) * seq.len() as f32).ceil() as usize;
+        for &(a, b) in seq.iter().take(n) {
+            let (ax, ay) = pt(a);
+            let (bx, by) = pt(b);
             line(grid, ax, ay, bx, by);
         }
-
-        // Draw triangle chords
-        let tri_drawn = reveal.saturating_sub(hexad_chords);
-        for i in 0..tri_chords.min(tri_drawn) {
-            let (ax, ay) = verts[tri[i]];
-            let (bx, by) = verts[tri[i + 1]];
-            line(grid, ax, ay, bx, by);
+        // Spark running the hexad 1 → 4 → 2 → 8 → 5 → 7 → 1.
+        let run = (ctx.time * 0.9).rem_euclid(6.0);
+        let k = (run as usize).min(5);
+        let f = run - k as f32;
+        let (ax, ay) = pt(seq[3 + k].0);
+        let (bx, by) = pt(seq[3 + k].1);
+        let sx = ax + ((bx - ax) as f32 * f).round() as i32;
+        let sy = ay + ((by - ay) as f32 * f).round() as i32;
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            draw::dot_i(grid, sx + dx, sy + dy);
         }
-
-        // Vertex dots
-        let vert_reveal = reveal.min(9);
-        for (vx, vy) in verts.iter().take(vert_reveal) {
-            draw::dot_i(grid, *vx, *vy);
-        }
-
         Ok(())
     }
 }
@@ -1483,74 +1499,62 @@ impl ProgressStyle for Rangoli {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Rangoli kolam: a grid of pulli dots with looping curves drawn around \
-         them in the South Indian kolam tradition — loops spiral outward from \
-         the center dot as progress rises, time rotates the outer loops"
+        "Rangoli kolam: a row of kolams, each a diamond of nine pulli dots \
+         with a loop drawn around every dot by a travelling pen, then framed \
+         in a diamond border, kolam after kolam as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r_max = fit_radius(dw, dh);
-        let rot = ctx.time * 0.07;
-
-        // Grid of pulli dots arranged in concentric diamond rings.
-        // Each ring k has 4k dots at distance k*step from center.
-        let step = (r_max / 4.0).max(2.0);
-        let n_rings = ((r_max / step) as usize).clamp(1, 4);
-        let total_dots = 1 + (1..=n_rings).map(|k| 4 * k).sum::<usize>();
-        let reveal = (ctx.eased * (total_dots + n_rings * 4) as f32).round() as usize;
-
-        let mut dots_drawn = 0usize;
-        let mut loops_drawn = 0usize;
-
-        // Center dot
-        if reveal > 0 {
-            draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-            dots_drawn += 1;
-        }
-
-        // Loop around center dot (small circle)
-        if reveal > 1 {
-            let lrot = rot;
-            arc(
-                grid,
-                cx + step * 0.5 * lrot.cos(),
-                cy - step * 0.5 * lrot.sin(),
-                step * 0.45,
-                0.0,
-                2.0 * PI,
-            );
-            loops_drawn += 1;
-        }
-
-        for ring in 1..=n_rings {
-            let ring_dots = 4 * ring;
-            for k in 0..ring_dots {
-                if dots_drawn >= reveal {
+        // Pen order: centre, then around the ring.
+        const PULLI: [(i32, i32); 9] = [
+            (0, 0),
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+        ];
+        let time = ctx.time;
+        frieze(grid, ctx.eased, 2.0, 3.0, |g, cx, cy, r, lr, _| {
+            let u = r * 0.38;
+            let lrad = (u * 0.62).max(0.8);
+            for &(a, b) in &PULLI {
+                let px = cx + (a - b) as f32 * u;
+                let py = cy - (a + b) as f32 * u;
+                draw::dot_i(g, px.round() as i32, py.round() as i32);
+            }
+            if lr <= 0.0 {
+                return;
+            }
+            let pen = (lr * 1.25).min(1.0) * PULLI.len() as f32;
+            for (k, &(a, b)) in PULLI.iter().enumerate() {
+                let f = (pen - k as f32).clamp(0.0, 1.0);
+                if f <= 0.0 {
                     break;
                 }
-                let angle = rot + 2.0 * PI * k as f32 / ring_dots as f32;
-                let dr = step * ring as f32;
-                let dx = cx + dr * angle.cos();
-                let dy = cy - dr * angle.sin();
-                draw::dot_i(grid, dx.round() as i32, dy.round() as i32);
-                dots_drawn += 1;
-
-                // Loop around this dot: figure-eight loops encircling adjacent pairs
-                if dots_drawn + loops_drawn < reveal {
-                    let next_a = rot + 2.0 * PI * (k + 1) as f32 / ring_dots as f32;
-                    let nx = cx + dr * next_a.cos();
-                    let ny = cy - dr * next_a.sin();
-                    let mx = (dx + nx) / 2.0;
-                    let my = (dy + ny) / 2.0;
-                    let loop_r = ((dx - nx).hypot(dy - ny) * 0.35).max(1.0);
-                    // Two arcs forming a loop around the midpoint
-                    arc(grid, mx, my, loop_r, angle + PI * 0.2, angle + PI * 1.8);
-                    loops_drawn += 1;
+                let px = cx + (a - b) as f32 * u;
+                let py = cy - (a + b) as f32 * u;
+                let start = PI / 2.0 + k as f32 * 0.7;
+                arc(g, px, py, lrad, start, start + 2.0 * PI * f);
+                if f < 1.0 && (time * 6.0).sin() > -0.5 {
+                    // The pen tip, chalk on the ground.
+                    let (tx, ty) = polar(px, py, lrad, start + 2.0 * PI * f);
+                    draw::dot_i(g, tx + 1, ty);
                 }
             }
-        }
-
+            if lr >= 0.8 {
+                let d = 2.0 * u + lrad + 0.6;
+                let (l, rt) = ((cx - d).round() as i32, (cx + d).round() as i32);
+                let (t, b) = ((cy - d).round() as i32, (cy + d).round() as i32);
+                let (mx, my) = (cx.round() as i32, cy.round() as i32);
+                line(g, l, my, mx, t);
+                line(g, mx, t, rt, my);
+                line(g, rt, my, mx, b);
+                line(g, mx, b, l, my);
+            }
+        });
         Ok(())
     }
 }
@@ -1568,53 +1572,84 @@ impl ProgressStyle for ChartresLabyrinth {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Chartres labyrinth: the classical 11-circuit circular labyrinth path \
-         winding inward — concentric arcs separated by quarter-turn gaps trace \
-         the unicursal path as progress slowly fills each circuit"
+        "Chartres labyrinth: the cathedral floor labyrinth seen in perspective \
+         — nested circuit walls with their turning gaps — while a walker \
+         traces the single path circuit by circuit to the centre, a dotted \
+         trail behind and the progress path either side"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r_max = fit_radius(dw, dh);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
+        let e = ctx.eased.clamp(0.0, 1.0);
+        let cx = dw as f32 / 2.0 - 0.5;
+        let cy = dh as f32 / 2.0 - 0.5;
+        let ry0 = (dh as f32 / 2.0 - 0.5).max(1.0);
+        // Floor seen at an angle: the circle widens into an ellipse.
+        let k = 2.4f32.min((dw as f32 / 2.0 - 0.5).max(1.0) / ry0);
+        let s = ry0 / 3.75;
+        let (g, h) = (0.42f32, 0.2f32);
+        let span = (ry0 * k).round() as i32;
+        let mx = cx.round() as i32;
+        rail(
+            grid,
+            cy.round() as i32,
+            mx - span - 2,
+            mx + span + 2,
+            e,
+            ctx.time,
+        );
 
-        // 11 circuits + center: 12 concentric arcs
-        let n_circuits = 11usize;
-        let reveal = (ctx.eased * (n_circuits + 1) as f32).ceil() as usize;
+        // Walls: outer to goal, each with its turning gap near the bottom.
+        let gaps = [PI / 2.0, PI / 2.0 - g, PI / 2.0 + g, PI / 2.0 - g];
+        for (j, &gc) in gaps.iter().enumerate() {
+            let ry = ry0 - j as f32 * s;
+            if ry < 0.8 {
+                break;
+            }
+            ell_arc(grid, cx, cy, ry * k, ry, gc + h, gc + 2.0 * PI - h);
+        }
 
-        // Slow rotation of the whole labyrinth with time
-        let rot = ctx.time * 0.05;
-
-        // Each circuit is a pair of arcs: the left half and the right half,
-        // connected by cross-passages at the top (entrance) and at ±90° turns.
-        // We simplify: each circuit = one near-full arc with a gap for the path entrance.
-        for circuit in 0..reveal.min(n_circuits) {
-            let frac = (n_circuits - circuit) as f32 / n_circuits as f32;
-            let r = r_max * frac;
-
-            // Gap angle: alternates left/right per circuit in the Chartres pattern
-            let gap_side = if circuit % 2 == 0 { 1.0_f32 } else { -1.0_f32 };
-            let gap_center = rot + gap_side * PI / 2.0;
-            let gap_half = PI * 0.12; // gap width in radians
-
-            // Arc sweeping almost full circle, skipping the gap
-            let a_start = gap_center + gap_half;
-            let a_end = gap_center + 2.0 * PI - gap_half;
-            arc(grid, cx, cy, r, a_start, a_end);
-
-            // Cross-passage: a short radial line at the gap
-            if circuit + 1 < reveal {
-                let inner_r = r_max * (n_circuits - circuit - 1) as f32 / n_circuits as f32;
-                let (x0, y0) = polar(cx, cy, inner_r, gap_center + gap_half);
-                let (x1, y1) = polar(cx, cy, r, gap_center + gap_half);
-                line(grid, x0, y0, x1, y1);
+        // The path: three circuits, reversing direction at each turn.
+        let segs: [(f32, f32, f32); 3] = [
+            (ry0 - 0.5 * s, PI / 2.0, PI / 2.0 + 2.0 * PI - g),
+            (ry0 - 1.5 * s, PI / 2.0 - g, PI / 2.0 + g - 2.0 * PI),
+            (ry0 - 2.5 * s, PI / 2.0 + g, PI / 2.0 - g + 2.0 * PI),
+        ];
+        let lens: Vec<f32> = segs
+            .iter()
+            .map(|&(ry, a0, a1)| ry * (1.0 + k) * 0.5 * (a1 - a0).abs())
+            .collect();
+        let total: f32 = lens.iter().sum::<f32>().max(1.0);
+        let mut walk = (0.05 + e * 0.95) * total;
+        let mut head = (cx, cy);
+        for (&(ry, a0, a1), &len) in segs.iter().zip(lens.iter()) {
+            if walk <= 0.0 {
+                break;
+            }
+            let f = (walk / len.max(0.1)).min(1.0);
+            walk -= len;
+            let steps = ((len * f) as usize).clamp(1, 512);
+            for i in 0..=steps {
+                let a = a0 + (a1 - a0) * f * i as f32 / steps as f32;
+                let (x, y) = (cx + ry * k * a.cos(), cy + ry * a.sin());
+                if i % 3 == 0 {
+                    draw::dot_i(grid, x.round() as i32, y.round() as i32);
+                }
+                head = (x, y);
             }
         }
-
-        // Center (goal)
-        if reveal > n_circuits {
-            circle(grid, cx, cy, r_max / n_circuits as f32 * 0.5);
+        if walk > 0.0 {
+            head = (cx, cy);
         }
-
+        // The walker: a small bright figure.
+        let (hx, hy) = (head.0.round() as i32, head.1.round() as i32);
+        draw::dot_i(grid, hx, hy);
+        draw::dot_i(grid, hx + 1, hy);
+        if (ctx.time * 4.0).sin() > 0.0 {
+            draw::dot_i(grid, hx, hy - 1);
+        }
         Ok(())
     }
 }
@@ -1632,59 +1667,51 @@ impl ProgressStyle for MandalaTessellation {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Mandala tessellation: 6-fold rotational tiling of kite-and-dart units \
-         growing outward from the center — each tile is a rhombus drawn with \
-         Bresenham lines, revealing ring by ring as progress rises"
+        "Mandala tessellation: a row of edge-sharing hexagonal tiles, each \
+         laid out with six spokes, a hexagram and a turning inner hexagon — \
+         the tiling fills tile by tile as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r_max = fit_radius(dw, dh);
-        let rot = ctx.time * 0.09;
-
-        let n_fold = 6usize;
-        let n_rings = 4usize;
-        let total = n_fold * n_rings;
-        let reveal = (ctx.eased * total as f32).ceil() as usize;
-
-        let tile_r = r_max / n_rings as f32;
-
-        let mut drawn = 0usize;
-        'outer: for ring in 1..=n_rings {
-            let tiles_per_ring = n_fold * ring; // grows with ring
-            let inner_r = tile_r * (ring - 1) as f32;
-            let outer_r = tile_r * ring as f32;
-
-            for k in 0..tiles_per_ring {
-                if drawn >= reveal {
-                    break 'outer;
-                }
-                let a0 = rot + 2.0 * PI * k as f32 / tiles_per_ring as f32;
-                let a1 = rot + 2.0 * PI * (k + 1) as f32 / tiles_per_ring as f32;
-                let am = (a0 + a1) / 2.0;
-
-                // Rhombus: four corners
-                let (ax, ay) = polar(cx, cy, inner_r, a0);
-                let (bx, by) = polar(cx, cy, outer_r, a0);
-                let (ex, ey) = polar(cx, cy, outer_r, a1);
-                let (fx, fy) = polar(cx, cy, inner_r, a1);
-                let (mx, my) = polar(cx, cy, (inner_r + outer_r) / 2.0, am);
-
-                // Draw the kite as two triangles sharing the midpoint apex
-                line(grid, ax, ay, mx, my);
-                line(grid, mx, my, ex, ey);
-                line(grid, ex, ey, fx, fy);
-                line(grid, fx, fy, ax, ay);
-                // Internal decorative diagonal
-                line(grid, bx, by, fx, fy);
-
-                drawn += 1;
+        let time = ctx.time;
+        let wf = 3f32.sqrt();
+        frieze(grid, ctx.eased, wf, 0.0, |g, cx, cy, r, lr, i| {
+            // Pointy-top hexagon tile; neighbours share their vertical edges.
+            let v: Vec<(i32, i32)> = (0..6)
+                .map(|k| polar(cx, cy, r, PI / 2.0 + k as f32 * PI / 3.0))
+                .collect();
+            for k in 0..6 {
+                let (a, b) = (v[k], v[(k + 1) % 6]);
+                line(g, a.0, a.1, b.0, b.1);
             }
-        }
-
-        // Center hub
-        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-
+            if lr <= 0.0 {
+                return;
+            }
+            let spokes = ((lr * 1.5).min(1.0) * 6.0).ceil() as usize;
+            for &(x, y) in v.iter().take(spokes.min(6)) {
+                line(g, cx.round() as i32, cy.round() as i32, x, y);
+            }
+            if lr > 0.5 {
+                // Hexagram through alternate edge midpoints.
+                let m: Vec<(i32, i32)> = (0..6)
+                    .map(|k| polar(cx, cy, r * 0.84, k as f32 * PI / 3.0))
+                    .collect();
+                for k in 0..6 {
+                    let (a, b) = (m[k], m[(k + 2) % 6]);
+                    line(g, a.0, a.1, b.0, b.1);
+                }
+            }
+            if lr >= 1.0 {
+                let dir = if i % 2 == 0 { 1.0 } else { -1.0 };
+                let rot = dir * time * 0.4;
+                let w: Vec<(i32, i32)> = (0..6)
+                    .map(|k| polar(cx, cy, r * 0.38, rot + k as f32 * PI / 3.0))
+                    .collect();
+                for k in 0..6 {
+                    let (a, b) = (w[k], w[(k + 1) % 6]);
+                    line(g, a.0, a.1, b.0, b.1);
+                }
+            }
+        });
         Ok(())
     }
 }
@@ -1702,54 +1729,39 @@ impl ProgressStyle for DharmaWheel {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Dharma wheel (Dharmachakra): 8 spokes radiating from a central hub \
-         to an outer rim, with decorative felloe arcs between spoke tips — \
-         the wheel spins continuously with time while spokes reveal with progress"
+        "Dharma wheel (Dharmachakra): rim, nave and eight knobbed spokes — the \
+         wheel of the law rolling along its path as progress turns it"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.40; // continuous spin
-
-        let n_spokes = 8usize;
-        let hub_r = (r * 0.15).max(1.0);
-        let rim_r = r;
-        let felloe_r = r * 0.12; // arc radius between spoke tips
-
-        // Outer rim
-        circle(grid, cx, cy, rim_r);
-        // Inner rim (double rim = traditional look)
-        circle(grid, cx, cy, rim_r * 0.88);
-        // Hub
-        circle(grid, cx, cy, hub_r);
-        circle(grid, cx, cy, hub_r * 0.5);
-
-        let spoke_reveal = (ctx.eased * n_spokes as f32).ceil() as usize;
-        for k in 0..spoke_reveal.min(n_spokes) {
-            let a = rot + PI * k as f32 / n_spokes as f32; // 8 spokes = every 22.5°
-            let (x0, y0) = polar(cx, cy, hub_r, a);
-            let (x1, y1) = polar(cx, cy, rim_r * 0.88, a);
-            line(grid, x0, y0, x1, y1);
-            // Opposite spoke (each of 8 half-spokes creates a full diameter)
-            let (x2, y2) = polar(cx, cy, hub_r, a + PI);
-            let (x3, y3) = polar(cx, cy, rim_r * 0.88, a + PI);
-            line(grid, x2, y2, x3, y3);
+        if dw < 2 || dh < 2 {
+            return Ok(());
         }
-
-        // Felloe arcs between spoke tips (decorative cusps)
-        if ctx.eased > 0.5 {
-            for k in 0..n_spokes {
-                let a0 = rot + PI * k as f32 / n_spokes as f32;
-                let a1 = rot + PI * (k + 1) as f32 / n_spokes as f32;
-                let (tx0, ty0) = polar(cx, cy, rim_r * 0.88, a0);
-                let (tx1, ty1) = polar(cx, cy, rim_r * 0.88, a1);
-                let mx = (tx0 + tx1) as f32 / 2.0;
-                let my = (ty0 + ty1) as f32 / 2.0;
-                circle(grid, mx, my, felloe_r);
+        let cy = dh as f32 / 2.0 - 0.5;
+        let knob = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let r = (knob - 1.2).max(1.0);
+        // The wheel rolls along its path: travel sets both place and turn.
+        let span = (dw as f32 - 2.0 * knob - 1.0).max(0.0);
+        let cx = knob + ctx.eased.clamp(0.0, 1.0) * span;
+        let turn = -(cx / r) - ctx.time * 0.6;
+        let ground = (cx - knob - 1.0).round() as i32;
+        for x in 0..ground.max(0) {
+            if x % 2 == 0 {
+                draw::dot_i(grid, x, cy.round() as i32);
             }
         }
-
+        // Rim and nave.
+        circle(grid, cx, cy, r);
+        circle(grid, cx, cy, (r * 0.28).max(1.0));
+        // Eight spokes, each ending in a knob just outside the rim.
+        for i in 0..8 {
+            let a = turn + i as f32 * PI / 4.0;
+            let (hx, hy) = polar(cx, cy, r * 0.28, a);
+            let (rx, ry) = polar(cx, cy, r, a);
+            line(grid, hx, hy, rx, ry);
+            let (kx, ky) = polar(cx, cy, knob, a);
+            draw::dot_i(grid, kx, ky);
+        }
         Ok(())
     }
 }
@@ -1767,57 +1779,31 @@ impl ProgressStyle for VesicaRosette {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Vesica rosette: a six-petal rosette built from six overlapping vesica \
-         piscis arcs — each arc is a circle of the same radius passing through \
-         the center, petals bloom one by one with progress as the rosette rotates"
+        "Vesica rosettes: a row of six-petal compass rosettes, each petal a \
+         vesica lens cut by two arcs of the circle's own radius, petals \
+         blooming one by one and rosette by rosette as progress rises"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        let (dw, dh) = draw::dot_dims(grid);
-        let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh) * 0.55; // vesica circles have radius = r_outer
-        let rot = ctx.time * 0.14;
-
-        let n_petals = 6usize;
-        let reveal = (ctx.eased * (n_petals + 2) as f32).round() as usize;
-
-        // Outer enclosing circle
-        if reveal > n_petals {
-            circle(grid, cx, cy, r * 1.00);
-        }
-
-        // Center bindu
-        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-
-        // Each of the 6 vesica circles is offset from center by r in one direction.
-        // A vesica piscis is the intersection region of two equal circles, each
-        // passing through the other's center.  We draw only the arc that lies within
-        // the central enclosing circle.
-        for k in 0..reveal.min(n_petals) {
-            let a = rot + 2.0 * PI * k as f32 / n_petals as f32;
-            let ocx = cx + r * a.cos();
-            let ocy = cy - r * a.sin();
-            // The arc of this circle that passes through the center region spans
-            // approximately ±60° around the direction back toward the center.
-            let back = a + PI;
-            arc(grid, ocx, ocy, r, back - PI / 3.0, back + PI / 3.0);
-
-            // Second arc on the same circle: forward-facing lobe
-            // (gives the petal shape when two adjacent circles overlap)
-            let fwd = a;
-            arc(grid, ocx, ocy, r, fwd - PI / 3.0, fwd + PI / 3.0);
-        }
-
-        // Inner hexagon at the vertices of the petal intersections
-        if reveal >= n_petals {
-            for k in 0..n_petals {
-                let a0 = rot + 2.0 * PI * k as f32 / n_petals as f32;
-                let a1 = rot + 2.0 * PI * (k + 1) as f32 / n_petals as f32;
-                let (x0, y0) = polar(cx, cy, r, a0);
-                let (x1, y1) = polar(cx, cy, r, a1);
-                line(grid, x0, y0, x1, y1);
+        let time = ctx.time;
+        frieze(grid, ctx.eased, 2.0, 3.0, |g, cx, cy, r, lr, i| {
+            if lr <= 0.0 {
+                dotted_ring(g, cx, cy, r);
+                return;
             }
-        }
-
+            circle(g, cx, cy, r);
+            let rot = time * 0.15 + i as f32 * PI / 6.0;
+            // Each arc is centred on the rim and passes through the centre;
+            // six of them cut six vesica petals.
+            let arcs = (lr * 6.0).ceil() as usize;
+            for k in 0..arcs.min(6) {
+                let a = rot + k as f32 * PI / 3.0;
+                let ox = cx + r * a.cos();
+                let oy = cy - r * a.sin();
+                let back = a + PI;
+                arc(g, ox, oy, r, back - PI / 3.0, back + PI / 3.0);
+            }
+            draw::dot_i(g, cx.round() as i32, cy.round() as i32);
+        });
         Ok(())
     }
 }
@@ -1835,91 +1821,47 @@ impl ProgressStyle for StarOfDavid {
         "yantra"
     }
     fn describe(&self) -> &str {
-        "Star of David hexagram: two interlocking equilateral triangles nested \
-         inside concentric circles — the up-triangle and down-triangle appear \
-         in sequence with progress while three harmonic circles spin with time"
+        "Star of David hexagram: two interlocking equilateral triangles inked \
+         edge by edge and slowly turning, on a progress path"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (dw, dh) = draw::dot_dims(grid);
+        if dw < 2 || dh < 2 {
+            return Ok(());
+        }
         let (cx, cy) = center(dw, dh);
-        let r = fit_radius(dw, dh);
-        let rot = ctx.time * 0.12;
-
-        let reveal = ctx.eased;
-
-        // Three concentric circles (outer, mid, inner) spinning with time
-        if reveal > 0.0 {
-            circle(grid, cx, cy, r);
+        let cy = cy - 0.5;
+        let r = (dh as f32 / 2.0 - 0.5).max(1.0);
+        let e = ctx.eased.clamp(0.0, 1.0);
+        // Progress path either side of the star.
+        let half_w = (r * 0.9).ceil() as i32 + 2;
+        rail(
+            grid,
+            cy.round() as i32,
+            cx as i32 - half_w,
+            cx as i32 + half_w,
+            e,
+            ctx.time,
+        );
+        // Two interlocking equilateral triangles, slowly turning; the six
+        // edges are inked in sequence over the first half of the run.
+        let spin = ctx.time * 0.35;
+        let up = [0, 1, 2].map(|i| polar(cx, cy, r, spin + PI / 2.0 + i as f32 * 2.0 * PI / 3.0));
+        let dn = [0, 1, 2].map(|i| polar(cx, cy, r, spin - PI / 2.0 + i as f32 * 2.0 * PI / 3.0));
+        let inked = (0.35 + e * 1.4).min(1.0) * 6.0;
+        for k in 0..6 {
+            let frac = (inked - k as f32).clamp(0.0, 1.0);
+            if frac <= 0.0 {
+                break;
+            }
+            let tri = if k % 2 == 0 { &up } else { &dn };
+            let i = k / 2;
+            let (ax, ay) = tri[i];
+            let (bx, by) = tri[(i + 1) % 3];
+            let ex = ax + ((bx - ax) as f32 * frac).round() as i32;
+            let ey = ay + ((by - ay) as f32 * frac).round() as i32;
+            line(grid, ax, ay, ex, ey);
         }
-        if reveal > 0.25 {
-            circle(grid, cx, cy, r * 0.70);
-        }
-        if reveal > 0.50 {
-            circle(grid, cx, cy, r * 0.35);
-        }
-
-        // Upward triangle (Star of David: apex at top, Δ)
-        if reveal > 0.15 {
-            let t_frac = ((reveal - 0.15) / 0.35).min(1.0);
-            let tr = r * 0.85;
-            let apex_a = PI / 2.0 + rot;
-            let left_a = PI / 2.0 + 2.0 * PI / 3.0 + rot;
-            let right_a = PI / 2.0 - 2.0 * PI / 3.0 + rot;
-            let (ax, ay) = polar(cx, cy, tr, apex_a);
-            let (lx, ly) = polar(cx, cy, tr, left_a);
-            let (rx, ry) = polar(cx, cy, tr, right_a);
-
-            // Reveal side by side progressively
-            let sides = (t_frac * 3.0).ceil() as usize;
-            if sides >= 1 {
-                line(grid, ax, ay, lx, ly);
-            }
-            if sides >= 2 {
-                line(grid, lx, ly, rx, ry);
-            }
-            if sides >= 3 {
-                line(grid, rx, ry, ax, ay);
-            }
-        }
-
-        // Downward triangle (inverted, ∇)
-        if reveal > 0.50 {
-            let t_frac = ((reveal - 0.50) / 0.35).min(1.0);
-            let tr = r * 0.85;
-            let apex_a = -PI / 2.0 + rot;
-            let left_a = -PI / 2.0 + 2.0 * PI / 3.0 + rot;
-            let right_a = -PI / 2.0 - 2.0 * PI / 3.0 + rot;
-            let (ax, ay) = polar(cx, cy, tr, apex_a);
-            let (lx, ly) = polar(cx, cy, tr, left_a);
-            let (rx, ry) = polar(cx, cy, tr, right_a);
-
-            let sides = (t_frac * 3.0).ceil() as usize;
-            if sides >= 1 {
-                line(grid, ax, ay, lx, ly);
-            }
-            if sides >= 2 {
-                line(grid, lx, ly, rx, ry);
-            }
-            if sides >= 3 {
-                line(grid, rx, ry, ax, ay);
-            }
-        }
-
-        // Central hexagon (intersection of the two triangles)
-        if reveal > 0.85 {
-            let hex_r = r * 0.49;
-            for k in 0..6usize {
-                let a0 = rot + PI / 6.0 + 2.0 * PI * k as f32 / 6.0;
-                let a1 = rot + PI / 6.0 + 2.0 * PI * (k + 1) as f32 / 6.0;
-                let (x0, y0) = polar(cx, cy, hex_r, a0);
-                let (x1, y1) = polar(cx, cy, hex_r, a1);
-                line(grid, x0, y0, x1, y1);
-            }
-        }
-
-        // Center bindu
-        draw::dot_i(grid, cx.round() as i32, cy.round() as i32);
-
         Ok(())
     }
 }

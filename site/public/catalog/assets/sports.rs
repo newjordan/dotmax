@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -846,74 +881,22 @@ pub mod styles {
 //! through `draw::` helpers so every pixel is silently bounds-safe.
 //!
 //! Styles in this file:
-//! - `sprint-100m`      — runner advances right, legs cycle, finish tape snaps at 100%
-//! - `basketball-arc`   — ball traces a parabola into a hoop, swish flash at 100%
-//! - `soccer-goal`      — ball curves into a net, net bulges on score
-//! - `swimming-laps`    — swimmer bobs across a lane, lap counter via vblocks
-//! - `archery`          — bow draws back with eased, arrow flies to a bullseye
-//! - `bowling`          — ball rolls down lane, pins topple progressively at end
-//! - `darts`            — dart flies toward concentric scoring rings of a dartboard
-//! - `high-jump`        — athlete arcs over a bar that rises with progress
-//! - `weightlifting`    — barbell overhead, plate stack height = eased
-//! - `tennis-rally`     — ball bounces between baselines, rally count as hbar fills
-//! - `cycling-peloton`  — wheels spin, riders packed tight, gap eaten by progress
+//! - `sprint-100m`      — sprinter strides down a lined track, tape breaks at the chequered finish
+//! - `basketball-arc`   — spinning ball arcs into a backboard, rim and net; swish at 100%
+//! - `soccer-goal`      — football rolls into a goal of posts and netting; net billows on score
+//! - `swimming-laps`    — freestyle swimmer windmills down a roped lane to the wall
+//! - `archery`          — arrow flies from a bow into a gold/red/blue ringed target
+//! - `bowling`          — ball rolls down a wooden lane into a rack of pins; strike at 100%
+//! - `darts`            — three darts land in turn on a segmented dartboard
+//! - `high-jump`        — run-up, Fosbury flop over the crossbar, landing on the mat
+//! - `weightlifting`    — lifter hoists a plate-loaded barbell from floor to overhead
+//! - `tennis-rally`     — two rackets trade a bouncing ball over the net
+//! - `cycling-peloton`  — three road cyclists pedal toward the finish, wheels spinning
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
-
-// ---------------------------------------------------------------------------
-// Theme tint — court orange into jersey red. Applied to styles that draw monochrome.
-// ---------------------------------------------------------------------------
-
-/// Gradient endpoints for this theme's signature tint.
-const TINT_START: Color = Color::rgb(255, 152, 56);
-const TINT_END: Color = Color::rgb(255, 84, 84);
-
-/// Sample the theme gradient at `t` in `0.0..=1.0`.
-fn sample_tint(t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    let lerp = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t) as u8;
-    Color::rgb(
-        lerp(TINT_START.r, TINT_END.r),
-        lerp(TINT_START.g, TINT_END.g),
-        lerp(TINT_START.b, TINT_END.b),
-    )
-}
-
-/// Applies the theme's signature gradient to every cell the inner style drew,
-/// drifting slowly with `time`. Styles stay monochrome-safe underneath: drop
-/// the wrapper in [`styles`] for uncolored output.
-struct Tinted<S>(S);
-
-impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
-    fn name(&self) -> &str {
-        self.0.name()
-    }
-    fn theme(&self) -> &str {
-        self.0.theme()
-    }
-    fn describe(&self) -> &str {
-        self.0.describe()
-    }
-    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
-        self.0.render(grid, ctx)?;
-        grid.enable_color_support();
-        let (w, h) = grid.dimensions();
-        for y in 0..h {
-            for x in 0..w {
-                let ch = grid.get_char(x, y);
-                if ch != '\u{2800}' && ch != ' ' {
-                    let t = (x as f32 / w.max(1) as f32 + ctx.time * 0.05).fract();
-                    let tri = 1.0 - (2.0 * t - 1.0).abs();
-                    let _ = grid.set_cell_color(x, y, sample_tint(tri));
-                }
-            }
-        }
-        Ok(())
-    }
-}
 
 /// All styles in the `sports` theme.
 ///
@@ -922,20 +905,71 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
         Box::new(Sprint100m),
-        Box::new(Tinted(BasketballArc)),
+        Box::new(BasketballArc),
         Box::new(SoccerGoal),
-        Box::new(Tinted(SwimmingLaps)),
-        Box::new(Tinted(Archery)),
+        Box::new(SwimmingLaps),
+        Box::new(Archery),
         Box::new(Bowling),
-        Box::new(Tinted(Darts)),
-        Box::new(Tinted(HighJump)),
-        Box::new(Tinted(Weightlifting)),
+        Box::new(Darts),
+        Box::new(HighJump),
+        Box::new(Weightlifting),
         Box::new(TennisRally),
         Box::new(CyclingPeloton),
     ]
 }
 
+// ── Sprite helpers ────────────────────────────────────────────────────────────
+
+/// Stamp an ASCII sprite: every `#` in `rows` becomes a dot at
+/// `(x0 + col, y0 + row)`. Out-of-bounds dots are dropped by `draw::dot_i`.
+fn sprite(grid: &mut BrailleGrid, x0: i32, y0: i32, rows: &[&str]) {
+    for (r, line) in rows.iter().enumerate() {
+        for (c, b) in line.bytes().enumerate() {
+            if b == b'#' {
+                draw::dot_i(grid, x0 + c as i32, y0 + r as i32);
+            }
+        }
+    }
+}
+
+/// Filled disc of dots centred on `(cx, cy)` with radius `r` (dot units).
+fn disc(grid: &mut BrailleGrid, cx: f32, cy: f32, r: f32) {
+    let r2 = r * r + 0.35;
+    for y in (cy - r).floor() as i32..=(cy + r).ceil() as i32 {
+        for x in (cx - r).floor() as i32..=(cx + r).ceil() as i32 {
+            let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+            if dx * dx + dy * dy <= r2 {
+                draw::dot_i(grid, x, y);
+            }
+        }
+    }
+}
+
+/// Colour every cell overlapping the dot box `[x0, x1] × [y0, y1]`.
+fn paint(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+    if x1 < 0 || y1 < 0 || x1 < x0 || y1 < y0 {
+        return;
+    }
+    let (cx0, cx1) = ((x0.max(0) / 2) as usize, (x1 / 2) as usize);
+    let (cy0, cy1) = ((y0.max(0) / 4) as usize, (y1 / 4) as usize);
+    for cy in cy0..=cy1 {
+        draw::tint_row(grid, cy, cx0, cx1, color);
+    }
+}
+
 // ── Sprint 100m ───────────────────────────────────────────────────────────────
+
+/// Runner sprite, two stride frames (facing right, 8 wide × 11 tall).
+const RUNNER: [[&str; 11]; 2] = [
+    [
+        ".....##.", ".....##.", "...####.", "..#.##.#", ".#..##..", "....##..", "...#..#.",
+        "..#....#", ".#......", "#.......", "........",
+    ],
+    [
+        ".....##.", ".....##.", "....###.", "...###..", "...#.##.", "....##..", "....##..",
+        "....#.#.", "...#..#.", "...#...#", "........",
+    ],
+];
 
 struct Sprint100m;
 impl ProgressStyle for Sprint100m {
@@ -946,85 +980,83 @@ impl ProgressStyle for Sprint100m {
         "sports"
     }
     fn describe(&self) -> &str {
-        "100m sprinter advances right with cycling legs; finish-line tape snaps at 100%"
+        "Sprinter strides down a lined track toward a chequered finish; the tape breaks at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
-        let mid = h / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let track = Color::rgb(200, 84, 60);
+        let chalk = Color::rgb(235, 235, 235);
 
-        // Ground line.
-        draw::hline(grid, 0, w.saturating_sub(1), base);
-
-        // Finish line — a vertical column of dots at the right edge.
-        let finish_x = w.saturating_sub(2);
-        draw::vline(grid, finish_x, 0, base);
-
-        // Runner horizontal position driven by progress.
-        let runner_x = (ctx.eased * finish_x.saturating_sub(4) as f32) as usize;
-        let runner_x = runner_x.min(finish_x.saturating_sub(4));
-
-        // Leg cycle phase from time.
-        let phase = ctx.time * 8.0;
-        // Forward leg (right).
-        let fwd = (phase.sin() * 1.5).round() as i32;
-        // Back leg (left) is opposite phase.
-        let bk = (-(phase.sin()) * 1.5).round() as i32;
-
-        // Body: torso leaning forward.
-        let torso_bot = base as i32 - 1;
-        let torso_top = torso_bot - (h as i32 / 3).max(1);
-        draw::dot_i(grid, runner_x as i32 + 1, torso_bot);
-        draw::dot_i(grid, runner_x as i32 + 1, torso_bot - 1);
-        draw::dot_i(grid, runner_x as i32 + 1, torso_top);
-        // Head.
-        draw::dot_i(grid, runner_x as i32 + 2, torso_top - 1);
-
-        // Arms (opposite to legs).
-        let arm_phase = -phase;
-        let arm_fwd = (arm_phase.sin() * 1.2).round() as i32;
-        draw::dot_i(grid, runner_x as i32 + 2, torso_bot - 1 + arm_fwd);
-        draw::dot_i(grid, runner_x as i32, torso_bot - 1 - arm_fwd);
-
-        // Legs.
-        draw::dot_i(grid, runner_x as i32 + 2, torso_bot + fwd);
-        draw::dot_i(grid, runner_x as i32, torso_bot + bk);
-        // Feet.
-        draw::dot_i(grid, runner_x as i32 + 3, base as i32 + fwd.min(0));
-        draw::dot_i(grid, runner_x as i32 - 1, base as i32 + bk.min(0));
-
-        // Tape break flash when at 100%.
-        if ctx.progress >= 0.999 {
-            // Horizontal tape across mid of bar at the finish line.
-            draw::hline(grid, finish_x.saturating_sub(1), w.saturating_sub(1), mid);
-            // Torn fragments: a few scattered dots to the right.
-            for k in 0..3usize {
-                let fx = finish_x + k * 2;
-                let fy = (mid as i32 + (k as i32 % 3) - 1).max(0) as usize;
-                draw::dot(
-                    grid,
-                    fx.min(w.saturating_sub(1)),
-                    fy.min(h.saturating_sub(1)),
-                );
+        // Lane lines: solid outer line, dashed distance marks that stream past.
+        draw::hline(grid, 0, w - 1, base as usize);
+        let scroll = (ctx.time * 30.0) as i32;
+        for x in 0..wi {
+            if (x + scroll).rem_euclid(10) < 4 {
+                draw::dot_i(grid, x, 1);
             }
         }
+        paint(grid, 0, 0, wi - 1, hi - 1, track);
 
-        // Tint the swept lane.
-        let (cw, ch) = grid.dimensions();
-        let swept = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..swept.min(cw) {
-                let t = if swept <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (swept - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Chequered finish line on the right.
+        let fx = wi - 4;
+        for y in 0..hi {
+            for x in fx..fx + 4 {
+                if ((x - fx) / 2 + y / 2) % 2 == 0 {
+                    draw::dot_i(grid, x, y);
+                }
             }
         }
+        paint(grid, fx, 0, wi - 1, hi - 1, chalk);
+
+        // Runner position follows progress; stride frame follows time.
+        let travel = (fx - 10).max(0) as f32;
+        let rx = (ctx.eased * travel) as i32;
+        let ry = (base - 11).max(0);
+        let frame = ((ctx.time * 8.0) as usize) % 2;
+        sprite(grid, rx, ry, &RUNNER[frame]);
+        // Speed lines trailing the runner.
+        for k in 0..3 {
+            let len = 3 + ((ctx.time * 10.0 + k as f32) as i32).rem_euclid(3);
+            let y = ry + 3 + k * 2;
+            draw::hline(
+                grid,
+                (rx - 2 - len).max(0) as usize,
+                (rx - 2).max(0) as usize,
+                y as usize,
+            );
+        }
+        paint(grid, rx - 6, ry, rx + 7, ry + 9, Color::rgb(255, 214, 64));
+
+        // Finish tape: taut across the line, snapped and fluttering at 100%.
+        let tape_y = ry + 4;
+        if ctx.progress < 0.999 {
+            draw::hline(grid, (fx - 1) as usize, (wi - 1) as usize, tape_y as usize);
+        } else {
+            for k in 0..4 {
+                let wave = ((ctx.time * 9.0 + k as f32).sin() * 1.5) as i32;
+                draw::dot_i(grid, fx - 1 - k, tape_y + k / 2 + wave);
+                draw::dot_i(grid, wi - 1, tape_y + k + wave);
+            }
+        }
+        paint(
+            grid,
+            fx - 2,
+            tape_y,
+            fx + 1,
+            tape_y,
+            Color::rgb(255, 60, 60),
+        );
         Ok(())
     }
 }
@@ -1040,79 +1072,140 @@ impl ProgressStyle for BasketballArc {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Basketball traces a parabolic arc toward a hoop; swish flash lights up at 100%"
+        "Spinning basketball arcs toward a backboard, rim and net; it swishes through at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
+        let (wi, hi) = (w as i32, h as i32);
+        let s = (hi as f32 / 16.0).max(0.25);
 
-        // Hoop: two dots at top-right, a small horizontal bar.
-        let hoop_x = w.saturating_sub(3);
-        let hoop_y = h / 4;
-        draw::hline(grid, hoop_x, w.saturating_sub(1), hoop_y);
-        // Net: vertical lines below hoop.
-        let net_h = (h / 4).max(1);
-        for nx in [hoop_x, w.saturating_sub(1)] {
-            draw::vline(
+        // Hoop: pole, backboard, rim and a swaying net.
+        let board_x = wi - 3;
+        let rim_y = (5.0 * s) as i32;
+        let rim_x0 = board_x - 12;
+        draw::vline(grid, (wi - 1) as usize, 0, (hi - 1) as usize);
+        draw::vline(grid, board_x as usize, 0, (rim_y + 3) as usize);
+        draw::hline(
+            grid,
+            board_x as usize,
+            (wi - 1) as usize,
+            (rim_y - 1).max(0) as usize,
+        );
+        paint(grid, board_x, 0, wi - 1, hi - 1, Color::rgb(190, 200, 215));
+        draw::hline(
+            grid,
+            rim_x0 as usize,
+            (board_x - 1) as usize,
+            rim_y as usize,
+        );
+        paint(
+            grid,
+            rim_x0,
+            rim_y,
+            board_x - 1,
+            rim_y,
+            Color::rgb(255, 80, 40),
+        );
+        let swish = if ctx.progress >= 0.999 {
+            ((ctx.time * 10.0).sin() * 1.5) as i32
+        } else {
+            0
+        };
+        let net_h = (6.0 * s) as i32;
+        for row in 1..=net_h {
+            let inset = row / 2;
+            for x in (rim_x0 + inset..board_x - inset).step_by(2) {
+                let x = x + (row % 2) + if row > 2 { swish } else { 0 };
+                draw::dot_i(grid, x, rim_y + row);
+            }
+        }
+        paint(
+            grid,
+            rim_x0,
+            rim_y + 1,
+            board_x - 1,
+            rim_y + net_h,
+            Color::rgb(235, 235, 235),
+        );
+
+        // Court floor.
+        draw::hline(grid, 0, (rim_x0 - 2).max(0) as usize, (hi - 1) as usize);
+        paint(
+            grid,
+            0,
+            hi - 1,
+            rim_x0 - 2,
+            hi - 1,
+            Color::rgb(170, 110, 60),
+        );
+
+        // Ball flight: parabola from the shooter's hands to the rim.
+        let p = ctx.eased;
+        let (x0, y0) = (4.0, hi as f32 - 5.0 * s);
+        let (x1, y1) = ((rim_x0 + board_x) as f32 / 2.0, rim_y as f32 + 2.0 * s);
+        let apex = 6.0 * s;
+        let pos = |q: f32| {
+            (
+                x0 + (x1 - x0) * q,
+                y0 + (y1 - y0) * q - apex * 4.0 * q * (1.0 - q),
+            )
+        };
+        // Dotted trail of where the ball has been.
+        let trail = ((p - 0.06) / 0.035).ceil().max(0.0) as i32;
+        for i in 0..trail {
+            let (tx, ty) = pos(i as f32 * 0.035);
+            draw::dot_i(grid, tx as i32, ty as i32);
+            paint(
                 grid,
-                nx.min(w.saturating_sub(1)),
-                hoop_y,
-                (hoop_y + net_h).min(base),
+                tx as i32,
+                ty as i32,
+                tx as i32,
+                ty as i32,
+                Color::rgb(150, 90, 40),
             );
         }
-        // Net cross-strands (every 2 dots).
-        for ny in (hoop_y..=(hoop_y + net_h).min(base)).step_by(2) {
-            draw::hline(grid, hoop_x, w.saturating_sub(1), ny.min(base));
+        let (bx, by) = pos(p);
+        let by = if ctx.progress >= 0.999 {
+            by + 3.0 * s
+        } else {
+            by
+        };
+        let r = 2.6 * s;
+        // Ball outline with a seam that spins with time.
+        for k in 0..20 {
+            let a = k as f32 / 20.0 * 2.0 * PI;
+            draw::dot_i(
+                grid,
+                (bx + a.cos() * r).round() as i32,
+                (by + a.sin() * r).round() as i32,
+            );
         }
-
-        // Ball trajectory: parabola from bottom-left to hoop.
-        // t drives the shot from 0 (ball in hand) → 1 (in hoop).
-        // We animate t using progress; time adds a spin bobble at rest.
-        let t = ctx.eased;
-
-        // Parametric: x linear, y parabolic (peak at mid-arc).
-        let bx = (t * hoop_x as f32) as i32;
-        // Parabola that starts at base and ends at hoop_y.
-        // y(t) = base - t*base + peak * 4t(1-t), where peak brings it above hoop.
-        let start_y = base as f32;
-        let end_y = hoop_y as f32;
-        let peak_lift = (h as f32 * 0.6).min((base - hoop_y) as f32 + h as f32 * 0.4);
-        let linear_y = start_y + t * (end_y - start_y);
-        let arc_y = linear_y - peak_lift * 4.0 * t * (1.0 - t);
-        let by = arc_y.round().clamp(0.0, base as f32) as i32;
-
-        // Ball (2-dot body, slightly round via 4 dots).
-        draw::dot_i(grid, bx, by);
-        draw::dot_i(grid, bx + 1, by);
-        draw::dot_i(grid, bx, by + 1);
-        draw::dot_i(grid, bx + 1, by + 1);
-
-        // Swish flash at 100%: fill net bright.
-        if ctx.progress >= 0.999 {
-            for ny in hoop_y..=(hoop_y + net_h).min(base) {
-                draw::hline(grid, hoop_x, w.saturating_sub(1), ny);
-            }
+        let spin = ctx.time * 6.0;
+        for k in -2..=2 {
+            let d = k as f32 * r / 2.5;
+            draw::dot_i(
+                grid,
+                (bx + spin.cos() * d).round() as i32,
+                (by + spin.sin() * d).round() as i32,
+            );
         }
-
-        // Faint arc trail (dotted line of the parabola).
-        for step in 0..20usize {
-            let pt = step as f32 / 20.0;
-            if pt >= t {
-                break;
-            }
-            let tx = (pt * hoop_x as f32) as i32;
-            let ty_lin = start_y + pt * (end_y - start_y);
-            let ty = (ty_lin - peak_lift * 4.0 * pt * (1.0 - pt))
-                .round()
-                .clamp(0.0, base as f32) as i32;
-            if step % 2 == 0 {
-                draw::dot_i(grid, tx, ty);
-            }
-        }
-
+        paint(
+            grid,
+            (bx - r) as i32,
+            (by - r) as i32,
+            (bx + r) as i32,
+            (by + r) as i32,
+            Color::rgb(255, 140, 30),
+        );
         Ok(())
     }
 }
@@ -1128,81 +1221,92 @@ impl ProgressStyle for SoccerGoal {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Soccer ball curves into a goal net; net bulges on score"
+        "Football rolls across the pitch into a goal of posts, crossbar and net; the net billows on the score"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let scored = ctx.progress >= 0.999;
 
-        // Goal frame: right side of bar.
-        let goal_left = w.saturating_sub((w / 5).max(3));
-        let goal_top = 0usize;
-        // Crossbar.
-        draw::hline(grid, goal_left, w.saturating_sub(1), goal_top);
-        // Posts.
-        draw::vline(grid, goal_left, goal_top, base);
-        draw::vline(grid, w.saturating_sub(1), goal_top, base);
-
-        // Net: diagonal grid inside the goal.
-        let net_bulge: i32 = if ctx.progress >= 0.999 {
-            ((ctx.time * 10.0).sin() * 1.5).round() as i32
+        // Goal (side-on): front post, crossbar, back stanchion and the net.
+        let gx = wi - 16;
+        let bar_y = (hi / 8).max(0);
+        draw::vline(grid, gx as usize, bar_y as usize, base as usize);
+        draw::hline(grid, gx as usize, (wi - 6).max(gx) as usize, bar_y as usize);
+        draw::vline(grid, (wi - 1) as usize, (bar_y + 4) as usize, base as usize);
+        let billow = if scored {
+            ((ctx.time * 6.0).sin().abs() * 2.0) as i32
         } else {
             0
         };
-        for ny in (goal_top..=base).step_by(2) {
-            for nx in (goal_left..w).step_by(3) {
-                let bx = nx as i32 + if ny % 4 == 0 { net_bulge } else { -net_bulge };
-                draw::dot_i(grid, bx, ny as i32);
+        // Pitch with mown tufts that drift slowly.
+        draw::hline(grid, 0, (w - 1) as usize, base as usize);
+        let drift = (ctx.time * 4.0) as i32;
+        for x in 0..gx {
+            if (x + drift).rem_euclid(7) == 0 {
+                draw::dot_i(grid, x, base - 1);
             }
         }
-
-        // Ball curve: starts bottom-left, curves into goal mouth.
-        let t = ctx.eased;
-        // Horizontal: 0 → goal_left.
-        let bx = (t * goal_left as f32) as i32;
-        // Vertical: starts at mid, curves up then down to goal mid.
-        let start_y = (h as f32 * 0.7) as i32;
-        let end_y = (h / 2) as i32;
-        let curve_peak = ((h as f32 * 0.25) * (PI * t).sin()) as i32;
-        let by =
-            (start_y + (t * (end_y - start_y) as f32) as i32 - curve_peak).clamp(0, base as i32);
-
-        // Ball: pentagon-ish 3x3 pattern.
-        draw::dot_i(grid, bx, by);
-        draw::dot_i(grid, bx + 1, by);
-        draw::dot_i(grid, bx, by + 1);
-        draw::dot_i(grid, bx + 1, by + 1);
-        // Pentagons: alternating black dots on ball.
-        if (ctx.time * 5.0) as usize % 2 == 0 {
-            draw::dot_i(grid, bx + 1, by - 1);
-        } else {
-            draw::dot_i(grid, bx - 1, by + 1);
-        }
-
-        // Field: grass line at base.
-        for gx in (0..w).step_by(4) {
-            draw::dot(grid, gx.min(w.saturating_sub(1)), base);
-            if gx + 1 < w {
-                draw::dot(grid, gx + 1, base.saturating_sub(1));
+        paint(grid, 0, 0, wi - 1, base, Color::rgb(60, 200, 90));
+        // Net mesh: a square lattice, pushed out on a goal.
+        for y in bar_y + 1..base {
+            for x in gx + 1..wi - 1 {
+                let col = (x - gx) % 3 == 0 && y % 2 == 0;
+                let row = (y - bar_y) % 3 == 0 && x % 2 == 0;
+                if col || row {
+                    let push = if y > bar_y + 2 && y < base - 2 {
+                        billow
+                    } else {
+                        0
+                    };
+                    draw::dot_i(grid, (x + push).min(wi - 2), y);
+                }
             }
         }
+        paint(grid, gx, 0, wi - 1, base, Color::rgb(235, 235, 240));
 
-        // Tint the arc path.
-        let (cw, ch) = grid.dimensions();
-        let swept = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..swept.min(cw) {
-                let t2 = if swept <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (swept - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t2));
-            }
+        // Ball rolls toward the goal mouth; panels rotate with time.
+        let r = (hi as f32 / 5.0).clamp(1.0, 3.2);
+        let travel = (gx + 4) as f32 - r - 2.0;
+        let bx = 2.0 + r + ctx.eased * (travel - 2.0 - r).max(0.0);
+        let by = base as f32 - 1.0 - r;
+        for k in 0..20 {
+            let a = k as f32 / 20.0 * 2.0 * PI;
+            draw::dot_i(
+                grid,
+                (bx + a.cos() * r).round() as i32,
+                (by + a.sin() * r).round() as i32,
+            );
         }
+        let roll = ctx.time * 5.0 + ctx.eased * 12.0;
+        draw::dot_i(grid, bx.round() as i32, by.round() as i32);
+        for k in 0..3 {
+            let a = roll + k as f32 * 2.0 * PI / 3.0;
+            let d = r * 0.55;
+            draw::dot_i(
+                grid,
+                (bx + a.cos() * d).round() as i32,
+                (by + a.sin() * d).round() as i32,
+            );
+        }
+        paint(
+            grid,
+            (bx - r) as i32,
+            (by - r) as i32,
+            (bx + r) as i32,
+            (by + r) as i32,
+            Color::rgb(255, 255, 255),
+        );
         Ok(())
     }
 }
@@ -1218,101 +1322,95 @@ impl ProgressStyle for SwimmingLaps {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Swimmer bobs across a lane; vblock lap counter fills on the right as laps complete"
+        "Freestyle swimmer windmills down a rippling lane under rope floats toward the touchpad wall"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let (cw, ch) = grid.dimensions();
-        let mid = h / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let t = ctx.time;
+        let surface = hi / 2 - 1;
 
-        // Lane boundaries: top and bottom dots.
-        draw::hline(grid, 0, w.saturating_sub(1), 0);
-        draw::hline(grid, 0, w.saturating_sub(1), h.saturating_sub(1));
-
-        // Lane rope: dashed middle.
-        let rope_y = mid;
-        for rx in (0..w).step_by(3) {
-            draw::dot(grid, rx.min(w.saturating_sub(1)), rope_y);
-        }
-
-        // Swimmer position: goes left-to-right then right-to-left on lap 2.
-        // Number of laps = 4 total. Each lap = 0.25 of progress.
-        let n_laps = 4usize;
-        let lap_frac_f = ctx.eased * n_laps as f32;
-        let current_lap = (lap_frac_f as usize).min(n_laps.saturating_sub(1));
-        let within_lap = lap_frac_f.fract();
-
-        // Alternate direction each lap.
-        let going_right = current_lap % 2 == 0;
-        let swim_x = if going_right {
-            (within_lap * w as f32) as usize
-        } else {
-            w.saturating_sub(1)
-                .saturating_sub((within_lap * w as f32) as usize)
-        };
-        let swim_x = swim_x.min(w.saturating_sub(3));
-
-        // Vertical bob from time + small correction for which half of lane.
-        let bob_amp = ((h / 4).max(1)) as f32 * 0.5;
-        let lane_y = if going_right {
-            mid.saturating_sub(2)
-        } else {
-            (mid + 2).min(h.saturating_sub(2))
-        };
-        let bob = (ctx.time * 6.0).sin() * bob_amp;
-        let sy = (lane_y as f32 + bob)
-            .round()
-            .clamp(1.0, h.saturating_sub(2) as f32) as usize;
-
-        // Swimmer body.
-        draw::dot(grid, swim_x, sy);
-        draw::dot(grid, swim_x + 1, sy);
-        // Head.
-        let head_off: i32 = if going_right { 2 } else { -1 };
-        draw::dot_i(grid, swim_x as i32 + head_off, sy as i32 - 1);
-
-        // Arm stroke — alternating.
-        let stroke = (ctx.time * 4.0).sin();
-        let arm_x = if going_right {
-            swim_x as i32 + 3
-        } else {
-            swim_x as i32 - 2
-        };
-        draw::dot_i(grid, arm_x, sy as i32 + (stroke * 1.5).round() as i32);
-        // Kick: tiny tail dots.
-        let kick_x = if going_right {
-            swim_x as i32 - 1
-        } else {
-            swim_x as i32 + 2
-        };
-        let kick_off = (-stroke).round() as i32;
-        draw::dot_i(grid, kick_x, sy as i32 + kick_off);
-        draw::dot_i(grid, kick_x, sy as i32 + kick_off + 1);
-
-        // Lap counter: vblocks on right columns, one per completed lap.
-        let laps_done = current_lap.min(n_laps);
-        let counter_cells = (n_laps).min(cw);
-        let start_cell = cw.saturating_sub(counter_cells);
-        for i in 0..counter_cells {
-            let filled = if i < laps_done { 8 } else { 0 };
-            for cy in 0..ch {
-                draw::vblock(grid, start_cell + i, cy, filled);
+        // Lane rope: chunky floats, alternating red and white cells.
+        for x in 0..wi {
+            if x % 4 != 3 {
+                draw::dot_i(grid, x, 1);
+                draw::dot_i(grid, x, 2);
             }
         }
-
-        // Water ripples trailing the swimmer.
-        let ripple_dir: i32 = if going_right { -1 } else { 1 };
-        for k in 1..4usize {
-            let rx = swim_x as i32 + ripple_dir * (k as i32 * 2);
-            if rx >= 0 && (rx as usize) < w {
-                let ry_off = (k as f32 * 0.7 * (ctx.time * 3.0 + k as f32).sin()) as i32;
-                draw::dot_i(grid, rx, sy as i32 + ry_off);
-            }
+        let (cw, _) = grid.dimensions();
+        for cx in 0..cw {
+            let c = if (cx / 2) % 2 == 0 {
+                Color::rgb(255, 70, 70)
+            } else {
+                Color::rgb(240, 240, 240)
+            };
+            draw::tint_row(grid, 0, cx, cx, c);
         }
 
+        // Rippling water surface, a floor stripe and the wall with touchpad.
+        for x in 0..wi - 3 {
+            let y = surface + ((x as f32 * 0.5 - t * 4.0).sin() * 0.8).round() as i32 + 1;
+            if x % 2 == 0 {
+                draw::dot_i(grid, x, y);
+            }
+        }
+        draw::hline(grid, 0, (wi - 4) as usize, (hi - 1) as usize);
+        draw::hline(grid, 4, (wi - 8) as usize, (hi - 3) as usize);
+        draw::vline(grid, (wi - 2) as usize, 1, (hi - 1) as usize);
+        draw::vline(grid, (wi - 1) as usize, 1, (hi - 1) as usize);
+        paint(grid, 0, 4, wi - 1, hi - 1, Color::rgb(60, 160, 255));
+        paint(grid, wi - 2, 0, wi - 1, hi - 1, Color::rgb(250, 220, 60));
+
+        // Swimmer: body along the surface, capped head, windmilling arm, kicks.
+        let len = 14;
+        let sx = len + (ctx.eased * (wi - len - 6) as f32) as i32;
+        let by = surface + 1;
+        draw::hline(grid, (sx - len).max(0) as usize, sx as usize, by as usize);
+        draw::hline(
+            grid,
+            (sx - len + 3).max(0) as usize,
+            (sx - 1) as usize,
+            (by + 1) as usize,
+        );
+        disc(grid, (sx + 2) as f32, (by - 1) as f32, 1.3);
+        let a = t * 7.0;
+        for k in 1..=6 {
+            let k = k as f32;
+            draw::dot_i(
+                grid,
+                (sx as f32 - 2.0 + a.cos() * k) as i32,
+                (by as f32 + a.sin() * k * 0.7) as i32,
+            );
+        }
+        for k in 0..3 {
+            let splash = ((t * 12.0 + k as f32 * 2.1).sin().abs() * 3.0) as i32;
+            draw::dot_i(grid, sx - len - 1 - k * 2, by - splash);
+        }
+        paint(
+            grid,
+            sx - len - 6,
+            by - 3,
+            sx + 4,
+            by + 1,
+            Color::rgb(255, 200, 150),
+        );
+        paint(
+            grid,
+            sx + 1,
+            by - 3,
+            sx + 4,
+            by - 1,
+            Color::rgb(255, 80, 80),
+        );
         Ok(())
     }
 }
@@ -1328,94 +1426,111 @@ impl ProgressStyle for Archery {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Bow draws back with eased progress; arrow flies across to a multi-ring bullseye"
+        "Arrow flies from a strung bow toward a gold-red-blue ringed target; it thuds into the bullseye at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let mid = h / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let cy = (hi - 1) as f32 / 2.0;
+        let r = cy.min(w as f32 / 6.0).max(1.0);
+        let tx = wi as f32 - r - 1.0;
 
-        // Bullseye target: concentric rings on the right.
-        let target_cx = w.saturating_sub(3) as i32;
-        let target_cy = mid as i32;
-        let max_r = (h / 2).clamp(1, 3) as i32;
-        for r in (1..=max_r).rev() {
-            // Approximate circle with 8 cardinal dots.
-            for &(dx, dy) in &[
-                (r, 0),
-                (-r, 0),
-                (0, r),
-                (0, -r),
-                (r, r),
-                (-r, r),
-                (r, -r),
-                (-r, -r),
-            ] {
-                draw::dot_i(grid, target_cx + dx, target_cy + dy);
+        // Target face: solid gold bullseye, then red and blue rings.
+        disc(grid, tx, cy, r * 0.3);
+        for (k, frac) in [0.55_f32, 0.8, 1.0].iter().enumerate() {
+            let n = 36 + k * 8;
+            for i in 0..n {
+                let a = i as f32 / n as f32 * 2.0 * PI;
+                draw::dot_i(
+                    grid,
+                    (tx + a.cos() * r * frac).round() as i32,
+                    (cy + a.sin() * r * frac).round() as i32,
+                );
             }
         }
-        // Bull: center dot.
-        draw::dot_i(grid, target_cx, target_cy);
-
-        // Bow on the left side.
-        let bow_x = 2i32;
-        let bow_h = (h * 3 / 4).max(2) as i32;
-        let bow_top = (mid as i32) - bow_h / 2;
-        let bow_bot = bow_top + bow_h;
-        // Bow limbs: arced using a few dots.
-        for step in 0..=bow_h {
-            let by = bow_top + step;
-            // Arc bulge to the left (pulling back).
-            let pull = ctx.eased; // 0 = no pull, 1 = full draw
-            let arc = (PI * step as f32 / bow_h as f32).sin();
-            let bx = bow_x - (arc * 2.0 * pull).round() as i32;
-            draw::dot_i(grid, bx, by);
+        // Colour each target cell by its distance from the centre.
+        let (cw, ch) = grid.dimensions();
+        for cyc in 0..ch {
+            for cx in 0..cw {
+                let dx = (cx * 2) as f32 + 1.0 - tx;
+                let dy = (cyc * 4) as f32 + 1.5 - cy;
+                let d = (dx * dx + dy * dy).sqrt() / r;
+                let c = match d {
+                    d if d < 0.4 => Color::rgb(255, 215, 0),
+                    d if d < 0.68 => Color::rgb(240, 50, 50),
+                    d if d < 0.92 => Color::rgb(60, 140, 255),
+                    d if d < 1.2 => Color::rgb(230, 230, 230),
+                    _ => continue,
+                };
+                draw::tint_row(grid, cyc, cx, cx, c);
+            }
         }
-        // Bowstring: straight line from top to bottom of bow.
-        let string_x = bow_x + 1 - (ctx.eased * 1.5).round() as i32;
-        draw::vline(
-            grid,
-            string_x.max(0) as usize,
-            bow_top.max(0) as usize,
-            bow_bot.min(h as i32 - 1) as usize,
-        );
 
-        // Arrow: travels from string to target when progress > 0.
-        // Before release (eased < 0.8) the arrow is nocked and held back.
-        // After release (eased >= 0.8) the arrow flies to the target.
-        let t = ctx.eased;
-        let arrow_head_x = if t < 0.8 {
-            // Nocked: arrow tip just ahead of string.
-            string_x + 1
+        // Bow on the left: a curved limb and its string.
+        let bow_h = (hi - 2).max(1);
+        for y in 0..=bow_h {
+            let u = y as f32 / bow_h as f32 * 2.0 - 1.0;
+            let bx = 1 + (3.0 * (1.0 - u * u)) as i32;
+            draw::dot_i(grid, bx, y + 1);
+        }
+        draw::vline(grid, 1, 1, (bow_h + 1) as usize);
+        paint(grid, 0, 0, 4, hi - 1, Color::rgb(170, 110, 60));
+
+        // Arrow: shaft, head and fletching; flies to the bullseye with progress.
+        let len = 12;
+        let tip0 = 6.0;
+        let tip1 = tx;
+        let tip = (tip0 + (tip1 - tip0) * ctx.eased) as i32;
+        let ay = cy.round() as i32;
+        let wobble = if ctx.progress >= 0.999 {
+            0
         } else {
-            // Flying: interpolate from nock to target.
-            let flight_t = (t - 0.8) / 0.2;
-            let nock_x = string_x + 1;
-            (nock_x as f32 + flight_t * (target_cx - nock_x as i32) as f32).round() as i32
+            ((ctx.time * 14.0).sin() * 0.8).round() as i32
         };
-
-        // Arrow shaft (horizontal dots from string to head).
-        let shaft_start = (string_x + 1).max(0);
-        let shaft_end = arrow_head_x.max(shaft_start);
-        for ax in shaft_start..=shaft_end.min(target_cx) {
-            draw::dot_i(grid, ax, mid as i32);
+        draw::hline(
+            grid,
+            (tip - len).max(0) as usize,
+            tip.max(0) as usize,
+            ay as usize,
+        );
+        for k in 1..3 {
+            draw::dot_i(grid, tip - k, ay - k);
+            draw::dot_i(grid, tip - k, ay + k);
         }
-        // Arrow head: small right-pointing tip.
-        draw::dot_i(grid, arrow_head_x, mid as i32 - 1);
-        draw::dot_i(grid, arrow_head_x + 1, mid as i32);
-        draw::dot_i(grid, arrow_head_x, mid as i32 + 1);
-        // Fletching: two dots at the tail.
-        let tail_x = shaft_start - 1;
-        draw::dot_i(grid, tail_x, mid as i32 - 1);
-        draw::dot_i(grid, tail_x, mid as i32 + 1);
-
+        for k in 0..4 {
+            let spread = 2 - k / 2;
+            draw::dot_i(grid, tip - len + k, ay - spread + wobble);
+            draw::dot_i(grid, tip - len + k, ay + spread - wobble);
+        }
+        paint(
+            grid,
+            tip - len,
+            ay - 2,
+            tip - 3,
+            ay + 2,
+            Color::rgb(240, 240, 240),
+        );
         Ok(())
     }
 }
 
 // ── Bowling ───────────────────────────────────────────────────────────────────
+
+/// Standing pin silhouette (4 wide × 11 tall).
+const PIN: [&str; 11] = [
+    ".##.", "####", "####", ".##.", ".##.", "####", "####", "####", "####", "####", ".##.",
+];
+/// Toppled pin lying on its side (11 wide × 4 tall).
+const PIN_DOWN: [&str; 4] = [".##.....##.", "###########", "###########", ".#####..##."];
 
 struct Bowling;
 impl ProgressStyle for Bowling {
@@ -1426,90 +1541,106 @@ impl ProgressStyle for Bowling {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Ball rolls down lane toward pins; pins scatter progressively at the end"
+        "Bowling ball rolls down a wooden lane toward a rack of white pins; strike scatters them at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
-        let mid = h / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
 
-        // Lane: two guide lines.
-        let lane_top = mid.saturating_sub(1);
-        let lane_bot = (mid + 1).min(base);
-        let guide_step = (w / 8).max(1);
-        for gx in (0..w).step_by(guide_step) {
-            draw::dot(grid, gx.min(w.saturating_sub(1)), lane_top);
-            draw::dot(grid, gx.min(w.saturating_sub(1)), lane_bot);
+        // Lane boards with drifting board seams.
+        draw::hline(grid, 0, w - 1, base as usize);
+        for x in (0..wi).step_by(6) {
+            draw::dot_i(grid, x + ((ctx.time * 2.0) as i32 % 2), base - 1);
         }
+        paint(grid, 0, base - 1, wi - 1, base, Color::rgb(200, 150, 90));
 
-        // Pin rack at the right end: triangle of 10 pins in rows 4-3-2-1.
-        let pin_area_x = w.saturating_sub((w / 6).max(4));
-        // Knock-down threshold: pins fall when progress > 0.8, staggered.
-        let knock_t = ((ctx.eased - 0.8) / 0.2).clamp(0.0, 1.0);
-        let rows = [4usize, 3, 2, 1];
-        let mut pin_idx = 0usize;
-        let total_pins = 10usize;
-        for (row, &count) in rows.iter().enumerate() {
-            for col in 0..count {
-                let px = pin_area_x + col * 2 + row;
-                let px = px.min(w.saturating_sub(1));
-                let pin_frac = pin_idx as f32 / total_pins as f32;
-                let knocked = knock_t > pin_frac;
-                if knocked {
-                    // Pin lying down: dot to the right.
-                    let scatter = ((ctx.time * 3.0 + pin_idx as f32).sin() * 1.5).round() as i32;
-                    draw::dot_i(grid, px as i32 + 1 + scatter, base as i32);
-                } else {
-                    // Pin standing: vertical stack of 2.
-                    draw::dot(grid, px, mid);
-                    draw::dot(grid, px, mid.saturating_sub(1));
-                }
-                pin_idx += 1;
+        // Pins: four in a staggered rack; knocked flat on a strike.
+        let rack_x = wi - 20;
+        let strike = ctx.progress >= 0.999;
+        for k in 0..4 {
+            let px = rack_x + k * 5;
+            if strike {
+                let hop = ((ctx.time * 7.0 + k as f32 * 1.7).sin().abs() * 3.0) as i32;
+                sprite(grid, px - 3 + k, base - 4 - hop - (k % 2) * 3, &PIN_DOWN);
+            } else {
+                sprite(grid, px, base - 11, &PIN);
             }
         }
-
-        // Ball: rolls from left to pin area.
-        let ball_x = (ctx.eased * pin_area_x as f32) as usize;
-        let ball_x = ball_x.min(pin_area_x.saturating_sub(2));
-        // Slight vertical wobble on roll.
-        let wobble = ((ctx.time * 12.0).sin() * 0.4).round() as i32;
-        let by = (mid as i32 + wobble).clamp(0, base as i32) as usize;
-        // Ball (2x2 dots).
-        draw::dot(grid, ball_x, by);
-        draw::dot(grid, (ball_x + 1).min(w.saturating_sub(1)), by);
-        draw::dot(grid, ball_x, (by + 1).min(base));
-        draw::dot(
+        paint(
             grid,
-            (ball_x + 1).min(w.saturating_sub(1)),
-            (by + 1).min(base),
+            rack_x - 4,
+            0,
+            wi - 1,
+            base - 2,
+            Color::rgb(245, 245, 245),
         );
-        // Spin dot.
-        let spin_angle = ctx.time * 10.0;
-        let sdx = spin_angle.cos().round() as i32;
-        let sdy = spin_angle.sin().round() as i32;
-        draw::dot_i(grid, ball_x as i32 + sdx, by as i32 + sdy);
 
-        // Color: lane gets warmer toward pins.
-        let (cw, ch) = grid.dimensions();
-        let filled_cells = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..filled_cells.min(cw) {
-                let t = if filled_cells <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (filled_cells - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
+        // Ball: a solid sphere trailing motion streaks.
+        let r = ((hi as f32 - 2.0) / 3.0).clamp(1.0, 4.0);
+        let stop = (rack_x - 2) as f32 - r;
+        let bx = r + 1.0 + ctx.eased * (stop - r - 1.0).max(0.0);
+        let by = base as f32 - 1.0 - r;
+        disc(grid, bx, by, r);
+        paint(
+            grid,
+            (bx - r) as i32,
+            (by - r) as i32,
+            (bx + r) as i32,
+            (by + r) as i32,
+            Color::rgb(90, 70, 220),
+        );
+        // Motion streaks behind the ball.
+        let streak = ((ctx.time * 12.0) as i32).rem_euclid(3);
+        for k in 0..2 {
+            let y = by as i32 - 1 + k * 2;
+            let x1 = (bx - r) as i32 - 2;
+            draw::hline(
+                grid,
+                (x1 - 3 - streak).max(0) as usize,
+                x1.max(0) as usize,
+                y as usize,
+            );
         }
         Ok(())
     }
 }
 
 // ── Darts ─────────────────────────────────────────────────────────────────────
+
+/// Draw one dart with its point at `(tip, y)`: needle, barrel and flights.
+fn dart(grid: &mut BrailleGrid, tip: i32, y: i32) {
+    draw::hline(
+        grid,
+        (tip - 2).max(0) as usize,
+        tip.max(0) as usize,
+        y.max(0) as usize,
+    );
+    for k in 3..7 {
+        draw::dot_i(grid, tip - k, y - 1);
+        draw::dot_i(grid, tip - k, y);
+        draw::dot_i(grid, tip - k, y + 1);
+    }
+    draw::hline(
+        grid,
+        (tip - 10).max(0) as usize,
+        (tip - 7).max(0) as usize,
+        y.max(0) as usize,
+    );
+    for k in 0..3 {
+        draw::dot_i(grid, tip - 9 - k, y - 1 - k);
+        draw::dot_i(grid, tip - 9 - k, y + 1 + k);
+    }
+}
 
 struct Darts;
 impl ProgressStyle for Darts {
@@ -1520,75 +1651,97 @@ impl ProgressStyle for Darts {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Dart flies toward concentric scoring rings; board glows as the dart closes in"
+        "Three darts fly in turn at a segmented dartboard with red bull and doubles ring; each third of progress lands one"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let mid = h / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let cy = (hi - 1) as f32 / 2.0;
+        let r = cy.min(w as f32 / 6.0).max(1.0);
+        let bx = wi as f32 - r - 1.0;
 
-        // Dartboard: concentric dot-rings on the right, centered.
-        let board_cx = w.saturating_sub(2) as i32;
-        let board_cy = mid as i32;
-        let n_rings = (h / 2).clamp(1, 4);
-        for r in 1..=n_rings {
-            let radius = r as i32;
-            // Draw partial ellipse (wider than tall) using parametric dots.
-            let steps = (radius * 8).max(8) as usize;
-            for s in 0..steps {
-                let angle = 2.0 * PI * s as f32 / steps as f32;
-                let ex = (board_cx + (angle.cos() * radius as f32 * 1.5).round() as i32).max(0);
-                let ey = (board_cy + (angle.sin() * radius as f32 * 0.75).round() as i32).max(0);
-                draw::dot_i(grid, ex, ey);
+        // Board: alternating wedge sectors, treble and double rings, bull.
+        let ri = r.ceil() as i32;
+        for y in -ri..=ri {
+            for x in -ri..=ri {
+                let d = ((x * x + y * y) as f32).sqrt() / r;
+                if d > 1.0 {
+                    continue;
+                }
+                let sector = ((y as f32).atan2(x as f32) / (2.0 * PI) * 20.0 + 20.5) as i32;
+                let ringed = (0.86..=1.0).contains(&d) || (0.5..=0.62).contains(&d);
+                if d < 0.16 || ringed || sector % 2 == 0 {
+                    draw::dot_i(grid, bx as i32 + x, cy.round() as i32 + y);
+                }
             }
         }
-        // Bull.
-        draw::dot_i(grid, board_cx, board_cy);
-
-        // Dart: travels horizontally from the left.
-        let dart_x = (ctx.eased * board_cx as f32).round() as i32;
-        let dart_y = board_cy;
-
-        // Slight arc drop: gravity dip over the flight.
-        let drop = if dart_x < board_cx {
-            let flight_t = dart_x as f32 / board_cx.max(1) as f32;
-            (flight_t * (1.0 - flight_t) * 2.0 * h as f32 * 0.2).round() as i32
-        } else {
-            0
-        };
-        let dart_y_dropped = (dart_y + drop).clamp(0, h as i32 - 1);
-
-        // Dart body: tip then shaft then flights.
-        // Tip.
-        draw::dot_i(grid, dart_x, dart_y_dropped);
-        // Barrel (2 dots back).
-        draw::dot_i(grid, dart_x - 1, dart_y_dropped);
-        draw::dot_i(grid, dart_x - 2, dart_y_dropped);
-        // Flights: angled fork.
-        draw::dot_i(grid, dart_x - 3, dart_y_dropped - 1);
-        draw::dot_i(grid, dart_x - 3, dart_y_dropped + 1);
-        draw::dot_i(grid, dart_x - 4, dart_y_dropped - 2);
-        draw::dot_i(grid, dart_x - 4, dart_y_dropped + 2);
-
-        // Board glow: as dart gets close, fill innermost ring column.
-        if ctx.eased > 0.8 {
-            let glow_t = (ctx.eased - 0.8) / 0.2;
-            let glow_r = (glow_t * n_rings as f32).round() as i32;
-            for gr in 1..=glow_r.min(n_rings as i32) {
-                draw::dot_i(grid, board_cx, board_cy - gr);
-                draw::dot_i(grid, board_cx, board_cy + gr);
-                draw::dot_i(grid, board_cx - gr, board_cy);
-                draw::dot_i(grid, board_cx + gr, board_cy);
+        let (cw, ch) = grid.dimensions();
+        for cyc in 0..ch {
+            for cx in 0..cw {
+                let dx = (cx * 2) as f32 + 0.5 - bx;
+                let dy = (cyc * 4) as f32 + 1.5 - cy;
+                let d = (dx * dx + dy * dy).sqrt() / r;
+                let c = match d {
+                    d if d < 0.3 => Color::rgb(240, 50, 50),
+                    d if d < 0.85 => Color::rgb(240, 225, 190),
+                    d if d < 1.25 => Color::rgb(40, 190, 90),
+                    _ => continue,
+                };
+                draw::tint_row(grid, cyc, cx, cx, c);
             }
         }
 
+        // Three throws: each third of progress carries one dart to the board.
+        let hits = [(-1.0_f32, -2.0_f32), (0.5, 2.0), (0.0, 0.0)];
+        let p = ctx.eased * 3.0;
+        for (k, &(ox, oy)) in hits.iter().enumerate() {
+            let u = (p - k as f32).clamp(0.0, 1.0);
+            if u <= 0.0 && k > 0 {
+                break;
+            }
+            let target_x = bx + ox - r * 0.1;
+            let target_y = cy + oy;
+            let tip = 10.0 + (target_x - 10.0) * u;
+            let arc = 4.0 * u * (1.0 - u) * 3.0;
+            let wobble = if u < 1.0 {
+                (ctx.time * 15.0).sin() * 0.5
+            } else {
+                0.0
+            };
+            let y = (target_y - arc + wobble).round() as i32;
+            dart(grid, tip as i32, y);
+            paint(
+                grid,
+                tip as i32 - 12,
+                y - 3,
+                tip as i32 - 3,
+                y + 3,
+                Color::rgb(90, 200, 255),
+            );
+        }
         Ok(())
     }
 }
 
 // ── High Jump ─────────────────────────────────────────────────────────────────
+
+/// Fosbury-flop body arched over the bar, head leading (12 wide × 5 tall).
+const FLOP: [&str; 5] = [
+    "....######..",
+    "..##......##",
+    ".#.........#",
+    "#.........##",
+    "#.........##",
+];
 
 struct HighJump;
 impl ProgressStyle for HighJump {
@@ -1599,81 +1752,88 @@ impl ProgressStyle for HighJump {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Athlete arcs over a bar that rises with progress; backflop pose at peak"
+        "Jumper sprints the run-up, arches over a crossbar between two standards in a flop and lands on the mat"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
 
-        // High-jump mat: fill at the right.
-        let mat_x = w.saturating_sub((w / 5).max(2));
-        draw::hline(grid, mat_x, w.saturating_sub(1), base);
+        // Standards and crossbar near the right; landing mat beyond.
+        let sx = wi - 26;
+        let bar_y = base - 9;
+        draw::vline(grid, sx as usize, bar_y as usize, base as usize);
+        draw::vline(grid, (sx + 4) as usize, bar_y as usize, base as usize);
+        draw::hline(grid, (sx - 1) as usize, (sx + 5) as usize, bar_y as usize);
+        paint(grid, sx - 1, bar_y, sx + 5, base, Color::rgb(255, 230, 80));
+        draw::fill_rect(
+            grid,
+            (sx + 7) as usize,
+            (base - 3) as usize,
+            18.min(w - (sx + 7) as usize),
+            4,
+        );
+        paint(
+            grid,
+            sx + 7,
+            base - 3,
+            wi - 1,
+            base,
+            Color::rgb(60, 120, 255),
+        );
+        draw::hline(grid, 0, (sx - 2) as usize, base as usize);
+        paint(grid, 0, base, sx - 2, base, Color::rgb(200, 84, 60));
 
-        // Bar uprights: two vertical posts.
-        let post_h = (ctx.eased * base as f32).round() as usize;
-        let post_h = post_h.max(1);
-        let lpost = mat_x.saturating_sub(2).min(w.saturating_sub(1));
-        let rpost = (mat_x + 1).min(w.saturating_sub(1));
-        draw::vline(grid, lpost, base.saturating_sub(post_h), base);
-        draw::vline(grid, rpost, base.saturating_sub(post_h), base);
-        // Crossbar at the top of the posts.
-        let bar_y = base.saturating_sub(post_h);
-        draw::hline(grid, lpost, rpost, bar_y);
-
-        // Athlete: progresses from approach run to arc over bar.
-        // phase: 0 = running in, 0.5 = peak arc, 1 = landing.
-        let t = ctx.eased;
-        // Athlete x: runs toward post then curves over and lands on mat.
-        let approach_x = (t * lpost as f32) as usize;
-        // Arc: highest at t=0.5, using a parabola shifted by the bar height.
-        let arc_frac = 4.0 * t * (1.0 - t); // 0→1→0
-        let arc_lift = (arc_frac * post_h as f32).round() as usize;
-        let ath_base = base.saturating_sub(arc_lift);
-
-        let ax = approach_x.min(w.saturating_sub(3));
-
-        // Body shape changes with arc phase.
-        if t < 0.4 {
-            // Running: upright torso.
-            draw::dot(grid, ax, ath_base);
-            draw::dot(grid, ax + 1, ath_base);
-            draw::dot(grid, ax, ath_base.saturating_sub(1));
-            // Head.
-            draw::dot_i(grid, ax as i32 + 1, ath_base as i32 - 2);
-            // Legs.
-            let leg_phase = (ctx.time * 8.0).sin();
-            draw::dot_i(grid, ax as i32 + 1, ath_base as i32 + 1);
-            draw::dot_i(
-                grid,
-                ax as i32 - 1 + (leg_phase * 1.0).round() as i32,
-                ath_base as i32 + 1,
-            );
+        // Run-up for the first 60%, then a flop arc over the bar onto the mat.
+        let p = ctx.eased;
+        let jumper = Color::rgb(255, 255, 255);
+        if p < 0.6 {
+            let rx = (p / 0.6 * (sx - 16) as f32) as i32;
+            let frame = ((ctx.time * 8.0) as usize) % 2;
+            sprite(grid, rx, base - 11, &RUNNER[frame]);
+            paint(grid, rx, base - 11, rx + 7, base - 1, jumper);
         } else {
-            // Arcing: horizontal body (Fosbury flop).
-            let bod_y = ath_base;
-            draw::dot(grid, ax, bod_y);
-            draw::dot(grid, ax + 1, bod_y);
-            draw::dot(grid, ax + 2, bod_y);
-            // Arch the back: middle dot slightly higher.
-            draw::dot_i(grid, ax as i32 + 1, bod_y as i32 - 1);
-            // Head tilted back.
-            draw::dot_i(grid, ax as i32 - 1, bod_y as i32 - 1);
-            // Legs up.
-            draw::dot_i(grid, ax as i32 + 3, bod_y as i32 - 1);
-            draw::dot_i(grid, ax as i32 + 4, bod_y as i32 - 2);
+            let u = (p - 0.6) / 0.4;
+            let x0 = (sx - 14) as f32;
+            let x1 = (sx + 10) as f32;
+            let x = x0 + (x1 - x0) * u;
+            let ground = (base - 8) as f32;
+            let y = ground - 4.0 * u * (1.0 - u) * 6.0 + u * 4.0;
+            sprite(grid, x as i32, y.round() as i32, &FLOP);
+            disc(grid, x + 12.0, y + 4.0, 1.2);
+            paint(
+                grid,
+                x as i32,
+                y as i32,
+                x as i32 + 13,
+                y as i32 + 5,
+                jumper,
+            );
         }
-
-        // Approach runway: ground to the left.
-        draw::hline(grid, 0, lpost.saturating_sub(1), base);
-
         Ok(())
     }
 }
 
 // ── Weightlifting ─────────────────────────────────────────────────────────────
+
+/// Straight dot line between two points (simple DDA, bounds-safe).
+fn line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
+    let n = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
+    for i in 0..=n {
+        let x = x0 + (x1 - x0) * i / n;
+        let y = y0 + (y1 - y0) * i / n;
+        draw::dot_i(grid, x, y);
+    }
+}
 
 struct Weightlifting;
 impl ProgressStyle for Weightlifting {
@@ -1684,112 +1844,97 @@ impl ProgressStyle for Weightlifting {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Barbell lifted overhead; plate stack height and arm angle track eased progress"
+        "Lifter hoists a plate-loaded barbell from the floor to locked-out overhead; plates load up with progress"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
-        let cx = w / 2;
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let cx = wi / 2;
+        let p = ctx.eased;
 
-        // Lift progress: 0 = bar on floor, 1 = fully overhead.
-        // Use eased so the lift has inertia.
-        let lift = ctx.eased;
-        // Barbell y position: from near base to top.
-        let bar_range = (base.saturating_sub(2)) as f32;
-        let bar_y = base
-            .saturating_sub(2)
-            .saturating_sub((lift * bar_range) as usize);
-        let bar_y = bar_y.min(base.saturating_sub(1));
-
-        // Barbell shaft.
-        let shaft_half = (w / 4).max(2);
+        // Platform.
         draw::hline(
             grid,
-            cx.saturating_sub(shaft_half),
-            (cx + shaft_half).min(w.saturating_sub(1)),
-            bar_y,
+            (cx - 30).max(0) as usize,
+            (cx + 30).min(wi - 1) as usize,
+            base as usize,
         );
+        paint(grid, cx - 30, base, cx + 30, base, Color::rgb(150, 110, 70));
 
-        // Plates: stack at each end proportional to progress.
-        let max_plates = 4usize;
-        let plates_on = (lift * max_plates as f32).ceil() as usize;
-        for p in 0..plates_on.min(max_plates) {
-            let plate_off = p + 1;
-            // Left plate.
-            let lpx = cx.saturating_sub(shaft_half).saturating_sub(plate_off);
-            draw::vline(grid, lpx, bar_y.saturating_sub(1), (bar_y + 1).min(base));
-            // Right plate.
-            let rpx = (cx + shaft_half + plate_off).min(w.saturating_sub(1));
-            draw::vline(grid, rpx, bar_y.saturating_sub(1), (bar_y + 1).min(base));
-        }
-        // Outer collar dots.
-        let lcollar = cx.saturating_sub(shaft_half + plates_on + 1);
-        let rcollar = (cx + shaft_half + plates_on + 1).min(w.saturating_sub(1));
-        draw::dot(grid, lcollar, bar_y);
-        draw::dot(grid, rcollar, bar_y);
+        // Bar height: floor (p = 0) to overhead (p = 1), straining with time.
+        let strain = if p > 0.97 {
+            ((ctx.time * 12.0).sin() * 0.6).round() as i32
+        } else {
+            0
+        };
+        let bar_y = (base as f32 - 4.0 - p * (base as f32 - 5.0)).round() as i32 + strain;
 
-        // Athlete: body adapts to lift phase.
-        // Legs always at base, torso/arms angle with lift.
-        let torso_top = bar_y.saturating_sub(1);
-        let hip_y = (base.saturating_sub(1)).min(base);
+        // Lifter: head, torso, legs bending deeper while the bar is low.
+        let squat = ((1.0 - p) * 3.0) as i32;
+        let hip_y = base - 5 + squat / 2;
+        let sh_y = hip_y - 5;
+        disc(grid, cx as f32, (sh_y - 2) as f32, 1.3);
+        draw::vline(grid, cx as usize, sh_y as usize, hip_y as usize);
+        draw::vline(grid, (cx - 1) as usize, sh_y as usize, hip_y as usize);
+        line(grid, cx - 1, hip_y, cx - 4 - squat, hip_y + 2 + squat / 2);
+        line(grid, cx - 4 - squat, hip_y + 2 + squat / 2, cx - 4, base);
+        line(grid, cx, hip_y, cx + 3 + squat, hip_y + 2 + squat / 2);
+        line(grid, cx + 3 + squat, hip_y + 2 + squat / 2, cx + 3, base);
+        // Arms reach from the shoulders to the grip on the bar.
+        line(grid, cx - 2, sh_y, cx - 7, bar_y);
+        line(grid, cx + 1, sh_y, cx + 6, bar_y);
+        paint(grid, cx - 7, 0, cx + 7, base - 1, Color::rgb(255, 205, 150));
 
-        // Legs: two dots each side.
-        let leg_spread = (w / 10).max(1);
-        draw::vline(grid, cx.saturating_sub(leg_spread), hip_y, base);
-        draw::vline(
+        // Barbell: shaft plus bumper plates, more loaded as progress climbs.
+        let half = 20.min(cx - 1);
+        draw::hline(
             grid,
-            (cx + leg_spread).min(w.saturating_sub(1)),
-            hip_y,
-            base,
+            (cx - half).max(0) as usize,
+            (cx + half) as usize,
+            bar_y.max(0) as usize,
         );
-
-        // Torso.
-        draw::vline(grid, cx, torso_top, hip_y);
-
-        // Arms: angle from hips up to bar.
-        // Simplified: diagonal from shoulder to bar ends.
-        let shoulder_y = torso_top.saturating_sub(1);
-        let lshoulder_x = cx.saturating_sub(1);
-        let rshoulder_x = (cx + 1).min(w.saturating_sub(1));
-
-        // Left arm: shoulder → left end of bar.
-        let arm_steps = 3usize;
-        for step in 0..=arm_steps {
-            let at = step as f32 / arm_steps as f32;
-            let ax = (lshoulder_x as f32 + at * (lcollar as i32 - lshoulder_x as i32) as f32)
-                .round() as i32;
-            let ay =
-                (shoulder_y as f32 + at * (bar_y as i32 - shoulder_y as i32) as f32).round() as i32;
-            draw::dot_i(grid, ax, ay);
+        let plates = 1 + (p * 3.0).min(2.0) as i32;
+        let colors = [
+            Color::rgb(230, 50, 50),
+            Color::rgb(50, 110, 240),
+            Color::rgb(250, 210, 40),
+        ];
+        for k in 0..plates {
+            let ph = 4 - k;
+            for side in [-1, 1] {
+                let px = cx + side * (half - 5 + k * 2);
+                for dx in 0..2 {
+                    draw::vline(
+                        grid,
+                        (px + dx).max(0) as usize,
+                        (bar_y - ph).max(0) as usize,
+                        (bar_y + ph).max(0) as usize,
+                    );
+                }
+                paint(grid, px, bar_y - ph, px + 1, bar_y + ph, colors[k as usize]);
+            }
         }
-        // Right arm.
-        for step in 0..=arm_steps {
-            let at = step as f32 / arm_steps as f32;
-            let ax = (rshoulder_x as f32 + at * (rcollar as i32 - rshoulder_x as i32) as f32)
-                .round() as i32;
-            let ay =
-                (shoulder_y as f32 + at * (bar_y as i32 - shoulder_y as i32) as f32).round() as i32;
-            draw::dot_i(grid, ax, ay);
-        }
-
-        // Head.
-        draw::dot_i(grid, cx as i32, torso_top as i32 - 2);
-        draw::dot_i(grid, cx as i32, torso_top as i32 - 1);
-
-        // Strain shimmer at peak.
-        if ctx.progress >= 0.9 {
-            let shake = ((ctx.time * 20.0).sin() * 0.5).round() as i32;
-            draw::dot_i(grid, cx as i32 + shake, bar_y as i32 - 1);
-        }
-
         Ok(())
     }
 }
 
 // ── Tennis Rally ──────────────────────────────────────────────────────────────
+
+/// Racket sprite (5 wide × 11 tall): strung oval head on a handle.
+const RACKET: [&str; 11] = [
+    ".###.", "#.#.#", "#####", "#.#.#", "#####", "#.#.#", ".###.", "..#..", "..#..", "..#..",
+    "..#..",
+];
 
 struct TennisRally;
 impl ProgressStyle for TennisRally {
@@ -1800,97 +1945,136 @@ impl ProgressStyle for TennisRally {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Ball bounces between baselines; a smooth hbar fill tracks rally progress"
+        "Two rackets trade a bouncing ball over the net; the court line paints in as the rally runs"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let (cw, ch) = grid.dimensions();
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
+        let mid = wi / 2;
 
-        // Bottom row: hbar fill showing overall progress.
-        if ch > 0 {
-            draw::hbar(grid, ch.saturating_sub(1), ctx.eased);
-        }
-
-        // Court area: rows above the hbar.
-        let court_rows = ch.saturating_sub(1);
-        if court_rows == 0 {
-            return Ok(());
-        }
-        let court_h = court_rows * 4;
-        let court_base = court_h.saturating_sub(1);
-
-        // Court lines: baselines and net.
-        draw::hline(grid, 0, w.saturating_sub(1), court_base);
-        draw::hline(grid, 0, w.saturating_sub(1), 0);
-        let net_x = w / 2;
-        draw::vline(grid, net_x, 0, court_base);
-
-        // Service line markers.
-        let sl = w / 4;
-        let sr = w * 3 / 4;
-        for sy in (0..court_base).step_by(2) {
-            draw::dot(grid, sl.min(w.saturating_sub(1)), sy);
-            draw::dot(grid, sr.min(w.saturating_sub(1)), sy);
-        }
-
-        // Ball: bounces back and forth driven by time.
-        // Horizontal: sinusoidal across width (rally speed increases with progress).
-        let rally_speed = 1.5 + ctx.progress * 3.0;
-        let bx_raw = ((ctx.time * rally_speed).sin() * 0.5 + 0.5) * (w - 1) as f32;
-        let bx = bx_raw.round() as usize;
-        let bx = bx.min(w.saturating_sub(1));
-
-        // Vertical: parabolic bounce — abs(sin) gives repeated parabola shape.
-        let bounce_freq = rally_speed * 2.0;
-        let bounce = ((ctx.time * bounce_freq).sin()).abs();
-        let by_raw = court_base as f32 - bounce * (court_base as f32 * 0.7);
-        let by = by_raw.round().clamp(0.0, court_base as f32) as usize;
-
-        // Ball dot.
-        draw::dot(grid, bx, by);
-        // Second dot for visibility (right or below).
-        if bx + 1 < w {
-            draw::dot(grid, bx + 1, by);
-        }
-
-        // Ball shadow on the court floor.
-        draw::dot(grid, bx, court_base);
-
-        // Players: simple stick figures at each end.
-        // Left player (server side).
-        let lp_x = 1usize;
-        let lp_mid = court_h / 2;
-        draw::dot(grid, lp_x, lp_mid.saturating_sub(1));
-        draw::dot(grid, lp_x, lp_mid);
-        draw::dot(grid, lp_x, (lp_mid + 1).min(court_base));
-        // Right player.
-        let rp_x = w.saturating_sub(2);
-        draw::dot(grid, rp_x, lp_mid.saturating_sub(1));
-        draw::dot(grid, rp_x, lp_mid);
-        draw::dot(grid, rp_x, (lp_mid + 1).min(court_base));
-
-        // Tint court.
-        for cy in 0..court_rows {
-            for cx in 0..cw {
-                let t = if cw <= 1 {
-                    0.5
-                } else {
-                    cx as f32 / (cw - 1) as f32
-                };
-                // Subtle tint — muted by applying only partially.
-                let color = ctx.palette.sample(t);
-                draw::tint_row(grid, cy, cx, cx, color);
+        // Court: solid green surface up to progress, chalk dots beyond.
+        let done = (ctx.eased * w as f32) as i32;
+        for x in 0..wi {
+            if x < done || x % 3 == 0 {
+                draw::dot_i(grid, x, base);
             }
         }
+        paint(grid, 0, base, done - 1, base, Color::rgb(70, 200, 110));
+        paint(grid, done, base, wi - 1, base, Color::rgb(110, 110, 120));
 
+        // Net: post plus a chequered mesh.
+        let net_top = base - (hi / 2).max(2);
+        draw::vline(grid, mid as usize, net_top as usize, base as usize);
+        for y in net_top..base {
+            for x in mid - 1..=mid + 1 {
+                if (x + y) % 2 == 0 {
+                    draw::dot_i(grid, x, y);
+                }
+            }
+        }
+        paint(
+            grid,
+            mid - 1,
+            net_top,
+            mid + 1,
+            base - 1,
+            Color::rgb(240, 240, 240),
+        );
+
+        // Rackets at either baseline, rocking as they swing.
+        let phase = (ctx.time * 0.7).fract() * 2.0;
+        let swing = |near: f32| ((1.0 - near.min(1.0)) * 2.0) as i32;
+        let lx = 1 + swing((phase - 0.0).abs().min((phase - 2.0).abs()) * 4.0);
+        let rx = wi - 6 - swing((phase - 1.0).abs() * 4.0);
+        sprite(grid, lx, 1, &RACKET);
+        sprite(grid, rx, 1, &RACKET);
+        paint(grid, lx, 0, lx + 4, 11, Color::rgb(90, 160, 255));
+        paint(grid, rx, 0, rx + 4, 11, Color::rgb(255, 90, 90));
+
+        // Ball: struck at head height, bounces once on the far side.
+        let (x0, x1) = ((lx + 6) as f32, (rx - 2) as f32);
+        let (u, dir) = if phase < 1.0 {
+            (phase, 1.0)
+        } else {
+            (phase - 1.0, -1.0)
+        };
+        let bx = if dir > 0.0 {
+            x0 + (x1 - x0) * u
+        } else {
+            x1 - (x1 - x0) * u
+        };
+        let ground = (base - 2) as f32;
+        let by = if u < 0.75 {
+            let q = u / 0.75;
+            3.0 + (ground - 3.0) * q - 6.0 * q * (1.0 - q) * 1.5
+        } else {
+            let q = (u - 0.75) / 0.25;
+            ground + (3.0 - ground) * q - 4.0 * q * (1.0 - q)
+        };
+        draw::fill_rect(grid, bx.max(0.0) as usize, by.max(0.0) as usize, 2, 2);
+        paint(
+            grid,
+            bx as i32,
+            by as i32,
+            bx as i32 + 1,
+            by as i32 + 1,
+            Color::rgb(220, 255, 60),
+        );
         Ok(())
     }
 }
 
 // ── Cycling Peloton ───────────────────────────────────────────────────────────
+
+/// One road bike with rider, rear hub at `(x0, hub_y)`; pedals and spokes turn with `spin`.
+fn cyclist(grid: &mut BrailleGrid, x0: i32, hub_y: i32, spin: f32) {
+    let r = 3.2;
+    let fx = x0 + 11;
+    for hx in [x0, fx] {
+        for k in 0..16 {
+            let a = k as f32 / 16.0 * 2.0 * PI;
+            draw::dot_i(
+                grid,
+                (hx as f32 + a.cos() * r).round() as i32,
+                (hub_y as f32 + a.sin() * r).round() as i32,
+            );
+        }
+        let (sx, sy) = (
+            (spin.cos() * 2.0).round() as i32,
+            (spin.sin() * 2.0).round() as i32,
+        );
+        line(grid, hx - sx, hub_y - sy, hx + sx, hub_y + sy);
+    }
+    // Frame: rear triangle, top tube and fork.
+    let (crank_x, seat_x, bar_x, top_y) = (x0 + 5, x0 + 3, x0 + 10, hub_y - 6);
+    line(grid, x0, hub_y, crank_x, hub_y);
+    line(grid, crank_x, hub_y, seat_x, top_y);
+    line(grid, x0, hub_y, seat_x, top_y);
+    line(grid, seat_x, top_y, bar_x, top_y);
+    line(grid, bar_x, top_y, fx, hub_y);
+    // Rider: tucked torso, head, arm to the bars, leg to the turning pedal.
+    let (sh_x, sh_y) = (x0 + 8, top_y - 4);
+    line(grid, seat_x, top_y - 1, sh_x, sh_y);
+    disc(grid, (sh_x + 2) as f32, (sh_y - 1) as f32, 1.2);
+    line(grid, sh_x, sh_y, bar_x, top_y);
+    let (pdx, pdy) = (
+        (spin.cos() * 2.0).round() as i32,
+        (spin.sin() * 2.0).round() as i32,
+    );
+    let knee = (seat_x + 4, top_y + 1 + pdy / 2);
+    line(grid, seat_x, top_y - 1, knee.0, knee.1);
+    line(grid, knee.0, knee.1, crank_x + pdx, hub_y + pdy);
+}
 
 struct CyclingPeloton;
 impl ProgressStyle for CyclingPeloton {
@@ -1901,97 +2085,56 @@ impl ProgressStyle for CyclingPeloton {
         "sports"
     }
     fn describe(&self) -> &str {
-        "Tightly-packed peloton advances; each bike's wheels spin with time via dot rotation"
+        "A tight pack of three road cyclists, wheels spinning and legs pedalling, rides the road to the finish"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 48 || h < 12 {
+            draw::hline(
+                grid,
+                0,
+                (ctx.eased * w as f32) as usize,
+                h.saturating_sub(1),
+            );
             return Ok(());
         }
-        let base = h.saturating_sub(1);
-        let rider_h = (h / 2).max(2);
-        let body_y = base.saturating_sub(rider_h);
+        let (wi, hi) = (w as i32, h as i32);
+        let base = hi - 1;
 
-        // Road: baseline.
-        draw::hline(grid, 0, w.saturating_sub(1), base);
-        // Road markings.
-        let center_y = (base + body_y) / 2;
-        for rx in (0..w).step_by(5) {
-            draw::dot(grid, rx.min(w.saturating_sub(1)), center_y);
+        // Road with centre dashes streaming past.
+        draw::hline(grid, 0, w - 1, base as usize);
+        let scroll = (ctx.time * 24.0) as i32;
+        paint(grid, 0, base, wi - 1, base, Color::rgb(120, 120, 130));
+
+        // Pack of three; leader in yellow.
+        let pack = 56;
+        let x = 4 + (ctx.eased * (wi - pack - 4).max(0) as f32) as i32;
+        let hub_y = base - 4;
+        let jerseys = [
+            Color::rgb(60, 140, 255),
+            Color::rgb(255, 80, 80),
+            Color::rgb(255, 215, 0),
+        ];
+        for (k, jersey) in jerseys.iter().enumerate() {
+            let rx = x + k as i32 * 19;
+            let spin = ctx.time * 9.0 + k as f32 * 1.3;
+            cyclist(grid, rx, hub_y, spin);
+            paint(grid, rx - 3, 0, rx + 14, hub_y - 6, *jersey);
+            paint(
+                grid,
+                rx - 3,
+                hub_y - 5,
+                rx + 14,
+                base - 1,
+                Color::rgb(200, 200, 210),
+            );
         }
-
-        // Pack of riders: progress dictates how far the leading edge is.
-        let lead_x = (ctx.eased * w as f32) as usize;
-        let lead_x = lead_x.min(w.saturating_sub(1));
-
-        // Number of riders: scales with bar width, minimum 2.
-        let n_riders = (w / 10).clamp(2, 8);
-        // Pack depth behind leader.
-        let pack_depth = (n_riders as f32 * 5.0) as usize;
-
-        // Wheel spin angle (radians) driven by time.
-        let spin = ctx.time * 8.0;
-        let wheel_r = ((h / 4).max(1)) as f32;
-
-        for i in 0..n_riders {
-            // Space riders behind the leader.
-            let offset = i * (pack_depth / n_riders.max(1));
-            let rx = lead_x.saturating_sub(offset);
-            if rx == 0 && i > 0 {
-                continue;
-            }
-            let rx = rx.min(w.saturating_sub(3));
-
-            // Each rider: two wheels + frame + body.
-            let front_wheel_x = (rx + 2).min(w.saturating_sub(1)) as i32;
-            let rear_wheel_x = rx as i32;
-            let wheel_y = (base - 1) as i32;
-
-            // Wheel spokes (2 per wheel, cross-shaped, rotating).
-            for spoke in 0..2usize {
-                let angle = spin + spoke as f32 * PI;
-                let sdx = (angle.cos() * wheel_r * 0.8).round() as i32;
-                let sdy = (angle.sin() * wheel_r * 0.5).round() as i32;
-                // Front wheel.
-                draw::dot_i(grid, front_wheel_x + sdx, wheel_y + sdy);
-                draw::dot_i(grid, front_wheel_x - sdx, wheel_y - sdy);
-                // Rear wheel.
-                draw::dot_i(grid, rear_wheel_x + sdx, wheel_y + sdy);
-                draw::dot_i(grid, rear_wheel_x - sdx, wheel_y - sdy);
-            }
-            // Wheel rims (hub dots).
-            draw::dot_i(grid, front_wheel_x, wheel_y);
-            draw::dot_i(grid, rear_wheel_x, wheel_y);
-
-            // Frame: diagonal from rear wheel to front wheel top.
-            draw::dot_i(grid, rear_wheel_x + 1, wheel_y - 1);
-            draw::dot_i(grid, front_wheel_x - 1, wheel_y - 1);
-
-            // Rider body.
-            let seat_x = rear_wheel_x + 1;
-            let seat_y = wheel_y - 2;
-            draw::dot_i(grid, seat_x, seat_y);
-            // Torso leans forward.
-            draw::dot_i(grid, seat_x + 1, seat_y - 1);
-            draw::dot_i(grid, seat_x + 1, seat_y - 2);
-            // Head.
-            draw::dot_i(grid, front_wheel_x, seat_y - 2);
+        // Wind lines ahead of the pack's wake.
+        for k in 0..3 {
+            let y = 3 + k * 3;
+            let x0 = (x - 4 - (scroll + k * 5).rem_euclid(8)).max(0);
+            draw::hline(grid, (x0 - 3).max(0) as usize, x0 as usize, y as usize);
         }
-
-        // Gradient tint of the swept portion.
-        let (cw, ch) = grid.dimensions();
-        let filled = (ctx.eased * cw as f32) as usize;
-        for cy in 0..ch {
-            for cx in 0..filled.min(cw) {
-                let t = if filled <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (filled - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
-        }
-
         Ok(())
     }
 }

@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -839,7 +874,7 @@ pub fn render_string(style: &dyn ProgressStyle, ctx: &BarContext) -> Result<Stri
 
 pub mod styles {
     pub mod mythology {
-//! Mythology-themed progress bars — twelve animated braille styles drawn from
+//! Mythology-themed progress bars — fourteen animated braille styles drawn from
 //! Greek, Norse, and world mythology.
 //!
 //! Each bar is structurally unique: distinct geometry, motion, and symbol
@@ -847,27 +882,29 @@ pub mod styles {
 //! with `ctx.time` and advances with `ctx.eased` progress.
 //!
 //! Styles:
-//! 1. **phoenix-rising**   — wings spread + ascending flame column flicker
-//! 2. **dragon-flight**    — dragon body sweeps left→right breathing a fire arc
-//! 3. **hydra-heads**      — each 10% unlocks a new sinusoidal neck + head
-//! 4. **kraken-depths**    — tentacles rise from a baseline with sine undulation
-//! 5. **pegasus-gallop**   — horse body gallops across + beating wing arcs
-//! 6. **medusa-gaze**      — radial snake-hair strands writhe outward from centre
-//! 7. **minotaur-labyrinth** — rectangular maze traced inward as progress advances
-//! 8. **icarus-sun**       — figure rises toward a sun, feathers scatter at 100%
-//! 9. **cerberus-watch**   — three dog-heads bob in a row, jaw opening with time
-//! 10. **valkyrie-ride**   — lance-wielding rider sweeps across with spear trails
-//! 11. **yggdrasil-grows** — world-tree trunk + spreading branches + root system
-//! 12. **ouroboros**       — snake traces a circle that closes as progress → 1
+//! 1. **phoenix-rising**   — raised-wing firebird climbs from embers, flame tail flickers
+//! 2. **dragon-flight**    — horned bat-winged dragon flaps across breathing fire
+//! 3. **hydra-heads**      — body sprouts swaying necks, up to nine snapping heads
+//! 4. **kraken-depths**    — goggle-eyed squid surfaces and swims toward a ship
+//! 5. **pegasus-gallop**   — white winged horse gallops over a stardust trail
+//! 6. **medusa-gaze**      — snake-haired face whose gaze petrifies a line of warriors
+//! 7. **minotaur-labyrinth** — red thread winds through a walled maze to the Minotaur
+//! 8. **icarus-sun**       — winged figure climbs toward a blazing sun, shedding feathers
+//! 9. **cerberus-watch**   — three-headed hound on a chain, heads bobbing and snapping
+//! 10. **valkyrie-ride**   — winged-helmed rider on a galloping steed, spear levelled
+//! 11. **yggdrasil-grows** — world tree grows: trunk, forked branches, crown, roots
+//! 12. **ouroboros**       — scaled serpent coils a rotating ring until it bites its tail
+//! 13. **trojan-horse**    — wheeled wooden horse rolls up to the gates of Troy
+//! 14. **mjolnir-strike**  — Thor's hammer slams a growing rune road, lightning flies
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
-use crate::{BrailleGrid, DotmaxError};
+use crate::{BrailleGrid, Color, DotmaxError};
 use std::f32::consts::PI;
 
 /// All styles in the `mythology` theme.
 ///
-/// Returns twelve boxed mythology-themed bars. Each is structurally distinct
+/// Returns fourteen boxed mythology-themed bars. Each is structurally distinct
 /// (geometry, motion, and symbol); color alone never separates them.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
@@ -883,15 +920,133 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(ValkyriRide),
         Box::new(YggdrasilGrows),
         Box::new(Ouroboros),
+        Box::new(TrojanHorse),
+        Box::new(MjolnirStrike),
     ]
 }
 
 // ---------------------------------------------------------------------------
+// Shared sprite helpers
+// ---------------------------------------------------------------------------
+// The pictorial bars below are drawn from small ASCII sprites (`#` = dot) so
+// each creature keeps a recognisable silhouette at 88x16 dots. All writes go
+// through `draw`, so off-grid sprite dots are silently clipped.
+
+/// Stamp an ASCII sprite with its top-left corner at dot `(x, y)`.
+fn stamp(grid: &mut BrailleGrid, rows: &[&str], x: i32, y: i32) {
+    for (dy, row) in rows.iter().enumerate() {
+        for (dx, c) in row.bytes().enumerate() {
+            if c == b'#' {
+                draw::dot_i(grid, x + dx as i32, y + dy as i32);
+            }
+        }
+    }
+}
+
+/// Straight dot line from `(x0, y0)` to `(x1, y1)` (inclusive).
+fn line(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32) {
+    let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
+    for s in 0..=steps {
+        let x = x0 + (x1 - x0) * s / steps;
+        let y = y0 + (y1 - y0) * s / steps;
+        draw::dot_i(grid, x, y);
+    }
+}
+
+/// Tint every cell overlapping the dot rectangle `[x, x+w) × [y, y+h)`.
+fn tint_box(grid: &mut BrailleGrid, x: i32, y: i32, w: i32, h: i32, color: Color) {
+    let (x1, y1) = (x + w - 1, y + h - 1);
+    if w <= 0 || h <= 0 || x1 < 0 || y1 < 0 {
+        return;
+    }
+    let (cx0, cx1) = ((x.max(0) / 2) as usize, (x1 / 2) as usize);
+    for cy in (y.max(0) / 4)..=(y1 / 4) {
+        draw::tint_row(grid, cy as usize, cx0, cx1, color);
+    }
+}
+
+/// Fallback for grids too small to hold a sprite: a plain fill line.
+fn tiny_fill(grid: &mut BrailleGrid, ctx: &BarContext, w: usize, h: usize) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    let filled = (ctx.eased * w as f32).round() as usize;
+    if filled > 0 {
+        draw::hline(grid, 0, filled.min(w) - 1, h / 2);
+    }
+}
+
+/// Side-on horse facing right, legs stretched (gallop frame A).
+const HORSE_A: [&str; 13] = [
+    "..................#.#...",
+    "..................####..",
+    ".................#######",
+    "................####.###",
+    "...............####...##",
+    "..##..........####......",
+    ".####.###########.......",
+    "##..#############.......",
+    "#...#############.......",
+    "....#############.......",
+    "....##.........##.......",
+    "...##...........##......",
+    "..##.............##.....",
+];
+
+/// The same horse with legs gathered under the body (gallop frame B).
+const HORSE_B: [&str; 13] = [
+    "..................#.#...",
+    "..................####..",
+    ".................#######",
+    "................####.###",
+    "...............####...##",
+    "..##..........####......",
+    ".####.###########.......",
+    "#...#############.......",
+    "#...#############.......",
+    "....#############.......",
+    ".....#.#......#.#.......",
+    ".....#..#.....#..#......",
+    "......#..#....#...#.....",
+];
+
+// ---------------------------------------------------------------------------
 // 1. Phoenix Rising
 // ---------------------------------------------------------------------------
-// A central flame column grows with progress. Two wing arcs spread outward,
-// whose span scales with eased progress. Flame tips flicker with time via
-// sine-perturbed dot heights.
+// A heraldic firebird — raised wings, crested head, fanned tail — climbs from
+// the left on a rising diagonal as progress advances. Its wings beat between
+// two frames, flame licks off its tail, and a bed of embers glows beneath the
+// ground it has already crossed.
+
+const PHOENIX_UP: [&str; 12] = [
+    "#....................#",
+    "##........##........##",
+    ".###......##......###.",
+    ".####....####....####.",
+    "..#####..####..#####..",
+    "...######.##.######...",
+    "....##############....",
+    "......##########......",
+    "........######........",
+    ".......#.####.#.......",
+    "......#..#..#..#......",
+    ".....#..#....#..#.....",
+];
+
+const PHOENIX_DOWN: [&str; 12] = [
+    "......................",
+    "..........##..........",
+    "..........##..........",
+    ".........####.........",
+    "##.......####.......##",
+    ".#####....##....#####.",
+    "...##############.....",
+    "......##########......",
+    "........######........",
+    ".......#.####.#.......",
+    "......#..#..#..#......",
+    ".....#..#....#..#.....",
+];
 
 struct PhoenixRising;
 impl ProgressStyle for PhoenixRising {
@@ -902,71 +1057,49 @@ impl ProgressStyle for PhoenixRising {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Phoenix ascends: flame column grows with progress, wings spread wide and flicker with time"
+        "A crested firebird beats its raised wings and climbs from the embers, trailing a flickering flame tail"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 24 || h < 14 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased;
 
-        let cx = (w / 2) as i32;
-        // Flame column height driven by eased progress.
-        let flame_h = ((ctx.eased * h as f32 * 0.85).round() as usize).max(1);
-        let base_y = (h - 1) as i32;
+        // Bird climbs a diagonal: bottom-left at 0 %, upper-right at 100 %.
+        let bx = (p * (wi - 22) as f32).round() as i32;
+        let lift = (p * (hi - 14) as f32).round() as i32;
+        let by = (hi - 14 - lift).max(0);
+        let beat = ((ctx.time * 3.0) as i32).rem_euclid(2) == 0;
+        stamp(grid, if beat { &PHOENIX_UP } else { &PHOENIX_DOWN }, bx, by);
 
-        // Draw central flame: each dot column flickers via per-x sine offset.
-        for seg in 0..flame_h {
-            let sy = base_y - seg as i32;
-            // Flicker narrows the flame at the tip.
-            let tip_frac = seg as f32 / flame_h.max(1) as f32;
-            let half_w = ((1.0 - tip_frac) * 2.0 + 1.0).round() as i32;
-            let flicker = ((ctx.time * 8.0 + seg as f32 * 0.5).sin() * 1.5).round() as i32;
-            for dx in -half_w..=half_w {
-                draw::dot_i(grid, cx + dx + flicker / 2, sy);
+        // Flame tail: flickering tongues dropping from the tail fan.
+        let tail_len = 2 + ((ctx.time * 9.0).sin() * 1.5).round() as i32;
+        for k in 0..5 {
+            let fx = bx + 7 + k * 2;
+            let len = tail_len + (k % 2) + ((ctx.time * 11.0 + k as f32).sin() > 0.0) as i32;
+            for d in 0..len {
+                draw::dot_i(grid, fx + ((d + k) % 2), by + 12 + d);
             }
         }
 
-        // Wing arcs: sweep outward proportional to eased progress.
-        let wing_span = ((ctx.eased * (w as f32 * 0.45)).round() as i32).max(1);
-        let wing_beat = ((ctx.time * 4.0).sin() * h as f32 * 0.12).round() as i32;
-        let wing_root_y = base_y - (flame_h as i32 / 3);
-
-        // Left wing: descending arc from root to tip.
-        let steps = (wing_span * 3).max(8) as usize;
-        for s in 0..=steps {
-            let t = s as f32 / steps.max(1) as f32;
-            let wx = cx - (t * wing_span as f32).round() as i32;
-            // Arc: starts level, curves down then up at tip.
-            let wy =
-                wing_root_y - ((t * PI * 0.8).sin() * h as f32 * 0.3).round() as i32 + wing_beat;
-            draw::dot_i(grid, wx, wy);
-            // Wing membrane — fill one row down.
-            draw::dot_i(grid, wx, wy + 1);
+        // Ember bed along the ground the bird has crossed.
+        let ground = hi - 1;
+        for x in 0..(bx + 11).min(wi) {
+            let flick = ((x as f32 * 1.7 + ctx.time * 10.0).sin() * 1.3).round() as i32;
+            draw::dot_i(grid, x, ground);
+            if flick > 0 {
+                draw::dot_i(grid, x, ground - flick);
+            }
         }
 
-        // Right wing: mirror.
-        for s in 0..=steps {
-            let t = s as f32 / steps.max(1) as f32;
-            let wx = cx + (t * wing_span as f32).round() as i32;
-            let wy =
-                wing_root_y - ((t * PI * 0.8).sin() * h as f32 * 0.3).round() as i32 + wing_beat;
-            draw::dot_i(grid, wx, wy);
-            draw::dot_i(grid, wx, wy + 1);
-        }
-
-        // Palette tint: deep ember at bottom, bright gold at top.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = 1.0 - cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
-        }
+        // Colour: embers red, body orange, wing tips and crest gold.
+        tint_box(grid, 0, hi - 4, wi, 4, Color::rgb(200, 50, 20));
+        tint_box(grid, bx, by + 8, 22, 8, Color::rgb(255, 90, 20));
+        tint_box(grid, bx, by + 4, 22, 4, Color::rgb(255, 150, 30));
+        tint_box(grid, bx, by, 22, 4, Color::rgb(255, 215, 80));
         Ok(())
     }
 }
@@ -974,9 +1107,46 @@ impl ProgressStyle for PhoenixRising {
 // ---------------------------------------------------------------------------
 // 2. Dragon Flight
 // ---------------------------------------------------------------------------
-// A serpentine dragon body (sine-oscillating spine) sweeps left→right as
-// eased progress advances. Its mouth emits a diverging arc of fire dots
-// ahead of the head. Wings beat with time.
+// A side-on dragon — horned head, long neck, bat wing, clawed legs, whip
+// tail — flies left→right with progress. The wing flaps between two frames,
+// a cone of fire flickers from its jaws, and the ground it has passed over is
+// left scorched.
+
+const DRAGON: [&str; 12] = [
+    "............................#....",
+    "...........................###...",
+    "..........................######.",
+    ".........................####.###",
+    "........................####.....",
+    "........###############.####.....",
+    "##....##################.........",
+    ".##..##################..........",
+    "..#######################........",
+    "........#####....#####...........",
+    "........#.#.#....#.#.#...........",
+    ".......#..#..#..#..#..#..........",
+];
+
+/// Scalloped bat wing, raised (three finger spines along the top edge).
+const BAT_WING_UP: [&str; 8] = [
+    "#.....#.....#.........",
+    "##....##....##........",
+    ".##..####..####.......",
+    ".###.#####.#####......",
+    "..###############.....",
+    "...###############....",
+    ".....##############...",
+    "........############..",
+];
+
+/// The same wing on the downstroke: flattened and swept back.
+const BAT_WING_DOWN: [&str; 5] = [
+    "#.....#.....#.........",
+    "###..###...####.......",
+    ".######..##########...",
+    "..##################..",
+    "....#################.",
+];
 
 struct DragonFlight;
 impl ProgressStyle for DragonFlight {
@@ -987,77 +1157,52 @@ impl ProgressStyle for DragonFlight {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Dragon flies left-to-right with a serpentine body and arc of fire breath"
+        "A horned, bat-winged dragon flaps across breathing a flickering cone of fire over scorched ground"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 41 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        let mid_y = (h / 2) as i32;
-        // Head x tracks eased progress.
-        let head_x = (ctx.eased * w as f32).round() as i32;
-        // Dragon body length scales with grid width.
-        let body_len = ((w as f32 * 0.35) as i32).max(4).min(w as i32 - 1);
-
-        // Serpentine body: each segment offset by sine of position + time.
-        for seg in 0..body_len {
-            let bx = head_x - seg;
-            if bx < 0 {
-                break;
-            }
-            let wave =
-                ((seg as f32 * 0.28 + ctx.time * 3.0).sin() * h as f32 * 0.25).round() as i32;
-            let by = mid_y + wave;
-            draw::dot_i(grid, bx, by);
-            // Thickness: two dots tall on the body center.
-            draw::dot_i(grid, bx, by + 1);
+        // Body travels with progress, leaving room for the fire cone.
+        let dx = (ctx.eased * (wi - 41).max(0) as f32).round() as i32;
+        let up = ((ctx.time * 3.0) as i32).rem_euclid(2) == 0;
+        let dy = if up { 3 } else { 2 };
+        stamp(grid, &DRAGON, dx, dy);
+        if up {
+            stamp(grid, &BAT_WING_UP, dx + 4, dy - 3);
+        } else {
+            stamp(grid, &BAT_WING_DOWN, dx + 4, dy + 1);
         }
 
-        // Head: a 3×3 blob.
-        draw::dot_i(grid, head_x, mid_y - 1);
-        draw::dot_i(grid, head_x, mid_y);
-        draw::dot_i(grid, head_x, mid_y + 1);
-        draw::dot_i(grid, head_x + 1, mid_y);
-
-        // Wings: two arcs above and below the body that beat.
-        let wing_beat = ((ctx.time * 5.0).sin() * h as f32 * 0.2).round() as i32;
-        let wing_w = (body_len / 2).max(2);
-        for dx in 0..wing_w {
-            let t = dx as f32 / wing_w.max(1) as f32;
-            let wing_y_up = mid_y - (h as f32 * 0.2 * (t * PI).sin()).round() as i32 - wing_beat;
-            let wing_y_dn = mid_y + (h as f32 * 0.2 * (t * PI).sin()).round() as i32 + wing_beat;
-            let wx = head_x - (body_len / 4) - dx;
-            draw::dot_i(grid, wx, wing_y_up);
-            draw::dot_i(grid, wx, wing_y_dn);
-        }
-
-        // Fire breath: diverging arc of dots ahead of head.
-        let fire_len = ((w as i32 - head_x).min(w as i32 / 3)).max(0);
-        for fi in 1..=fire_len {
-            let spread = (fi as f32 * 0.4).round() as i32;
-            let flicker = ((ctx.time * 9.0 + fi as f32 * 0.7).sin() * 1.5).round() as i32;
-            for ds in -spread..=spread {
-                // Only draw the outer shell of the cone, plus flicker.
-                if ds.abs() >= spread - 1 || (fi + flicker.abs() as i32) % 3 == 0 {
-                    draw::dot_i(grid, head_x + fi, mid_y + ds + flicker);
+        // Fire cone from the jaws: widens with distance, dots flicker.
+        let (mx, my) = (dx + 33, dy + 3);
+        let tick = (ctx.time * 12.0) as i32;
+        for d in 0..8 {
+            let spread = d / 2;
+            for s in -spread..=spread {
+                if (d * 7 + s * 13 + tick).rem_euclid(3) != 0 {
+                    draw::dot_i(grid, mx + d, my + s);
                 }
             }
         }
 
-        // Palette: fiery gradient across columns.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // Scorched ground behind the dragon: a smouldering, flickering line.
+        let ground = hi - 1;
+        for x in 0..(dx + 16).min(wi) {
+            if (x * 5 + tick).rem_euclid(7) != 0 {
+                draw::dot_i(grid, x, ground);
+            }
         }
+
+        // Colour: body from the palette, fire gold-orange, scorch red.
+        tint_box(grid, 0, 0, wi, hi, ctx.palette.sample(0.2));
+        tint_box(grid, 0, hi - 2, dx + 16, 2, Color::rgb(190, 50, 20));
+        tint_box(grid, mx, my - 4, 8, 9, Color::rgb(255, 150, 30));
+        tint_box(grid, mx + 4, my - 4, 4, 9, Color::rgb(255, 220, 90));
         Ok(())
     }
 }
@@ -1065,8 +1210,13 @@ impl ProgressStyle for DragonFlight {
 // ---------------------------------------------------------------------------
 // 3. Hydra Heads
 // ---------------------------------------------------------------------------
-// Each 10% of progress reveals a new neck+head growing from a shared base.
-// Every neck follows a sinusoidal path; heads bob with time independently.
+// A many-headed serpent: a scaly body mound sits on the ground and a new
+// neck sprouts for each step of progress (one head at 0 %, nine at 100 %).
+// Each neck sways with time and ends in a horned dragon head whose jaws snap
+// open and shut.
+
+const HYDRA_HEAD_OPEN: [&str; 4] = [".##..", "#####", "##...", ".####"];
+const HYDRA_HEAD_SHUT: [&str; 4] = [".##..", "#####", "#####", "....."];
 
 struct HydraHeads;
 impl ProgressStyle for HydraHeads {
@@ -1077,82 +1227,54 @@ impl ProgressStyle for HydraHeads {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Hydra: each 10% progress grows a new writhing neck and snapping head"
+        "A serpent body sprouts a new swaying neck with progress, up to nine snapping dragon heads"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 20 || h < 12 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let heads = 1 + (ctx.eased * 8.0).round() as i32;
 
-        let base_y = (h - 1) as i32;
-        // One head per 10%.
-        let n_heads = ((ctx.eased * 10.0).ceil() as usize).clamp(1, 10);
+        // Body: a long mound along the ground under all the necks.
+        let body_w = 8 + (heads - 1) * (wi - 14) / 8;
+        let bx = 2;
+        for x in 0..body_w {
+            let t = x as f32 / body_w.max(1) as f32;
+            let hump = ((t * PI).sin() * 3.0).round() as i32 + 1;
+            for y in 0..=hump {
+                draw::dot_i(grid, bx + x, hi - 1 - y);
+            }
+        }
 
-        // Body base: thick horizontal bar at the bottom.
-        let body_w = (w as f32 * 0.4).round() as usize;
-        let body_x0 = w / 2 - body_w / 2;
-        draw::hline(grid, body_x0, body_x0 + body_w, base_y as usize);
-        draw::hline(
-            grid,
-            body_x0,
-            body_x0 + body_w,
-            (base_y - 1).max(0) as usize,
-        );
-
-        // Spread heads evenly across body width.
-        for i in 0..n_heads {
-            // Base x of this neck.
-            let neck_base_x = if n_heads == 1 {
-                w / 2
+        // Necks: one per head, rising from the body and swaying with time.
+        let gap = (body_w - 6).max(1) / (heads - 1).max(1);
+        for i in 0..heads {
+            let root = bx + 3 + i * gap;
+            let neck_top = 3 + (i % 3);
+            let mut end = (root, hi - 4);
+            for y in (neck_top..=hi - 4).rev() {
+                let d = (hi - 4 - y) as f32;
+                let sway = (ctx.time * 2.5 + i as f32 * 1.3 + d * 0.3).sin() * d * 0.25;
+                let x = root + sway.round() as i32;
+                draw::dot_i(grid, x, y);
+                draw::dot_i(grid, x + 1, y);
+                end = (x, y);
+            }
+            let open = ((ctx.time * 3.0 + i as f32 * 0.7) as i32).rem_euclid(2) == 0;
+            let head = if open {
+                &HYDRA_HEAD_OPEN
             } else {
-                body_x0 + (i * body_w) / (n_heads - 1).max(1)
+                &HYDRA_HEAD_SHUT
             };
-
-            let neck_h = (h as f32 * 0.65).round() as usize;
-            // Each head bobs at a different frequency.
-            let bob_freq = 1.5 + i as f32 * 0.4;
-            let bob = ((ctx.time * bob_freq + i as f32 * 1.1).sin() * 2.0).round() as i32;
-
-            // Neck: sine-curved spine from base upward.
-            for seg in 0..neck_h {
-                let seg_y = base_y - seg as i32;
-                let sway_amp = seg as f32 / neck_h.max(1) as f32 * 3.5;
-                let sway = ((ctx.time * 1.8 + i as f32 * 0.9 + seg as f32 * 0.3).sin() * sway_amp)
-                    .round() as i32;
-                draw::dot_i(grid, neck_base_x as i32 + sway, seg_y);
-            }
-
-            // Head: oval 3×2 at the neck tip.
-            let sway_tip = ((ctx.time * 1.8 + i as f32 * 0.9 + neck_h as f32 * 0.3).sin() * 3.5)
-                .round() as i32;
-            let hx = neck_base_x as i32 + sway_tip;
-            let hy = base_y - neck_h as i32 + bob;
-            for dy in -1i32..=1 {
-                for dx in -2i32..=2 {
-                    if dx.abs() + dy.abs() * 2 <= 3 {
-                        draw::dot_i(grid, hx + dx, hy + dy);
-                    }
-                }
-            }
-            // Jaw: jabs open and shut with time.
-            let jaw = ((ctx.time * bob_freq * 1.3 + i as f32).sin() * 1.5 + 1.5).round() as i32;
-            draw::dot_i(grid, hx + 2, hy + 1 + jaw);
-            draw::dot_i(grid, hx + 3, hy + 1 + jaw);
+            stamp(grid, head, end.0, end.1 - 3);
         }
 
-        // Palette: hellish gradient bottom to top.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = 1.0 - cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
-        }
+        // Colour: body and necks in the palette, heads a venomous green.
+        tint_box(grid, 0, 0, wi, hi, ctx.palette.sample(0.3));
+        tint_box(grid, 0, 0, wi, 8, Color::rgb(110, 220, 110));
         Ok(())
     }
 }
@@ -1160,9 +1282,20 @@ impl ProgressStyle for HydraHeads {
 // ---------------------------------------------------------------------------
 // 4. Kraken Depths
 // ---------------------------------------------------------------------------
-// A seafloor baseline spans the bottom. Tentacles rise from it; their count
-// and height track eased progress. Each tentacle is a sine-undulating column
-// of dots, with a sucker dot on alternating sides.
+// A giant squid surfaces and swims toward a ship at the far right as progress
+// advances: a domed mantle with two staring eyes breaks the rolling waterline
+// while a fan of tentacles undulates beneath it. At 100 % it reaches the hull.
+
+const SHIP: [&str; 8] = [
+    ".....#....",
+    ".....##...",
+    ".....###..",
+    ".....####.",
+    ".....#....",
+    "##########",
+    ".########.",
+    "..######..",
+];
 
 struct KrakenDepths;
 impl ProgressStyle for KrakenDepths {
@@ -1173,69 +1306,63 @@ impl ProgressStyle for KrakenDepths {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Kraken tentacles rise from the abyss, sine-undulating as progress advances"
+        "A goggle-eyed kraken surfaces and swims toward a ship, tentacles writhing below the rolling waterline"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 36 || h < 15 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let sea = 6;
 
-        let floor_y = (h - 1) as i32;
-        // Seafloor.
-        draw::hline(grid, 0, w - 1, floor_y as usize);
+        // Ship riding the waterline at the right edge.
+        let ship_x = wi - 10;
+        stamp(grid, &SHIP, ship_x, sea - 5);
 
-        let n_tent = ((ctx.eased * 8.0).ceil() as usize).clamp(1, 8);
-        let tent_spacing = (w / n_tent.max(1)).max(1);
+        // Kraken position: centre of the mantle travels toward the ship.
+        let kx = 7 + (ctx.eased * (wi - 26) as f32).round() as i32;
+        let bob = ((ctx.time * 2.0).sin() * 0.8).round() as i32;
+        let top = 1 + bob;
 
-        for i in 0..n_tent {
-            let tx_base = (i * tent_spacing + tent_spacing / 2) as i32;
-            // Height: full tentacles plus a partially grown newest one.
-            let full_frac = if n_tent == 1 {
-                ctx.eased
-            } else {
-                let step = 1.0 / n_tent as f32;
-                let head_frac = (ctx.eased - (i as f32 * step)) / step;
-                head_frac.clamp(0.0, 1.0)
+        // Mantle: a dome 13 dots wide, with two eye holes left unlit.
+        for dy in 0..7i32 {
+            let half = match dy {
+                0 => 2,
+                1 => 4,
+                2 => 5,
+                _ => 6,
             };
-            let tent_h = (full_frac * h as f32 * 0.85).round() as usize;
-
-            let freq = 1.4 + i as f32 * 0.25;
-            for seg in 0..tent_h {
-                let seg_y = floor_y - seg as i32;
-                let phase = ctx.time * freq + i as f32 * 1.2 + seg as f32 * 0.22;
-                let sway = (phase.sin() * (seg as f32 * 0.08).min(4.0)).round() as i32;
-                draw::dot_i(grid, tx_base + sway, seg_y);
-                // Sucker nodes every 5 dots, alternating sides.
-                if seg % 5 == 2 {
-                    let sucker_side: i32 = if seg % 10 < 5 { 2 } else { -2 };
-                    draw::dot_i(grid, tx_base + sway + sucker_side, seg_y);
+            for dx in -half..=half {
+                let eye = dy == 4 && (dx == -3 || dx == 3);
+                if !eye {
+                    draw::dot_i(grid, kx + dx, top + dy);
                 }
             }
-            // Curled tip.
-            if tent_h > 0 {
-                let tip_sway = ((ctx.time * freq + i as f32 * 1.2 + tent_h as f32 * 0.22).sin()
-                    * (tent_h as f32 * 0.08).min(4.0))
-                .round() as i32;
-                let tip_y = floor_y - tent_h as i32;
-                let curl = ((ctx.time * 2.0 + i as f32 * 0.5).sin() * 2.0).round() as i32;
-                draw::dot_i(grid, tx_base + tip_sway + curl, tip_y - 1);
-                draw::dot_i(grid, tx_base + tip_sway + curl + 1, tip_y - 2);
+        }
+
+        // Tentacles: eight curling ribbons hanging from the mantle.
+        for i in 0..8i32 {
+            let base = kx - 6 + i * 12 / 7;
+            for d in 0..(hi - top - 7) {
+                let sway = (ctx.time * 3.0 + d as f32 * 0.5 + i as f32 * 0.9).sin();
+                let x = base + (sway * d as f32 * 0.25).round() as i32 - (d / 3);
+                draw::dot_i(grid, x, top + 7 + d);
             }
         }
 
-        // Deep-ocean tint: darkest at bottom.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // Rolling waterline across the whole width.
+        for x in 0..wi {
+            let crest = ((x as f32 * 0.5 + ctx.time * 4.0).sin() * 0.9).round() as i32;
+            draw::dot_i(grid, x, sea + crest);
         }
+
+        // Colour: sea from the palette, kraken crimson, ship timber.
+        tint_box(grid, 0, 0, wi, hi, ctx.palette.sample(0.0));
+        tint_box(grid, kx - 9, top + 7, 20, hi, Color::rgb(170, 40, 90));
+        tint_box(grid, kx - 6, top, 13, 7, Color::rgb(210, 60, 100));
+        tint_box(grid, ship_x, 0, 10, sea + 3, Color::rgb(200, 150, 90));
         Ok(())
     }
 }
@@ -1243,9 +1370,27 @@ impl ProgressStyle for KrakenDepths {
 // ---------------------------------------------------------------------------
 // 5. Pegasus Gallop
 // ---------------------------------------------------------------------------
-// A horse body (oval) advances left→right driven by eased progress. Four
-// legs cycle through a gallop pattern with time. Two wing arcs above beat
-// independently with a different frequency.
+// A white winged horse gallops through the sky left→right with progress. Its
+// legs alternate between stretched and gathered frames, its feathered wing
+// beats up and down, and a twinkling stardust trail marks the distance run.
+
+const WING_UP: [&str; 8] = [
+    "#.............",
+    "###...........",
+    ".####.........",
+    "..#####.......",
+    "...#######....",
+    "....########..",
+    ".....#########",
+    "......########",
+];
+
+const WING_DOWN: [&str; 4] = [
+    "######........",
+    ".##########...",
+    "...###########",
+    ".....########.",
+];
 
 struct PegasusGallop;
 impl ProgressStyle for PegasusGallop {
@@ -1256,89 +1401,40 @@ impl ProgressStyle for PegasusGallop {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Pegasus gallops across the bar: legs cycle through a gait, wings beat overhead"
+        "A white winged horse gallops across the sky, legs and feathered wings beating, over a stardust trail"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 26 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        let mid_y = (h / 2) as i32;
-        let cx = (ctx.eased * w as f32).round() as i32;
-
-        // Body: horizontal ellipse.
-        let body_rx = ((w as f32 * 0.12) as i32).max(2);
-        let body_ry = ((h as f32 * 0.2) as i32).max(1);
-        let body_steps = (body_rx * 8).max(12) as usize;
-        for s in 0..=body_steps {
-            let angle = s as f32 / body_steps as f32 * 2.0 * PI;
-            let bx = cx + (angle.cos() * body_rx as f32).round() as i32;
-            let by = mid_y + (angle.sin() * body_ry as f32).round() as i32;
-            draw::dot_i(grid, bx, by);
-        }
-        // Fill body centre.
-        draw::dot_i(grid, cx, mid_y);
-
-        // Head & neck: small oval in front of body.
-        let head_x = cx + body_rx + 2;
-        let head_ry = (body_ry as f32 * 0.7).round() as i32;
-        for s in 0..16usize {
-            let angle = s as f32 / 16.0 * 2.0 * PI;
-            let hx = head_x + (angle.cos() * 2.0).round() as i32;
-            let hy = mid_y - body_ry + (angle.sin() * head_ry as f32).round() as i32;
-            draw::dot_i(grid, hx, hy);
-        }
-        // Mane flick.
-        let mane = ((ctx.time * 7.0).sin() * 1.5).round() as i32;
-        draw::dot_i(grid, head_x - 1, mid_y - body_ry - 2 + mane);
-
-        // Four legs cycling through gallop: each leg has a phase offset.
-        let leg_phases = [0.0f32, PI, PI * 0.5, PI * 1.5];
-        let leg_offsets_x: [i32; 4] = [-body_rx + 1, -body_rx + 3, body_rx - 3, body_rx - 1];
-        for (idx, (&loff, &phase)) in leg_offsets_x.iter().zip(leg_phases.iter()).enumerate() {
-            let leg_x = cx + loff;
-            let leg_cycle = (ctx.time * 6.0 + phase).sin();
-            let knee_y = mid_y + body_ry + 2;
-            let foot_y = mid_y + body_ry + (3.0 + leg_cycle * 2.5).round() as i32;
-            let knee_x = leg_x + (leg_cycle * 1.5).round() as i32;
-            // Upper leg.
-            draw::dot_i(grid, leg_x, mid_y + body_ry);
-            draw::dot_i(grid, knee_x, knee_y);
-            // Lower leg.
-            let foot_swing = ((ctx.time * 6.0 + phase + 0.4).sin() * 1.5).round() as i32;
-            draw::dot_i(grid, knee_x + foot_swing, foot_y);
-            // Hoof.
-            draw::dot_i(grid, knee_x + foot_swing, foot_y + 1);
-            draw::dot_i(grid, knee_x + foot_swing + 1, foot_y + 1);
-            let _ = idx;
+        let x = (ctx.eased * (wi - 25) as f32).round() as i32;
+        let stride = ((ctx.time * 6.0) as i32).rem_euclid(2) == 0;
+        let y = if stride { 3 } else { 2 };
+        stamp(grid, if stride { &HORSE_A } else { &HORSE_B }, x, y);
+        // The wing roots at the withers and beats between two frames.
+        if ((ctx.time * 3.0) as i32).rem_euclid(2) == 0 {
+            stamp(grid, &WING_UP, x + 1, y - 3);
+        } else {
+            stamp(grid, &WING_DOWN, x, y + 3);
         }
 
-        // Wings: two arcs above body, beating at a different frequency.
-        let wing_beat = ((ctx.time * 3.5).sin() * h as f32 * 0.18).round() as i32;
-        let wing_span = ((w as f32 * 0.25) as i32).max(2);
-        for dx in 0..=wing_span {
-            let t = dx as f32 / wing_span.max(1) as f32;
-            let arc_y = mid_y
-                - body_ry
-                - (t * PI).sin() as i32 * ((h as f32 * 0.25).round() as i32)
-                - wing_beat;
-            draw::dot_i(grid, cx - dx, arc_y);
-            draw::dot_i(grid, cx + dx, arc_y);
+        // Stardust trail: twinkling dots strewn behind the hooves.
+        let tick = (ctx.time * 8.0) as i32;
+        for tx in 0..x.min(wi) {
+            let row = hi - 2 - (tx * 7).rem_euclid(4);
+            if (tx * 3 + tick).rem_euclid(5) == 0 || tx % 2 == 0 && row == hi - 2 {
+                draw::dot_i(grid, tx, row);
+            }
         }
 
-        // Sky gradient tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(1.0 - t),
-            );
-        }
+        // Colour: trail from the palette, the horse bright white, wing silver.
+        tint_box(grid, 0, hi - 6, wi, 6, ctx.palette.sample(0.4));
+        tint_box(grid, x, y, 25, 13, Color::rgb(240, 245, 255));
+        tint_box(grid, x, y - 3, 12, 6, Color::rgb(190, 215, 255));
         Ok(())
     }
 }
@@ -1346,9 +1442,14 @@ impl ProgressStyle for PegasusGallop {
 // ---------------------------------------------------------------------------
 // 6. Medusa Gaze
 // ---------------------------------------------------------------------------
-// A central head glyph at the progress point. From it, radial snake-hair
-// strands extend outward, each following its own sinusoidal path. Strand
-// count and length grow with eased progress.
+// Medusa's face sits at the left, crowned by writhing snakes. A golden gaze
+// beam shoots from her eyes and lengthens with progress; every spear-carrying
+// warrior it has passed is turned to grey stone, while those still ahead of
+// it march in place, bronze and alive.
+
+const WARRIOR: [&str; 7] = [
+    ".##.#", ".##.#", "#####", ".##.#", ".##.#", ".#.##", "#...#",
+];
 
 struct MedusaGaze;
 impl ProgressStyle for MedusaGaze {
@@ -1359,89 +1460,85 @@ impl ProgressStyle for MedusaGaze {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Medusa: radial writhing snake-hair strands grow outward from a central head"
+        "Snake-haired Medusa stares down a line of warriors; her lengthening gaze turns each one to grey stone"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 30 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let (fx, fy) = (9, 7);
 
-        // Head centre: x tracks eased progress.
-        let cx = ((ctx.eased * 0.85 + 0.075) * w as f32).round() as i32;
-        let cy = (h / 2) as i32;
-
-        // Snake-hair: n_strands radial lines with sinusoidal wobble.
-        let n_strands = 8usize;
-        let max_len = ((h.min(w)) as f32 * 0.42).round() as i32;
-        let strand_len = ((ctx.eased * max_len as f32).round() as i32).max(1);
-
-        for s in 0..n_strands {
-            let base_angle = s as f32 / n_strands as f32 * 2.0 * PI;
-            let phase_off = s as f32 * 0.7;
-            let freq = 2.2 + s as f32 * 0.15;
-
-            for seg in 1..=strand_len {
-                // Sinusoidal deviation perpendicular to radial direction.
-                let wobble =
-                    ((ctx.time * freq + seg as f32 * 0.35 + phase_off).sin() * seg as f32 * 0.18)
-                        .min(3.0);
-                let perp_angle = base_angle + PI / 2.0;
-                let sx =
-                    cx + (base_angle.cos() * seg as f32 + perp_angle.cos() * wobble).round() as i32;
-                let sy =
-                    cy + (base_angle.sin() * seg as f32 + perp_angle.sin() * wobble).round() as i32;
-                draw::dot_i(grid, sx, sy);
-            }
-
-            // Snake head at tip: two extra dots.
-            if strand_len > 1 {
-                let end_wobble = ((ctx.time * freq + strand_len as f32 * 0.35 + phase_off).sin()
-                    * strand_len as f32
-                    * 0.18)
-                    .min(3.0);
-                let perp_angle = base_angle + PI / 2.0;
-                let hx = cx
-                    + (base_angle.cos() * (strand_len + 1) as f32 + perp_angle.cos() * end_wobble)
-                        .round() as i32;
-                let hy = cy
-                    + (base_angle.sin() * (strand_len + 1) as f32 + perp_angle.sin() * end_wobble)
-                        .round() as i32;
-                draw::dot_i(grid, hx, hy);
-                draw::dot_i(
-                    grid,
-                    hx + base_angle.cos().round() as i32,
-                    hy + base_angle.sin().round() as i32,
-                );
+        // Face: an oval with two eye holes and a mouth slit left unlit.
+        for dy in -5..=5i32 {
+            for dx in -4..=4i32 {
+                let eye = dy == -1 && (dx == -2 || dx == 2);
+                let mouth = dy == 3 && dx.abs() <= 1;
+                if dx * dx * 25 + dy * dy * 16 <= 400 && !eye && !mouth {
+                    draw::dot_i(grid, fx + dx, fy + dy);
+                }
             }
         }
 
-        // Central head oval.
-        for s in 0..12usize {
-            let angle = s as f32 / 12.0 * 2.0 * PI;
-            draw::dot_i(
-                grid,
-                cx + (angle.cos() * 2.0).round() as i32,
-                cy + (angle.sin() * 1.5).round() as i32,
-            );
+        // Snake hair: seven serpents radiating from the crown, each swaying.
+        for i in 0..7 {
+            let base = -PI - 0.3 + i as f32 * (PI + 0.6) / 6.0;
+            let len = 6 + (i % 2) * 2;
+            let mut end = (fx, fy);
+            for d in 0..len {
+                let r = 5.0 + d as f32;
+                let a = base + (ctx.time * 4.0 + d as f32 * 0.8 + i as f32).sin() * 0.22;
+                let x = fx + (a.cos() * r * 1.4).round() as i32;
+                let y = fy + (a.sin() * r * 0.9).round() as i32;
+                draw::dot_i(grid, x, y);
+                end = (x, y);
+            }
+            draw::dot_i(grid, end.0 + 1, end.1);
+            draw::dot_i(grid, end.0, end.1 - 1);
         }
-        // Eye glow pulses with time.
-        let eye_pulse = ((ctx.time * 4.0).sin() * 0.5 + 0.5) as i32;
-        draw::dot_i(grid, cx - 1, cy - eye_pulse);
-        draw::dot_i(grid, cx + 1, cy - eye_pulse);
 
-        // Venomous green gradient tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy_cell in 0..cells_h {
-            let t = cy_cell as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy_cell,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // Gaze beam: two scrolling rays from the eyes, length = progress.
+        let start = fx + 4;
+        let tip = start + (ctx.eased * (wi - start) as f32).round() as i32;
+        let scroll = (ctx.time * 24.0) as i32;
+        for x in start..tip.min(wi) {
+            if (x - scroll).rem_euclid(4) != 0 {
+                draw::dot_i(grid, x, fy - 2);
+            }
+            if (x - scroll + 2).rem_euclid(4) != 0 {
+                draw::dot_i(grid, x, fy - 1);
+            }
         }
+
+        // Warriors line up to the right; the living ones march in place.
+        let mut wx = 24;
+        let step = ((ctx.time * 4.0) as i32).rem_euclid(2);
+        while wx + 5 <= wi {
+            let stone = wx + 2 < tip;
+            let lift = if stone { 0 } else { step };
+            stamp(grid, &WARRIOR, wx, hi - 7 - lift);
+            let color = if stone {
+                Color::rgb(140, 140, 150)
+            } else {
+                Color::rgb(215, 150, 70)
+            };
+            tint_box(grid, wx, hi - 8, 5, 8, color);
+            wx += 11;
+        }
+
+        // Colour: hair dark green, face pale green, gaze gold.
+        tint_box(grid, 0, 0, 22, hi, Color::rgb(60, 170, 80));
+        tint_box(grid, fx - 4, fy - 4, 9, 9, Color::rgb(150, 220, 150));
+        tint_box(
+            grid,
+            start,
+            fy - 2,
+            tip - start,
+            2,
+            Color::rgb(255, 215, 80),
+        );
         Ok(())
     }
 }
@@ -1449,9 +1546,27 @@ impl ProgressStyle for MedusaGaze {
 // ---------------------------------------------------------------------------
 // 7. Minotaur Labyrinth
 // ---------------------------------------------------------------------------
-// Concentric rectangular outlines are drawn from the outside in; the number
-// of visible rings grows with eased progress. A Minotaur dot pulses in the
-// centre, animated with time. This is pure geometry — no flowing shapes.
+// A walled serpentine labyrinth: vertical walls with gaps alternating top and
+// bottom. Ariadne's red thread unwinds from the entrance, snaking through
+// each gap as progress advances, toward the horned, bull-headed Minotaur that
+// paces in the inner chamber at the far end.
+
+const MINOTAUR: [&str; 14] = [
+    "#...........#",
+    "##.........##",
+    ".##.......##.",
+    "..##.###.##..",
+    "...#######...",
+    "....#.#.#....",
+    "....#####....",
+    ".....###.....",
+    "...#######...",
+    "..#########..",
+    "..##.###.##..",
+    "..##.###.##..",
+    "....##.##....",
+    "....#...#....",
+];
 
 struct MinotaurLabyrinth;
 impl ProgressStyle for MinotaurLabyrinth {
@@ -1462,62 +1577,85 @@ impl ProgressStyle for MinotaurLabyrinth {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Labyrinth rings drawn inward ring-by-ring as progress advances; Minotaur pulses at the core"
+        "Ariadne's red thread winds through a walled labyrinth toward the horned Minotaur in its inner chamber"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 36 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let mid = hi / 2;
 
-        // Max rings that fit given smallest dimension.
-        let max_rings = (h.min(w) / 4).max(1);
-        let active_rings = ((ctx.eased * max_rings as f32).ceil() as usize).min(max_rings);
+        // Outer walls, with the entrance gap on the left.
+        draw::hline(grid, 0, w - 1, 0);
+        draw::hline(grid, 0, w - 1, h - 1);
+        draw::vline(grid, w - 1, 0, h - 1);
+        draw::vline(grid, 0, 0, (mid - 3) as usize);
+        draw::vline(grid, 0, (mid + 3) as usize, h - 1);
 
-        for ring in 0..active_rings {
-            let margin = ring * 2;
-            let rx = margin;
-            let ry = margin;
-            let rw = w.saturating_sub(margin * 2);
-            let rh = h.saturating_sub(margin * 2);
-            if rw < 2 || rh < 2 {
+        // Inner walls every 8 dots, gaps alternating top / bottom.
+        let walls = (wi - 18) / 8;
+        for k in 1..=walls {
+            let x = (k * 8) as usize;
+            if k % 2 == 1 {
+                draw::vline(grid, x, 5, h - 1);
+            } else {
+                draw::vline(grid, x, 0, h - 6);
+            }
+        }
+
+        // Ariadne's thread: a square-wave path through every gap, ending at
+        // the chamber. Walk its polyline and light the first `eased` share.
+        let mut pts = vec![(0, mid), (4, mid)];
+        for k in 1..=walls {
+            let gy = if k % 2 == 1 { 2 } else { hi - 3 };
+            pts.push((k * 8 - 4, gy));
+            pts.push((k * 8 + 4, gy));
+        }
+        pts.push((walls * 8 + 4, mid));
+        pts.push((wi - 16, mid));
+        let total: i32 = pts
+            .windows(2)
+            .map(|s| (s[1].0 - s[0].0).abs() + (s[1].1 - s[0].1).abs())
+            .sum();
+        let mut left = (ctx.eased * total as f32).round() as i32;
+        let mut lit = Vec::new();
+        for s in pts.windows(2) {
+            let ((x0, y0), (x1, y1)) = (s[0], s[1]);
+            let len = (x1 - x0).abs() + (y1 - y0).abs();
+            let take = left.min(len);
+            for d in 0..=take {
+                let p = (x0 + (x1 - x0).signum() * d, y0 + (y1 - y0).signum() * d);
+                draw::dot_i(grid, p.0, p.1);
+                lit.push(p);
+            }
+            left -= take;
+            if left <= 0 {
                 break;
             }
-            draw::rect_outline(grid, rx, ry, rw, rh);
-
-            // Gap in each ring would require clearing individual dots, which the API
-            // does not expose; the concentric outlines convey the labyrinth structure.
+        }
+        // Theseus' torch: a flickering spark at the thread's tip.
+        let tip = lit.last().copied().unwrap_or(pts[0]);
+        if ((ctx.time * 6.0) as i32).rem_euclid(2) == 0 {
+            draw::dot_i(grid, tip.0 + 1, tip.1 - 1);
+            draw::dot_i(grid, tip.0 - 1, tip.1 - 1);
         }
 
-        // Minotaur pulse at centre.
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        let pulse = ((ctx.time * 3.0).sin() * 1.5).round() as i32;
-        for dy in -1i32..=1 {
-            for dx in -1i32..=1 {
-                if dx.abs() + dy.abs() <= 1 + pulse.abs() as i32 / 2 {
-                    draw::dot_i(grid, cx + dx, cy + dy);
-                }
-            }
-        }
-        // "Horns".
-        draw::dot_i(grid, cx - 2, cy - 2 - pulse.abs());
-        draw::dot_i(grid, cx + 2, cy - 2 - pulse.abs());
-        draw::dot_i(grid, cx - 3, cy - 3 - pulse.abs());
-        draw::dot_i(grid, cx + 3, cy - 3 - pulse.abs());
+        // The Minotaur paces in the chamber, head bobbing.
+        let pace = ((ctx.time * 1.5).sin() * 2.0).round() as i32;
+        let bob = ((ctx.time * 3.0) as i32).rem_euclid(2);
+        let mx = wi - 15 + pace;
+        stamp(grid, &MINOTAUR, mx, 1 + bob);
 
-        // Stone-cold tint: muted across rows.
-        let (_, cells_h) = grid.dimensions();
-        for cy_c in 0..cells_h {
-            let t = cy_c as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy_c,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t * 0.6 + 0.1),
-            );
+        // Colour: walls in the palette, thread red, Minotaur bronze, horns ivory.
+        tint_box(grid, 0, 0, wi, hi, ctx.palette.sample(0.25));
+        for &(x, y) in &lit {
+            tint_box(grid, x, y, 1, 1, Color::rgb(235, 60, 70));
         }
+        tint_box(grid, mx, 4, 13, hi - 4, Color::rgb(200, 130, 70));
+        tint_box(grid, mx, 0, 13, 4, Color::rgb(240, 230, 200));
         Ok(())
     }
 }
@@ -1525,9 +1663,32 @@ impl ProgressStyle for MinotaurLabyrinth {
 // ---------------------------------------------------------------------------
 // 8. Icarus Sun
 // ---------------------------------------------------------------------------
-// A figure (dot cluster) rises toward a radiant sun at the top-right corner.
-// The figure's altitude tracks eased progress. When progress ≥ 0.9 the wings
-// begin shedding feathers (scattered dots falling in arcs below the figure).
+// A blazing sun with turning rays waits at the right edge. Icarus — a small
+// figure with outstretched feathered wings — climbs from the sea toward it as
+// progress advances. The closer he gets, the more wax melts: loose feathers
+// tumble down toward the rolling waves below.
+
+const ICARUS_UP: [&str; 8] = [
+    "#...............#",
+    "##......#......##",
+    ".###...###...###.",
+    "..####..#..####..",
+    "...###########...",
+    ".......###.......",
+    ".......###.......",
+    "......#...#......",
+];
+
+const ICARUS_DOWN: [&str; 8] = [
+    ".................",
+    "........#........",
+    ".......###.......",
+    "........#........",
+    "#################",
+    ".####..###..####.",
+    "..##...###...##..",
+    "......#...#......",
+];
 
 struct IcarusSun;
 impl ProgressStyle for IcarusSun {
@@ -1538,89 +1699,65 @@ impl ProgressStyle for IcarusSun {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Icarus climbs toward the blazing sun; feathers scatter and fall as he nears 100%"
+        "Winged Icarus climbs from the waves toward a blazing sun, shedding more melted feathers the closer he flies"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 40 || h < 14 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased;
 
-        // Sun: radiating dot star at top-right corner.
-        let sun_x = (w as i32) - 4;
-        let sun_y = 3i32;
-        let sun_r = ((h.min(w) as f32 * 0.18).round() as i32).max(2);
-        // Sun disc.
-        let disc_steps = (sun_r * 8).max(16) as usize;
-        for s in 0..=disc_steps {
-            let angle = s as f32 / disc_steps as f32 * 2.0 * PI;
-            draw::dot_i(
-                grid,
-                sun_x + (angle.cos() * sun_r as f32).round() as i32,
-                sun_y + (angle.sin() * (sun_r as f32 * 0.6)).round() as i32,
-            );
+        // Sun: filled disc with eight rays that slowly turn.
+        let (sx, sy) = (wi - 9, 6);
+        for dy in -4..=4i32 {
+            for dx in -5..=5i32 {
+                if dx * dx * 16 + dy * dy * 25 <= 400 {
+                    draw::dot_i(grid, sx + dx, sy + dy);
+                }
+            }
         }
-        // Sun rays: 8 spokes radiating outward, pulsing with time.
-        let ray_len = ((sun_r as f32 * 1.6) as i32).max(2);
-        let ray_pulse = ((ctx.time * 2.0).sin() * 1.5).round() as i32;
-        for r in 0..8usize {
-            let angle = r as f32 / 8.0 * 2.0 * PI + ctx.time * 0.3;
-            for d in sun_r + 1..=sun_r + ray_len + ray_pulse {
-                draw::dot_i(
-                    grid,
-                    sun_x + (angle.cos() * d as f32).round() as i32,
-                    sun_y + (angle.sin() * d as f32 * 0.6).round() as i32,
-                );
+        for r in 0..8 {
+            let a = r as f32 * PI / 4.0 + ctx.time * 0.8;
+            for d in 7..9 {
+                let rx = sx + (a.cos() * d as f32 * 1.2).round() as i32;
+                let ry = sy + (a.sin() * d as f32 * 0.7).round() as i32;
+                draw::dot_i(grid, rx, ry);
             }
         }
 
-        // Icarus figure: rises from bottom-left toward the sun with progress.
-        let fig_x = (ctx.eased * (w as f32 - 8.0) + 2.0).round() as i32;
-        let fig_y = (h as f32 - ctx.eased * (h as f32 - 4.0) - 2.0).round() as i32;
+        // Icarus climbs from low-left toward the sun.
+        let ix = (p * (wi - 38) as f32).round() as i32;
+        let iy = (hi - 10) - (p * (hi - 10) as f32).round() as i32;
+        let flap = ((ctx.time * 4.0) as i32).rem_euclid(2) == 0;
+        stamp(grid, if flap { &ICARUS_UP } else { &ICARUS_DOWN }, ix, iy);
 
-        // Body.
-        draw::dot_i(grid, fig_x, fig_y);
-        draw::dot_i(grid, fig_x, fig_y + 1);
-        draw::dot_i(grid, fig_x, fig_y + 2);
-        // Head.
-        draw::dot_i(grid, fig_x, fig_y - 1);
-        draw::dot_i(grid, fig_x + 1, fig_y - 1);
-        // Wings: two arcs that beat.
-        let wing_beat = ((ctx.time * 4.5).sin() * h as f32 * 0.15).round() as i32;
-        let wing_span = ((w as f32 * 0.15) as i32).max(3);
-        for dx in 1..=wing_span {
-            let t = dx as f32 / wing_span.max(1) as f32;
-            let wy = fig_y + 1 - (t * PI * 0.6).sin() as i32 * 3 - wing_beat;
-            draw::dot_i(grid, fig_x - dx, wy);
-            draw::dot_i(grid, fig_x + dx + 1, wy);
-        }
-
-        // Feather fall: when progress ≥ 0.9, shed animated feathers below.
-        if ctx.progress >= 0.9 {
-            let melt = (ctx.progress - 0.9) / 0.1;
-            let n_feathers = (melt * 12.0).round() as usize;
-            for fi in 0..n_feathers {
-                let fall_phase = (ctx.time * 1.8 + fi as f32 * 0.6) % 1.0;
-                let fx = fig_x - wing_span + fi as i32 % (wing_span * 2 + 1).max(1);
-                let fy = fig_y + 3 + (fall_phase * h as f32 * 0.7).round() as i32;
-                let drift = ((ctx.time * 0.8 + fi as f32 * 1.1).sin() * 3.0).round() as i32;
-                draw::dot_i(grid, fx + drift, fy);
-                draw::dot_i(grid, fx + drift + 1, fy + 1);
+        // Melting feathers: more fall as he nears the sun, drifting down-left.
+        let feathers = (p * 7.0).round() as i32;
+        for k in 0..feathers {
+            let fall = (ctx.time * 5.0 + k as f32 * 2.3) % (hi as f32);
+            let fx = ix + 2 + (k * 5) % 14 - (fall * 0.4) as i32;
+            let fy = iy + 4 + fall as i32;
+            if fy < hi - 2 {
+                draw::dot_i(grid, fx, fy);
+                draw::dot_i(grid, fx + 1, fy);
             }
         }
 
-        // Solar gradient tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = 1.0 - cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // The sea: a rolling wave line along the bottom.
+        for x in 0..wi {
+            let wave = ((x as f32 * 0.45 - ctx.time * 3.0).sin() + 1.0).round() as i32;
+            draw::dot_i(grid, x, hi - 1 - wave.min(1));
         }
+
+        // Colour: sea blue, Icarus pale, feathers wax-gold, sun hot.
+        tint_box(grid, 0, 0, wi, hi, Color::rgb(235, 215, 170));
+        tint_box(grid, 0, hi - 4, wi, 4, Color::rgb(40, 120, 220));
+        tint_box(grid, sx - 10, 0, 20, 16, Color::rgb(255, 200, 40));
+        tint_box(grid, sx - 4, sy - 2, 8, 5, Color::rgb(255, 240, 150));
+        tint_box(grid, ix, iy, 17, 8, Color::rgb(245, 235, 220));
         Ok(())
     }
 }
@@ -1628,9 +1765,57 @@ impl ProgressStyle for IcarusSun {
 // ---------------------------------------------------------------------------
 // 9. Cerberus Watch
 // ---------------------------------------------------------------------------
-// Three dog-heads bob across the progress bar in a row; each head is drawn
-// as an oval outline with two eye dots and an animated jaw gap. Head spacing
-// tracks progress (heads spread out as progress advances).
+// The three-headed hound of the underworld pads left→right with progress on a
+// chain staked at the left edge. Three pointy-eared heads on separate necks
+// bob independently as they keep watch, each snapping its jaws in turn, while
+// its legs alternate stride frames and its tail curls up behind.
+
+const HOUND_A: [&str; 12] = [
+    "#...................",
+    ".#..................",
+    ".#..................",
+    "..#################.",
+    "..#################.",
+    "...################.",
+    "...##.#.......##.#..",
+    "..#....#.....#....#.",
+    ".#.....#....#.....#.",
+    ".#......#...#......#",
+    "##......##.##......##",
+    "....................",
+];
+
+const HOUND_B: [&str; 12] = [
+    "#...................",
+    ".#..................",
+    ".#..................",
+    "..#################.",
+    "..#################.",
+    "...################.",
+    "....##.#......##.#..",
+    "....#..#......#..#..",
+    "....#..#......#..#..",
+    "....#..#......#..#..",
+    "...##.##.....##.##..",
+    "....................",
+];
+
+const DOG_HEAD_SHUT: [&str; 6] = [
+    ".#..#....",
+    "##.##....",
+    "########.",
+    "##.######",
+    "#########",
+    ".###.....",
+];
+const DOG_HEAD_OPEN: [&str; 6] = [
+    ".#..#....",
+    "##.##....",
+    "########.",
+    "##.######",
+    "#####....",
+    ".########",
+];
 
 struct CerberusWatch;
 impl ProgressStyle for CerberusWatch {
@@ -1641,86 +1826,69 @@ impl ProgressStyle for CerberusWatch {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Cerberus: three animated dog-heads spread across the bar, jaws barking with time"
+        "Three-headed Cerberus pads along on its chain, each pointy-eared head bobbing and snapping as it keeps watch"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 40 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        let mid_y = (h / 2) as i32;
-        // The three heads spread from a cluster on the left to evenly spaced as progress → 1.
-        let base_cx = (w / 2) as i32;
-        // Spread: at progress=0 all three overlap at centre; at 1 they span 80% of w.
-        let spread = (ctx.eased * w as f32 * 0.4).round() as i32;
-        let head_xs: [i32; 3] = [base_cx - spread, base_cx, base_cx + spread];
-        let bob_freqs = [2.1f32, 2.7, 1.9];
+        // Hound body travels with progress; legs alternate stride frames.
+        let x = 4 + (ctx.eased * (wi - 42) as f32).round() as i32;
+        let stride = ((ctx.time * 5.0) as i32).rem_euclid(2) == 0;
+        stamp(grid, if stride { &HOUND_A } else { &HOUND_B }, x, hi - 11);
 
-        for (i, &hx) in head_xs.iter().enumerate() {
-            let bob = ((ctx.time * bob_freqs[i] + i as f32 * 1.2).sin() * (h as f32 * 0.08)).round()
-                as i32;
-            let hy = mid_y + bob;
-
-            // Head oval.
-            let head_rx = ((w as f32 * 0.06).round() as i32).max(2).min(w as i32 / 4);
-            let head_ry = ((h as f32 * 0.22).round() as i32).max(1);
-            let oval_steps = (head_rx * 6 + head_ry * 3).max(10) as usize;
-            for s in 0..oval_steps {
-                let angle = s as f32 / oval_steps as f32 * 2.0 * PI;
-                let ox = hx + (angle.cos() * head_rx as f32).round() as i32;
-                let oy = hy + (angle.sin() * head_ry as f32).round() as i32;
-                draw::dot_i(grid, ox, oy);
-            }
-
-            // Eyes.
-            draw::dot_i(grid, hx - 1, hy - head_ry / 2);
-            draw::dot_i(grid, hx + 1, hy - head_ry / 2);
-
-            // Jaw: lower part of the oval opens based on a bark cycle.
-            let bark = ((ctx.time * bob_freqs[i] * 1.5 + i as f32 * 0.8).sin()
-                * (head_ry as f32 * 0.4))
-                .round() as i32;
-            if bark > 0 {
-                // Upper jaw outline stays; lower jaw drops.
-                for dx in -head_rx..=head_rx {
-                    draw::dot_i(grid, hx + dx, hy + head_ry + bark);
-                }
-                // Tongue dot in the gap.
-                draw::dot_i(grid, hx, hy + head_ry + bark / 2);
-            }
-
-            // Ears: two points above head.
-            draw::dot_i(grid, hx - head_rx + 1, hy - head_ry - 2);
-            draw::dot_i(grid, hx + head_rx - 1, hy - head_ry - 2);
+        // Three necks fan out from the shoulders: one head reared high, one
+        // thrust forward, one held low.
+        let heads = [(16, 0), (28, 4), (22, 10)];
+        let roots = [(17, 8), (18, 8), (18, 10)];
+        for (i, (&(hx, hy), &(rx, ry))) in heads.iter().zip(roots.iter()).enumerate() {
+            let bob =
+                ((ctx.time * (2.0 + i as f32 * 0.6) + i as f32 * 2.0).sin() * 0.6).round() as i32;
+            let (hx, hy) = (x + hx, hy + bob);
+            line(grid, x + rx, ry, hx + 1, hy + 4);
+            let open = ((ctx.time * 3.0 + i as f32 * 0.66) as i32).rem_euclid(3) == 0;
+            stamp(
+                grid,
+                if open { &DOG_HEAD_OPEN } else { &DOG_HEAD_SHUT },
+                hx,
+                hy,
+            );
         }
 
-        // Body connecting the three heads: a wide thick bar below.
-        let body_y = mid_y + (h as f32 * 0.3).round() as i32;
-        draw::hline(
-            grid,
-            (base_cx - spread - 2).max(0) as usize,
-            (base_cx + spread + 2).min(w as i32 - 1) as usize,
-            body_y.clamp(0, h as i32 - 1) as usize,
-        );
-        draw::hline(
-            grid,
-            (base_cx - spread - 2).max(0) as usize,
-            (base_cx + spread + 2).min(w as i32 - 1) as usize,
-            (body_y + 1).clamp(0, h as i32 - 1) as usize,
-        );
+        // Stake at the left and a sagging chain to the hound's harness.
+        draw::vline(grid, 0, 7, h - 1);
+        draw::vline(grid, 1, 7, h - 1);
+        let (cx1, cy1) = (x + 3, 9);
+        let span = (cx1 - 2).max(1);
+        for cx in 2..cx1 {
+            let t = (cx - 2) as f32 / span as f32;
+            let cy = cy1 + ((t * PI).sin() * 3.0).round() as i32;
+            match cx.rem_euclid(4) {
+                0 | 2 => draw::dot_i(grid, cx, cy),
+                1 => {
+                    draw::dot_i(grid, cx, cy - 1);
+                    draw::dot_i(grid, cx, cy + 1);
+                }
+                _ => {}
+            }
+        }
 
-        // Underworld tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // Colour: chain steel, hound ash-brown, heads a darker brown.
+        tint_box(grid, 0, 0, wi, hi, Color::rgb(170, 170, 185));
+        tint_box(grid, 0, 6, 2, 10, Color::rgb(150, 100, 60));
+        tint_box(grid, x, 0, 36, hi, Color::rgb(160, 110, 90));
+        // Each head its own shade, so the three read apart.
+        let shades = [
+            Color::rgb(120, 78, 64),
+            Color::rgb(205, 150, 120),
+            Color::rgb(140, 92, 74),
+        ];
+        for (&(hx, hy), &shade) in heads.iter().zip(shades.iter()) {
+            tint_box(grid, x + hx, hy, 9, 6, shade);
         }
         Ok(())
     }
@@ -1729,9 +1897,13 @@ impl ProgressStyle for CerberusWatch {
 // ---------------------------------------------------------------------------
 // 10. Valkyrie Ride
 // ---------------------------------------------------------------------------
-// A horse+rider silhouette sweeps left→right (eased progress). A spear
-// extends forward from the rider; the horse gallops (leg cycle with time).
-// A trail of braille dots smears behind. Wings on the helmet beat with time.
+// A valkyrie in a winged helmet rides a galloping horse across the sky with
+// her spear levelled ahead of her. The horse's legs alternate stride frames,
+// and streaming speed lines behind her mark the distance ridden.
+
+const VALKYRIE: [&str; 8] = [
+    "#.....#", "##.#.##", "..###..", "...#...", ".#####.", "#.###.#", "..###..", "..#.#..",
+];
 
 struct ValkyriRide;
 impl ProgressStyle for ValkyriRide {
@@ -1742,108 +1914,42 @@ impl ProgressStyle for ValkyriRide {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Valkyrie charges across on horseback: spear extended, trail of glory behind"
+        "A winged-helmed valkyrie gallops across the sky on her steed, spear levelled, trailing streaming speed lines"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 36 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
 
-        let mid_y = (h / 2) as i32;
-        let cx = (ctx.eased * w as f32).round() as i32;
+        let x = (ctx.eased * (wi - 35) as f32).round() as i32;
+        let stride = ((ctx.time * 6.0) as i32).rem_euclid(2) == 0;
+        let y = if stride { 3 } else { 2 };
+        stamp(grid, if stride { &HORSE_A } else { &HORSE_B }, x, y);
 
-        // Trail of fading dots behind the rider.
-        let trail_len = ((w as f32 * 0.3) as i32).max(4);
-        for t in 1..=trail_len {
-            let tx = cx - t;
-            let ty = mid_y + ((ctx.time * 4.0 + t as f32 * 0.3).sin() * 1.0).round() as i32;
-            // Thinning trail: draw every other dot further back.
-            if t % 2 == 0 || t <= trail_len / 3 {
-                draw::dot_i(grid, tx, ty);
+        // Rider on the horse's back, spear couched forward past its head.
+        let (rx, ry) = (x + 7, y - 2);
+        stamp(grid, &VALKYRIE, rx, ry);
+        line(grid, rx + 6, ry + 5, x + 31, ry);
+        stamp(grid, &["#..", "###", "#.."], x + 31, ry - 1);
+
+        // Speed lines streaming behind her, scrolling with time.
+        let scroll = (ctx.time * 30.0) as i32;
+        for (row, phase) in [(y + 5, 0), (y + 8, 7), (y + 11, 3)] {
+            for tx in 0..x.min(wi) {
+                if (tx + scroll + phase).rem_euclid(9) < 5 {
+                    draw::dot_i(grid, tx, row);
+                }
             }
         }
 
-        // Horse body: horizontal ellipse.
-        let body_rx = ((w as f32 * 0.1) as i32).max(2);
-        let body_ry = ((h as f32 * 0.18) as i32).max(1);
-        let steps = (body_rx * 6 + body_ry * 3).max(10) as usize;
-        for s in 0..=steps {
-            let angle = s as f32 / steps as f32 * 2.0 * PI;
-            let bx = cx + (angle.cos() * body_rx as f32).round() as i32;
-            let by = mid_y + (angle.sin() * body_ry as f32).round() as i32;
-            draw::dot_i(grid, bx, by);
-        }
-
-        // Horse head & neck.
-        let neck_x = cx + body_rx;
-        let neck_y = mid_y - body_ry;
-        draw::dot_i(grid, neck_x, neck_y);
-        draw::dot_i(grid, neck_x + 1, neck_y - 1);
-        draw::dot_i(grid, neck_x + 2, neck_y - 2);
-        // Mane.
-        let mane = ((ctx.time * 8.0).sin() * 1.5).round() as i32;
-        draw::dot_i(grid, neck_x + 1, neck_y - 3 + mane);
-
-        // Rider torso: a vertical dot column above body.
-        let rider_x = cx;
-        for dy in 0..=(body_ry + 2) {
-            draw::dot_i(grid, rider_x, mid_y - dy);
-        }
-        // Rider head.
-        draw::dot_i(grid, rider_x, mid_y - body_ry - 3);
-        draw::dot_i(grid, rider_x + 1, mid_y - body_ry - 3);
-        // Helmet wings: two small arcs.
-        let helm_y = mid_y - body_ry - 4;
-        let wing_beat = ((ctx.time * 5.0).sin() * 1.5).round() as i32;
-        draw::dot_i(grid, rider_x - 2, helm_y - wing_beat.abs());
-        draw::dot_i(grid, rider_x - 3, helm_y - 1 - wing_beat.abs());
-        draw::dot_i(grid, rider_x + 3, helm_y - wing_beat.abs());
-        draw::dot_i(grid, rider_x + 4, helm_y - 1 - wing_beat.abs());
-
-        // Spear: long diagonal line extending forward and slightly upward.
-        let spear_len = ((w as f32 * 0.25) as i32).max(4);
-        for d in 1..=spear_len {
-            let spear_x = cx + body_rx + d + 2;
-            let spear_y = mid_y - body_ry - 1 - d / 4;
-            draw::dot_i(grid, spear_x, spear_y);
-        }
-        // Spear tip flare.
-        let tip_x = cx + body_rx + spear_len + 2;
-        let tip_y = mid_y - body_ry - 1 - spear_len / 4;
-        draw::dot_i(grid, tip_x + 1, tip_y - 1);
-        draw::dot_i(grid, tip_x + 1, tip_y + 1);
-
-        // Four galloping legs.
-        let leg_phases = [0.0f32, PI, PI * 0.5, PI * 1.5];
-        let leg_xs: [i32; 4] = [
-            cx - body_rx + 1,
-            cx - body_rx + 3,
-            cx + body_rx - 3,
-            cx + body_rx - 1,
-        ];
-        for (lx, phase) in leg_xs.iter().zip(leg_phases.iter()) {
-            let cycle = (ctx.time * 7.0 + phase).sin();
-            let knee_y = mid_y + body_ry + 2;
-            let foot_y = knee_y + (2.0 + cycle * 2.0).round() as i32;
-            let foot_x = lx + (cycle * 1.5).round() as i32;
-            draw::dot_i(grid, *lx, mid_y + body_ry);
-            draw::dot_i(grid, foot_x, knee_y);
-            draw::dot_i(grid, foot_x, foot_y);
-        }
-
-        // Nordic sky tint.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = 1.0 - cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
-                grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t * 0.8 + 0.1),
-            );
-        }
+        // Colour: lines from the palette, steed slate, rider gold, spear steel.
+        tint_box(grid, 0, 0, wi, hi, ctx.palette.sample(0.6));
+        tint_box(grid, x, y, 25, 13, Color::rgb(150, 160, 190));
+        tint_box(grid, rx, ry, 7, 6, Color::rgb(250, 200, 70));
+        tint_box(grid, rx + 8, ry - 1, 27, 4, Color::rgb(225, 230, 240));
         Ok(())
     }
 }
@@ -1851,10 +1957,10 @@ impl ProgressStyle for ValkyriRide {
 // ---------------------------------------------------------------------------
 // 11. Yggdrasil Grows
 // ---------------------------------------------------------------------------
-// A vertical trunk grows upward from the bottom with eased progress.
-// Branches fork left and right at several heights, extending proportionally.
-// Roots mirror downward. Leaves shimmer with time on the branches.
-// This is pure tree geometry, not a traversal or wave.
+// The world tree grows from a sapling into a vast ash as progress advances: a
+// thick trunk rises from the ground line, forked branches reach out, a broad
+// dome of leaves widens over them (rustling with time), and roots spread
+// down into the earth below.
 
 struct YggdrasilGrows;
 impl ProgressStyle for YggdrasilGrows {
@@ -1865,108 +1971,69 @@ impl ProgressStyle for YggdrasilGrows {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Yggdrasil world-tree grows trunk, branches, and roots as progress advances"
+        "The world tree grows from sapling to vast ash: trunk rises, branches fork, a rustling crown widens, roots spread"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 12 || h < 12 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (wi, hi) = (w as i32, h as i32);
+        let p = ctx.eased;
+        let cx = wi / 2;
+        let ground = hi - 4;
 
-        let cx = (w / 2) as i32;
-        let ground_y = (h * 2 / 3) as i32; // ground line at 2/3 height
-
-        // Trunk: grows upward from ground with progress.
-        let trunk_reach = (h as i32 / 3).max(1);
-        let trunk_h = (ctx.eased * trunk_reach as f32).round() as i32;
-        for dy in 0..trunk_h {
-            let trunk_y = ground_y - dy;
-            // Trunk is 3 dots wide.
-            draw::dot_i(grid, cx - 1, trunk_y);
-            draw::dot_i(grid, cx, trunk_y);
-            draw::dot_i(grid, cx + 1, trunk_y);
-        }
-
-        // Root system: grows downward.
-        let root_depth = (h as i32 - ground_y - 1).max(1);
-        let root_h = (ctx.eased * root_depth as f32).round() as i32;
-        let root_count = 3usize;
-        for ri in 0..root_count {
-            let root_angle = -PI / 4.0 + (ri as f32 / (root_count - 1).max(1) as f32) * PI / 2.0;
-            let sway_freq = 0.8 + ri as f32 * 0.3;
-            for seg in 0..root_h {
-                let t = seg as f32 / root_depth.max(1) as f32;
-                let spread = (t * w as f32 * 0.15).round() as i32;
-                let sway = ((ctx.time * sway_freq + ri as f32 * 1.1 + seg as f32 * 0.1).sin() * 0.8)
-                    .round() as i32;
-                let rx = cx + root_angle.sin() as i32 * spread + sway;
-                let ry = ground_y + 1 + seg;
-                draw::dot_i(grid, rx, ry);
+        // Trunk: grows taller and thicker with progress.
+        let trunk_h = 2 + (p * (ground - 5) as f32).round() as i32;
+        let top = ground - trunk_h;
+        let half = if p > 0.5 { 2 } else { 1 };
+        for y in top..=ground {
+            for dx in -half..=half {
+                draw::dot_i(grid, cx + dx, y);
             }
         }
 
-        // Branches: three tiers, each extending proportionally with progress.
-        let branch_tiers = [
-            (0.3f32, 0.55f32, w as f32 * 0.35),
-            (0.55, 0.75, w as f32 * 0.27),
-            (0.75, 1.0, w as f32 * 0.18),
-        ];
-        for (tier_idx, &(lo_prog, hi_prog, max_branch_w)) in branch_tiers.iter().enumerate() {
-            // How far this tier has grown (0..1 within its own progress window).
-            let tier_frac = ((ctx.eased - lo_prog) / (hi_prog - lo_prog)).clamp(0.0, 1.0);
-            if tier_frac <= 0.0 {
-                continue;
-            }
-
-            // Branch root y on the trunk.
-            let branch_root_y = ground_y
-                - (tier_idx as f32 / branch_tiers.len() as f32 * trunk_reach as f32).round() as i32
-                - 1;
-            let branch_len = (tier_frac * max_branch_w).round() as i32;
-
-            // Left branch: angle upward-left.
-            for b in 0..=branch_len {
-                let t = b as f32 / max_branch_w.max(1.0);
-                let leaf_sway =
-                    ((ctx.time * 1.5 + tier_idx as f32 + b as f32 * 0.2).sin() * t * 1.5).round()
-                        as i32;
-                let bx = cx - b;
-                let by = branch_root_y - (t * h as f32 * 0.15).round() as i32 + leaf_sway;
-                draw::dot_i(grid, bx, by);
-                // Leaf cluster near the tip.
-                if b > branch_len - 3 {
-                    draw::dot_i(grid, bx - 1, by - 1 + leaf_sway);
-                    draw::dot_i(grid, bx, by - 2 + leaf_sway);
-                }
-            }
-            // Right branch: mirror.
-            for b in 0..=branch_len {
-                let t = b as f32 / max_branch_w.max(1.0);
-                let leaf_sway =
-                    ((ctx.time * 1.5 + tier_idx as f32 + b as f32 * 0.2).sin() * t * 1.5).round()
-                        as i32;
-                let bx = cx + b;
-                let by = branch_root_y - (t * h as f32 * 0.15).round() as i32 + leaf_sway;
-                draw::dot_i(grid, bx, by);
-                if b > branch_len - 3 {
-                    draw::dot_i(grid, bx + 1, by - 1 + leaf_sway);
-                    draw::dot_i(grid, bx, by - 2 + leaf_sway);
+        // Crown: a dome of leaves whose half-width grows with progress.
+        let rx = 3.0 + p * (wi as f32 / 2.0 - 5.0);
+        let ry = 1.5 + p * (top as f32 - 0.5).max(0.0);
+        let tick = (ctx.time * 6.0) as i32;
+        let crown_y = top as f32;
+        for y in 0..=top {
+            for x in 0..wi {
+                let nx = (x - cx) as f32 / rx;
+                let ny = (y as f32 - crown_y) / ry.max(1.0);
+                if nx * nx + ny * ny <= 1.0 && (x * 3 + y * 5 + tick).rem_euclid(5) != 0 {
+                    draw::dot_i(grid, x, y);
                 }
             }
         }
 
-        // Nature gradient tint: root-brown at bottom, sky-blue at top.
-        let (_, cells_h) = grid.dimensions();
-        for cy in 0..cells_h {
-            let t = cy as f32 / cells_h.max(1) as f32;
-            draw::tint_row(
+        // Branches: forks from the trunk top out toward the crown's edge.
+        for side in [-1, 1] {
+            let reach = (rx * 0.8) as i32;
+            line(
                 grid,
-                cy,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
+                cx,
+                top + 2,
+                cx + side * reach,
+                top - (ry * 0.5) as i32,
             );
+            line(grid, cx, top + 1, cx + side * reach / 2, top - ry as i32);
         }
+
+        // Ground line and roots spreading below it.
+        draw::hline(grid, 0, w - 1, ground as usize);
+        let root_reach = (p * wi as f32 * 0.4) as i32 + 2;
+        for (k, side) in [(0, -1), (1, 1), (2, -1), (3, 1)] {
+            let len = root_reach - k * root_reach / 5;
+            line(grid, cx, ground, cx + side * len, hi - 1 - (k % 2));
+        }
+
+        // Colour: leaves green, trunk and roots bark brown, ground earthy.
+        tint_box(grid, 0, 0, wi, ground, Color::rgb(70, 200, 90));
+        tint_box(grid, cx - 3, top + 1, 6, trunk_h, Color::rgb(170, 110, 60));
+        tint_box(grid, 0, ground, wi, 4, Color::rgb(140, 90, 50));
         Ok(())
     }
 }
@@ -1974,10 +2041,10 @@ impl ProgressStyle for YggdrasilGrows {
 // ---------------------------------------------------------------------------
 // 12. Ouroboros
 // ---------------------------------------------------------------------------
-// A snake traces a circular arc (the arc angle = eased × 2π). At progress=1
-// the circle is complete (snake biting its tail). The snake head and body
-// are drawn as dots along the arc; the tail end tapers. The whole circle
-// slowly rotates with time for animation even when progress is static.
+// A thick-bodied serpent coils around an oval ring. Its body grows head-first
+// around the loop with progress — scaled with a diamond pattern, tapering to
+// a pointed tail — and at 100 % its open jaws close on its own tail. The whole
+// ring slowly rotates with time.
 
 struct Ouroboros;
 impl ProgressStyle for Ouroboros {
@@ -1988,80 +2055,256 @@ impl ProgressStyle for Ouroboros {
         "mythology"
     }
     fn describe(&self) -> &str {
-        "Ouroboros: a snake traces a circle that closes completely as progress reaches 100%"
+        "A scaled serpent coils around a rotating ring, its open jaws closing on its own tail at 100%"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        if w == 0 || h == 0 {
+        if w < 16 || h < 8 {
+            tiny_fill(grid, ctx, w, h);
             return Ok(());
         }
+        let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0 - 0.5);
+        let rx = w as f32 / 2.0 - 4.0;
+        let ry = h as f32 / 2.0 - 2.0;
 
-        let cx = (w / 2) as i32;
-        let cy = (h / 2) as i32;
-        // Radius fits within the smaller dimension.
-        let rx = ((w / 2).saturating_sub(3).max(2)) as f32;
-        let ry = ((h / 2).saturating_sub(2).max(1)) as f32;
-
-        // Arc angle: 0 at start, 2π at complete. Plus slow rotation from time.
-        let arc = ctx.eased * 2.0 * PI;
-        let rot = ctx.time * 0.4; // slow rotation for constant animation
-
-        // Body thickness scales slightly at head.
-        let body_steps = ((arc / (2.0 * PI)) * 300.0).round() as usize + 1;
-        let body_steps = body_steps.max(2);
-
-        for s in 0..=body_steps {
-            let t = s as f32 / body_steps.max(1) as f32;
-            let angle = rot + t * arc;
-            let sx = cx + (angle.cos() * rx).round() as i32;
-            let sy = cy + (angle.sin() * ry).round() as i32;
-            draw::dot_i(grid, sx, sy);
-
-            // Head: extra thick dot cluster at the leading end.
-            if s == body_steps {
-                draw::dot_i(grid, sx + 1, sy);
-                draw::dot_i(grid, sx, sy + 1);
-                draw::dot_i(grid, sx - 1, sy);
-                // Eye: one dot slightly inside the circle.
-                let eye_x = cx + ((angle - 0.2).cos() * (rx - 2.0)).round() as i32;
-                let eye_y = cy + ((angle - 0.2).sin() * (ry - 1.0)).round() as i32;
-                draw::dot_i(grid, eye_x, eye_y);
-            }
-
-            // Tail taper: shed dots near the start.
-            if s == 0 && arc < 2.0 * PI * 0.98 {
-                // Tail tip: single dot only (no extra).
-            } else if s < 3 {
-                // Build up the tail with 2-dot thickness for most of the arc.
-                draw::dot_i(grid, sx + 1, sy);
+        // Body spans from the tail angle to the head angle; a gap remains
+        // until progress completes. Rotation keeps it moving.
+        let arc = 0.5 + ctx.eased * (2.0 * PI - 0.8);
+        let rot = ctx.time * 0.5;
+        let steps = (arc * rx * 1.4) as usize + 2;
+        for s in 0..=steps {
+            let t = s as f32 / steps as f32;
+            let a = rot + t * arc;
+            // Thickness tapers from tail (1) to body (3 rings of dots).
+            let thick = if t < 0.08 {
+                1
+            } else if t < 0.2 {
+                2
+            } else {
+                3
+            };
+            for layer in 0..thick {
+                let k = layer as f32 - (thick - 1) as f32 / 2.0;
+                // Diamond scale pattern: skip a lattice of dots on the body.
+                if thick == 3 && layer == 1 && s % 6 == 3 {
+                    continue;
+                }
+                let x = cx + a.cos() * (rx + k * 1.6);
+                let y = cy + a.sin() * (ry + k);
+                draw::dot_i(grid, x.round() as i32, y.round() as i32);
             }
         }
 
-        // Scales: small perpendicular ticks along the body every ~20 steps.
-        let scale_interval = 20usize;
-        for s in (0..=body_steps).step_by(scale_interval.max(1)) {
-            let t = s as f32 / body_steps.max(1) as f32;
-            let angle = rot + t * arc;
-            let sx = cx + (angle.cos() * rx).round() as i32;
-            let sy = cy + (angle.sin() * ry).round() as i32;
-            // Perpendicular direction: tangent rotated 90°.
-            let perp_x = (-angle.sin()).signum() as i32;
-            let perp_y = (angle.cos()).signum() as i32;
-            draw::dot_i(grid, sx + perp_x, sy + perp_y);
+        // Head: a wedge at the leading end with open jaws and an eye.
+        let ha = rot + arc;
+        let (hx, hy) = (
+            (cx + ha.cos() * rx).round() as i32,
+            (cy + ha.sin() * ry).round() as i32,
+        );
+        // Tangent direction (where the head points) in dot space.
+        let (tx, ty) = (-ha.sin() * rx, ha.cos() * ry);
+        let len = (tx * tx + ty * ty).sqrt().max(0.01);
+        let (ux, uy) = (tx / len, ty / len);
+        let gape = if ctx.eased >= 1.0 {
+            0.0
+        } else {
+            1.5 + (ctx.time * 5.0).sin()
+        };
+        for d in 0..5 {
+            let df = d as f32;
+            for side in [-1.0f32, 1.0] {
+                let spread = 1.4 + df * gape * 0.3;
+                let jx = hx as f32 + ux * df - uy * side * spread;
+                let jy = hy as f32 + uy * df + ux * side * spread * 0.6;
+                draw::dot_i(grid, jx.round() as i32, jy.round() as i32);
+            }
+        }
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                draw::dot_i(grid, hx + dx, hy + dy);
+            }
         }
 
-        // Mystic tint: shifts through the palette with time to show constant motion.
-        let (_, cells_h) = grid.dimensions();
-        for cy_c in 0..cells_h {
-            let t = ((cy_c as f32 / cells_h.max(1) as f32) + ctx.time * 0.04) % 1.0;
-            draw::tint_row(
-                grid,
-                cy_c,
-                0,
-                ctx.width.saturating_sub(1),
-                ctx.palette.sample(t),
-            );
+        // Colour: body along the palette, head gold.
+        let (cells_w, _) = grid.dimensions();
+        for cx_c in 0..cells_w {
+            let t = cx_c as f32 / cells_w.max(1) as f32;
+            tint_box(grid, cx_c as i32 * 2, 0, 2, h as i32, ctx.palette.sample(t));
         }
+        tint_box(grid, hx - 5, hy - 4, 11, 9, Color::rgb(255, 210, 70));
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 13. Trojan Horse
+// ---------------------------------------------------------------------------
+// The great wooden horse, stood on a wheeled platform, is rolled left→right
+// toward the walls of Troy — a crenellated wall between two towers with an
+// arched gate. Its wheels turn as it moves; at 100 % it reaches the gate.
+
+const TROY_WALL: [&str; 14] = [
+    "###.#.###.......###.#.###",
+    "#########.......#########",
+    "#########.#.#.#.#########",
+    "#########################",
+    "#########################",
+    "#########################",
+    "#########################",
+    "#########.......#########",
+    "########.........########",
+    "########.........########",
+    "########.........########",
+    "########.........########",
+    "########.........########",
+    "########.........########",
+];
+
+struct TrojanHorse;
+impl ProgressStyle for TrojanHorse {
+    fn name(&self) -> &str {
+        "trojan-horse"
+    }
+    fn theme(&self) -> &str {
+        "mythology"
+    }
+    fn describe(&self) -> &str {
+        "The wooden horse rolls on turning wheels toward the towered walls and arched gate of Troy"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 52 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+
+        // The walls of Troy stand at the right edge.
+        let troy = wi - 25;
+        stamp(grid, &TROY_WALL, troy, hi - 14);
+
+        // Horse on its platform, rolled toward the gate with progress.
+        let x = (ctx.eased * (troy - 25) as f32).round() as i32;
+        stamp(grid, &HORSE_B, x, 0);
+        draw::hline(grid, x.max(0) as usize, (x + 22).max(0) as usize, 12);
+
+        // Wheels: rings of six dots with a gap that turns as the horse rolls.
+        let spin = (x / 2).rem_euclid(3);
+        let ring = [(-2, 0), (-1, -1), (1, -1), (2, 0), (1, 1), (-1, 1)];
+        for wx in [x + 4, x + 18] {
+            draw::dot_i(grid, wx, 14);
+            for (i, &(dx, dy)) in ring.iter().enumerate() {
+                if (i as i32 + spin) % 3 != 0 {
+                    draw::dot_i(grid, wx + dx, 14 + dy);
+                }
+            }
+        }
+
+        // Dust kicked up behind the platform, drifting with time.
+        let tick = (ctx.time * 8.0) as i32;
+        for d in 0..x.min(wi) {
+            if (d * 5 + tick).rem_euclid(11) == 0 {
+                draw::dot_i(grid, d, hi - 1 - (d + tick).rem_euclid(2));
+            }
+        }
+
+        // Colour: horse timber, platform dark wood, Troy sandstone.
+        tint_box(grid, 0, 0, wi, hi, Color::rgb(150, 120, 90));
+        tint_box(grid, x, 0, 24, 13, Color::rgb(200, 140, 70));
+        tint_box(grid, troy, 0, 25, hi, Color::rgb(220, 205, 160));
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 14. Mjolnir Strike
+// ---------------------------------------------------------------------------
+// Thor's hammer — a broad steel head on a short leather-wrapped handle with
+// a pommel loop — hovers over the leading edge of a glowing rune-stone road.
+// It rises and slams down in a loop; each impact throws jagged lightning out
+// to both sides. The road lengthens with progress, carrying the hammer.
+
+const MJOLNIR: [&str; 12] = [
+    "......##......",
+    ".....#..#.....",
+    "......##......",
+    "......##......",
+    "......##......",
+    "......##......",
+    "##############",
+    "##############",
+    "##.########.##",
+    "##.#......#.##",
+    "##############",
+    "##############",
+];
+
+struct MjolnirStrike;
+impl ProgressStyle for MjolnirStrike {
+    fn name(&self) -> &str {
+        "mjolnir-strike"
+    }
+    fn theme(&self) -> &str {
+        "mythology"
+    }
+    fn describe(&self) -> &str {
+        "Thor's hammer slams down at the edge of a growing rune-stone road, throwing jagged lightning on impact"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w < 24 || h < 16 {
+            tiny_fill(grid, ctx, w, h);
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+
+        // Rune road: a solid course with carved marks above, up to the edge.
+        let edge = (ctx.eased * wi as f32).round() as i32;
+        for x in 0..edge.min(wi) {
+            draw::dot_i(grid, x, hi - 1);
+            if x % 4 != 3 && (x / 4) % 2 == 0 || x % 4 == 1 {
+                draw::dot_i(grid, x, hi - 2);
+            }
+        }
+
+        // Hammer: slow rise, fast slam, short rest on the road.
+        let phase = (ctx.time * 1.2).rem_euclid(1.0);
+        let lift = if phase < 0.6 {
+            phase / 0.6 * 2.0
+        } else if phase < 0.7 {
+            2.0 - (phase - 0.6) / 0.1 * 2.0
+        } else {
+            0.0
+        };
+        let hx = (edge - 7).clamp(0, wi - 14);
+        let hy = hi - 14 - lift.round() as i32;
+        stamp(grid, &MJOLNIR, hx, hy);
+
+        // Lightning: two jagged bolts from the head on impact.
+        let impact = phase >= 0.7;
+        if impact {
+            let jag = ((ctx.time * 20.0) as i32).rem_euclid(2);
+            for side in [-1, 1] {
+                let mut bx = if side < 0 { hx - 1 } else { hx + 14 };
+                let mut by = hy + 7;
+                for seg in 0..7 {
+                    let dy = if (seg + jag) % 2 == 0 { -1 } else { 2 };
+                    for _ in 0..3 {
+                        draw::dot_i(grid, bx, by);
+                        bx += side;
+                    }
+                    by = (by + dy).clamp(0, hi - 3);
+                }
+            }
+        }
+
+        // Colour: road in the palette, steel head, leather handle, bolts.
+        tint_box(grid, 0, hi - 4, wi, 4, ctx.palette.sample(0.1));
+        if impact {
+            tint_box(grid, hx - 22, hy + 4, 58, 9, Color::rgb(200, 235, 255));
+        }
+        tint_box(grid, hx, hy, 14, 6, Color::rgb(170, 110, 60));
+        tint_box(grid, hx, hy + 6, 14, 6, Color::rgb(200, 205, 220));
         Ok(())
     }
 }

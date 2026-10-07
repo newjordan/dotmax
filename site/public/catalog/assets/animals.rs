@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -839,23 +874,24 @@ pub fn render_string(style: &dyn ProgressStyle, ctx: &BarContext) -> Result<Stri
 
 pub mod styles {
     pub mod animals {
-//! Animals-themed progress bars — ten distinct creatures drawn in braille dots.
+//! Animals-themed progress bars — eleven distinct creatures drawn in braille dots.
 //!
 //! Every bar is stateless: all motion comes from `ctx.time` (for perpetual
 //! animation) and `ctx.eased` (for progress-driven advancement). The bars use
 //! only the `draw::` helpers so all writes are silently bounds-safe.
 //!
 //! Styles in this file:
-//! - `caterpillar`  — segmented body that undulates across the bar
-//! - `snail`        — shell advancing over a slime trail
-//! - `inchworm`     — bunching and stretching segments via eased spacing
-//! - `fish-school`  — sine-bobbing dots swimming in formation
-//! - `snake`        — sine-wave lateral slither advancing with progress
+//! - `caterpillar`  — round-segmented crawler munching the leaves along a twig
+//! - `snail`        — spiral-shelled snail with eye stalks on a slime trail
+//! - `inchworm`     — looping arch that stretches flat along a ruler
+//! - `fish-school`  — forked-tail fish swimming in formation, trailing bubbles
+//! - `snake`        — banded S-curve body with a head and flicking tongue
 //! - `rabbit-hops`  — parabolic jump arcs across discrete hop chunks
-//! - `paw-prints`   — alternating offset prints appearing one by one
-//! - `bird-flock`   — V-formation sweeping across the bar
-//! - `turtle`       — dome shell that fills from the bottom up
-//! - `ant-march`    — ants carrying the load in single file
+//! - `paw-prints`   — four-toed prints stepping left-right one by one
+//! - `bird-flock`   — V-formation of flapping gulls
+//! - `turtle`       — plate-shelled turtle plodding over sand
+//! - `ant-march`    — six-legged ants hauling crumbs toward an anthill
+//! - `cat-prowl`    — tabby with pointed ears and curled tail chasing yarn
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -920,17 +956,58 @@ impl<S: ProgressStyle> ProgressStyle for Tinted<S> {
 /// into a gallery or driven individually.
 pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
     vec![
-        Box::new(Tinted(Caterpillar)),
-        Box::new(Tinted(Snail)),
-        Box::new(Tinted(Inchworm)),
+        Box::new(Caterpillar),
+        Box::new(Snail),
+        Box::new(Inchworm),
         Box::new(FishSchool),
-        Box::new(Tinted(Snake)),
+        Box::new(Snake),
         Box::new(Tinted(RabbitHops)),
         Box::new(PawPrints),
         Box::new(BirdFlock),
-        Box::new(Tinted(Turtle)),
+        Box::new(Turtle),
         Box::new(AntMarch),
+        Box::new(CatProwl),
     ]
+}
+
+// ── Sprite helpers ───────────────────────────────────────────────────────────
+
+/// Stamp an ASCII sprite (`#` = dot) with its top-left corner at `(x, y)`.
+fn stamp(grid: &mut BrailleGrid, rows: &[&str], x: i32, y: i32) {
+    for (dy, row) in rows.iter().enumerate() {
+        for (dx, c) in row.bytes().enumerate() {
+            if c == b'#' {
+                draw::dot_i(grid, x + dx as i32, y + dy as i32);
+            }
+        }
+    }
+}
+
+/// Filled disc of dots centred on `(cx, cy)`.
+fn disc(grid: &mut BrailleGrid, cx: i32, cy: i32, r: f32) {
+    let ri = r.ceil() as i32;
+    for dy in -ri..=ri {
+        for dx in -ri..=ri {
+            if (dx * dx + dy * dy) as f32 <= r * r {
+                draw::dot_i(grid, cx + dx, cy + dy);
+            }
+        }
+    }
+}
+
+/// Colour every non-empty cell overlapping the dot rectangle `[x0, x1] × [y0, y1]`.
+fn paint(grid: &mut BrailleGrid, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+    grid.enable_color_support();
+    let (cw, ch) = grid.dimensions();
+    let (cx1, cy1) = ((x1 / 2).min(cw as i32 - 1), (y1 / 4).min(ch as i32 - 1));
+    for cy in (y0.max(0) / 4)..=cy1 {
+        for cx in (x0.max(0) / 2)..=cx1 {
+            let c = grid.get_char(cx as usize, cy as usize);
+            if c != '\u{2800}' && c != ' ' {
+                let _ = grid.set_cell_color(cx as usize, cy as usize, color);
+            }
+        }
+    }
 }
 
 // ── Caterpillar ──────────────────────────────────────────────────────────────
@@ -944,58 +1021,85 @@ impl ProgressStyle for Caterpillar {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Segmented caterpillar body undulating across the bar as it advances"
+        "Round-segmented green caterpillar with a red head and antennae, rippling along a twig and munching the leaves ahead"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let mid = h / 2;
-        // How far the head has advanced (in dots).
-        let head_x = (ctx.eased * w as f32) as usize;
-        let seg_spacing = 4usize;
-        // Phase offset scrolls with time for continuous crawl motion.
-        let phase_offset = ctx.time * 6.0;
-        // Draw body segments from tail to head.
-        let mut x = 0usize;
-        while x < head_x {
-            // Sine-wave vertical displacement — body undulates.
-            let wave = ((x as f32 * 0.4 + phase_offset) * 1.0).sin();
-            let amp = ((h / 2).saturating_sub(1).max(1)) as f32 * 0.6;
-            let y = (mid as f32 + wave * amp).round() as usize;
-            let y = y.min(h - 1);
-            // Segment body dot (slightly wider near center).
-            draw::dot(grid, x, y);
-            if x + 1 < head_x {
-                draw::dot(grid, x + 1, y);
+        let (wi, hi) = (w as i32, h as i32);
+        let twig = hi - 1;
+        draw::hline(grid, 0, w - 1, twig as usize);
+        // Head position: the caterpillar eats its way from left to right.
+        let head_x = 26 + (ctx.eased * (wi - 30).max(0) as f32) as i32;
+        // Leaves still standing ahead of the head; eaten ones leave a stub.
+        for k in 0..=(wi / 10) {
+            let lx = k * 10 + 5;
+            if lx > head_x + 3 {
+                stamp(
+                    grid,
+                    &[" ### ", "#####", "#####", " ### ", "  #  "],
+                    lx - 2,
+                    twig - 5,
+                );
+            } else {
+                draw::dot_i(grid, lx, twig - 1);
             }
-            // Every seg_spacing dots, draw a leg nub above and below.
-            if (x / seg_spacing) % 2 == 0 {
-                if y + 1 < h {
-                    draw::dot(grid, x, y + 1);
-                }
-                if y >= 1 {
-                    draw::dot(grid, x, y - 1);
-                }
-            }
-            x += seg_spacing;
         }
-        // Head: two dots at the leading edge with antennae.
-        if head_x > 0 {
-            let hx = head_x.min(w - 1);
-            let hy = mid.min(h - 1);
-            draw::dot(grid, hx, hy);
-            // Antenna: two dots diagonally up.
-            draw::dot_i(grid, hx as i32 + 1, hy as i32 - 1);
-            draw::dot_i(grid, hx as i32 + 1, hy as i32 - 2);
-            draw::dot_i(grid, hx as i32 + 2, hy as i32 - 1);
+        paint(grid, 0, twig - 6, wi, twig, Color::rgb(70, 160, 70));
+        paint(grid, 0, twig, wi, twig, Color::rgb(150, 105, 60));
+        // Body: round segments; a hump ripples tail→head (peristaltic crawl).
+        let base = twig - 4;
+        for i in (1..=6i32).rev() {
+            let wave = ((i as f32 * 0.9 - ctx.time * 2.0 * PI * 0.75).sin()).max(0.0);
+            let sy = base - (wave * 2.5).round() as i32;
+            let sx = head_x - i * 5 + 1;
+            disc(grid, sx, sy, 2.4);
+            draw::dot_i(grid, sx, sy + 3);
         }
+        paint(
+            grid,
+            head_x - 34,
+            0,
+            head_x - 3,
+            twig - 1,
+            Color::rgb(130, 220, 70),
+        );
+        // Head with antennae that twitch.
+        let twitch = ((ctx.time * 3.0) as i32).rem_euclid(2);
+        disc(grid, head_x + 1, base - 1, 3.0);
+        draw::dot_i(grid, head_x + 2, base - 5);
+        draw::dot_i(grid, head_x + 3 + twitch, base - 6);
+        draw::dot_i(grid, head_x - 1, base - 5);
+        draw::dot_i(grid, head_x - 1 + twitch, base - 6);
+        paint(
+            grid,
+            head_x - 2,
+            0,
+            head_x + 5,
+            twig - 1,
+            Color::rgb(235, 80, 60),
+        );
         Ok(())
     }
 }
 
 // ── Snail ─────────────────────────────────────────────────────────────────────
+
+/// Snail facing right: spiral shell riding on a foot that tapers to the head.
+const SNAIL: [&str; 10] = [
+    "    #####          ",
+    "  ##     ##        ",
+    " #  #####  #       ",
+    "#  #     #  #      ",
+    "# #  ##   # #   ## ",
+    "# #  # #  # #  ####",
+    "#  #  ## #  # #####",
+    " #  ####   # ######",
+    "  ##     ## #######",
+    "####################",
+];
 
 struct Snail;
 impl ProgressStyle for Snail {
@@ -1006,52 +1110,44 @@ impl ProgressStyle for Snail {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Snail leaving a slime trail — shell advances, trail fills behind it"
+        "Spiral-shelled snail with waving eye stalks gliding right on a glistening slime trail"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let base = (h - 1).min(h.saturating_sub(1));
-        let head_x = (ctx.eased * w as f32) as usize;
-        // Slime trail: a single dot line along the base behind the snail.
-        if head_x > 0 {
-            draw::hline(grid, 0, head_x.saturating_sub(1).min(w - 1), base);
-            // Slime shimmer — occasional dots one row above the trail.
-            let shimmer_period = 8usize;
-            let mut sx = 0usize;
-            while sx < head_x.saturating_sub(2) {
-                draw::dot(grid, sx, base.saturating_sub(1));
-                sx += shimmer_period;
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 1;
+        let sx = (ctx.eased * (wi - 22).max(0) as f32) as i32;
+        let top = ground - 9;
+        // Slime trail: glints shimmer along the path already travelled.
+        let shimmer = (ctx.time * 6.0) as i32;
+        for x in 0..sx.max(0) + 2 {
+            if (x + shimmer) % 5 != 0 {
+                draw::dot_i(grid, x, ground);
             }
         }
-        // Shell: a small dome at head_x.
-        let sx = head_x.min(w.saturating_sub(1));
-        let shell_h = (h / 2).max(2);
-        let shell_w = (shell_h).min(w.saturating_sub(sx));
-        // Dome outline: arc of dots.
-        for i in 0..=shell_w {
-            let t = if shell_w == 0 {
-                0.5
-            } else {
-                i as f32 / shell_w as f32
-            };
-            let arc_y = (base as f32 - (1.0 - (t * PI).sin() * (shell_h as f32 - 1.0)).max(0.0))
-                .round() as usize;
-            let arc_y = arc_y.max(base.saturating_sub(shell_h));
-            draw::dot(grid, (sx + i).min(w - 1), arc_y.min(h - 1));
+        paint(grid, 0, ground, sx + 1, ground, Color::rgb(150, 190, 230));
+        stamp(grid, &SNAIL, sx, top);
+        // Eye stalks sway on the time clock.
+        let sway = ((ctx.time * PI).sin() * 1.4).round() as i32;
+        for j in 1..=4i32 {
+            let lean = (sway * j) / 4;
+            draw::dot_i(grid, sx + 16 + lean, top + 4 - j);
+            draw::dot_i(grid, sx + 18 + lean + j / 2, top + 4 - j);
         }
-        // Shell spiral (time-animated bob).
-        let bob = ((ctx.time * 3.0).sin() * 0.4).round() as i32;
-        let inner_x = sx as i32 + shell_w as i32 / 2;
-        let inner_y = base as i32 - shell_h as i32 / 2 + bob;
-        draw::dot_i(grid, inner_x, inner_y);
-        // Head: eyestalk.
-        let eye_x = sx as i32 + shell_w as i32 + 1;
-        draw::dot_i(grid, eye_x, base as i32);
-        draw::dot_i(grid, eye_x, base as i32 - 1);
-        draw::dot_i(grid, eye_x + 1, base as i32 - 2);
+        disc(grid, sx + 16 + sway, top - 1, 0.9);
+        disc(grid, sx + 20 + sway, top - 1, 0.9);
+        paint(
+            grid,
+            sx + 12,
+            top - 2,
+            sx + 22,
+            ground,
+            Color::rgb(190, 210, 150),
+        );
+        paint(grid, sx, top, sx + 11, ground - 1, Color::rgb(220, 140, 70));
         Ok(())
     }
 }
@@ -1067,62 +1163,94 @@ impl ProgressStyle for Inchworm {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Inchworm bunching and stretching — eased segment spacing gives organic motion"
+        "Inchworm looping into an arch and stretching flat as it measures its way along a ruler"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let mid = h / 2;
-        // The inchworm body spans from 0 to head_x, split into N segments.
-        let head_x = (ctx.eased * w as f32) as usize;
-        let n_segs = 6usize;
-        // Bunch/stretch phase: oscillates with time. 0 = fully bunched, 1 = stretched.
-        let stretch_phase = ((ctx.time * 2.0).sin() * 0.5 + 0.5) as f32;
-        // Map segment index → x position using an eased distribution.
-        for seg in 0..=n_segs {
-            let raw_t = if n_segs == 0 {
-                0.5
-            } else {
-                seg as f32 / n_segs as f32
-            };
-            // Interpolate between bunched (quadratic cluster at head) and stretched (linear).
-            let bunched = raw_t * raw_t; // cluster toward head
-            let t = bunched * (1.0 - stretch_phase) + raw_t * stretch_phase;
-            let sx = (t * head_x as f32) as usize;
-            let sx = sx.min(w - 1);
-            // Arch height: tallest in the middle of the body.
-            let arch = (PI * raw_t).sin();
-            let arch_h = (arch * (h / 2) as f32).round() as usize;
-            let sy = mid.saturating_sub(arch_h).min(h - 1);
-            draw::dot(grid, sx, sy);
-            // Connect adjacent segments with a line.
-            if seg > 0 {
-                let prev_t_raw = (seg - 1) as f32 / n_segs as f32;
-                let prev_bunched = prev_t_raw * prev_t_raw;
-                let prev_t = prev_bunched * (1.0 - stretch_phase) + prev_t_raw * stretch_phase;
-                let prev_x = (prev_t * head_x as f32) as usize;
-                let prev_arch = (PI * prev_t_raw).sin();
-                let prev_arch_h = (prev_arch * (h / 2) as f32).round() as usize;
-                let prev_y = mid.saturating_sub(prev_arch_h).min(h - 1);
-                // Draw midpoint bridging dot.
-                let bx = (prev_x + sx) / 2;
-                let by = (prev_y + sy) / 2;
-                draw::dot(grid, bx.min(w - 1), by.min(h - 1));
+        let (wi, hi) = (w as i32, h as i32);
+        let ruler = hi - 1;
+        // Ruler with inch ticks; the measured part is lit.
+        draw::hline(grid, 0, w - 1, ruler as usize);
+        for x in (0..wi).step_by(4) {
+            let tall = if x % 16 == 0 { 3 } else { 1 };
+            for d in 1..=tall {
+                draw::dot_i(grid, x, ruler - d);
             }
         }
-        // Head features.
-        if head_x > 0 {
-            let hx = head_x.min(w.saturating_sub(1));
-            draw::dot_i(grid, hx as i32 + 1, mid as i32);
-            draw::dot_i(grid, hx as i32 + 1, mid as i32 - 1);
+        // Gait: three loops per 4 s. First half the head reaches forward
+        // (arch flattens); second half the tail catches up (arch rises).
+        let cyc = (ctx.time * 0.75).fract();
+        let (min_len, max_len) = (8.0f32, 22.0f32);
+        let len = if cyc < 0.5 {
+            min_len + (max_len - min_len) * (cyc * 2.0)
+        } else {
+            max_len - (max_len - min_len) * ((cyc - 0.5) * 2.0)
+        };
+        let base = ctx.eased * (wi as f32 - max_len - 4.0).max(0.0);
+        let tail = if cyc < 0.5 {
+            base
+        } else {
+            base + max_len - len
+        };
+        let arch = ((max_len - len) * 0.62 + 1.0).min((hi - 4).max(1) as f32);
+        let foot = ruler - 2;
+        paint(
+            grid,
+            0,
+            ruler - 3,
+            tail as i32 + 2,
+            ruler,
+            Color::rgb(240, 200, 90),
+        );
+        paint(
+            grid,
+            tail as i32 + 3,
+            ruler - 3,
+            wi,
+            ruler,
+            Color::rgb(120, 110, 90),
+        );
+        // Body: a thick half-sine arch from tail to head.
+        let steps = (len * 2.0) as i32;
+        for s in 0..=steps {
+            let f = s as f32 / steps.max(1) as f32;
+            let x = (tail + f * len).round() as i32;
+            let y = (foot as f32 - (f * PI).sin() * arch).round() as i32;
+            draw::dot_i(grid, x, y);
+            draw::dot_i(grid, x, y - 1);
         }
+        // Head with a stubby antenna at the leading end; clasping feet.
+        let hx = (tail + len).round() as i32;
+        disc(grid, hx + 1, foot - 1, 1.5);
+        draw::dot_i(grid, hx + 3, foot - 3);
+        draw::dot_i(grid, tail as i32 - 1, foot);
+        paint(
+            grid,
+            tail as i32 - 2,
+            0,
+            hx + 4,
+            foot,
+            Color::rgb(140, 230, 80),
+        );
         Ok(())
     }
 }
 
 // ── Fish School ───────────────────────────────────────────────────────────────
+
+/// Fish facing right: forked tail, oval body, open eye.
+const FISH: [&str; 7] = [
+    "     #####   ",
+    "#  ########  ",
+    "## ###### ## ",
+    " ############",
+    "## ##########",
+    "#  ######### ",
+    "     #####   ",
+];
 
 struct FishSchool;
 impl ProgressStyle for FishSchool {
@@ -1133,57 +1261,47 @@ impl ProgressStyle for FishSchool {
         "animals"
     }
     fn describe(&self) -> &str {
-        "School of fish bobbing in sine-wave formation, swimming with progress"
+        "School of forked-tail fish swimming right in formation, bobbing and trailing bubbles"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let front_x = (ctx.eased * w as f32) as usize;
-        // Number of fish scales with bar width.
-        let n_fish = (w / 8).clamp(2, 10);
-        let amp = (h / 2).saturating_sub(1).max(1) as f32 * 0.8;
-        let mid = h as f32 / 2.0;
-        for i in 0..n_fish {
-            // Each fish is offset behind the leader proportionally.
-            let lag = i as f32 / n_fish as f32;
-            // Fish x position: lead fish at front_x, others trail behind.
-            let fish_x = (front_x as f32 * (1.0 - lag * 0.35)) as usize;
-            let fish_x = fish_x.min(w.saturating_sub(2));
-            // Vertical bobbing: each fish has a phase offset.
-            let phase = i as f32 * (PI * 2.0 / n_fish as f32);
-            let bob_y = mid + amp * (ctx.time * 4.0 + phase).sin();
-            let fy = (bob_y.round() as usize).min(h - 1);
-            // Fish body: two dots.
-            draw::dot(grid, fish_x, fy);
-            if fish_x + 1 < w {
-                draw::dot(grid, fish_x + 1, fy);
-            }
-            // Fish tail: a dot forked behind.
-            if fish_x >= 1 {
-                draw::dot(grid, fish_x - 1, fy.saturating_sub(1).min(h - 1));
-                draw::dot(grid, fish_x - 1, (fy + 1).min(h - 1));
-            }
+        let (wi, hi) = (w as i32, h as i32);
+        let lead = 14 + (ctx.eased * (wi - 28).max(0) as f32) as i32;
+        let colors = [
+            Color::rgb(255, 150, 60),
+            Color::rgb(255, 210, 80),
+            Color::rgb(90, 200, 255),
+        ];
+        // Formation: leader plus two wingmen behind, each on its own bob phase.
+        let slots = [(0i32, 4i32), (-15, 0), (-15, 9)];
+        for (i, &(dx, dy)) in slots.iter().enumerate() {
+            let bob = ((ctx.time * 2.0 * PI * 0.5 + i as f32 * 2.1).sin() * 1.2).round() as i32;
+            let (fx, fy) = (lead + dx, (dy + bob).clamp(0, (hi - 7).max(0)));
+            stamp(grid, &FISH, fx, fy);
+            paint(grid, fx, fy, fx + 12, fy + 6, colors[i % colors.len()]);
         }
-        // Color: gradient across the school.
-        let (cells_w, cells_h) = grid.dimensions();
-        let filled_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx in 0..filled_cells.min(cells_w) {
-                let t = if filled_cells <= 1 {
-                    0.5
-                } else {
-                    cx as f32 / filled_cells as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
+        // Bubbles drift up from the wake on the time clock.
+        for k in 0..6i32 {
+            let bx = lead - 20 - k * 7;
+            if bx < 0 {
+                break;
             }
+            let by = hi - 1 - ((ctx.time * 6.0 + k as f32 * 5.0) as i32).rem_euclid(hi.max(1));
+            draw::dot_i(grid, bx, by);
+            draw::dot_i(grid, bx + 1, by - 1);
+            paint(grid, bx, by - 1, bx + 1, by, Color::rgb(170, 220, 255));
         }
         Ok(())
     }
 }
 
 // ── Snake ─────────────────────────────────────────────────────────────────────
+
+/// Snake head facing right, with an open eye.
+const SNAKE_HEAD: [&str; 5] = [" ####  ", "## ### ", "#######", "###### ", " ####  "];
 
 struct Snake;
 impl ProgressStyle for Snake {
@@ -1194,47 +1312,63 @@ impl ProgressStyle for Snake {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Snake slithering — sine-wave lateral offset along a horizontal advance"
+        "Banded snake slithering in S-curves, tapered tail to a wide head with a flicking forked tongue"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let mid = h as f32 / 2.0;
-        let amp = (h as f32 / 2.0 - 1.0).max(0.5);
-        let head_x = (ctx.eased * w as f32) as usize;
-        // Phase scrolls with time for continuous slither.
-        let phase = ctx.time * 5.0;
-        // Draw snake body from tail to head.
-        for x in 0..head_x.min(w) {
-            // Lateral sine offset; frequency increases toward the head (tighter wriggle).
-            let freq = 0.25 + (x as f32 / w.max(1) as f32) * 0.25;
-            let y = mid + amp * (x as f32 * freq + phase).sin();
-            let y = (y.round() as usize).min(h - 1);
-            draw::dot(grid, x, y);
-            // Slight body thickness — extra dot perpendicular.
-            if x % 3 == 0 {
-                let y2 = (y + 1).min(h - 1);
-                draw::dot(grid, x, y2);
+        let (wi, hi) = (w as i32, h as i32);
+        let mid = hi as f32 / 2.0 - 0.5;
+        let amp = (hi as f32 / 2.0 - 3.5).clamp(0.0, 4.0);
+        let head_x = 8 + (ctx.eased * (wi - 18).max(0) as f32) as i32;
+        // Body: a travelling sine, thickening from a thin tail to the neck.
+        let y_at = |x: i32| mid + ((x as f32 * 0.3) - ctx.time * 2.0 * PI * 0.5).sin() * amp;
+        for x in 0..head_x {
+            let thick = 2 + (2 * x) / head_x.max(1);
+            let y = y_at(x).round() as i32;
+            for d in 0..thick {
+                draw::dot_i(grid, x, y - thick / 2 + d);
             }
         }
-        // Head: tongue flick (time-based).
-        if head_x > 0 {
-            let hx = head_x.min(w - 1);
-            let hy_f = mid + amp * (hx as f32 * 0.5 + phase).sin();
-            let hy = (hy_f.round() as usize).min(h - 1);
-            // Tongue: two dots above the head at a tongue-flick interval.
-            let tongue = ((ctx.time * 3.0).sin() > 0.4) as usize;
-            if tongue > 0 {
-                draw::dot_i(grid, hx as i32 + 1, hy as i32 - 1);
-                draw::dot_i(grid, hx as i32 + 2, hy as i32 - 2);
-                draw::dot_i(grid, hx as i32 + 2, hy as i32);
+        // Alternating bands along the body.
+        for cx in 0..=(head_x / 2) {
+            let band = if (cx / 2) % 2 == 0 {
+                Color::rgb(110, 200, 80)
             } else {
-                draw::dot_i(grid, hx as i32 + 1, hy as i32);
-            }
-            // Eye.
-            draw::dot(grid, hx, hy.saturating_sub(1));
+                Color::rgb(230, 190, 60)
+            };
+            paint(grid, cx * 2, 0, cx * 2 + 1, hi, band);
+        }
+        // Head and forked tongue, flicking out twice a second.
+        let hy = y_at(head_x).round() as i32 - 2;
+        stamp(grid, &SNAKE_HEAD, head_x, hy);
+        paint(
+            grid,
+            head_x,
+            hy,
+            head_x + 6,
+            hy + 4,
+            Color::rgb(110, 200, 80),
+        );
+        if (ctx.time * 2.0).fract() < 0.5 {
+            draw::hline(
+                grid,
+                (head_x + 7).max(0) as usize,
+                (head_x + 8).max(0) as usize,
+                (hy + 2).max(0) as usize,
+            );
+            draw::dot_i(grid, head_x + 9, hy + 1);
+            draw::dot_i(grid, head_x + 9, hy + 3);
+            paint(
+                grid,
+                head_x + 7,
+                hy + 1,
+                head_x + 9,
+                hy + 3,
+                Color::rgb(240, 70, 70),
+            );
         }
         Ok(())
     }
@@ -1353,6 +1487,12 @@ impl ProgressStyle for RabbitHops {
 
 // ── Paw Prints ────────────────────────────────────────────────────────────────
 
+/// One paw print, toes pointing right: heel pad plus four toe beans.
+const PAW: [&str; 9] = [
+    "    ##  ", "    ##  ", " ##   ##", "####  ##", "#####   ", "####  ##", " ##   ##", "    ##  ",
+    "    ##  ",
+];
+
 struct PawPrints;
 impl ProgressStyle for PawPrints {
     fn name(&self) -> &str {
@@ -1362,61 +1502,61 @@ impl ProgressStyle for PawPrints {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Paw prints appearing one by one, alternating left/right offset across the bar"
+        "Four-toed paw prints stepping left-right across the bar, the freshest print pressing in"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let n_prints = 8usize;
-        let visible = (ctx.eased * n_prints as f32).ceil() as usize;
-        let mid = h / 2;
-        let step_w = w / n_prints.max(1);
-        let offset = (h / 4).max(1);
-        for i in 0..visible.min(n_prints) {
-            let px = i * step_w + step_w / 2;
-            let px = px.min(w.saturating_sub(2));
-            // Alternate left/right offset.
-            let (py, small_off) = if i % 2 == 0 {
-                (mid.saturating_sub(offset), 1usize)
+        let (wi, hi) = (w as i32, h as i32);
+        let stride = 11i32;
+        let count = ((wi - 8) / stride + 1).max(1);
+        let shown = (ctx.eased * count as f32).ceil() as i32;
+        for k in 0..shown.min(count) {
+            let x = 1 + k * stride;
+            let y = if k % 2 == 0 { (hi - 9).max(0) } else { 0 };
+            let newest = k == shown - 1 && ctx.eased < 1.0;
+            // The newest print flickers as it is pressed into the ground.
+            if newest && (ctx.time * 4.0).fract() < 0.3 {
+                stamp(grid, &PAW[2..7], x, y + 2);
             } else {
-                ((mid + offset).min(h.saturating_sub(2)), 0usize)
-            };
-            // Pad: a 2×2 cluster.
-            draw::dot(grid, px, py);
-            draw::dot(grid, (px + 1).min(w - 1), py);
-            draw::dot(grid, px, (py + 1).min(h - 1));
-            draw::dot(grid, (px + 1).min(w - 1), (py + 1).min(h - 1));
-            // Three toe dots above the pad.
-            let toe_y = py.saturating_sub(1);
-            draw::dot(grid, px.saturating_sub(1), toe_y);
-            draw::dot(grid, px, toe_y.saturating_sub(small_off));
-            draw::dot(grid, (px + 1).min(w - 1), toe_y);
-            // Tint completed prints with palette color.
-            let t = if n_prints <= 1 {
-                1.0
-            } else {
-                i as f32 / (n_prints - 1) as f32
-            };
-            let color = ctx.palette.sample(t);
-            let (cells_w, cells_h) = grid.dimensions();
-            let cell_x = (px / 2).min(cells_w.saturating_sub(1));
-            for cy in 0..cells_h {
-                draw::tint_row(
-                    grid,
-                    cy,
-                    cell_x,
-                    (cell_x + 1).min(cells_w.saturating_sub(1)),
-                    color,
-                );
+                stamp(grid, &PAW, x, y);
             }
+            let age = (shown - 1 - k) as f32 / count as f32;
+            let color = ctx.palette.sample(1.0 - age);
+            paint(grid, x, y, x + 7, y + 8, color);
         }
         Ok(())
     }
 }
 
 // ── Bird Flock ────────────────────────────────────────────────────────────────
+
+/// Gull wing-beat frames: wings up, gliding "m", wings down.
+const GULL: [[&str; 5]; 3] = [
+    [
+        "##         ##",
+        "  ##     ##  ",
+        "    ## ##    ",
+        "     ###     ",
+        "      #      ",
+    ],
+    [
+        "             ",
+        "  ###   ###  ",
+        " #   # #   # ",
+        "#     #     #",
+        "             ",
+    ],
+    [
+        "             ",
+        "     ###     ",
+        "   ## # ##   ",
+        " ##       ## ",
+        "#           #",
+    ],
+];
 
 struct BirdFlock;
 impl ProgressStyle for BirdFlock {
@@ -1427,105 +1567,48 @@ impl ProgressStyle for BirdFlock {
         "animals"
     }
     fn describe(&self) -> &str {
-        "V-formation bird flock sweeping across the bar, wings flapping with time"
+        "V-formation of flapping gulls flying right, each on its own wing-beat"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let mid = h / 2;
-        let leader_x = (ctx.eased * w as f32) as usize;
-        // Wing flap: oscillate between up and down positions.
-        let flap = (ctx.time * 5.0).sin();
-        let wing_spread = ((h / 4).max(1)) as f32;
-        // Birds in a V: index 0 = leader, positive/negative index = left/right wing.
-        let n_side = 3usize; // birds on each side of the V
-        let v_step_x = 3usize; // horizontal spacing between birds in the V
-        let v_step_y = 1usize; // vertical depth per step back in the V
-                               // Draw leader.
-        let lx = leader_x.min(w.saturating_sub(1));
-        let ly = mid.min(h - 1);
-        draw_bird(grid, lx, ly, flap, wing_spread, w, h);
-        // Draw left and right wings.
-        for side in 0..n_side {
-            let offset_x = (side + 1) * v_step_x;
-            let offset_y = (side + 1) * v_step_y;
-            // Phase lag per bird — trailing birds flap slightly later.
-            let lag = side as f32 * 0.4;
-            let flap_bird = (ctx.time * 5.0 - lag).sin();
-            // Left wing bird (above mid).
-            let lx_left = leader_x.saturating_sub(offset_x);
-            let ly_left = mid.saturating_sub(offset_y).min(h - 1);
-            draw_bird(
-                grid,
-                lx_left.min(w.saturating_sub(1)),
-                ly_left,
-                flap_bird,
-                wing_spread * 0.7,
-                w,
-                h,
-            );
-            // Right wing bird (below mid).
-            let lx_right = leader_x.saturating_sub(offset_x);
-            let ly_right = (mid + offset_y).min(h - 1);
-            draw_bird(
-                grid,
-                lx_right.min(w.saturating_sub(1)),
-                ly_right,
-                flap_bird,
-                wing_spread * 0.7,
-                w,
-                h,
-            );
-        }
-        // Gradient tint on the swept region.
-        let (cells_w, cells_h) = grid.dimensions();
-        let swept = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx in 0..swept.min(cells_w) {
-                let t = if swept <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (swept - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
+        let (wi, hi) = (w as i32, h as i32);
+        let lead = 30 + (ctx.eased * (wi - 43).max(0) as f32) as i32;
+        let mid = (hi / 2 - 3).max(0);
+        let slots = [(0i32, 0i32), (-15, -5), (-15, 5), (-30, -6), (-30, 6)];
+        for (i, &(dx, dy)) in slots.iter().enumerate() {
+            // Beat cycle up → glide → down → glide, staggered per bird.
+            let beat = ((ctx.time * 6.0) as i32 + i as i32).rem_euclid(4);
+            let frame = [0usize, 1, 2, 1][beat as usize];
+            let (bx, by) = (lead + dx, (mid + dy).clamp(0, (hi - 5).max(0)));
+            stamp(grid, &GULL[frame], bx, by);
+            let color = ctx.palette.sample(i as f32 / 4.0);
+            paint(grid, bx, by, bx + 12, by + 4, color);
         }
         Ok(())
     }
 }
 
-/// Draw a single bird glyph at (bx, by) with a wing flap value in [-1, 1].
-fn draw_bird(
-    grid: &mut BrailleGrid,
-    bx: usize,
-    by: usize,
-    flap: f32,
-    wing_spread: f32,
-    _w: usize,
-    h: usize,
-) {
-    let wing_h = (flap * wing_spread * 0.5).round() as i32;
-    // Body dot.
-    draw::dot_i(grid, bx as i32, by as i32);
-    // Left wing.
-    draw::dot_i(grid, bx as i32 - 1, by as i32 + wing_h);
-    draw::dot_i(
-        grid,
-        bx as i32 - 2,
-        by as i32 + wing_h.abs().min((h / 2) as i32),
-    );
-    // Right wing.
-    draw::dot_i(grid, bx as i32 + 1, by as i32 + wing_h);
-    draw::dot_i(
-        grid,
-        bx as i32 + 2,
-        by as i32 + wing_h.abs().min((h / 2) as i32),
-    );
-}
-
 // ── Turtle ────────────────────────────────────────────────────────────────────
+
+/// Turtle facing right: domed shell with plate seams, head with an eye, tail.
+const TURTLE: [&str; 7] = [
+    "      #######          ",
+    "    ###########        ",
+    "   ###  ###  ###   ### ",
+    "  #### ##### ####  # ##",
+    " ####  #####  #########",
+    "#######################",
+    "  ##################   ",
+];
+
+/// Two walking poses for the four stubby legs.
+const TURTLE_LEGS: [[&str; 2]; 2] = [
+    ["  ###          ###    ", "  ##            ##    "],
+    ["   ###       ###      ", "    ##       ##       "],
+];
 
 struct Turtle;
 impl ProgressStyle for Turtle {
@@ -1536,67 +1619,70 @@ impl ProgressStyle for Turtle {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Turtle shell dome that fills from bottom up as progress increases"
+        "Plate-shelled turtle plodding right on stubby legs, head bobbing, leaving a footprint trail in the sand"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        // Shell dome: centered, width = 80% of bar, height = full bar.
-        let shell_w = (w * 4 / 5).max(4).min(w);
-        let x0 = w.saturating_sub(shell_w) / 2;
-        let base = h - 1;
-        // Draw dome outline using semi-ellipse.
-        for xi in 0..=shell_w {
-            let t = if shell_w == 0 {
-                0.5
-            } else {
-                xi as f32 / shell_w as f32
-            };
-            // Ellipse: y = h * sqrt(1 - (2t-1)^2).
-            let norm = 2.0 * t - 1.0;
-            let ellipse_y = (h as f32 * (1.0 - norm * norm).sqrt()).min(h as f32 - 1.0);
-            let top_y = base.saturating_sub(ellipse_y.round() as usize);
-            draw::dot(grid, (x0 + xi).min(w - 1), top_y.min(h - 1));
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 1;
+        let tx = (ctx.eased * (wi - 24).max(0) as f32) as i32;
+        let pose = ((ctx.time * 2.0) as i32).rem_euclid(2) as usize;
+        let top = ground - 9;
+        // Sand, with footprints along the stretch already walked.
+        draw::hline(grid, 0, w - 1, ground as usize);
+        for x in (2..tx.max(0)).step_by(5) {
+            draw::dot_i(grid, x, ground - 1);
         }
-        // Bottom base line.
-        draw::hline(grid, x0, (x0 + shell_w).min(w - 1), base);
-        // Fill from base up to progress fraction of dome height.
-        let fill_height = (ctx.eased * h as f32).round() as usize;
-        for xi in 0..=shell_w {
-            let t = if shell_w == 0 {
-                0.5
-            } else {
-                xi as f32 / shell_w as f32
-            };
-            let norm = 2.0 * t - 1.0;
-            let dome_height = (h as f32 * (1.0 - norm * norm).sqrt()).round() as usize;
-            let col_fill = fill_height.min(dome_height);
-            if col_fill > 0 {
-                let y_top = base.saturating_sub(col_fill);
-                draw::vline(grid, (x0 + xi).min(w - 1), y_top, base);
-            }
-        }
-        // Shell pattern: diamond grid overlay (scute pattern), animated bobble.
-        let bob = ((ctx.time * 1.5).sin() * 0.5) as i32;
-        for row in (0..h).step_by(3) {
-            for col in (x0..x0 + shell_w).step_by(4) {
-                draw::dot_i(grid, col as i32, row as i32 + bob);
-            }
-        }
-        // Head and tail (only partially visible, emerge at sides).
-        draw::dot_i(grid, x0 as i32 - 1, base as i32);
-        draw::dot_i(grid, x0 as i32 - 2, base as i32);
-        draw::dot_i(grid, (x0 + shell_w) as i32 + 1, base as i32);
-        // Legs.
-        draw::dot_i(grid, x0 as i32 + 1, base as i32 + 1);
-        draw::dot_i(grid, (x0 + shell_w) as i32 - 1, base as i32 + 1);
+        paint(grid, 0, ground - 1, wi, ground, Color::rgb(210, 180, 120));
+        stamp(grid, &TURTLE, tx, top);
+        stamp(grid, &TURTLE_LEGS[pose], tx, top + 7);
+        // Head bobs a dot forward on each step.
+        draw::dot_i(grid, tx + 23, top + 3 + pose as i32);
+        paint(
+            grid,
+            tx + 18,
+            top + 2,
+            tx + 23,
+            ground - 1,
+            Color::rgb(170, 215, 120),
+        );
+        paint(
+            grid,
+            tx,
+            top + 7,
+            tx + 18,
+            ground - 1,
+            Color::rgb(170, 215, 120),
+        );
+        paint(grid, tx, top, tx + 17, top + 6, Color::rgb(70, 150, 80));
         Ok(())
     }
 }
 
 // ── Ant March ─────────────────────────────────────────────────────────────────
+
+/// Ant facing right — abdomen, waist, thorax, head, antenna — in two leg poses.
+const ANT: [[&str; 6]; 2] = [
+    [
+        "          # ",
+        " ###     #  ",
+        "##### #####",
+        "###########",
+        " ###  # # # ",
+        "     #  #  #",
+    ],
+    [
+        "         #  ",
+        " ###     #  ",
+        "##### #####",
+        "###########",
+        " ### # # #  ",
+        "    #  # #  ",
+    ],
+];
 
 struct AntMarch;
 impl ProgressStyle for AntMarch {
@@ -1607,73 +1693,147 @@ impl ProgressStyle for AntMarch {
         "animals"
     }
     fn describe(&self) -> &str {
-        "Ants marching in single file, carrying the load — legs animate with time"
+        "Single file of six-legged ants marching toward an anthill, every other one hauling a crumb"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
         if w == 0 || h == 0 {
             return Ok(());
         }
-        let n_ants = (w / 7).clamp(1, 8);
-        let base = (h - 1).min(h.saturating_sub(1));
-        let head_x = (ctx.eased * w as f32) as usize;
-        // Ant spacing: packed in the filled region.
-        let spacing = if n_ants <= 1 {
-            head_x.max(1)
-        } else {
-            head_x / n_ants.max(1)
-        };
-        // Leg animation: alternating sets swing with time.
-        let leg_phase = ctx.time * 8.0;
-        for i in 0..n_ants {
-            let ant_x = if spacing == 0 { 0 } else { i * spacing };
-            if ant_x >= head_x.max(1) {
-                break;
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 1;
+        // Anthill on the right edge.
+        for r in 0..6i32 {
+            draw::hline(
+                grid,
+                (wi - 12 + r).max(0) as usize,
+                (wi - 1).max(0) as usize,
+                (ground - 5 + r).max(0) as usize,
+            );
+        }
+        paint(
+            grid,
+            wi - 12,
+            ground - 6,
+            wi,
+            ground,
+            Color::rgb(170, 120, 70),
+        );
+        // The column reaches further as progress grows; ants scroll forward one
+        // spacing per 4 s loop so the march is seamless.
+        let front = (ctx.eased * (wi - 14).max(0) as f32) as i32;
+        let spacing = 16i32;
+        let shift = ((ctx.time * 4.0) as i32).rem_euclid(spacing);
+        let mut k = 0i32;
+        while k * spacing <= front + spacing {
+            let ax = front - 12 - k * spacing + shift;
+            if ax + 11 >= 0 && ax <= front {
+                let pose = ((ctx.time * 8.0) as i32 + k).rem_euclid(2) as usize;
+                let ay = ground - 5;
+                stamp(grid, &ANT[pose], ax, ay);
+                paint(grid, ax, ay, ax + 11, ground, Color::rgb(220, 90, 60));
+                if k % 2 == 0 {
+                    draw::fill_rect(
+                        grid,
+                        (ax + 6).max(0) as usize,
+                        (ay - 3).max(0) as usize,
+                        3,
+                        3,
+                    );
+                    paint(
+                        grid,
+                        ax + 6,
+                        ay - 3,
+                        ax + 8,
+                        ay - 2,
+                        Color::rgb(250, 230, 160),
+                    );
+                }
             }
-            let ant_x = ant_x.min(w.saturating_sub(3));
-            // Alternate leg sets: even ants phase-A, odd ants phase-B.
-            let ant_leg_phase = leg_phase + i as f32 * PI / n_ants as f32;
-            let leg_up = (ant_leg_phase.sin() > 0.0) as usize;
-            // Ant: head (1 dot), thorax (1 dot), abdomen (1 dot).
-            // Head.
-            draw::dot(grid, (ant_x + 2).min(w - 1), base.saturating_sub(2));
-            // Antennae — flicker with leg_up.
-            draw::dot_i(grid, ant_x as i32 + 1, base as i32 - 3);
-            draw::dot_i(grid, ant_x as i32 + 3, base as i32 - 3 + leg_up as i32);
-            // Thorax.
-            draw::dot(grid, (ant_x + 2).min(w - 1), base.saturating_sub(1));
-            // Abdomen.
-            draw::dot(grid, (ant_x + 2).min(w - 1), base);
-            // Legs (3 pairs): alternate up/down with phase.
-            for leg in 0..3usize {
-                let leg_y_off = i32::from((leg + leg_up) % 2 != 0);
-                // Left leg.
-                draw::dot_i(
-                    grid,
-                    ant_x as i32 + 1,
-                    base as i32 - leg as i32 + leg_y_off - 1,
-                );
-                // Right leg.
-                draw::dot_i(
-                    grid,
-                    ant_x as i32 + 3,
-                    base as i32 - leg as i32 + leg_y_off - 1,
-                );
+            k += 1;
+        }
+        Ok(())
+    }
+}
+
+// ── Cat Prowl ─────────────────────────────────────────────────────────────────
+
+/// Cat facing right: pointed ears, eyes, arched back and a question-mark tail.
+const CAT: [&str; 9] = [
+    "               #   #  ",
+    "               ## ##  ",
+    " #             #####  ",
+    "#              # # #  ",
+    "#              ###### ",
+    "#  ############ ###   ",
+    " # ##############     ",
+    "  ###############     ",
+    "   ##############     ",
+];
+
+/// Trotting leg poses.
+const CAT_LEGS: [[&str; 3]; 2] = [
+    [
+        "   ##        ##   ",
+        "  ##          ##  ",
+        "  #            #  ",
+    ],
+    [
+        "    ##      ##    ",
+        "    ##      ##    ",
+        "    #       #     ",
+    ],
+];
+
+struct CatProwl;
+impl ProgressStyle for CatProwl {
+    fn name(&self) -> &str {
+        "cat-prowl"
+    }
+    fn theme(&self) -> &str {
+        "animals"
+    }
+    fn describe(&self) -> &str {
+        "Orange tabby with pointed ears and a curled tail trotting right after a rolling ball of yarn"
+    }
+    fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
+        let (w, h) = draw::dot_dims(grid);
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+        let (wi, hi) = (w as i32, h as i32);
+        let ground = hi - 1;
+        let cx = (ctx.eased * (wi - 34).max(0) as f32) as i32;
+        let pose = ((ctx.time * 4.0) as i32).rem_euclid(2) as usize;
+        let top = ground - 12 + pose as i32;
+        stamp(grid, &CAT, cx, top);
+        stamp(grid, &CAT_LEGS[pose], cx, top + 9);
+        // Tail tip flicks.
+        if (ctx.time * 1.5).fract() < 0.5 {
+            draw::dot_i(grid, cx + 2, top + 1);
+        }
+        paint(grid, cx - 1, top, cx + 21, ground, Color::rgb(245, 160, 70));
+        // Yarn ball rolling ahead, its wrap lines turning with time.
+        let (bx, by) = (cx + 28, ground - 3);
+        disc(grid, bx, by, 3.0);
+        let spin = (ctx.time * 4.0) as i32;
+        for d in -2..=2i32 {
+            if (d + spin).rem_euclid(2) == 0 {
+                draw::dot_i(grid, bx + d, by - d);
             }
         }
-        // Gradient tint on the ant column.
-        let (cells_w, cells_h) = grid.dimensions();
-        let ant_cells = (ctx.eased * cells_w as f32) as usize;
-        for cy in 0..cells_h {
-            for cx in 0..ant_cells.min(cells_w) {
-                let t = if ant_cells <= 1 {
-                    0.0
-                } else {
-                    cx as f32 / (ant_cells - 1) as f32
-                };
-                draw::tint_row(grid, cy, cx, cx, ctx.palette.sample(t));
-            }
+        // A loose thread trails back toward the cat.
+        for x in (cx + 22)..(bx - 3) {
+            draw::dot_i(grid, x, ground - (x + spin).rem_euclid(3) / 2);
         }
+        paint(
+            grid,
+            cx + 22,
+            by - 3,
+            bx + 3,
+            ground,
+            Color::rgb(240, 110, 170),
+        );
         Ok(())
     }
 }

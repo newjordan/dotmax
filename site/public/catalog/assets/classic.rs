@@ -128,6 +128,41 @@ impl BrailleGrid {
         self.colors[y * self.width + x]
     }
 
+    pub fn clear(&mut self) {
+        self.patterns.fill(0);
+        self.colors.fill(None);
+    }
+
+    pub fn clear_region(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<(), DotmaxError> {
+        let (end_x, end_y) = (x.saturating_add(width), y.saturating_add(height));
+        if end_x > self.width || end_y > self.height {
+            return Err(DotmaxError::OutOfBounds {
+                x: end_x.saturating_sub(1),
+                y: end_y.saturating_sub(1),
+                width: self.width,
+                height: self.height,
+            });
+        }
+        for row in y..end_y {
+            for col in x..end_x {
+                self.patterns[row * self.width + col] = 0;
+                self.colors[row * self.width + col] = None;
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get_raw_patterns(&self) -> &[u8] {
+        &self.patterns
+    }
+
     fn check_cell(&self, x: usize, y: usize) -> Result<(), DotmaxError> {
         if x >= self.width || y >= self.height {
             return Err(DotmaxError::OutOfBounds {
@@ -843,8 +878,8 @@ pub mod styles {
 //!
 //! These six styles demonstrate every technique the themed bars build on:
 //! solid fill, gradient tinting, discrete blocks, a scrolling indeterminate
-//! shimmer, an eased "rocket" fill, and a ticked percentage track. Copy any
-//! one of these as a starting point for a new bar.
+//! shimmer, a rocket whose exhaust trail is the fill, and a ticked percentage
+//! track. Copy any one of these as a starting point for a new bar.
 
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
@@ -926,7 +961,7 @@ pub fn styles() -> Vec<Box<dyn ProgressStyle>> {
         Box::new(Gradient),
         Box::new(Tinted(Blocks)),
         Box::new(Tinted(Shimmer)),
-        Box::new(Tinted(Rocket)),
+        Box::new(Rocket),
         Box::new(Tinted(TickedTrack)),
     ]
 }
@@ -1075,7 +1110,140 @@ impl ProgressStyle for Shimmer {
     }
 }
 
-/// An eased fill with a glowing leading edge — uses `ctx.eased` for snap.
+// ---------------------------------------------------------------------------
+// Rocket sprite — a real rocket silhouette painted at any heading.
+// ---------------------------------------------------------------------------
+
+/// What a rocket-scene dot is made of. Each cell takes the colour of the
+/// material most of its dots hold, so the hull, trim and flame stay distinct
+/// even at one colour per cell.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ink {
+    Empty,
+    Trail,
+    Flame,
+    Core,
+    Hull,
+    Trim,
+}
+
+/// A dot-space canvas of [`Ink`], flushed into a grid in one pass.
+struct Canvas {
+    w: usize,
+    h: usize,
+    ink: Vec<Ink>,
+}
+
+impl Canvas {
+    fn new(w: usize, h: usize) -> Self {
+        Self {
+            w,
+            h,
+            ink: vec![Ink::Empty; w * h],
+        }
+    }
+
+    fn set(&mut self, x: i32, y: i32, ink: Ink) {
+        if x >= 0 && y >= 0 && (x as usize) < self.w && (y as usize) < self.h {
+            self.ink[y as usize * self.w + x as usize] = ink;
+        }
+    }
+
+    /// Paint a rocket centred on `(cx, cy)` heading `ang` radians (0 = right,
+    /// PI/2 = up): pointed nose cone, hull with a porthole, two swept fins and
+    /// a flickering two-tone flame `flame` dots long.
+    #[allow(clippy::too_many_arguments)]
+    fn rocket(&mut self, cx: f32, cy: f32, ang: f32, len: f32, r: f32, flame: f32, t: f32) {
+        let (ca, sa) = (ang.cos(), ang.sin());
+        let half = len / 2.0;
+        let nose = len * 0.3;
+        let nose_at = half - nose;
+        let fin = len * 0.4;
+        let flare = r * 1.1 + 1.0;
+        let reach = half + flame + flare + 2.0;
+        let port_u = nose_at - r * 1.1;
+        for y in (cy - reach).floor() as i32..=(cy + reach).ceil() as i32 {
+            for x in (cx - reach).floor() as i32..=(cx + reach).ceil() as i32 {
+                let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+                // Rocket-local axes: u runs tail -> nose, v across the hull.
+                let u = dx * ca - dy * sa;
+                let v = (dx * sa + dy * ca).abs();
+                let ink = if u > nose_at && u <= half {
+                    let k = (u - nose_at) / nose;
+                    (v <= r * (1.0 - k).powf(0.85) + 0.2).then_some(Ink::Trim)
+                } else if u >= -half && u <= nose_at {
+                    let porthole = r >= 2.4 && (u - port_u).powi(2) + v * v < 1.1;
+                    if v <= r && !porthole {
+                        Some(Ink::Hull)
+                    } else if u < -half + fin && v > r && v <= r + flare * (1.0 - (u + half) / fin)
+                    {
+                        Some(Ink::Trim)
+                    } else {
+                        None
+                    }
+                } else if u < -half && u >= -half - 1.5 && v > r * 0.75 && v <= r + flare {
+                    // Fin tips sweep back past the nozzle.
+                    Some(Ink::Trim)
+                } else if u < -half && u >= -half - flame {
+                    let k = (-half - u) / flame.max(0.1);
+                    let jag = 0.75 + 0.25 * (t * 37.0 + v * 2.3 + u * 0.9).sin();
+                    let width = r * 0.8 * (1.0 - k).powf(0.6) * jag;
+                    if v <= width {
+                        Some(if k < 0.4 && v < width * 0.6 {
+                            Ink::Core
+                        } else {
+                            Ink::Flame
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(ink) = ink {
+                    self.set(x, y, ink);
+                }
+            }
+        }
+    }
+
+    /// Set every inked dot, then colour each cell by its majority material.
+    fn flush(&self, grid: &mut BrailleGrid, color: impl Fn(Ink, usize) -> Color) {
+        grid.enable_color_support();
+        for y in 0..self.h {
+            for x in 0..self.w {
+                if self.ink[y * self.w + x] != Ink::Empty {
+                    draw::dot(grid, x, y);
+                }
+            }
+        }
+        for cy in 0..(self.h + 3) / 4 {
+            for cx in 0..(self.w + 1) / 2 {
+                let mut counts = [0u8; 6];
+                for y in cy * 4..(cy * 4 + 4).min(self.h) {
+                    for x in cx * 2..(cx * 2 + 2).min(self.w) {
+                        counts[self.ink[y * self.w + x] as usize] += 1;
+                    }
+                }
+                // Ties go to the later (more important) material.
+                let best = (1..6).rev().max_by_key(|&i| counts[i]).unwrap_or(0);
+                if counts[best] > 0 {
+                    let ink = [
+                        Ink::Empty,
+                        Ink::Trail,
+                        Ink::Flame,
+                        Ink::Core,
+                        Ink::Hull,
+                        Ink::Trim,
+                    ][best];
+                    let _ = grid.set_cell_color(cx, cy, color(ink, cx));
+                }
+            }
+        }
+    }
+}
+
+/// A rocket flies along the track; its exhaust trail is the fill.
 struct Rocket;
 impl ProgressStyle for Rocket {
     fn name(&self) -> &str {
@@ -1085,33 +1253,58 @@ impl ProgressStyle for Rocket {
         "classic"
     }
     fn describe(&self) -> &str {
-        "Eased fill with a bright leading edge"
+        "A finned rocket flies the track; its exhaust trail is the fill"
     }
     fn render(&self, grid: &mut BrailleGrid, ctx: &BarContext) -> Result<(), DotmaxError> {
         let (w, h) = draw::dot_dims(grid);
-        let head = (ctx.eased * w as f32).round() as usize;
-        let mid = h / 2;
-        // Body: a thick center line that thins toward the start.
-        for x in 0..head {
-            let frac = if head <= 1 {
-                1.0
-            } else {
-                x as f32 / head as f32
-            };
-            let thick = (frac * (h as f32 / 2.0)).round() as usize;
-            draw::vline(grid, x, mid.saturating_sub(thick), (mid + thick).min(h - 1));
+        let r = (h as f32 * 0.19).min(w as f32 / 16.0);
+        let mut cv = Canvas::new(w, h);
+        let mid = h as f32 / 2.0;
+        if r < 1.2 {
+            // Too small for a silhouette: a plain trail with a bright nose.
+            let head = (ctx.eased * w as f32) as i32;
+            for x in 0..head {
+                cv.set(x, mid as i32, Ink::Trail);
+            }
+            cv.set(head, mid as i32, Ink::Trim);
+        } else {
+            let len = r * 7.2;
+            let flame = r * (1.9 + 0.6 * (ctx.time * 23.0).sin().abs());
+            let nose = len + flame + ctx.eased * (w as f32 - len - flame - 1.0);
+            let cx = nose - len / 2.0;
+            let cy = mid + 0.6 * (ctx.time * 2.2).sin();
+            // Unfilled track: a dotted centre line still to fly.
+            for x in (nose as i32 + 2..w as i32).step_by(4) {
+                cv.set(x, mid as i32, Ink::Trail);
+            }
+            // The trail is the fill: a solid exhaust band whose fringe puffs
+            // out and thins the further it drifts behind the rocket.
+            let tail = (cx - len / 2.0 - flame) as i32 + 1;
+            let slot = (ctx.time * 6.0) as i32;
+            for x in 0..tail.max(0) {
+                let age = (tail - x) as f32 / w as f32;
+                for dy in -1..=1 {
+                    cv.set(x, mid as i32 + dy, Ink::Trail);
+                }
+                let puff = (age * r * 2.4) as i32;
+                for dy in 2..=1 + puff {
+                    for sign in [-1, 1] {
+                        if hash3(x / 2, dy * sign, slot) > 0.35 + 0.15 * dy as f32 {
+                            cv.set(x, mid as i32 + dy * sign, Ink::Trail);
+                        }
+                    }
+                }
+            }
+            cv.rocket(cx, cy, 0.0, len, r, flame, ctx.time);
         }
-        // Leading edge flare.
-        if head < w {
-            draw::vline(grid, head, 0, h - 1);
-        }
-        // Sparks popping off the nose, ahead of the fill where they show.
-        let slot = (ctx.time * 6.0) as i32;
-        for i in 0..6i32 {
-            let ahead = 2 + (hash3(i, 1, slot) * 8.0) as i32;
-            let spread = ((hash3(i, 2, slot) - 0.5) * h as f32 * 0.9) as i32;
-            draw::dot_i(grid, head as i32 + ahead, h as i32 / 2 + spread);
-        }
+        let cells = (w / 2).max(1) as f32;
+        cv.flush(grid, |ink, cx| match ink {
+            Ink::Hull => Color::rgb(232, 236, 245),
+            Ink::Trim => TINT_END,
+            Ink::Core => Color::rgb(255, 236, 150),
+            Ink::Flame => Color::rgb(255, 140, 40),
+            _ => sample_tint(cx as f32 / cells),
+        });
         Ok(())
     }
 }
