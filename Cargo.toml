@@ -40,11 +40,14 @@ exclude = [
     "tests/test_assets/",
     # Community website assets and generated frontend files
     "site/",
-    # Local scratch assets and WIP examples (not part of the crate)
+    # Local scratch assets and WIP examples (not part of the crate).
+    # Keep `src/image/` in the package. It is the implementation behind the
+    # `image`, `svg`, and `video` features. `cargo package` only builds the
+    # default feature set, which is empty, so dropping this directory used to
+    # publish a crate whose primary feature did not compile.
     "*.log",
     "*.mp4",
     "docs/examples/",
-    "src/image/",
     "dotamax_pets/",
     "examples/mikey.rs",
     "examples/raphe.rs",
@@ -57,6 +60,12 @@ exclude = [
     # Planning docs
     "BRAILLE_GRAPHICS_MASTER_PLAN.md",
 ]
+
+# docs.rs builds with default features unless told otherwise. Those defaults
+# are empty, which hid `image`, `media`, and the quick image helpers. `video`
+# links a system FFmpeg and stays off this list.
+[package.metadata.docs.rs]
+features = ["image", "svg"]
 
 [dependencies]
 # Core dependencies (always included)

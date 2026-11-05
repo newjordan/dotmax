@@ -58,8 +58,10 @@
 //! use dotmax::image::load_from_bytes;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let bytes = include_bytes!("../../tests/fixtures/images/sample.png");
-//! let img = load_from_bytes(bytes)?;
+//! // Any PNG/JPEG/GIF/WebP/BMP/TIFF buffer. `include_bytes!("photo.png")`
+//! // works the same way when the file lives in your own crate.
+//! let bytes = std::fs::read("photo.png")?;
+//! let img = load_from_bytes(&bytes)?;
 //! println!("Loaded image from bytes: {}×{}", img.width(), img.height());
 //! # Ok(())
 //! # }
@@ -443,9 +445,10 @@ impl ImageRenderer {
     /// use dotmax::image::ImageRenderer;
     ///
     /// # fn main() -> Result<(), dotmax::DotmaxError> {
-    /// let bytes = include_bytes!("../../tests/fixtures/images/sample.png");
+    /// // Any encoded image buffer, including `include_bytes!("photo.png")`.
+    /// let bytes = std::fs::read("photo.png")?;
     /// let renderer = ImageRenderer::new()
-    ///     .load_from_bytes(bytes)?;
+    ///     .load_from_bytes(&bytes)?;
     /// # Ok(())
     /// # }
     /// ```
