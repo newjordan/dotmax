@@ -103,8 +103,9 @@ pub fn load_from_path(path: &Path) -> Result<DynamicImage, DotmaxError> {
 /// use dotmax::image::load_from_bytes;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let bytes = include_bytes!("../../tests/fixtures/images/sample.png");
-/// let img = load_from_bytes(bytes)?;
+/// // Any encoded image buffer, including `include_bytes!("photo.png")`.
+/// let bytes = std::fs::read("photo.png")?;
+/// let img = load_from_bytes(&bytes)?;
 /// println!("Loaded {}×{} image from bytes", img.width(), img.height());
 /// # Ok(())
 /// # }
