@@ -19,8 +19,8 @@ fn render_svg_to_terminal(svg_path: &str, title: &str) -> Result<(), Box<dyn std
     let binary = auto_threshold(&img);
 
     // Calculate grid dimensions
-    let grid_width = ((binary.width + 1) / 2) as usize;
-    let grid_height = ((binary.height + 3) / 4) as usize;
+    let grid_width = binary.width.div_ceil(2) as usize;
+    let grid_height = binary.height.div_ceil(4) as usize;
 
     // Map to braille
     let grid = pixels_to_braille(&binary, grid_width, grid_height)?;

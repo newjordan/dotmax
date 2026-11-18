@@ -169,7 +169,7 @@ impl DifferentialRenderer {
         renderer: &mut TerminalRenderer,
     ) -> Result<(), DotmaxError> {
         // Check for dimension mismatch or no previous frame
-        let should_full_render = self.last_frame.as_ref().map_or(true, |last| {
+        let should_full_render = self.last_frame.as_ref().is_none_or(|last| {
             if last.width() != current.width() || last.height() != current.height() {
                 debug!(
                     old_width = last.width(),

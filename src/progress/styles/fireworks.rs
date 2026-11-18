@@ -321,7 +321,7 @@ impl ProgressStyle for RomanCandle {
         for y in tube_top..h {
             draw::hline(grid, 0, 3, y);
         }
-        for cy in tube_top / 4..(h + 3) / 4 {
+        for cy in tube_top / 4..h.div_ceil(4) {
             let band = if cy % 2 == 0 {
                 FW_CORAL
             } else {

@@ -325,7 +325,7 @@ impl ProgressStyle for PianoKeyboard {
         // White keys are 3 dots + a 1-dot gap; black keys cover the top
         // ~60% (whole cell rows when there is room) of the cell straddling
         // the gap after C, D, F, G and A.
-        let whites = (dw + 3) / 4;
+        let whites = dw.div_ceil(4);
         let black_h = if ch >= 2 {
             ((dh * 5 / 8) / 4 * 4).max(4)
         } else {
@@ -450,7 +450,7 @@ impl ProgressStyle for Metronome {
                 } else {
                     sample_tint(i as f32 / n.max(1) as f32)
                 };
-                for cy in 0..(dh + 3) / 4 {
+                for cy in 0..dh.div_ceil(4) {
                     let _ = grid.set_cell_color(cell.0, cy, col);
                 }
             } else {
@@ -614,7 +614,7 @@ impl ProgressStyle for DrumKit {
         let rug = (p * dw as f32).round() as usize;
         if rug > 0 {
             draw::hline(grid, 0, rug.min(dw) - 1, dh - 1);
-            for cx in 0..(rug + 1) / 2 {
+            for cx in 0..rug.div_ceil(2) {
                 let col = ctx.palette.sample(cx as f32 * 2.0 / dw as f32);
                 let _ = grid.set_cell_color(cx, (dh - 1) / 4, col);
             }

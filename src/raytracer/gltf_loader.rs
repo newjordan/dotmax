@@ -205,7 +205,7 @@ pub fn load_gltf(path: &str) -> Result<MeshData> {
         anyhow::bail!("Mesh has no indices");
     }
 
-    if indices.len() % 3 != 0 {
+    if !indices.len().is_multiple_of(3) {
         anyhow::bail!(
             "Index count ({}) is not a multiple of 3 - invalid triangle data",
             indices.len()

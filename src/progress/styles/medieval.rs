@@ -972,8 +972,8 @@ impl ProgressStyle for TreasureChest {
                 if y / 4 == lid_bot / 4 {
                     continue;
                 }
-                if mhash((x * 31 + y * 7) as u32) % 7 != 0 {
-                    let tw = mhash((x * 13 + y) as u32 + (t * 6.0) as u32) % 23 == 0;
+                if !mhash((x * 31 + y * 7) as u32).is_multiple_of(7) {
+                    let tw = mhash((x * 13 + y) as u32 + (t * 6.0) as u32).is_multiple_of(23);
                     px(grid, x, y, if tw { WHITE } else { GOLD });
                 }
             }

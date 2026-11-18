@@ -253,7 +253,7 @@ mod tests {
         let intensities: Vec<Vec<f32>> = vec![];
         let scheme = grayscale();
         let colors = apply_color_scheme(&intensities, &scheme);
-        assert!(colors.is_empty());
+        assert_eq!(colors, Vec::<Vec<Color>>::new());
     }
 
     #[test]

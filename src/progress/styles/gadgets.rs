@@ -485,7 +485,7 @@ impl ProgressStyle for CrtPowerOn {
                 }
                 // Sparse noise dots derived from hash.
                 for x in 0..w {
-                    let on = (hash((x as u32).wrapping_add(y_nl as u32 * 17)) % 5) == 0;
+                    let on = hash((x as u32).wrapping_add(y_nl as u32 * 17)).is_multiple_of(5);
                     if on {
                         draw::dot(grid, x, y_nl);
                     }

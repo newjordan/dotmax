@@ -158,8 +158,8 @@ pub fn pixels_to_braille(
 
     // Calculate grid dimensions (ceiling division for padding)
     // Each braille cell is 2 dots wide and 4 dots tall
-    let grid_width = ((binary.width + 1) / 2) as usize;
-    let grid_height = ((binary.height + 3) / 4) as usize;
+    let grid_width = binary.width.div_ceil(2) as usize;
+    let grid_height = binary.height.div_ceil(4) as usize;
 
     info!(
         "Mapping {}×{} binary image to {}×{} braille grid",

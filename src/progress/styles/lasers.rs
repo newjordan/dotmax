@@ -492,7 +492,7 @@ impl ProgressStyle for PrismDispersion {
             let along = ((ctx.time * 1.3 + hashf(i as u32)) % 1.0) * e;
             let tx = xr + (span as f32 * along) as i32;
             let tyy = y_out + ((ty - y_out) as f32 * along) as i32;
-            if hash(frame.wrapping_add(i as u32)) % 3 != 0 {
+            if !hash(frame.wrapping_add(i as u32)).is_multiple_of(3) {
                 draw::dot_i(grid, tx, tyy - 1);
             }
         }
@@ -982,7 +982,7 @@ impl ProgressStyle for PlasmaBolt {
             beam_line(grid, px, py, nx, ny, bound);
             beam_line(grid, px, py + 1, nx, ny + 1, bound);
             // Every few kinks a short fork splits off.
-            if hash(frame.wrapping_add(n * 13)) % 3 == 0 {
+            if hash(frame.wrapping_add(n * 13)).is_multiple_of(3) {
                 let fy = if ny < mid { ny - seg } else { ny + seg };
                 beam_line(grid, nx, ny, nx + seg, fy, bound);
             }

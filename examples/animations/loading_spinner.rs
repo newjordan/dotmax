@@ -227,7 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout.flush()?;
 
         // Cycle through styles
-        if frame > 0 && frame % style_change_interval == 0 {
+        if frame > 0 && frame.is_multiple_of(style_change_interval) {
             style = style.next();
         }
 

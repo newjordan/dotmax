@@ -39,9 +39,9 @@ cargo build --features image,svg
 | **Error Handling** | thiserror | 2.0.17 | All | Library users need typed errors for pattern matching (ImageLoadError vs RenderError). thiserror provides minimal boilerplate. |
 | **Terminal I/O** | ratatui + crossterm | 0.29.0 + 0.29.0 | Epic 2, 6 | Industry standard for Rust TUIs. Abstracted via TerminalBackend trait to reduce lock-in. |
 | **Logging** | tracing | 0.1 | All | Structured logging standard for Rust. Instrument functions, multiple log levels. |
-| **Benchmarking** | criterion | 0.7.0 | Epic 7 | Statistics-driven benchmarking with HTML reports. Performance regression detection in CI. |
-| **Image Processing** | image + imageproc | 0.25 + 0.24 | Epic 3 | Standard Rust image library. Handles PNG/JPG/GIF/BMP/WebP/TIFF. Feature-gated. |
-| **SVG Rendering** | resvg + usvg | 0.38 + 0.38 | Epic 3 | SVG rasterization to bitmap. Feature-gated separately from raster images. |
+| **Benchmarking** | criterion | 0.8.0 | Epic 7 | Statistics-driven benchmarking with HTML reports. Performance regression detection in CI. |
+| **Image Processing** | image + imageproc | 0.25 + 0.25 | Epic 3 | Standard Rust image library. Handles PNG/JPG/GIF/BMP/WebP/TIFF. Feature-gated. |
+| **SVG Rendering** | resvg + usvg | 0.50 + 0.50 | Epic 3 | SVG rasterization to bitmap. Feature-gated separately from raster images. |
 | **Module Structure** | Feature-based | N/A | All | One module per epic/feature (grid, render, image, primitives, color, animation). Clear boundaries. |
 | **Public API** | Minimal surface | N/A | All | Only essential types exported (BrailleGrid, TerminalRenderer, etc.). Internals stay private. |
 | **Extraction Strategy** | Copy-refactor-test | N/A | Epic 2 | Copy crabmusic code, strip audio deps, refactor to modules, test to lock behavior, then optimize. |
@@ -178,7 +178,7 @@ dotmax/
 
 **Language & Edition:**
 - Rust 2021 edition
-- MSRV: 1.70 (documented in Cargo.toml, enforced in CI)
+- MSRV: 1.88 (documented in Cargo.toml, enforced in CI)
 - Stable Rust only (no nightly features)
 
 **Core Dependencies (always included):**
@@ -194,9 +194,9 @@ tracing = "0.1"          # Structured logging
 ```toml
 [dependencies]
 image = { version = "0.25", optional = true }
-imageproc = { version = "0.24", optional = true }
-resvg = { version = "0.38", optional = true }
-usvg = { version = "0.38", optional = true }
+imageproc = { version = "0.25", optional = true }
+resvg = { version = "0.50", optional = true }
+usvg = { version = "0.50", optional = true }
 
 [features]
 default = []
@@ -1039,7 +1039,7 @@ dotmax = "0.1"  # Semantic versioning
 - **1.0.0 = Stable API** - No breaking changes in 1.x line
 
 **MSRV Policy:**
-- Minimum Supported Rust Version: **1.70**
+- Minimum Supported Rust Version: **1.88**
 - MSRV only bumped with minor version increments
 - Documented in README and enforced in CI
 
@@ -1055,7 +1055,7 @@ dotmax = "0.1"  # Semantic versioning
 strategy:
   matrix:
     os: [ubuntu-latest, windows-latest, macos-latest]
-    rust: [stable, 1.70]  # Stable + MSRV
+    rust: [stable, 1.88]  # Stable + MSRV
 ```
 
 ## Development Environment
@@ -1063,7 +1063,7 @@ strategy:
 ### Prerequisites
 
 **Required:**
-- **Rust 1.70 or later** (stable toolchain)
+- **Rust 1.88 or later** (stable toolchain)
   ```bash
   rustup update stable
   ```

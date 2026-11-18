@@ -22,7 +22,7 @@ mod image_pipeline_tests {
     /// distribution rather than a flat image.
     fn synthetic_rgb(width: u32, height: u32) -> image::DynamicImage {
         let mut raw = vec![0u8; width as usize * height as usize * 3];
-        for (i, px) in raw.chunks_exact_mut(3).enumerate() {
+        for (i, px) in raw.as_chunks_mut::<3>().0.iter_mut().enumerate() {
             let v = (i % 251) as u8;
             px[0] = v;
             px[1] = v ^ 0x55;
@@ -46,8 +46,8 @@ mod image_pipeline_tests {
         let binary = auto_threshold(&resized);
 
         // Calculate expected grid dimensions based on actual binary image dimensions
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         // Map to braille grid
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
@@ -80,8 +80,8 @@ mod image_pipeline_tests {
             .expect("Failed to apply Floyd-Steinberg dithering");
 
         // Calculate expected grid dimensions
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         // Map to braille grid
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
@@ -109,8 +109,8 @@ mod image_pipeline_tests {
             .expect("Failed to apply Bayer dithering");
 
         // Calculate expected grid dimensions
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         // Map to braille grid
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
@@ -138,8 +138,8 @@ mod image_pipeline_tests {
             .expect("Failed to apply Atkinson dithering");
 
         // Calculate expected grid dimensions
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         // Map to braille grid
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
@@ -188,8 +188,8 @@ mod image_pipeline_tests {
         let binary_dithered = apply_dithering(&gray, DitheringMethod::FloydSteinberg).unwrap();
 
         // Calculate expected dimensions
-        let expected_width = ((binary_threshold.width + 1) / 2) as usize;
-        let expected_height = ((binary_threshold.height + 3) / 4) as usize;
+        let expected_width = binary_threshold.width.div_ceil(2) as usize;
+        let expected_height = binary_threshold.height.div_ceil(4) as usize;
 
         // Map both to grids
         let grid_threshold =
@@ -229,8 +229,8 @@ mod image_pipeline_tests {
 
         // Complete pipeline: threshold and map to braille
         let binary = auto_threshold(&resized);
-        let grid_width = ((binary.width + 1) / 2) as usize;
-        let grid_height = ((binary.height + 3) / 4) as usize;
+        let grid_width = binary.width.div_ceil(2) as usize;
+        let grid_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, grid_width, grid_height)
             .expect("Failed to map extreme wide image to braille");
 
@@ -258,8 +258,8 @@ mod image_pipeline_tests {
 
         // Complete pipeline
         let binary = auto_threshold(&resized);
-        let grid_width = ((binary.width + 1) / 2) as usize;
-        let grid_height = ((binary.height + 3) / 4) as usize;
+        let grid_width = binary.width.div_ceil(2) as usize;
+        let grid_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, grid_width, grid_height)
             .expect("Failed to map extreme tall image to braille");
 
@@ -288,8 +288,8 @@ mod image_pipeline_tests {
 
         // Complete pipeline should not panic
         let binary = auto_threshold(&resized);
-        let grid_width = ((binary.width + 1) / 2) as usize;
-        let grid_height = ((binary.height + 3) / 4) as usize;
+        let grid_width = binary.width.div_ceil(2) as usize;
+        let grid_height = binary.height.div_ceil(4) as usize;
         let _grid = pixels_to_braille(&binary, grid_width, grid_height)
             .expect("Failed to map truly extreme image to braille");
     }
@@ -313,8 +313,8 @@ mod image_pipeline_tests {
 
         // Complete pipeline
         let binary = auto_threshold(&resized);
-        let grid_width = ((binary.width + 1) / 2) as usize;
-        let grid_height = ((binary.height + 3) / 4) as usize;
+        let grid_width = binary.width.div_ceil(2) as usize;
+        let grid_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, grid_width, grid_height)
             .expect("Failed to map large square image to braille");
 
@@ -572,8 +572,8 @@ mod svg_pipeline_tests {
         let binary = auto_threshold(&img);
 
         // Calculate expected grid dimensions
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         // Map to braille grid
         let grid =
@@ -598,8 +598,8 @@ mod svg_pipeline_tests {
         let binary =
             apply_dithering(&gray, DitheringMethod::FloydSteinberg).expect("Failed to dither");
 
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         let grid =
             pixels_to_braille(&binary, expected_width, expected_height).expect("Failed to map");
@@ -617,8 +617,8 @@ mod svg_pipeline_tests {
         let gray = to_grayscale(&img);
         let binary = apply_dithering(&gray, DitheringMethod::Bayer).expect("Failed to dither");
 
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         let grid =
             pixels_to_braille(&binary, expected_width, expected_height).expect("Failed to map");
@@ -636,8 +636,8 @@ mod svg_pipeline_tests {
         let gray = to_grayscale(&img);
         let binary = apply_dithering(&gray, DitheringMethod::Atkinson).expect("Failed to dither");
 
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         let grid =
             pixels_to_braille(&binary, expected_width, expected_height).expect("Failed to map");
@@ -657,8 +657,8 @@ mod svg_pipeline_tests {
         let binary =
             apply_dithering(&gray, DitheringMethod::FloydSteinberg).expect("Failed to dither");
 
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         let grid =
             pixels_to_braille(&binary, expected_width, expected_height).expect("Failed to map");
@@ -680,8 +680,8 @@ mod svg_pipeline_tests {
         // Full pipeline
         let binary = auto_threshold(&img);
 
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
 
         let grid =
             pixels_to_braille(&binary, expected_width, expected_height).expect("Failed to map");
@@ -738,8 +738,8 @@ mod svg_pipeline_tests {
         );
 
         // Map to braille and verify non-trivial output
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
             .expect("Should map to braille");
 
@@ -859,8 +859,8 @@ mod svg_pipeline_tests {
         );
 
         // Map to braille and verify distinguishable from background
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
             .expect("Should map to braille");
 
@@ -930,8 +930,8 @@ mod svg_pipeline_tests {
         );
 
         // Map to braille and verify non-trivial output
-        let expected_width = ((binary.width + 1) / 2) as usize;
-        let expected_height = ((binary.height + 3) / 4) as usize;
+        let expected_width = binary.width.div_ceil(2) as usize;
+        let expected_height = binary.height.div_ceil(4) as usize;
         let grid = pixels_to_braille(&binary, expected_width, expected_height)
             .expect("Should map to braille");
 

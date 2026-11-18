@@ -110,8 +110,8 @@ fn render_svg_to_terminal(
 
     // Step 4: Map to braille grid
     // Calculate grid dimensions from pixel dimensions
-    let grid_width = ((binary.width + 1) / 2) as usize;
-    let grid_height = ((binary.height + 3) / 4) as usize;
+    let grid_width = binary.width.div_ceil(2) as usize;
+    let grid_height = binary.height.div_ceil(4) as usize;
 
     let grid = pixels_to_braille(&binary, grid_width, grid_height)?;
     println!(

@@ -211,7 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Spawn new firework periodically
-        if frame % SPAWN_INTERVAL == 0 {
+        if frame.is_multiple_of(SPAWN_INTERVAL) {
             // Random position in upper half of screen
             let spawn_x = rng.range(20.0, (dot_width - 20) as f64);
             let spawn_y = rng.range(10.0, (dot_height / 2) as f64);

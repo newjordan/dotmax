@@ -618,7 +618,7 @@ impl ProgressStyle for VoronoiDiagram {
                 let _ = id1; // used implicitly for the edge condition
                 if d2 - d1 < 1.5 {
                     draw::dot(grid, dx, dy);
-                } else if id1 % 2 == 0 && d1 < 3.0 {
+                } else if id1.is_multiple_of(2) && d1 < 3.0 {
                     // Dot near every other seed centre.
                     draw::dot(grid, dx, dy);
                 }

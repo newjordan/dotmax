@@ -1,11 +1,19 @@
 # cargo-deny configuration for dotmax
 # Enforces license policy, detects security vulnerabilities, prevents duplicates
 
+[graph]
+# Check the full optional-dependency graph (matches `cargo clippy --all-features`).
+all-features = true
+
 [advisories]
 ignore = [
     # paste 1.0.15 is unmaintained but still functional
     # ratatui v0.29.0 depends on it transitively, widely used in ecosystem
-    "RUSTSEC-2024-0436",
+    { id = "RUSTSEC-2024-0436" },
+    # ttf-parser is unmaintained with no in-place fix (harfbuzz/ttf-parser#217).
+    # It reaches us via imageproc -> ab_glyph -> owned_ttf_parser; dotmax itself
+    # never calls imageproc, so nothing in dotmax parses fonts through it.
+    { id = "RUSTSEC-2026-0192" },
 ]
 
 [licenses]
@@ -23,8 +31,54 @@ allow = [
     "0BSD",
     "Zlib",
     "BSL-1.0",
+    # Permissive BSD-style license, pulled in via the image feature:
+    # image -> ravif -> rav1e -> libfuzzer-sys
+    "NCSA",
 ]
 confidence-threshold = 0.8
+
+# Licenses of opt-in feature dependencies that are deliberately not in the
+# global allow list. They only apply to the named crates, so the core crate
+# stays clean of them (see the "Built on" section of README.md).
+[[licenses.exceptions]]
+# `svg` feature: resvg and the usvg family
+allow = ["MPL-2.0"]
+name = "resvg"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "usvg"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "usvg-parser"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "usvg-text-layout"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "usvg-tree"
+
+[[licenses.exceptions]]
+# `video` feature: FFmpeg bindings
+allow = ["WTFPL"]
+name = "ffmpeg-next"
+
+[[licenses.exceptions]]
+allow = ["WTFPL"]
+name = "ffmpeg-sys-next"
+
+[[licenses.exceptions]]
+# `chess` feature: GPL-3.0, as documented in the README. Binaries built with
+# the chess feature inherit GPL-3.0 obligations.
+allow = ["GPL-3.0-or-later"]
+name = "shakmaty"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "pgn-reader"
 
 [bans]
 # Warn about multiple versions of same crate (common in Rust ecosystem)

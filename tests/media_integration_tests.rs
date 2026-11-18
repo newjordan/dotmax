@@ -3,6 +3,7 @@
 //! These tests verify that `show_file()` and `load_file()` correctly
 //! route all media formats to their appropriate handlers.
 
+#[cfg(feature = "image")]
 use std::path::Path;
 
 #[cfg(feature = "image")]

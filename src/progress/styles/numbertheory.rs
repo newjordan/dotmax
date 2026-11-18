@@ -24,12 +24,12 @@ fn is_prime(n: u64) -> bool {
     if n == 2 {
         return true;
     }
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return false;
     }
     let mut i = 3u64;
     while i * i <= n {
-        if n % i == 0 {
+        if n.is_multiple_of(i) {
             return false;
         }
         i += 2;
@@ -347,7 +347,11 @@ impl ProgressStyle for Collatz {
         fn stopping_time(mut k: u64) -> u64 {
             let mut count = 0u64;
             while k != 1 && count < 10_000 {
-                k = if k % 2 == 0 { k / 2 } else { 3 * k + 1 };
+                k = if k.is_multiple_of(2) {
+                    k / 2
+                } else {
+                    3 * k + 1
+                };
                 count += 1;
             }
             count
@@ -574,8 +578,8 @@ impl ProgressStyle for TotientHistogram {
             let mut temp = n;
             let mut p = 2;
             while p * p <= temp {
-                if temp % p == 0 {
-                    while temp % p == 0 {
+                if temp.is_multiple_of(p) {
+                    while temp.is_multiple_of(p) {
                         temp /= p;
                     }
                     phi = phi - phi / p;

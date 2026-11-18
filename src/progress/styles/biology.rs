@@ -636,7 +636,11 @@ impl ProgressStyle for ProteinFolding {
             // Folded slot: boustrophedon rows.
             let r = i / per_row;
             let c = i % per_row;
-            let col = if r % 2 == 0 { c } else { per_row - 1 - c };
+            let col = if r.is_multiple_of(2) {
+                c
+            } else {
+                per_row - 1 - c
+            };
             let fx = fx0 + col as f32 * pitch;
             let fy = row_gap * (r as f32 + 0.5);
             let jx = (ctx.time * 7.0 + i as f32 * 2.3).sin() * jig;
@@ -668,7 +672,7 @@ impl ProgressStyle for ProteinFolding {
                 let c = i % per_row;
                 // Partner directly below in the next strand.
                 let j = (r + 1) * per_row + (per_row - 1 - c);
-                if j < n && c % 2 == 0 {
+                if j < n && c.is_multiple_of(2) {
                     let (a, b) = (pts[i], pts[j]);
                     let mut y = a.1.min(b.1) + 2;
                     while y < a.1.max(b.1) - 1 {

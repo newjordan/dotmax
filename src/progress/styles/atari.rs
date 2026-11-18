@@ -346,7 +346,7 @@ impl ProgressStyle for Asteroids {
         };
         let blink = ((ctx.time * 4.0) as u32).rem_euclid(8);
         for i in 0..24u32 {
-            if (star_hash(i * 5 + 3) + blink) % 8 == 0 {
+            if (star_hash(i * 5 + 3) + blink).is_multiple_of(8) {
                 continue; // this star is blinked off right now
             }
             let sx = (star_hash(i * 2 + 1) % w as u32) as i32;

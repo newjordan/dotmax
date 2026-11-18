@@ -212,7 +212,7 @@ impl ProgressStyle for NokiaSnake {
             let head_seg = snake_dots.saturating_sub(1);
             let row = head_seg / w;
             let col_in_row = head_seg % w;
-            let hx = if row % 2 == 0 {
+            let hx = if row.is_multiple_of(2) {
                 col_in_row
             } else {
                 w.saturating_sub(1 + col_in_row)

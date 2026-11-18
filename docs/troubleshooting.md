@@ -296,7 +296,7 @@ This guide covers common issues and their solutions when using dotmax.
 1. **Check Rust version**
    ```bash
    rustc --version
-   # Requires Rust 1.70+
+   # Requires Rust 1.88+
    ```
 
 2. **Update Rust**

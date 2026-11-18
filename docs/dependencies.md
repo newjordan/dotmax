@@ -94,7 +94,7 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **License**: MIT OR Apache-2.0
 - **Estimated Binary Size Impact**: +1.5MB
 
-### imageproc (0.24) - Behind `image` Feature
+### imageproc (0.25) - Behind `image` Feature
 
 - **Purpose**: Image processing algorithms (dithering, thresholding)
 - **Why Required**:
@@ -107,11 +107,11 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **Alternatives Considered**:
   - Manual implementation: Would require reimplementing Floyd-Steinberg, Bayer matrices, Otsu's method
   - `imageproc` is battle-tested and actively maintained
-- **Rationale for Version**: 0.24 matches `image` 0.25 compatibility
+- **Rationale for Version**: 0.25 matches `image` 0.25 compatibility
 - **License**: MIT
 - **Estimated Binary Size Impact**: +500KB
 
-### gif (0.13) - Behind `image` Feature
+### gif (0.14) - Behind `image` Feature
 
 - **Purpose**: Animated GIF decoding for frame-by-frame playback
 - **Why Required**:
@@ -124,7 +124,7 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **Alternatives Considered**:
   - `image` crate alone: Only decodes first frame of animated GIFs
   - Manual parsing: GIF format is complex (LZW, disposal methods, extensions)
-- **Rationale for Version**: 0.13 is latest stable
+- **Rationale for Version**: 0.14 is latest stable
 - **License**: MIT OR Apache-2.0
 - **Estimated Binary Size Impact**: +150KB
 
@@ -147,7 +147,7 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 - **License**: MIT OR Apache-2.0
 - **Estimated Binary Size Impact**: ~0KB (already included via image crate dependency tree)
 
-### resvg (0.38) - Behind `svg` Feature
+### resvg (0.50) - Behind `svg` Feature
 
 - **Purpose**: SVG rasterization (vector graphics to bitmap conversion)
 - **Why Required**:
@@ -162,11 +162,11 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
   - `svg` crate: Only parses SVG, doesn't rasterize
   - `librsvg` (C library): FFI overhead, not pure Rust
   - `resvg` is the only viable pure-Rust option
-- **Rationale for Version**: 0.38 is latest stable
+- **Rationale for Version**: 0.50 is latest stable
 - **License**: MPL-2.0 (compatible with MIT/Apache-2.0)
 - **Estimated Binary Size Impact**: +1.2MB
 
-### usvg (0.38) - Behind `svg` Feature
+### usvg (0.50) - Behind `svg` Feature
 
 - **Purpose**: SVG parsing and simplification
 - **Why Required**:
@@ -178,11 +178,11 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
   - No value without SVG support
 - **Alternatives Considered**:
   - None - `usvg` is tightly coupled to `resvg` (same author/ecosystem)
-- **Rationale for Version**: 0.38 matches `resvg` compatibility
+- **Rationale for Version**: 0.50 matches `resvg` compatibility
 - **License**: MPL-2.0
 - **Estimated Binary Size Impact**: Included in `resvg` estimate
 
-### ffmpeg-next (7.0) - Behind `video` Feature
+### ffmpeg-next (9.1) - Behind `video` Feature
 
 - **Purpose**: FFmpeg bindings for video decoding and playback
 - **Why Required**:
@@ -200,11 +200,11 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
   - Pure Rust decoders: No comprehensive option exists for all codecs
   - `ffmpeg-next` is well-maintained fork with modern API
 - **System Requirements**:
-  - Linux: `libavcodec-dev libavformat-dev libavutil-dev libswscale-dev`
+  - Linux: `libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libswscale-dev libswresample-dev`
   - macOS: `brew install ffmpeg`
   - Windows: FFmpeg binaries in PATH
-- **Rationale for Version**: 7.0 supports FFmpeg 6.x/7.x
-- **License**: LGPL-2.1+ (FFmpeg itself), crate is MIT
+- **Rationale for Version**: 9.1 binds to whatever FFmpeg the system provides (4.x through 9.x)
+- **License**: LGPL-2.1+ (FFmpeg itself), crate is WTFPL
 - **Estimated Binary Size Impact**: +2MB (mostly from FFmpeg system libs)
 
 ---
@@ -213,7 +213,7 @@ These dependencies are **only included when explicitly enabled** via Cargo featu
 
 These dependencies are **only used during development/testing** and do NOT impact library users.
 
-### criterion (0.7)
+### criterion (0.8)
 
 - **Purpose**: Statistics-driven benchmarking with HTML reports
 - **Why Required**:
@@ -221,7 +221,7 @@ These dependencies are **only used during development/testing** and do NOT impac
   - Provides statistical analysis of performance (mean, variance, outlier detection)
   - Generates HTML reports for visualizing performance trends
   - Industry standard for Rust benchmarking (used by tokio, serde, rayon)
-- **Rationale for Version**: 0.7 is latest stable with HTML report features
+- **Rationale for Version**: 0.8 is latest stable with HTML report features
 - **License**: Apache-2.0 OR MIT
 - **Impact**: Dev-only, not included in library builds
 

@@ -101,8 +101,8 @@ fn bench_color_extraction_average(c: &mut Criterion) {
     let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
 
     // Calculate actual cell dimensions after resize (aspect ratio preserved)
-    let cell_width = (resized.width() as usize + 1) / 2;
-    let cell_height = (resized.height() as usize + 3) / 4;
+    let cell_width = (resized.width() as usize).div_ceil(2);
+    let cell_height = (resized.height() as usize).div_ceil(4);
 
     c.bench_function("color_extraction_average_80x24", |b| {
         b.iter(|| {
@@ -123,8 +123,8 @@ fn bench_color_extraction_dominant(c: &mut Criterion) {
         .expect("Failed to load sample image");
     let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
 
-    let cell_width = (resized.width() as usize + 1) / 2;
-    let cell_height = (resized.height() as usize + 3) / 4;
+    let cell_width = (resized.width() as usize).div_ceil(2);
+    let cell_height = (resized.height() as usize).div_ceil(4);
 
     c.bench_function("color_extraction_dominant_80x24", |b| {
         b.iter(|| {
@@ -145,8 +145,8 @@ fn bench_color_extraction_center(c: &mut Criterion) {
         .expect("Failed to load sample image");
     let resized = resize_to_dimensions(&img, 160, 96, true).expect("Failed to resize");
 
-    let cell_width = (resized.width() as usize + 1) / 2;
-    let cell_height = (resized.height() as usize + 3) / 4;
+    let cell_width = (resized.width() as usize).div_ceil(2);
+    let cell_height = (resized.height() as usize).div_ceil(4);
 
     c.bench_function("color_extraction_center_80x24", |b| {
         b.iter(|| {

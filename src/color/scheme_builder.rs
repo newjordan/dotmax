@@ -281,7 +281,7 @@ mod tests {
     fn test_builder_new_creates_empty_builder() {
         let builder = ColorSchemeBuilder::new("test");
         assert_eq!(builder.name, "test");
-        assert!(builder.stops.is_empty());
+        assert_eq!(builder.stops, []);
     }
 
     #[test]

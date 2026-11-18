@@ -707,7 +707,7 @@ impl ProgressStyle for TwoRunners {
         let shimmer_tail = tail;
         for k in 0..shimmer_tail {
             let step = (ctx.time * 8.0) as usize;
-            if (k + step) % 2 == 0 {
+            if (k + step).is_multiple_of(2) {
                 let idx_cw = (head_cw + p - k) % p;
                 let idx_ccw = (head_ccw + k) % p;
                 let (x, y) = perim_point(idx_cw, pw, ph);

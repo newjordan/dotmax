@@ -103,7 +103,7 @@ impl ProgressStyle for Supernova {
                     let px = cx + (r as f32 * a.cos()) as i32;
                     let py = cy + (r as f32 * a.sin() * 0.5) as i32;
                     // Occasional gap for ring texture
-                    if hash((s as u32).wrapping_add(dr.unsigned_abs() * 997)) % 5 != 0 {
+                    if !hash((s as u32).wrapping_add(dr.unsigned_abs() * 997)).is_multiple_of(5) {
                         draw::dot_i(grid, px, py);
                     }
                 }
@@ -124,7 +124,7 @@ impl ProgressStyle for Supernova {
             let r_d = (r + drift).min(shell_r);
             let px = cx + (r_d as f32 * angle.cos()) as i32;
             let py = cy + (r_d as f32 * angle.sin() * 0.5) as i32;
-            if hash(i.wrapping_add((ctx.time * 3.0) as u32)) % 3 != 0 {
+            if !hash(i.wrapping_add((ctx.time * 3.0) as u32)).is_multiple_of(3) {
                 draw::dot_i(grid, px, py);
             }
         }
@@ -452,7 +452,7 @@ impl ProgressStyle for BigBang {
 
             // Draw particle; brighter near leading edge.
             draw::dot_i(grid, px as i32, py as i32);
-            if hash(i.wrapping_add(17)) % 4 == 0 {
+            if hash(i.wrapping_add(17)).is_multiple_of(4) {
                 draw::dot_i(grid, px as i32 + 1, py as i32);
             }
         }
@@ -518,13 +518,13 @@ impl ProgressStyle for SolarFlare {
             draw::dot_i(grid, x as i32, ly);
             for y in (ly + 1)..hi {
                 let g = hash((x as u32).wrapping_mul(97) ^ (y as u32).wrapping_mul(31));
-                if (x + y as usize) % 2 == 0 || g % 3 == 0 {
+                if (x + y as usize).is_multiple_of(2) || g.is_multiple_of(3) {
                     draw::dot_i(grid, x as i32, y);
                 }
             }
             // Spicules: short flickering hairs on the limb.
             let sp = hash((x as u32).wrapping_add((ctx.time * 5.0) as u32 * 131));
-            if x % 5 == 0 && sp % 3 == 0 {
+            if x % 5 == 0 && sp.is_multiple_of(3) {
                 draw::dot_i(grid, x as i32, ly - 1);
             }
         }
@@ -691,7 +691,7 @@ impl ProgressStyle for MeteorShower {
         for i in 0u32..24 {
             let sx = (hash_f(i + 9000) * w as f32) as i32;
             let sy = (hash_f(i + 9100) * (hi - 2).max(1) as f32) as i32;
-            if hash(i.wrapping_add((ctx.time * 2.0) as u32)) % 5 != 0 {
+            if !hash(i.wrapping_add((ctx.time * 2.0) as u32)).is_multiple_of(5) {
                 draw::dot_i(grid, sx, sy);
             }
         }
@@ -904,7 +904,7 @@ impl ProgressStyle for GravitationalLens {
                 let r = (ring_r as i32 + dr).max(0) as f32;
                 let px = cx + r * a.cos();
                 let py = cy + r * a.sin() * 0.5;
-                if hash((s as u32).wrapping_add(dr.unsigned_abs() * 199)) % 3 != 0 {
+                if !hash((s as u32).wrapping_add(dr.unsigned_abs() * 199)).is_multiple_of(3) {
                     draw::dot_i(grid, px as i32, py as i32);
                 }
             }
@@ -1026,12 +1026,12 @@ impl ProgressStyle for CosmicWeb {
                 let px = ax + ((bx - ax) as f32 * t) as i32;
                 let py = ay + ((by - ay) as f32 * t) as i32;
                 // Filament has gaps — sparse, like gas strands.
-                if hash(
+                if !hash(
                     (s as u32)
                         .wrapping_mul(a as u32 * 13 + b as u32 * 7 + 1)
                         .wrapping_add((ctx.time * 2.0) as u32),
-                ) % 4
-                    != 0
+                )
+                .is_multiple_of(4)
                 {
                     draw::dot_i(grid, px, py);
                 }

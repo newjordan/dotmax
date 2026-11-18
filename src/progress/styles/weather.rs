@@ -838,7 +838,7 @@ impl ProgressStyle for BlizzardWhiteout {
         // The whiteout wall itself: dense drifting flecks behind the front.
         for y in 0..hi {
             for x in 0..hidden.min(wi) {
-                if hash((x * 31 + y * 7) as u32 + (t * 8.0) as u32) % 3 != 0 {
+                if !hash((x * 31 + y * 7) as u32 + (t * 8.0) as u32).is_multiple_of(3) {
                     draw::dot_i(grid, x, y);
                 }
             }
@@ -1184,7 +1184,7 @@ impl ProgressStyle for Thermometer {
         let tick_positions = [0.0, 0.25, 0.5, 0.75, 1.0];
         for &tp in &tick_positions {
             let ty = bulb_top_y.saturating_sub((tp * tube_h as f32).round() as usize);
-            let tick_len = if (tp * 4.0).round() as usize % 2 == 0 {
+            let tick_len = if ((tp * 4.0).round() as usize).is_multiple_of(2) {
                 4i32
             } else {
                 2i32

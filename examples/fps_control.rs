@@ -193,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame_count += 1;
 
         // Display FPS info every frame (stderr doesn't interfere with terminal graphics)
-        if frame_count % 5 == 0 {
+        if frame_count.is_multiple_of(5) {
             display_status(&timer, frame_count, current_fps);
         }
     }
