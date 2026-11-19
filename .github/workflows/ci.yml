@@ -113,6 +113,24 @@ jobs:
           command: check
           arguments: --all-features
 
+  package:
+    name: Packaged crate builds image feature
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # `cargo package` only compiles default features, which are empty.
+      # Unpack the .crate and compile the features crates.io users enable.
+      - name: Verify packaged image and svg features
+        run: bash scripts/verify-packaged-crate.sh
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest

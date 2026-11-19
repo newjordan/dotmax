@@ -40,8 +40,8 @@ jobs:
       - name: Run doc tests
         run: cargo test --doc
 
-      - name: Verify package
-        run: cargo package --allow-dirty --list
+      - name: Verify packaged crate builds image and svg features
+        run: bash scripts/verify-packaged-crate.sh
 
   publish:
     name: Publish to crates.io

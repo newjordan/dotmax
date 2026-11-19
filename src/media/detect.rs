@@ -526,9 +526,8 @@ pub fn is_animated_gif(path: impl AsRef<Path>) -> Result<bool> {
 /// ```
 /// use dotmax::media::is_animated_gif_from_bytes;
 ///
-/// // Single-frame GIF (typical static image)
-/// let static_gif = include_bytes!("../../tests/fixtures/media/static.gif");
-/// // This would return false for a static GIF fixture
+/// // Bytes that are not a GIF are not an animation.
+/// assert!(!is_animated_gif_from_bytes(b"not a gif"));
 /// ```
 #[cfg(feature = "image")]
 #[must_use]
