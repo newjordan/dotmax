@@ -48,6 +48,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
+#[cfg(feature = "video")]
 use std::fmt::Write as _;
 use std::io::{stdout, Write};
 
@@ -81,6 +82,7 @@ impl Default for TunerSettings {
 
 /// Frame buffer for differential rendering.
 /// Stores pre-rendered lines to enable skip-unchanged optimization.
+#[cfg(feature = "video")]
 struct FrameBuffer {
     /// Pre-rendered lines with ANSI codes baked in
     lines: Vec<String>,
@@ -90,6 +92,7 @@ struct FrameBuffer {
     height: usize,
 }
 
+#[cfg(feature = "video")]
 impl FrameBuffer {
     fn new() -> Self {
         Self {
@@ -152,6 +155,7 @@ impl FrameBuffer {
 
 /// Render a single grid line to a string with ANSI color codes.
 /// Batches consecutive same-color characters for efficiency.
+#[cfg(feature = "video")]
 fn render_grid_line(grid: &BrailleGrid, y: usize, max_width: usize) -> String {
     let width = grid.width().min(max_width);
     // Pre-allocate: worst case is color change every char (~20 bytes per color code)
@@ -191,6 +195,7 @@ fn render_grid_line(grid: &BrailleGrid, y: usize, max_width: usize) -> String {
 }
 
 /// Flush a batch of same-colored characters to the output string.
+#[cfg(feature = "video")]
 #[inline]
 fn flush_color_batch(output: &mut String, chars: &[char], color: Option<dotmax::Color>) {
     if let Some(c) = color {

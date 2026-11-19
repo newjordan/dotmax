@@ -783,8 +783,8 @@ pub fn render_image_with_color_jittered(
     // Image is already resized by caller, use directly
     let actual_pixel_width = image.width() as usize;
     let actual_pixel_height = image.height() as usize;
-    let actual_cell_width = (actual_pixel_width + 1) / 2; // Round up
-    let actual_cell_height = (actual_pixel_height + 3) / 4; // Round up
+    let actual_cell_width = actual_pixel_width.div_ceil(2); // Round up
+    let actual_cell_height = actual_pixel_height.div_ceil(4); // Round up
 
     debug!(
         "Image dimensions: {}×{} pixels → {}×{} cells",

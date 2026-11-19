@@ -42,7 +42,7 @@ fn main() {
             .split_once('/')
             .map_or((a.as_str(), None), |(t, s)| (t, Some(s)));
         for s in styles_for_theme(theme) {
-            if style.map_or(true, |n| n == s.name()) {
+            if style.is_none_or(|n| n == s.name()) {
                 picks.push(s);
             }
         }

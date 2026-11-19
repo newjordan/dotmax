@@ -375,7 +375,7 @@ fn find_ident_bounded(src: &str, needle: &str, from: usize) -> Option<usize> {
     while let Some(rel) = src[start..].find(needle) {
         let pos = start + rel;
         let end = pos + needle.len();
-        let bounded = src.as_bytes().get(end).map_or(true, |b| !is_ident_char(*b));
+        let bounded = src.as_bytes().get(end).is_none_or(|b| !is_ident_char(*b));
         if bounded {
             return Some(pos);
         }

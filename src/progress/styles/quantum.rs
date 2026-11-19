@@ -444,7 +444,7 @@ impl ProgressStyle for QuantumTunneling {
             let d = xi.saturating_sub(barrier_x0) as f32;
             let envelope =
                 (-decay * 2.5 * d / (barrier_x1.saturating_sub(barrier_x0) as f32).max(1.0)).exp();
-            if (d as usize % (2.max((1.0 / envelope.max(0.1)) as usize))) == 0 {
+            if (d as usize).is_multiple_of(2.max((1.0 / envelope.max(0.1)) as usize)) {
                 draw::dot(grid, xi, mid_y as usize);
             }
         }
@@ -918,7 +918,7 @@ impl ProgressStyle for EnergyLevels {
 
         // Tint: filled levels are brighter
         let (cw, ch) = grid.dimensions();
-        let filled_levels = (n_filled + 1) / 2; // levels with at least one electron
+        let filled_levels = n_filled.div_ceil(2); // levels with at least one electron
         for lv in 0..filled_levels.min(n_levels) {
             let y_frac = 1.0 - (lv as f32 + 0.5) / n_levels as f32;
             let cy = (y_frac * (ch as f32 - 1.0)) as usize;

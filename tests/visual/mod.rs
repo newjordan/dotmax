@@ -130,6 +130,6 @@ mod tests {
         grid.set_dot(0, 0).unwrap(); // Top-left dot
         let output = capture_grid(&grid);
         // Should have non-blank character in top-left
-        assert!(!output.is_empty());
+        assert_ne!(output, String::new());
     }
 }

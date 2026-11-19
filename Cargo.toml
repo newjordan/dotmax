@@ -3,7 +3,10 @@ name = "dotmax"
 version = "0.1.11"
 authors = ["Frosty", "Claude Fable 5.1 (Anthropic) <noreply@anthropic.com>"]
 edition = "2021"
-rust-version = "1.70"
+# 1.88 is the real floor for a fresh dependency resolve: unicode-segmentation
+# 1.13.x, instability 0.3.x and darling 0.24.x (via ratatui 0.29) require it.
+# Verified in CI's MSRV job; the source itself needs nothing newer.
+rust-version = "1.88"
 description = "High-performance terminal braille rendering for images, animations, and graphics"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/newjordan/dotmax"
@@ -69,12 +72,12 @@ serde_json = "1.0"       # Static web demo frame-pack writer
 
 # Optional dependencies (feature-gated)
 image = { version = "0.25", optional = true }
-imageproc = { version = "0.24", optional = true }
-gif = { version = "0.13", optional = true }
+imageproc = { version = "0.25", optional = true }
+gif = { version = "0.14", optional = true }
 png = { version = "0.18", optional = true }  # For APNG animation support
-resvg = { version = "0.38", optional = true }
-usvg = { version = "0.38", optional = true }
-ffmpeg-next = { version = "7.0", optional = true }  # For video playback
+resvg = { version = "0.50", optional = true }
+usvg = { version = "0.50", optional = true }
+ffmpeg-next = { version = "9.1", optional = true }  # For video playback
 anyhow = { version = "1.0", optional = true }       # Error handling for raytracer loaders
 gltf = { version = "1.4", optional = true }         # glTF/GLB loading for raytracer
 shakmaty = { version = "0.28", optional = true }    # Chess game logic for chess module
@@ -89,7 +92,7 @@ raytracer = ["dep:anyhow", "dep:gltf"]  # CPU raytracer with braille output
 chess = ["dep:shakmaty", "dep:pgn-reader"]  # Chess board rendering
 
 [dev-dependencies]
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 tracing-subscriber = "0.3"
 tempfile = "3.10"
 proptest = "1.4"
@@ -303,12 +306,20 @@ name = "generate_watermark"
 required-features = ["image"]
 
 [[example]]
+name = "generate_readme_examples"
+required-features = ["image"]
+
+[[example]]
 name = "render_braille"
 required-features = ["image"]
 
 [[example]]
 name = "render_cuda_dojo"
 required-features = ["image"]
+
+[[example]]
+name = "test_video_decode"
+required-features = ["video"]
 
 [[example]]
 name = "webcam_viewer"
@@ -351,6 +362,10 @@ unnecessary_literal_bound = "allow"
 # rendered output (and the visual-regression baselines). It is also slower on CPUs without
 # hardware FMA. Not a win for a software renderer.
 suboptimal_flops = "allow"
+# Same reasoning: `(a + b) / 2` and friends are the hand-tuned math behind the 692-style
+# catalog. `midpoint()` is defined to avoid overflow and rounds differently, so a
+# mechanical rewrite risks 1-ULP shifts in the rendered styles for no real benefit.
+manual_midpoint = "allow"
 # Graphics/math code legitimately uses short, similar names: x/y/z, cx/cy, nx/ny, r/g/b.
 similar_names = "allow"
 many_single_char_names = "allow"

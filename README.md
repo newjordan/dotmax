@@ -61,6 +61,8 @@ println!("{}", render_string(styles[0].as_ref(), &ctx).unwrap());
 
 ## Install
 
+Requires Rust 1.88 or later (`rust-version` in `Cargo.toml`).
+
 ```bash
 cargo add dotmax --features image
 ```

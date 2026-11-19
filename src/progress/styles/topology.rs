@@ -529,7 +529,7 @@ impl ProgressStyle for KleinBottle {
         let mut plot = |p: (i32, i32, f32)| {
             n = n.wrapping_add(1);
             // Visible wire solid; wire seen *through* the glass dotted.
-            if zb.front(p.0, p.1, p.2, eps) || n % 5 == 0 {
+            if zb.front(p.0, p.1, p.2, eps) || n.is_multiple_of(5) {
                 draw::dot_i(grid, p.0, p.1);
             }
         };

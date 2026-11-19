@@ -439,7 +439,7 @@ impl ProgressStyle for VenetianBlinds {
         let (dw, dh) = draw::dot_dims(grid);
         // Slat height in dots — 8 dots = 2 cell rows.
         let slat_h = 8usize;
-        let num_slats = (dh + slat_h - 1) / slat_h;
+        let num_slats = dh.div_ceil(slat_h);
         for s in 0..num_slats {
             let top = s * slat_h;
             let slat_actual = slat_h.min(dh.saturating_sub(top));
@@ -456,7 +456,11 @@ impl ProgressStyle for VenetianBlinds {
         let slat_c = 2usize;
         for cy_idx in 0..ch {
             let slat_idx = cy_idx / slat_c;
-            let t = if slat_idx % 2 == 0 { 0.25 } else { 0.75 };
+            let t = if slat_idx.is_multiple_of(2) {
+                0.25
+            } else {
+                0.75
+            };
             let color = ctx.palette.sample(t);
             draw::tint_row(grid, cy_idx, 0, cw.saturating_sub(1), color);
         }
@@ -805,8 +809,8 @@ impl ProgressStyle for Pixelate {
         // Each block has a pseudorandom order based on its grid position so that
         // blocks light up in a spatial-hash order rather than simple scan order.
         // We use a cheap integer hash of (block_col, block_row).
-        let num_bx = (cw + block_w - 1) / block_w;
-        let num_by = (ch + block_h - 1) / block_h;
+        let num_bx = cw.div_ceil(block_w);
+        let num_by = ch.div_ceil(block_h);
         let total_blocks = (num_bx * num_by).max(1);
         for bby in 0..num_by {
             for bbx in 0..num_bx {

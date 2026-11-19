@@ -1,6 +1,6 @@
 # Dotmax Examples
 
-This directory contains 52 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
+This directory contains 74 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
 
 ## Quick Start
 

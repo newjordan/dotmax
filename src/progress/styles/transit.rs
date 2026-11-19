@@ -1085,8 +1085,8 @@ impl GantryCanvas {
                 }
             }
         }
-        for cy in 0..(self.h + 3) / 4 {
-            for cx in 0..(self.w + 1) / 2 {
+        for cy in 0..self.h.div_ceil(4) {
+            for cx in 0..self.w.div_ceil(2) {
                 let mut counts = [0u8; 9];
                 for y in cy * 4..(cy * 4 + 4).min(self.h) {
                     for x in cx * 2..(cx * 2 + 2).min(self.w) {

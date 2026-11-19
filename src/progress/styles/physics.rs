@@ -463,7 +463,7 @@ impl ProgressStyle for NewtonsCradle {
 
         // Tint: base gradient to progress; balls in the leading colour.
         let (cw, ch) = grid.dimensions();
-        let filled_cells = (filled.max(0) as usize + 1) / 2;
+        let filled_cells = (filled.max(0) as usize).div_ceil(2);
         for cx in 0..filled_cells.min(cw) {
             let t = cx as f32 / cw as f32;
             draw::tint_row(grid, ch.saturating_sub(1), cx, cx, ctx.palette.sample(t));

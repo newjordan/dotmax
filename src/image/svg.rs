@@ -152,8 +152,8 @@
 use crate::DotmaxError;
 use image::DynamicImage;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, info};
-use usvg::{TreeParsing, TreePostProc};
 
 /// Maximum SVG dimensions (width or height in pixels)
 ///
@@ -303,16 +303,9 @@ pub fn load_svg_from_bytes(
 
     debug!("Parsing SVG data ({} bytes)", bytes.len());
 
-    // Parse SVG with usvg
-    let options = usvg::Options::default();
-    let mut tree = usvg::Tree::from_data(bytes, &options)
-        .map_err(|e| DotmaxError::SvgError(format!("Failed to parse SVG: {e}")))?;
-
-    debug!(
-        "SVG parsed successfully, viewBox size: {}×{}",
-        tree.size.width(),
-        tree.size.height()
-    );
+    // Parse SVG with usvg. Text nodes are laid out during parsing, using the
+    // font database carried by the options.
+    let mut options = usvg::Options::default();
 
     // Load system fonts for proper text rendering
     // Without this, SVG text elements fall back to poor-quality generic fonts
@@ -320,10 +313,16 @@ pub fn load_svg_from_bytes(
     fontdb.load_system_fonts();
 
     debug!("Loaded {} font faces for text rendering", fontdb.len());
+    options.fontdb = Arc::new(fontdb);
 
-    // Postprocess tree to flatten text nodes and calculate bounding boxes
-    // This prevents rendering warnings and ensures proper text rendering
-    tree.postprocess(usvg::PostProcessingSteps::default(), &fontdb);
+    let tree = usvg::Tree::from_data(bytes, &options)
+        .map_err(|e| DotmaxError::SvgError(format!("Failed to parse SVG: {e}")))?;
+
+    debug!(
+        "SVG parsed successfully, viewBox size: {}×{}",
+        tree.size().width(),
+        tree.size().height()
+    );
 
     // Rasterize to pixel buffer
     rasterize_svg_tree(&tree, width, height)
@@ -370,7 +369,7 @@ fn rasterize_svg_tree(
     })?;
 
     // Calculate transform for aspect ratio preservation
-    let tree_size = tree.size;
+    let tree_size = tree.size();
     #[allow(clippy::cast_precision_loss)]
     let scale_x = width as f32 / tree_size.width();
     #[allow(clippy::cast_precision_loss)]
@@ -395,7 +394,7 @@ fn rasterize_svg_tree(
     let mut brightness_sum: u64 = 0;
     let pixel_count = (width * height) as usize;
 
-    for pixel in pixmap_data.chunks_exact(4) {
+    for pixel in pixmap_data.as_chunks::<4>().0 {
         // Calculate perceived brightness using standard luminance formula
         #[allow(
             clippy::cast_possible_truncation,
@@ -419,7 +418,7 @@ fn rasterize_svg_tree(
 
         // Invert all pixel values
         let pixmap_data = pixmap.data_mut();
-        for pixel in pixmap_data.chunks_exact_mut(4) {
+        for pixel in pixmap_data.as_chunks_mut::<4>().0 {
             pixel[0] = 255 - pixel[0]; // R
             pixel[1] = 255 - pixel[1]; // G
             pixel[2] = 255 - pixel[2]; // B

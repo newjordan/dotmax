@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Print FPS to stderr every second (doesn't interfere with terminal graphics)
         let total_elapsed = start_time.elapsed().as_secs();
-        if total_elapsed > 0 && frame_count % 60 == 0 {
+        if total_elapsed > 0 && frame_count.is_multiple_of(60) {
             let fps = frame_count as f64 / start_time.elapsed().as_secs_f64();
             eprintln!("\rFPS: {fps:.1}  Frame: {frame_count}  ");
         }

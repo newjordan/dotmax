@@ -445,7 +445,7 @@ impl ProgressStyle for TetrisWell {
         // Falling piece: a blinking 4-wide row just above the stack.
         if stack_dots < inner_h {
             let piece_y = stack_y0.saturating_sub(1);
-            let blink = ((ctx.time * 4.0) as usize) % 2 == 0;
+            let blink = ((ctx.time * 4.0) as usize).is_multiple_of(2);
             if blink && piece_y < inner_h {
                 // Randomise piece shape by time bucket (cycles through shapes).
                 let shape = ((ctx.time * 0.5) as usize) % 5;
@@ -875,7 +875,7 @@ impl ProgressStyle for ContraSpread {
         let reach = (ctx.eased * dw as f32) as usize;
 
         // Also draw a muzzle flash at the origin.
-        let flash = ((ctx.time * 12.0) as usize) % 2 == 0;
+        let flash = ((ctx.time * 12.0) as usize).is_multiple_of(2);
         if flash {
             draw::dot(grid, 0, cy_f as usize);
         }

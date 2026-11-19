@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   - Total Pixels: {}", img.width() * img.height());
 
             // Calculate braille cell dimensions (2×4 dots per cell)
-            let braille_width = (img.width() + 1) / 2; // 2 dots wide per cell
-            let braille_height = (img.height() + 3) / 4; // 4 dots tall per cell
+            let braille_width = img.width().div_ceil(2); // 2 dots wide per cell
+            let braille_height = img.height().div_ceil(4); // 4 dots tall per cell
             println!("\n🔲 Braille Rendering Info:");
             println!(
                 "   - Would render as: {}×{} braille cells",
