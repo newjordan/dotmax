@@ -1,7 +1,15 @@
 //! Vector3 and Ray primitives
 
 use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
-
+/// Vector3.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::Vector3;
+/// let v = Vector3::new(3.0, 0.0, 4.0);
+/// assert_eq!(v.length(), 5.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vector3 {
     pub x: f32,
@@ -10,11 +18,26 @@ pub struct Vector3 {
 }
 
 impl Vector3 {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// assert_eq!(Vector3::new(1.0, 2.0, 3.0).y, 2.0);
+    /// ```
     #[inline]
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
-
+    /// zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// assert_eq!(Vector3::zero().length_squared(), 0.0);
+    /// ```
     #[inline]
     pub fn zero() -> Self {
         Self {
@@ -23,22 +46,51 @@ impl Vector3 {
             z: 0.0,
         }
     }
-
+    /// length squared.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// assert_eq!(Vector3::new(1.0, 2.0, 2.0).length_squared(), 9.0);
+    /// ```
     #[inline]
     pub fn length_squared(&self) -> f32 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
-
+    /// length.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// assert_eq!(Vector3::new(0.0, 3.0, 4.0).length(), 5.0);
+    /// ```
     #[inline]
     pub fn length(&self) -> f32 {
         self.length_squared().sqrt()
     }
-
+    /// dot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// assert_eq!(Vector3::new(1.0, 0.0, 0.0).dot(&Vector3::new(1.0, 0.0, 0.0)), 1.0);
+    /// ```
     #[inline]
     pub fn dot(&self, other: &Vector3) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
-
+    /// cross.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// let c = Vector3::new(1.0, 0.0, 0.0).cross(&Vector3::new(0.0, 1.0, 0.0));
+    /// assert_eq!(c.z, 1.0);
+    /// ```
     #[inline]
     #[must_use]
     pub fn cross(&self, other: &Vector3) -> Vector3 {
@@ -48,7 +100,15 @@ impl Vector3 {
             self.x * other.y - self.y * other.x,
         )
     }
-
+    /// normalize.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Vector3;
+    /// let n = Vector3::new(0.0, 10.0, 0.0).normalize();
+    /// assert!((n.length() - 1.0).abs() < 1e-5);
+    /// ```
     #[inline]
     #[must_use]
     pub fn normalize(&self) -> Vector3 {
@@ -118,7 +178,15 @@ impl Neg for Vector3 {
         Vector3::new(-self.x, -self.y, -self.z)
     }
 }
-
+/// Ray.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{Ray, Vector3};
+/// let ray = Ray::new(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0));
+/// assert_eq!(ray.at(2.0).z, -2.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ray {
     pub origin: Vector3,
@@ -126,6 +194,15 @@ pub struct Ray {
 }
 
 impl Ray {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Ray, Vector3};
+    /// let ray = Ray::new(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0));
+    /// assert_eq!(ray.direction.x, 1.0);
+    /// ```
     #[inline]
     pub fn new(origin: Vector3, direction: Vector3) -> Self {
         Self {
@@ -133,7 +210,15 @@ impl Ray {
             direction: direction.normalize(),
         }
     }
-
+    /// at.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Ray, Vector3};
+    /// let ray = Ray::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0));
+    /// assert_eq!(ray.at(3.0).y, 3.0);
+    /// ```
     #[inline]
     pub fn at(&self, t: f32) -> Vector3 {
         self.origin + self.direction * t

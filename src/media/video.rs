@@ -388,30 +388,75 @@ impl VideoPlayer {
     }
 
     /// Returns the video width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.width();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn width(&self) -> u32 {
         self.width
     }
 
     /// Returns the video height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.height();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn height(&self) -> u32 {
         self.height
     }
 
     /// Returns the frame rate (frames per second).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.fps();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn fps(&self) -> f64 {
         self.fps
     }
 
     /// Returns the video duration, if known.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.duration();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn duration(&self) -> Option<Duration> {
         self.video_duration
     }
 
     /// Returns the current frame index (0-based).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.current_frame_index();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn current_frame_index(&self) -> usize {
         self.current_frame
@@ -584,36 +629,90 @@ impl VideoPlayer {
     // ========== Getters for current render settings ==========
 
     /// Returns the current dithering method.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_dithering();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_dithering(&self) -> DitheringMethod {
         self.dithering
     }
 
     /// Returns the current threshold setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_threshold();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_threshold(&self) -> Option<u8> {
         self.threshold
     }
 
     /// Returns the current brightness setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_brightness();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_brightness(&self) -> f32 {
         self.brightness
     }
 
     /// Returns the current contrast setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_contrast();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_contrast(&self) -> f32 {
         self.contrast
     }
 
     /// Returns the current gamma setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_gamma();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_gamma(&self) -> f32 {
         self.gamma
     }
 
     /// Returns the current color mode.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.get_color_mode();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_color_mode(&self) -> ColorMode {
         self.color_mode
@@ -622,31 +721,85 @@ impl VideoPlayer {
     // ========== Mutable setters for runtime adjustment ==========
 
     /// Updates the dithering method at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_dithering(dotmax::image::DitheringMethod::Bayer);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_dithering(&mut self, method: DitheringMethod) {
         self.dithering = method;
     }
 
     /// Updates the threshold at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_threshold(Some(140));
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_threshold(&mut self, threshold: Option<u8>) {
         self.threshold = threshold;
     }
 
     /// Updates the brightness at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_brightness(1.1);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_brightness(&mut self, brightness: f32) {
         self.brightness = brightness;
     }
 
     /// Updates the contrast at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_contrast(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_contrast(&mut self, contrast: f32) {
         self.contrast = contrast;
     }
 
     /// Updates the gamma at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_gamma(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_gamma(&mut self, gamma: f32) {
         self.gamma = gamma;
     }
 
     /// Updates the color mode at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.set_color_mode(dotmax::image::ColorMode::TrueColor);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_color_mode(&mut self, mode: ColorMode) {
         self.color_mode = mode;
     }
@@ -654,6 +807,15 @@ impl VideoPlayer {
     // ========== Temporal Coherence Settings ==========
 
     /// Returns a reference to the temporal coherence configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let _ = player.temporal_config();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub fn temporal_config(&self) -> &TemporalConfig {
         self.temporal_coherence.config()
@@ -689,6 +851,15 @@ impl VideoPlayer {
     /// # Arguments
     ///
     /// * `config` - Temporal coherence configuration
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// let player = player.temporal_coherence(dotmax::image::temporal::TemporalConfig::video());
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub fn temporal_coherence(mut self, config: TemporalConfig) -> Self {
         self.temporal_coherence.set_config(config);
@@ -699,6 +870,15 @@ impl VideoPlayer {
     ///
     /// Call this when seeking in the video to prevent artifacts from
     /// blending unrelated frames.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::VideoPlayer;
+    /// let mut player = VideoPlayer::new("clip.mp4")?;
+    /// player.reset_temporal_state();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn reset_temporal_state(&mut self) {
         self.temporal_coherence.reset();
     }

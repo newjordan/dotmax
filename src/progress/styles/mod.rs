@@ -87,6 +87,13 @@ mod synthwave;
 mod fable;
 
 /// All themes bundled with dotmax, in display order.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::THEMES;
+/// assert!(THEMES.contains(&"classic"));
+/// ```
 pub const THEMES: [&str; 60] = [
     "classic",
     "fable",
@@ -151,12 +158,26 @@ pub const THEMES: [&str; 60] = [
 ];
 
 /// The list of bundled theme names.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::themes;
+/// assert!(themes().contains(&"matrix"));
+/// ```
 #[must_use]
 pub fn themes() -> &'static [&'static str] {
     &THEMES
 }
 
 /// Collect every bundled style across all themes.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::all_styles;
+/// assert!(all_styles().len() > 100);
+/// ```
 #[must_use]
 pub fn all_styles() -> Vec<Box<dyn ProgressStyle>> {
     let mut v = Vec::new();
@@ -224,6 +245,13 @@ pub fn all_styles() -> Vec<Box<dyn ProgressStyle>> {
 }
 
 /// Collect only the styles belonging to `theme` (case-insensitive).
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::styles_for_theme;
+/// assert!(!styles_for_theme("ocean").is_empty());
+/// ```
 #[must_use]
 pub fn styles_for_theme(theme: &str) -> Vec<Box<dyn ProgressStyle>> {
     let theme = theme.to_lowercase();

@@ -5,7 +5,15 @@ use super::lighting::calculate_diffuse_shading;
 use super::scene::Scene;
 use super::wireframe::{is_on_wireframe_normal_rotated, rotate_vec_yaw_pitch_roll};
 use super::RenderMode;
-
+/// WireframeRotation.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::WireframeRotation;
+/// let rotation = WireframeRotation { yaw: 0.3, pitch: 0.1, roll: 0.0 };
+/// assert_eq!(rotation.yaw, 0.3);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct WireframeRotation {
     pub yaw: f32,
@@ -21,7 +29,15 @@ impl Default for WireframeRotation {
         }
     }
 }
-
+/// render with orientation.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{render_with_orientation, Camera, RenderMode, Scene, Vector3, WireframeRotation};
+/// let buffer = render_with_orientation(&Scene::new_with_sphere(), &Camera::new(Vector3::zero(), 2.0, 2.0), 4, 3, RenderMode::Solid, WireframeRotation::default());
+/// assert_eq!(buffer.len(), 3);
+/// ```
 pub fn render_with_orientation(
     scene: &Scene,
     camera: &Camera,
@@ -82,6 +98,15 @@ pub fn render_with_orientation(
 /// Simple edge/vertex renderer for mesh scenes with hidden-line removal.
 // Public API re-exported from `raytracer::mod`; grouping the parameters into a
 // struct would be a breaking change for downstream callers.
+/// render edges with orientation.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{render_edges_with_orientation, Camera, Scene, Vector3};
+/// let buffer = render_edges_with_orientation(&Scene::new(), &Camera::new(Vector3::zero(), 2.0, 2.0), 4, 2, 0.0, 0.0, 0.0, 1.0, 1, 1);
+/// assert_eq!(buffer[0].len(), 4);
+/// ```
 #[allow(clippy::too_many_arguments)]
 pub fn render_edges_with_orientation(
     scene: &Scene,
@@ -212,7 +237,15 @@ pub fn render_edges_with_orientation(
 
     buffer
 }
-
+/// render.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{render, Camera, RenderMode, Scene, Vector3};
+/// let buffer = render(&Scene::new_with_sphere_and_light(), &Camera::new(Vector3::new(0.0, 0.0, 1.0), 2.0, 2.0), 4, 2, RenderMode::Solid);
+/// assert_eq!(buffer.len(), 2);
+/// ```
 pub fn render(
     scene: &Scene,
     camera: &Camera,

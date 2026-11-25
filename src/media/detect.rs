@@ -70,6 +70,13 @@ impl std::fmt::Display for MediaFormat {
 /// Static image format variants.
 ///
 /// These formats are handled by the existing `ImageRenderer` pipeline.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::ImageFormat;
+/// assert_eq!(ImageFormat::Png.to_string(), "PNG");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
     /// PNG (Portable Network Graphics)
@@ -103,6 +110,13 @@ impl std::fmt::Display for ImageFormat {
 ///
 /// Note: This is a simplified detection based on container format.
 /// Actual codec detection would require parsing container metadata.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::VideoCodec;
+/// assert_eq!(VideoCodec::H264, VideoCodec::H264);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoCodec {
     /// H.264/AVC (common in MP4)

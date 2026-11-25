@@ -2,7 +2,15 @@
 
 use super::hittable::{HitRecord, Hittable};
 use super::math::{Ray, Vector3};
-
+/// Sphere.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{Sphere, Vector3};
+/// let sphere = Sphere::new(Vector3::zero(), 1.5);
+/// assert_eq!(sphere.radius, 1.5);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sphere {
     pub center: Vector3,
@@ -10,6 +18,14 @@ pub struct Sphere {
 }
 
 impl Sphere {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Sphere, Vector3};
+    /// assert_eq!(Sphere::new(Vector3::zero(), 2.0).radius, 2.0);
+    /// ```
     #[inline]
     pub fn new(center: Vector3, radius: f32) -> Self {
         Self { center, radius }

@@ -10,9 +10,24 @@ use std::fs::File;
 use std::path::Path;
 
 /// RGB color encoded as `[red, green, blue]`.
+///
+/// # Examples
+///
+/// ```
+/// let color: dotmax::frame_export::DotmaxFrameColor = [8, 16, 32];
+/// assert_eq!(color[2], 32);
+/// ```
 pub type DotmaxFrameColor = [u8; 3];
 
 /// One captured terminal frame.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::frame_export::DotmaxFrame;
+/// let frame = DotmaxFrame { rows: vec!["⠁".into()], colors: None };
+/// assert_eq!(frame.rows.len(), 1);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DotmaxFrame {
     /// Rows of braille or density characters, one string per terminal row.
@@ -23,6 +38,14 @@ pub struct DotmaxFrame {
 }
 
 /// A replayable set of terminal frames.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::DotmaxFramePack;
+/// let pack = DotmaxFramePack::new("demo", "showcase", 2, 1, 12, Vec::new());
+/// assert_eq!(pack.fps, 12);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DotmaxFramePack {
     /// Human-readable example name.
@@ -41,6 +64,14 @@ pub struct DotmaxFramePack {
 
 impl DotmaxFramePack {
     /// Build a frame pack from metadata and captured frames.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::DotmaxFramePack;
+    /// let pack = DotmaxFramePack::new("demo", "showcase", 2, 1, 12, Vec::new());
+    /// assert_eq!(pack.width, 2);
+    /// ```
     #[must_use]
     pub fn new(
         name: impl Into<String>,
@@ -62,6 +93,16 @@ impl DotmaxFramePack {
 }
 
 /// Capture the visible characters and optional colors from a [`BrailleGrid`].
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::{capture_frame, BrailleGrid};
+/// let mut grid = BrailleGrid::new(2, 1).unwrap();
+/// grid.set_dot(0, 0).unwrap();
+/// let frame = capture_frame(&grid);
+/// assert_eq!(frame.rows.len(), 1);
+/// ```
 #[must_use]
 pub fn capture_frame(grid: &BrailleGrid) -> DotmaxFrame {
     let (width, height) = grid.dimensions();
@@ -97,6 +138,17 @@ pub fn capture_frame(grid: &BrailleGrid) -> DotmaxFrame {
 /// # Errors
 /// Returns a [`DotmaxError`] if the file cannot be created or the pack cannot
 /// be serialized.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::{capture_frame, write_frame_pack, BrailleGrid, DotmaxFramePack};
+/// let grid = BrailleGrid::new(2, 1).unwrap();
+/// let pack = DotmaxFramePack::new("demo", "showcase", 2, 1, 8, vec![capture_frame(&grid)]);
+/// let path = std::env::temp_dir().join("dotmax-doc-pack.json");
+/// write_frame_pack(&path, &pack).unwrap();
+/// let _ = std::fs::remove_file(path);
+/// ```
 pub fn write_frame_pack(path: impl AsRef<Path>, pack: &DotmaxFramePack) -> Result<(), DotmaxError> {
     let file = File::create(path)?;
     serde_json::to_writer_pretty(file, pack)

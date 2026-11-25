@@ -40,6 +40,13 @@ use thiserror::Error;
 ///
 /// All variants include contextual information to aid debugging and provide
 /// actionable error messages to end users.
+///
+/// # Examples
+///
+/// ```
+/// let err = dotmax::BrailleGrid::new(0, 1).unwrap_err();
+/// assert!(matches!(err, dotmax::DotmaxError::InvalidDimensions { .. }));
+/// ```
 #[derive(Error, Debug)]
 pub enum DotmaxError {
     /// Grid dimensions are invalid (zero or exceeding maximum limits)

@@ -71,6 +71,13 @@ use super::MediaPlayer;
 /// |-------|--------|-------------|
 /// | 0 | Source | All pixels replace output buffer completely |
 /// | 1 | Over | Alpha composite using Porter-Duff "over" |
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::BlendOp;
+/// assert_eq!(BlendOp::default(), BlendOp::Source);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BlendOp {
     /// Source blend - frame pixels replace output buffer completely.
@@ -108,6 +115,13 @@ impl From<png::BlendOp> for BlendOp {
 /// | 0 | None | Leave output buffer unchanged |
 /// | 1 | Background | Clear frame region to transparent black |
 /// | 2 | Previous | Restore canvas to state before frame |
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::DisposeOp;
+/// let _ = DisposeOp::default();
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisposeOp {
     /// No disposal - leave frame in place.
@@ -143,6 +157,18 @@ impl From<png::DisposeOp> for DisposeOp {
 ///
 /// Contains frame metadata including timing, position, and blend/dispose operations.
 /// The pixel data is stored in the canvas buffer during playback.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::{ApngFrame, BlendOp, DisposeOp};
+/// let frame = ApngFrame {
+///     width: 1, height: 1, x_offset: 0, y_offset: 0,
+///     delay: std::time::Duration::from_millis(100), index: 0,
+///     blend_op: BlendOp::Source, dispose_op: DisposeOp::default(),
+/// };
+/// assert_eq!(frame.index, 0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ApngFrame {
     /// Frame width in pixels.
@@ -375,12 +401,30 @@ impl ApngPlayer {
     }
 
     /// Returns the canvas width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::ApngPlayer;
+    /// let player = ApngPlayer::new("animation.png")?;
+    /// let _ = player.canvas_width();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn canvas_width(&self) -> u32 {
         self.canvas_width
     }
 
     /// Returns the canvas height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::ApngPlayer;
+    /// let player = ApngPlayer::new("animation.png")?;
+    /// let _ = player.canvas_height();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn canvas_height(&self) -> u32 {
         self.canvas_height

@@ -4,11 +4,35 @@ use super::math::Vector3;
 
 /// Default wireframe grid spacing (radians) and tolerance (thickness in radians)
 // `f32::to_radians` is not const-stable until Rust 1.85; MSRV is 1.70. 10 degrees == PI / 18.
+/// DEFAULT WIREFRAME STEP RAD.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::DEFAULT_WIREFRAME_STEP_RAD;
+/// assert!(DEFAULT_WIREFRAME_STEP_RAD > 0.0);
+/// ```
 pub const DEFAULT_WIREFRAME_STEP_RAD: f32 = std::f32::consts::PI / 18.0;
+/// DEFAULT WIREFRAME TOL RAD.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::DEFAULT_WIREFRAME_TOL_RAD;
+/// assert!(DEFAULT_WIREFRAME_TOL_RAD > 0.0);
+/// ```
 pub const DEFAULT_WIREFRAME_TOL_RAD: f32 = 0.03; // ~1.7 degrees
 
 /// Returns true if the surface normal lies on a wireframe grid line.
 /// Uses only the normal, so it works regardless of sphere center/radius.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::wireframe::is_on_wireframe_normal;
+/// use dotmax::raytracer::{Vector3, DEFAULT_WIREFRAME_STEP_RAD, DEFAULT_WIREFRAME_TOL_RAD};
+/// let _ = is_on_wireframe_normal(Vector3::new(0.0, 1.0, 0.0), DEFAULT_WIREFRAME_STEP_RAD, DEFAULT_WIREFRAME_TOL_RAD);
+/// ```
 pub fn is_on_wireframe_normal(normal: Vector3, step_rad: f32, tol_rad: f32) -> bool {
     // Normal should already be unit length, but normalize defensively
     let len = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z)
@@ -36,6 +60,15 @@ pub fn is_on_wireframe_normal(normal: Vector3, step_rad: f32, tol_rad: f32) -> b
 }
 
 /// Rotate a vector by yaw (Y), pitch (X), then roll (Z)
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::wireframe::rotate_vec_yaw_pitch_roll;
+/// use dotmax::raytracer::Vector3;
+/// let v = rotate_vec_yaw_pitch_roll(Vector3::new(1.0, 0.0, 0.0), 0.0, 0.0, 0.0);
+/// assert!((v.x - 1.0).abs() < 1e-5);
+/// ```
 pub fn rotate_vec_yaw_pitch_roll(v: Vector3, yaw: f32, pitch: f32, roll: f32) -> Vector3 {
     let (sy, cy) = yaw.sin_cos();
     let (sp, cp) = pitch.sin_cos();
@@ -56,11 +89,28 @@ pub fn rotate_vec_yaw_pitch_roll(v: Vector3, yaw: f32, pitch: f32, roll: f32) ->
 }
 
 /// Backward-compat: rotate a normal by yaw (Y axis) then pitch (X axis)
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::wireframe::rotate_normal_yaw_pitch;
+/// use dotmax::raytracer::Vector3;
+/// let n = rotate_normal_yaw_pitch(Vector3::new(0.0, 0.0, 1.0), 0.0, 0.0);
+/// assert!((n.z - 1.0).abs() < 1e-5);
+/// ```
 pub fn rotate_normal_yaw_pitch(normal: Vector3, yaw: f32, pitch: f32) -> Vector3 {
     rotate_vec_yaw_pitch_roll(normal, yaw, pitch, 0.0)
 }
 
 /// Wireframe test with an additional orientation (rotation) applied before grid check
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::wireframe::is_on_wireframe_normal_rotated;
+/// use dotmax::raytracer::{Vector3, DEFAULT_WIREFRAME_STEP_RAD, DEFAULT_WIREFRAME_TOL_RAD};
+/// let _ = is_on_wireframe_normal_rotated(Vector3::new(0.0, 1.0, 0.0), 0.2, 0.1, DEFAULT_WIREFRAME_STEP_RAD, DEFAULT_WIREFRAME_TOL_RAD);
+/// ```
 pub fn is_on_wireframe_normal_rotated(
     normal: Vector3,
     step_rad: f32,
@@ -73,6 +123,14 @@ pub fn is_on_wireframe_normal_rotated(
 }
 
 /// Backward-compatible helper: check wireframe using point/center/radius with default params.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::wireframe::is_on_wireframe;
+/// use dotmax::raytracer::Vector3;
+/// let _ = is_on_wireframe(Vector3::new(0.0, 1.0, 0.0), Vector3::zero(), 1.0);
+/// ```
 pub fn is_on_wireframe(point: Vector3, center: Vector3, radius: f32) -> bool {
     let p = point - center;
     let r = radius.max(1e-6);

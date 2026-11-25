@@ -1,6 +1,6 @@
 # Dotmax Examples
 
-This directory contains 74 examples demonstrating dotmax's features. All examples can be run with `cargo run --example <name>`.
+This directory contains the runnable examples. `showcase` prints the text, shape, and animation paths without a terminal UI; `--features image -- --gif` also writes `docs/examples/bouncing_dot.gif`. All examples can be run with `cargo run --example <name>`.
 
 ## Quick Start
 
@@ -8,6 +8,7 @@ This directory contains 74 examples demonstrating dotmax's features. All example
 
 | Example | Description | Lines |
 |---------|-------------|-------|
+| `showcase` | Text, shapes, animation, and (with `image`) a thresholded picture plus `--gif` | ~180 |
 | `hello_braille` | Basic braille grid rendering | ~65 |
 | `simple_animation` | Bouncing dot animation with `AnimationLoop` | ~30 |
 | `shapes_demo` | Drawing rectangles, polygons, triangles | ~160 |

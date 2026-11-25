@@ -3029,9 +3029,9 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     };
     // 1) NON-UI formations first — fib zones, image panels, anything that
     //    forms the chaotic substrate.
-    for i in 0..scene.zones.len() {
-        if !is_ui_formation(&scene.zones[i].formation) {
-            paint_formation(&mut grid, &scene.zones[i], i as u16, &ctx);
+    for (i, zone) in scene.zones.iter().enumerate() {
+        if !is_ui_formation(&zone.formation) {
+            paint_formation(&mut grid, zone, i as u16, &ctx);
         }
     }
     // 2) Edge-morph pass — zone borders bleed their neighbors' chars in.
@@ -3074,9 +3074,9 @@ fn render(scene: &Scene) -> Vec<Vec<PxCell>> {
     // 7) UI zones (chess + ATM + agents + payout + terminal) re-paint LAST
     //    so the betting interface stays readable, but chaos leaks through
     //    every cell where the UI's intensity is below the chaos behind it.
-    for i in 0..scene.zones.len() {
-        if is_ui_formation(&scene.zones[i].formation) {
-            paint_formation(&mut grid, &scene.zones[i], i as u16, &ctx);
+    for (i, zone) in scene.zones.iter().enumerate() {
+        if is_ui_formation(&zone.formation) {
+            paint_formation(&mut grid, zone, i as u16, &ctx);
         }
     }
     // 8) Litany — scripture scrolling across row 0, above everything.

@@ -13,6 +13,15 @@ use anyhow::{Context, Result};
 ///
 /// This is a simple data container that separates loading from geometry construction.
 /// The mesh module will consume this data to build Triangle objects.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::gltf_loader::MeshData;
+/// use dotmax::raytracer::Vector3;
+/// let data = MeshData { positions: vec![Vector3::new(1.0, 0.0, 0.0)], normals: None, indices: vec![] };
+/// assert_eq!(data.vertex_count(), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct MeshData {
     /// Vertex positions in 3D space
@@ -25,22 +34,60 @@ pub struct MeshData {
 
 impl MeshData {
     /// Get the number of triangles in this mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::zero(); 3], normals: None, indices: vec![0, 1, 2] };
+    /// assert_eq!(data.triangle_count(), 1);
+    /// ```
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
     }
 
     /// Get the number of vertices in this mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::zero(), Vector3::new(1.0, 0.0, 0.0)], normals: None, indices: vec![] };
+    /// assert_eq!(data.vertex_count(), 2);
+    /// ```
     pub fn vertex_count(&self) -> usize {
         self.positions.len()
     }
 
     /// Check if this mesh has vertex normals
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![], normals: None, indices: vec![] };
+    /// assert!(!data.has_normals());
+    /// ```
     pub fn has_normals(&self) -> bool {
         self.normals.is_some()
     }
 
     /// Calculate the bounding box of the mesh
     /// Returns (min, max) corners of the axis-aligned bounding box
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::new(-1.0, 0.0, 0.0), Vector3::new(2.0, 0.0, 0.0)], normals: None, indices: vec![] };
+    /// let (min, max) = data.bounds();
+    /// assert_eq!(min.x, -1.0);
+    /// assert_eq!(max.x, 2.0);
+    /// ```
     pub fn bounds(&self) -> (Vector3, Vector3) {
         if self.positions.is_empty() {
             return (Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0));
@@ -62,6 +109,15 @@ impl MeshData {
     }
 
     /// Get the center point of the mesh's bounding box
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::new(-2.0, 0.0, 0.0), Vector3::new(2.0, 0.0, 0.0)], normals: None, indices: vec![] };
+    /// assert_eq!(data.center().x, 0.0);
+    /// ```
     pub fn center(&self) -> Vector3 {
         let (min, max) = self.bounds();
         Vector3::new(
@@ -72,12 +128,30 @@ impl MeshData {
     }
 
     /// Get the size (dimensions) of the mesh's bounding box
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::zero(), Vector3::new(2.0, 0.0, 0.0)], normals: None, indices: vec![] };
+    /// assert_eq!(data.size().x, 2.0);
+    /// ```
     pub fn size(&self) -> Vector3 {
         let (min, max) = self.bounds();
         Vector3::new(max.x - min.x, max.y - min.y, max.z - min.z)
     }
 
     /// Get the maximum dimension of the bounding box
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::zero(), Vector3::new(0.0, 4.0, 0.0)], normals: None, indices: vec![] };
+    /// assert_eq!(data.max_dimension(), 4.0);
+    /// ```
     pub fn max_dimension(&self) -> f32 {
         let size = self.size();
         size.x.max(size.y).max(size.z)
@@ -85,6 +159,15 @@ impl MeshData {
 
     /// Normalize the mesh to fit within a unit cube centered at origin
     /// Returns a new MeshData with transformed positions
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::Vector3;
+    /// let data = MeshData { positions: vec![Vector3::new(-2.0, 0.0, 0.0), Vector3::new(2.0, 0.0, 0.0)], normals: None, indices: vec![] };
+    /// assert!((data.normalize().max_dimension() - 2.0).abs() < 1e-4);
+    /// ```
     #[must_use]
     pub fn normalize(&self) -> Self {
         let center = self.center();

@@ -8,7 +8,14 @@ use super::mesh::TriangleMesh;
 use super::obj_loader::load_obj;
 use super::sphere::Sphere;
 use anyhow::Result;
-
+/// Scene.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::Scene;
+/// assert!(Scene::new().lights().is_empty());
+/// ```
 pub struct Scene {
     pub(crate) objects: Vec<Box<dyn Hittable + Send + Sync>>, // allow future parallelism
     pub(crate) lights: Vec<Light>,
@@ -24,6 +31,14 @@ impl Default for Scene {
 }
 
 impl Scene {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Scene;
+    /// assert!(Scene::new().lights().is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
@@ -32,7 +47,16 @@ impl Scene {
             mesh_edges: None,
         }
     }
-
+    /// new with sphere.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Ray, Scene, Vector3};
+    /// let scene = Scene::new_with_sphere();
+    /// let ray = Ray::new(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0));
+    /// let _ = scene.hit(&ray, 0.001, 100.0);
+    /// ```
     pub fn new_with_sphere() -> Self {
         let sphere = Box::new(Sphere::new(Vector3::new(0.0, 0.0, -3.0), 1.0));
         Self {
@@ -42,7 +66,14 @@ impl Scene {
             mesh_edges: None,
         }
     }
-
+    /// new with sphere and light.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Scene;
+    /// assert!(!Scene::new_with_sphere_and_light().lights().is_empty());
+    /// ```
     pub fn new_with_sphere_and_light() -> Self {
         let sphere = Box::new(Sphere::new(Vector3::new(0.0, 0.0, -3.0), 1.0));
         let light = Light::new(Vector3::new(-2.0, 2.0, 0.0), 1.0);
@@ -88,6 +119,14 @@ impl Scene {
     ///
     /// # Errors
     /// Returns an error if the OBJ file cannot be read or parsed (see [`load_obj`]).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::raytracer::Scene;
+    /// let _scene = Scene::new_with_obj_model("model.obj")?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn new_with_obj_model(path: &str) -> Result<Self> {
         let data = load_obj(path)?;
         Ok(Self::from_mesh_data(data))
@@ -156,22 +195,63 @@ impl Scene {
     }
 
     /// If the scene was created from a mesh, returns cached vertex positions
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Scene;
+    /// assert!(Scene::new().mesh_vertices().is_none());
+    /// ```
     pub fn mesh_vertices(&self) -> Option<&[Vector3]> {
         self.mesh_vertices.as_deref()
     }
 
     /// If the scene was created from a mesh, returns cached unique edges
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Scene;
+    /// assert!(Scene::new().mesh_edges().is_none());
+    /// ```
     pub fn mesh_edges(&self) -> Option<&[(Vector3, Vector3)]> {
         self.mesh_edges.as_deref()
     }
-
+    /// add object.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Scene, Sphere, Vector3};
+    /// let mut scene = Scene::new();
+    /// scene.add_object(Box::new(Sphere::new(Vector3::zero(), 1.0)));
+    /// ```
     pub fn add_object(&mut self, obj: Box<dyn Hittable + Send + Sync>) {
         self.objects.push(obj);
     }
+    /// add light.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Light, Scene, Vector3};
+    /// let mut scene = Scene::new();
+    /// scene.add_light(Light::new(Vector3::new(0.0, 2.0, 0.0), 1.0));
+    /// assert_eq!(scene.lights().len(), 1);
+    /// ```
     pub fn add_light(&mut self, light: Light) {
         self.lights.push(light);
     }
-
+    /// hit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Ray, Scene, Vector3};
+    /// let scene = Scene::new();
+    /// let ray = Ray::new(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0));
+    /// assert!(scene.hit(&ray, 0.0, 10.0).is_none());
+    /// ```
     pub fn hit(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
         let mut closest_so_far = t_max;
         let mut best: Option<HitRecord> = None;
@@ -183,7 +263,14 @@ impl Scene {
         }
         best
     }
-
+    /// lights.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::Scene;
+    /// assert!(Scene::new().lights().is_empty());
+    /// ```
     pub fn lights(&self) -> &[Light] {
         &self.lights
     }

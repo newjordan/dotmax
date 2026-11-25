@@ -22,10 +22,10 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
-use std::f32::consts::PI;
+use std::f32::consts::{GOLDEN_RATIO, PI};
 
 /// The golden ratio φ = (1 + √5) / 2.
-const PHI: f32 = 1.618_033_9;
+const PHI: f32 = GOLDEN_RATIO;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry

@@ -6,6 +6,14 @@ use crate::grid::{BrailleGrid, Color};
 use shakmaty::{Chess, File, Position, Rank, Square};
 
 /// Options for rendering the chess board.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::RenderOptions;
+/// let options = RenderOptions::default();
+/// assert_eq!(options.target_width, Some(32));
+/// ```
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
     /// Target width in terminal cells. If None, uses a default size.
@@ -30,6 +38,14 @@ impl Default for RenderOptions {
 }
 
 /// Color scheme for the chess board.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::BoardColorScheme;
+/// let colors = BoardColorScheme::default();
+/// assert_eq!(colors.white_piece, dotmax::Color::rgb(255, 255, 255));
+/// ```
 #[derive(Debug, Clone)]
 pub struct BoardColorScheme {
     /// Color of light squares.
@@ -63,6 +79,16 @@ impl Default for BoardColorScheme {
 /// Returns [`DotmaxError::InvalidDimensions`] if `options.target_width` or
 /// `options.target_height` is zero or exceeds the maximum grid size. Dot and color
 /// writes are bounds-checked against the grid before being issued.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::board::render_position_with_options;
+/// use dotmax::chess::RenderOptions;
+/// use shakmaty::Chess;
+/// let grid = render_position_with_options(&Chess::default(), &RenderOptions::default()).unwrap();
+/// assert!(grid.width() > 0);
+/// ```
 pub fn render_position_with_options(
     pos: &Chess,
     options: &RenderOptions,
@@ -156,6 +182,15 @@ pub fn render_position_with_options(
 ///
 /// Propagates errors from [`render_position_with_options`]; the default 32×16 grid
 /// is always valid, so this does not fail in practice.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::board::render_position;
+/// use shakmaty::Chess;
+/// let grid = render_position(&Chess::default()).unwrap();
+/// assert!(grid.height() > 0);
+/// ```
 pub fn render_position(pos: &Chess) -> Result<BrailleGrid, DotmaxError> {
     render_position_with_options(pos, &RenderOptions::default())
 }

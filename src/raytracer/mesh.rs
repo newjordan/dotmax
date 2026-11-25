@@ -17,6 +17,13 @@ use super::triangle::Triangle;
 /// This is a simple container that holds triangles and implements ray intersection
 /// by testing against all triangles. Future optimizations could add spatial
 /// acceleration structures (BVH, octree, etc.) for large meshes.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::TriangleMesh;
+/// assert_eq!(TriangleMesh::new().triangle_count(), 0);
+/// ```
 pub struct TriangleMesh {
     triangles: Vec<Triangle>,
     aabb_min: Vector3,
@@ -25,6 +32,13 @@ pub struct TriangleMesh {
 
 impl TriangleMesh {
     /// Create an empty mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::TriangleMesh;
+    /// assert_eq!(TriangleMesh::new().triangle_count(), 0);
+    /// ```
     pub fn new() -> Self {
         Self {
             triangles: Vec::new(),
@@ -34,6 +48,14 @@ impl TriangleMesh {
     }
 
     /// Create a mesh from raw triangle data
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Triangle, TriangleMesh, Vector3};
+    /// let tri = Triangle::new(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
+    /// assert_eq!(TriangleMesh::from_triangles(vec![tri]).triangle_count(), 1);
+    /// ```
     pub fn from_triangles(triangles: Vec<Triangle>) -> Self {
         let (aabb_min, aabb_max) = Self::compute_aabb(&triangles);
         Self {
@@ -54,6 +76,15 @@ impl TriangleMesh {
     ///
     /// # Returns
     /// A TriangleMesh containing all triangles from the mesh data
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::gltf_loader::MeshData;
+    /// use dotmax::raytracer::{TriangleMesh, Vector3};
+    /// let data = MeshData { positions: vec![Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)], normals: None, indices: vec![0, 1, 2] };
+    /// assert_eq!(TriangleMesh::from_gltf_data(data).triangle_count(), 1);
+    /// ```
     pub fn from_gltf_data(data: MeshData) -> Self {
         let mut triangles = Vec::new();
 
@@ -176,16 +207,39 @@ impl TriangleMesh {
     }
 
     /// Get the number of triangles in this mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::TriangleMesh;
+    /// assert_eq!(TriangleMesh::new().triangle_count(), 0);
+    /// ```
     pub fn triangle_count(&self) -> usize {
         self.triangles.len()
     }
 
     /// Add a triangle to the mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Triangle, TriangleMesh, Vector3};
+    /// let mut mesh = TriangleMesh::new();
+    /// mesh.add_triangle(Triangle::new(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)));
+    /// assert_eq!(mesh.triangle_count(), 1);
+    /// ```
     pub fn add_triangle(&mut self, triangle: Triangle) {
         self.triangles.push(triangle);
     }
 
     /// Get an iterator over the triangles
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::TriangleMesh;
+    /// assert_eq!(TriangleMesh::new().triangles().count(), 0);
+    /// ```
     pub fn triangles(&self) -> impl Iterator<Item = &Triangle> {
         self.triangles.iter()
     }

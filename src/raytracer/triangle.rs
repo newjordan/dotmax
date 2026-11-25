@@ -13,6 +13,14 @@ use super::math::{Ray, Vector3};
 /// Triangles are the fundamental building block of 3D meshes.
 /// This implementation supports both flat shading (using geometric normal)
 /// and smooth shading (using interpolated vertex normals).
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{Triangle, Vector3};
+/// let tri = Triangle::new(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
+/// assert_eq!(tri.v1.x, 1.0);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Triangle {
     /// First vertex position
@@ -33,6 +41,14 @@ impl Triangle {
     /// Create a new triangle with flat shading (no vertex normals)
     ///
     /// The geometric normal will be computed from the triangle's vertices.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Triangle, Vector3};
+    /// let tri = Triangle::new(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
+    /// assert_eq!(tri.v1.x, 1.0);
+    /// ```
     #[inline]
     pub fn new(v0: Vector3, v1: Vector3, v2: Vector3) -> Self {
         Self {
@@ -49,6 +65,15 @@ impl Triangle {
     ///
     /// Normals will be interpolated across the triangle surface using
     /// barycentric coordinates for smooth shading.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Triangle, Vector3};
+    /// let n = Vector3::new(0.0, 0.0, 1.0);
+    /// let tri = Triangle::with_normals(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0), n, n, n);
+    /// assert!(tri.n0.is_some());
+    /// ```
     #[inline]
     pub fn with_normals(
         v0: Vector3,

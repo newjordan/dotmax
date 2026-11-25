@@ -324,7 +324,7 @@ impl ProgressStyle for Octahedron {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Golden ratio φ = (1+√5)/2.
-const PHI: f32 = 1.618_033_9;
+const PHI: f32 = std::f32::consts::GOLDEN_RATIO;
 /// 1/φ.
 const INV_PHI: f32 = 0.618_033_9;
 /// Circumradius of the dodecahedron built from these coordinates is √3.

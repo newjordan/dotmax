@@ -13,8 +13,20 @@ use tracing::{debug, info};
 /// This limit prevents memory exhaustion attacks from malicious or
 /// extremely large images. Images exceeding these dimensions will
 /// return `DotmaxError::InvalidImageDimensions`.
+///
+/// # Examples
+///
+/// ```
+/// assert!(dotmax::image::loader::MAX_IMAGE_WIDTH >= 1000);
+/// ```
 pub const MAX_IMAGE_WIDTH: u32 = 10_000;
 /// Maximum image height in pixels (prevents memory exhaustion)
+///
+/// # Examples
+///
+/// ```
+/// assert!(dotmax::image::loader::MAX_IMAGE_HEIGHT >= 1000);
+/// ```
 pub const MAX_IMAGE_HEIGHT: u32 = 10_000;
 
 /// Load an image from a file path

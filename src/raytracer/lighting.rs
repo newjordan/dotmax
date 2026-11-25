@@ -1,7 +1,15 @@
 //! Simple Lambert diffuse lighting (VIZ-011)
 
 use super::math::Vector3;
-
+/// Light.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{Light, Vector3};
+/// let light = Light::new(Vector3::new(2.0, 2.0, 0.0), 1.0);
+/// assert!(light.intensity > 0.0);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Light {
     pub position: Vector3,
@@ -9,6 +17,14 @@ pub struct Light {
 }
 
 impl Light {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Light, Vector3};
+    /// assert_eq!(Light::new(Vector3::zero(), 2.0).intensity, 2.0);
+    /// ```
     pub fn new(position: Vector3, intensity: f32) -> Self {
         Self {
             position,
@@ -16,7 +32,17 @@ impl Light {
         }
     }
 }
-
+/// calculate diffuse shading.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::lighting::calculate_diffuse_shading;
+/// use dotmax::raytracer::{Light, Vector3};
+/// let light = Light::new(Vector3::new(0.0, 2.0, 0.0), 1.0);
+/// let shade = calculate_diffuse_shading(Vector3::zero(), Vector3::new(0.0, 1.0, 0.0), &light);
+/// assert!(shade >= 0.0);
+/// ```
 pub fn calculate_diffuse_shading(point: Vector3, normal: Vector3, light: &Light) -> f32 {
     let l = (light.position - point).normalize();
     let n = normal.normalize();

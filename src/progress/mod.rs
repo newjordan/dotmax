@@ -61,6 +61,14 @@ pub use easing::{ease, lerp, Easing};
 ///
 /// A bar reads everything it needs from here and writes only into the grid,
 /// which keeps bars stateless and trivially reusable across programs.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::BarContext;
+/// let ctx = BarContext::new(0.4, 1.0, 20, 2);
+/// assert_eq!(ctx.width, 20);
+/// ```
 #[derive(Debug, Clone)]
 pub struct BarContext {
     /// Raw completion fraction in `[0.0, 1.0]`.
@@ -84,6 +92,14 @@ pub struct BarContext {
 
 impl BarContext {
     /// Build a context with linear (un-eased) progress and a default palette.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::BarContext;
+    /// let ctx = BarContext::new(0.4, 1.0, 20, 2);
+    /// assert!((ctx.eased - 0.4).abs() < 1e-6);
+    /// ```
     #[must_use]
     pub fn new(progress: f32, time: f32, width: usize, height: usize) -> Self {
         let progress = progress.clamp(0.0, 1.0);
@@ -99,6 +115,14 @@ impl BarContext {
     }
 
     /// Apply an easing curve, populating [`BarContext::eased`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::{BarContext, Easing};
+    /// let ctx = BarContext::new(1.0, 0.0, 10, 1).with_easing(Easing::Linear);
+    /// assert_eq!(ctx.eased, 1.0);
+    /// ```
     #[must_use]
     pub fn with_easing(mut self, kind: Easing) -> Self {
         self.eased = ease(kind, self.progress);
@@ -106,6 +130,14 @@ impl BarContext {
     }
 
     /// Override the accent palette.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::{BarContext, Palette};
+    /// let ctx = BarContext::new(0.2, 0.0, 10, 1).with_palette(Palette::default());
+    /// assert_eq!(ctx.palette.track, Palette::default().track);
+    /// ```
     #[must_use]
     pub const fn with_palette(mut self, palette: Palette) -> Self {
         self.palette = palette;
@@ -113,6 +145,14 @@ impl BarContext {
     }
 
     /// Attach a text label.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::BarContext;
+    /// let ctx = BarContext::new(0.2, 0.0, 10, 1).with_label("42%");
+    /// assert_eq!(ctx.label.as_deref(), Some("42%"));
+    /// ```
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
@@ -125,6 +165,14 @@ impl BarContext {
 /// Bars may interpolate between `start` and `end` across the fill, and use
 /// `track` for the unfilled remainder. All optional — a bar that ignores
 /// color still renders correctly in monochrome.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::Palette;
+/// let color = Palette::default().sample(0.0);
+/// assert_eq!(color, Palette::default().start);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Palette {
     /// Color at the left / start of the fill.
@@ -137,6 +185,14 @@ pub struct Palette {
 
 impl Palette {
     /// Sample the start→end gradient at fraction `t` in `[0.0, 1.0]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::Palette;
+    /// let color = Palette::default().sample(1.0);
+    /// assert_eq!(color, Palette::default().end);
+    /// ```
     #[must_use]
     pub fn sample(&self, t: f32) -> Color {
         let t = t.clamp(0.0, 1.0);
@@ -163,6 +219,24 @@ impl Default for Palette {
 /// `render` draws the bar's current frame into `grid` based on `ctx`. The grid
 /// is sized by the caller; a style should respect [`BarContext::width`] /
 /// [`BarContext::height`] or simply fill the grid it is given.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::{BarContext, ProgressStyle};
+/// use dotmax::{BrailleGrid, DotmaxError};
+/// struct Solid;
+/// impl ProgressStyle for Solid {
+///     fn name(&self) -> &str { "solid" }
+///     fn theme(&self) -> &str { "demo" }
+///     fn render(&self, grid: &mut BrailleGrid, _ctx: &BarContext) -> Result<(), DotmaxError> {
+///         grid.set_dot(0, 0)?;
+///         Ok(())
+///     }
+/// }
+/// let mut grid = BrailleGrid::new(4, 1).unwrap();
+/// Solid.render(&mut grid, &BarContext::new(0.5, 0.0, 4, 1)).unwrap();
+/// ```
 pub trait ProgressStyle {
     /// Stable, kebab-case identifier (unique within a theme).
     fn name(&self) -> &str;
@@ -189,6 +263,16 @@ pub mod draw {
     use crate::BrailleGrid;
 
     /// Grid size in dots: `(width * 2, height * 4)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// let (w, h) = draw::dot_dims(&grid); assert_eq!((w, h), (8, 8));
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     #[must_use]
     pub fn dot_dims(grid: &BrailleGrid) -> (usize, usize) {
         let (w, h) = grid.dimensions();
@@ -196,6 +280,16 @@ pub mod draw {
     }
 
     /// Set a single dot, ignoring out-of-bounds coordinates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::dot(&mut grid, 1, 1);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn dot(grid: &mut BrailleGrid, x: usize, y: usize) {
         let (w, h) = dot_dims(grid);
         if x < w && y < h {
@@ -204,6 +298,16 @@ pub mod draw {
     }
 
     /// Set a dot from signed coordinates, ignoring negatives / overflow.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::dot_i(&mut grid, 2, 2);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn dot_i(grid: &mut BrailleGrid, x: i32, y: i32) {
         if x >= 0 && y >= 0 {
             dot(grid, x as usize, y as usize);
@@ -211,6 +315,16 @@ pub mod draw {
     }
 
     /// Horizontal run of dots from `x0` to `x1` (inclusive) at row `y`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::hline(&mut grid, 0, 3, 1);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn hline(grid: &mut BrailleGrid, x0: usize, x1: usize, y: usize) {
         let (lo, hi) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
         for x in lo..=hi {
@@ -219,6 +333,16 @@ pub mod draw {
     }
 
     /// Vertical run of dots from `y0` to `y1` (inclusive) at column `x`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::vline(&mut grid, 1, 0, 3);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn vline(grid: &mut BrailleGrid, x: usize, y0: usize, y1: usize) {
         let (lo, hi) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
         for y in lo..=hi {
@@ -227,6 +351,16 @@ pub mod draw {
     }
 
     /// Filled rectangle of dots: `[x0, x0+w) × [y0, y0+h)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::fill_rect(&mut grid, 0, 0, 3, 2);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn fill_rect(grid: &mut BrailleGrid, x0: usize, y0: usize, w: usize, h: usize) {
         for y in y0..y0 + h {
             for x in x0..x0 + w {
@@ -236,6 +370,16 @@ pub mod draw {
     }
 
     /// Unfilled rectangle outline of dots.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::rect_outline(&mut grid, 0, 0, 4, 4);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn rect_outline(grid: &mut BrailleGrid, x0: usize, y0: usize, w: usize, h: usize) {
         if w == 0 || h == 0 {
             return;
@@ -249,6 +393,16 @@ pub mod draw {
 
     /// Tint a horizontal span of **cells** on a row, enabling color support
     /// first. Out-of-range cells are skipped. Cell `x` spans dots `[x*2, x*2+2)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::tint_row(&mut grid, 0, 0, 2, dotmax::Color::rgb(0, 200, 255));
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn tint_row(
         grid: &mut BrailleGrid,
         cell_y: usize,
@@ -268,14 +422,46 @@ pub mod draw {
     }
 
     /// Horizontal block-eighths ` ▏▎▍▌▋▊▉█` — for sub-cell-precise *smooth* bars.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw::H_BLOCKS;
+    /// assert_eq!(H_BLOCKS[0], ' ');
+    /// assert_eq!(H_BLOCKS[8], '█');
+    /// ```
     pub const H_BLOCKS: [char; 9] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
     /// Vertical block-eighths ` ▁▂▃▄▅▆▇█` — for equalizer columns and *blocky* bars.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw::V_BLOCKS;
+    /// assert_eq!(*V_BLOCKS.last().unwrap(), '█');
+    /// ```
     pub const V_BLOCKS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     /// Shading ramp ` ░▒▓█` — for coarse density / dithered texture.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw::SHADES;
+    /// assert_eq!(SHADES[1], '░');
+    /// ```
     pub const SHADES: [char; 5] = [' ', '░', '▒', '▓', '█'];
 
     /// Place an arbitrary glyph in a **cell**, ignoring out-of-bounds. The cell's
     /// braille dots are overwritten by this glyph. Use for block/symbol styles.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::glyph(&mut grid, 0, 0, '█');
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn glyph(grid: &mut BrailleGrid, cell_x: usize, cell_y: usize, c: char) {
         let _ = grid.set_char(cell_x, cell_y, c);
     }
@@ -286,6 +472,16 @@ pub mod draw {
     /// This is the classic crisp, sub-character-precise progress bar. It mixes
     /// full `█` cells with one partial edge glyph for smoothness no braille dot
     /// run can match.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::hbar(&mut grid, 0, 0.5);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn hbar(grid: &mut BrailleGrid, cell_y: usize, frac: f32) {
         let (w, _) = grid.dimensions();
         let frac = frac.clamp(0.0, 1.0);
@@ -302,11 +498,31 @@ pub mod draw {
 
     /// Set a column cell to a vertical fill `level` in `0..=8` (eighths) — for
     /// equalizer / spectrum columns. Level 0 clears nothing visible.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::vblock(&mut grid, 1, 0, 4);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn vblock(grid: &mut BrailleGrid, cell_x: usize, cell_y: usize, level: usize) {
         glyph(grid, cell_x, cell_y, V_BLOCKS[level.min(8)]);
     }
 
     /// Shade a cell at coarse density `level` in `0..=4` using ` ░▒▓█`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::progress::draw;
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// draw::shade(&mut grid, 2, 0, 3);
+    /// assert_eq!(grid.width(), 4);
+    /// ```
     pub fn shade(grid: &mut BrailleGrid, cell_x: usize, cell_y: usize, level: usize) {
         glyph(grid, cell_x, cell_y, SHADES[level.min(4)]);
     }
@@ -357,13 +573,22 @@ pub fn render_lines(
 ///
 /// # Errors
 /// Propagates any [`DotmaxError`] from [`render_lines`].
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::{render_string, styles_for_theme, BarContext};
+/// let styles = styles_for_theme("classic");
+/// let text = render_string(styles[0].as_ref(), &BarContext::new(0.5, 0.0, 12, 2)).unwrap();
+/// assert!(text.lines().count() == 2);
+/// ```
 pub fn render_string(style: &dyn ProgressStyle, ctx: &BarContext) -> Result<String, DotmaxError> {
     Ok(render_lines(style, ctx)?.join("\n"))
 }
 
 mod styles;
 
-pub use styles::{all_styles, styles_for_theme, themes};
+pub use styles::{all_styles, styles_for_theme, themes, THEMES};
 
 #[cfg(test)]
 mod tests {

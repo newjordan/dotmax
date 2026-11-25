@@ -23,7 +23,7 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
-use std::f32::consts::PI;
+use std::f32::consts::{GOLDEN_RATIO, PI};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -459,7 +459,7 @@ impl ProgressStyle for Phyllotaxis {
         let (cx, cy) = center(dw, dh);
         let scale = fit_scale(dw, dh);
 
-        let golden_angle: f32 = 2.0 * PI * (1.0 - 1.0 / 1.618_033_9); // ≈ 137.508°
+        let golden_angle: f32 = 2.0 * PI * (1.0 - 1.0 / GOLDEN_RATIO); // ≈ 137.508°
         let n_max: f32 = 90.0;
         let n_plot = (ctx.eased * n_max).round() as usize;
         // c chosen so the outermost seed lands near the grid edge.
