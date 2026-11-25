@@ -313,6 +313,14 @@ impl ImageRenderer {
     ///
     /// 0.0 disables ambient and restores fully deterministic output.
     /// 0.25–0.6 is a calm shimmer; 1.0 is heavy stipple churn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::ImageRenderer;
+    /// let renderer = ImageRenderer::new().ambient(0.3);
+    /// let _ = renderer;
+    /// ```
     #[must_use]
     pub fn ambient(mut self, intensity: f32) -> Self {
         self.ambient_intensity = intensity.clamp(0.0, 1.0);
@@ -325,6 +333,14 @@ impl ImageRenderer {
     /// when you want a deterministic animation (e.g., generating a fixed set
     /// of frames for a preview). Leave the seed unset (the default) to fall
     /// back to clock-driven seeding.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::ImageRenderer;
+    /// let renderer = ImageRenderer::new().ambient_seed(7);
+    /// let _ = renderer;
+    /// ```
     #[must_use]
     pub fn ambient_seed(mut self, seed: u64) -> Self {
         self.ambient_seed = Some(seed);
@@ -336,6 +352,14 @@ impl ImageRenderer {
     /// Useful when driving the renderer from an external animation clock —
     /// pass the frame index and you'll get a deterministic, evolving output
     /// per frame.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::ImageRenderer;
+    /// let renderer = ImageRenderer::new().ambient_frame(2);
+    /// let _ = renderer;
+    /// ```
     #[must_use]
     pub fn ambient_frame(mut self, frame: u64) -> Self {
         self.frame_counter = frame;

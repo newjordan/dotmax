@@ -343,6 +343,16 @@ fn detect_from_environment() -> ColorCapability {
 ///
 /// This function does NOT cache its result and is primarily intended for
 /// testing purposes. For normal usage, use [`detect_color_capability()`].
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::utils::terminal_caps::{detect_with_env, ColorCapability};
+/// assert_eq!(
+///     detect_with_env(Some("truecolor"), None),
+///     ColorCapability::TrueColor
+/// );
+/// ```
 #[must_use]
 pub fn detect_with_env(colorterm: Option<&str>, term: Option<&str>) -> ColorCapability {
     // Check $COLORTERM for true color support

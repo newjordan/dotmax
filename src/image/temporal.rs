@@ -144,6 +144,13 @@ impl TemporalConfig {
     ///
     /// Balanced settings with hysteresis and light frame blending.
     /// Good for most video content.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::TemporalConfig;
+    /// assert!(TemporalConfig::video().hysteresis_enabled);
+    /// ```
     #[must_use]
     pub const fn video() -> Self {
         Self {
@@ -160,6 +167,13 @@ impl TemporalConfig {
     ///
     /// More aggressive smoothing to handle sensor noise and
     /// lighting variations. Higher latency but much smoother output.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::TemporalConfig;
+    /// assert!(TemporalConfig::webcam().dot_filter_enabled);
+    /// ```
     #[must_use]
     pub const fn webcam() -> Self {
         Self {
@@ -176,6 +190,14 @@ impl TemporalConfig {
     ///
     /// Light smoothing that preserves animation crispness while
     /// reducing noise in compressed frames.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::TemporalConfig;
+    /// let cfg = TemporalConfig::animation();
+    /// assert!(cfg.hysteresis_margin > 0);
+    /// ```
     #[must_use]
     pub const fn animation() -> Self {
         Self {
@@ -192,6 +214,13 @@ impl TemporalConfig {
     ///
     /// Use this to compare with/without temporal coherence, or when
     /// processing static images where temporal filtering isn't needed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::TemporalConfig;
+    /// assert!(!TemporalConfig::disabled().hysteresis_enabled);
+    /// ```
     #[must_use]
     pub const fn disabled() -> Self {
         Self {
@@ -257,6 +286,13 @@ impl HysteresisFilter {
     /// # Arguments
     ///
     /// * `margin` - Dead zone size around threshold (0-127)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::HysteresisFilter;
+    /// assert_eq!(HysteresisFilter::new(8).margin(), 8);
+    /// ```
     #[must_use]
     pub const fn new(margin: u8) -> Self {
         Self {
@@ -276,6 +312,15 @@ impl HysteresisFilter {
     /// # Returns
     ///
     /// Binary image where white (255) = on, black (0) = off.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::HysteresisFilter;
+    /// let mut filter = HysteresisFilter::new(4);
+    /// let frame = image::GrayImage::from_pixel(2, 2, image::Luma([10]));
+    /// assert_eq!(filter.apply(&frame, 128).dimensions(), (2, 2));
+    /// ```
     pub fn apply(&mut self, frame: &GrayImage, threshold: u8) -> GrayImage {
         let width = frame.width();
         let height = frame.height();
@@ -334,17 +379,42 @@ impl HysteresisFilter {
     }
 
     /// Resets the filter state (clears history).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::HysteresisFilter;
+    /// let mut filter = HysteresisFilter::new(4);
+    /// filter.reset();
+    /// assert_eq!(filter.margin(), 4);
+    /// ```
     pub fn reset(&mut self) {
         self.previous_state = None;
         self.dimensions = None;
     }
 
     /// Sets the hysteresis margin.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::HysteresisFilter;
+    /// let mut filter = HysteresisFilter::new(4);
+    /// filter.set_margin(9);
+    /// assert_eq!(filter.margin(), 9);
+    /// ```
     pub fn set_margin(&mut self, margin: u8) {
         self.margin = margin;
     }
 
     /// Returns the current margin.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::HysteresisFilter;
+    /// assert_eq!(HysteresisFilter::new(3).margin(), 3);
+    /// ```
     #[must_use]
     pub const fn margin(&self) -> u8 {
         self.margin
@@ -401,6 +471,13 @@ impl FrameBlender {
     ///
     /// * `alpha` - Blend ratio (0.0-1.0). Higher values = more responsive,
     ///   lower values = smoother but more latency.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::FrameBlender;
+    /// assert!((FrameBlender::new(0.8).alpha() - 0.8).abs() < 1e-6);
+    /// ```
     #[must_use]
     pub fn new(alpha: f32) -> Self {
         Self {
@@ -419,6 +496,15 @@ impl FrameBlender {
     /// # Returns
     ///
     /// Blended grayscale image.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::FrameBlender;
+    /// let mut blender = FrameBlender::new(1.0);
+    /// let frame = image::GrayImage::from_pixel(2, 2, image::Luma([80]));
+    /// assert_eq!(blender.blend(&frame).dimensions(), (2, 2));
+    /// ```
     pub fn blend(&mut self, frame: &GrayImage) -> GrayImage {
         let width = frame.width();
         let height = frame.height();
@@ -468,17 +554,41 @@ impl FrameBlender {
     }
 
     /// Resets the blender state (clears history).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::FrameBlender;
+    /// let mut blender = FrameBlender::new(0.5);
+    /// blender.reset();
+    /// ```
     pub fn reset(&mut self) {
         self.history = None;
         self.dimensions = None;
     }
 
     /// Sets the blend alpha.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::FrameBlender;
+    /// let mut blender = FrameBlender::new(0.5);
+    /// blender.set_alpha(0.2);
+    /// assert!((blender.alpha() - 0.2).abs() < 1e-6);
+    /// ```
     pub fn set_alpha(&mut self, alpha: f32) {
         self.alpha = alpha.clamp(0.0, 1.0);
     }
 
     /// Returns the current alpha.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::FrameBlender;
+    /// assert!((FrameBlender::new(0.4).alpha() - 0.4).abs() < 1e-6);
+    /// ```
     #[must_use]
     pub const fn alpha(&self) -> f32 {
         self.alpha
@@ -535,6 +645,13 @@ impl DotTemporalFilter {
     /// * `alpha` - Filter responsiveness (0.0-1.0)
     /// * `width` - Grid width in dots
     /// * `height` - Grid height in dots
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// assert_eq!(DotTemporalFilter::new(0.5, 4, 2).alpha(), 0.5);
+    /// ```
     #[must_use]
     pub fn new(alpha: f32, width: usize, height: usize) -> Self {
         Self {
@@ -554,6 +671,15 @@ impl DotTemporalFilter {
     /// # Returns
     ///
     /// Filtered dot states.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// let mut filter = DotTemporalFilter::new(1.0, 2, 2);
+    /// let dots = filter.filter(&[true, false, true, false]);
+    /// assert_eq!(dots.len(), 4);
+    /// ```
     pub fn filter(&mut self, dots: &[bool]) -> Vec<bool> {
         let expected_len = self.width * self.height;
 
@@ -586,11 +712,27 @@ impl DotTemporalFilter {
     }
 
     /// Resets the filter state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// let mut filter = DotTemporalFilter::new(0.5, 2, 2);
+    /// filter.reset();
+    /// ```
     pub fn reset(&mut self) {
         self.confidence = None;
     }
 
     /// Updates the grid dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// let mut filter = DotTemporalFilter::new(0.5, 2, 2);
+    /// filter.resize(3, 1);
+    /// ```
     pub fn resize(&mut self, width: usize, height: usize) {
         if self.width != width || self.height != height {
             self.width = width;
@@ -600,11 +742,27 @@ impl DotTemporalFilter {
     }
 
     /// Sets the filter alpha.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// let mut filter = DotTemporalFilter::new(0.5, 2, 2);
+    /// filter.set_alpha(0.1);
+    /// assert!((filter.alpha() - 0.1).abs() < 1e-6);
+    /// ```
     pub fn set_alpha(&mut self, alpha: f32) {
         self.alpha = alpha.clamp(0.0, 1.0);
     }
 
     /// Returns the current alpha.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::DotTemporalFilter;
+    /// assert_eq!(DotTemporalFilter::new(0.3, 1, 1).alpha(), 0.3);
+    /// ```
     #[must_use]
     pub const fn alpha(&self) -> f32 {
         self.alpha
@@ -651,6 +809,14 @@ impl TemporalCoherence {
     /// # Arguments
     ///
     /// * `config` - Configuration for temporal processing
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let coherence = TemporalCoherence::new(TemporalConfig::disabled());
+    /// assert!(!coherence.config().hysteresis_enabled);
+    /// ```
     #[must_use]
     pub fn new(config: TemporalConfig) -> Self {
         Self {
@@ -677,6 +843,15 @@ impl TemporalCoherence {
     /// # Returns
     ///
     /// Binary image (white = on, black = off).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let mut coherence = TemporalCoherence::new(TemporalConfig::disabled());
+    /// let frame = image::GrayImage::from_pixel(2, 2, image::Luma([200]));
+    /// assert_eq!(coherence.process_grayscale(&frame, 128).dimensions(), (2, 2));
+    /// ```
     pub fn process_grayscale(&mut self, frame: &GrayImage, threshold: u8) -> GrayImage {
         // Step 1: Frame blending (if enabled)
         let blended = if self.config.frame_blend_enabled {
@@ -714,6 +889,15 @@ impl TemporalCoherence {
     /// # Returns
     ///
     /// Filtered dot states.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let mut coherence = TemporalCoherence::new(TemporalConfig::disabled());
+    /// let dots = coherence.process_dots(&[true, false, false, true], 2, 2);
+    /// assert_eq!(dots.len(), 4);
+    /// ```
     pub fn process_dots(&mut self, dots: &[bool], width: usize, height: usize) -> Vec<bool> {
         if !self.config.dot_filter_enabled {
             return dots.to_vec();
@@ -733,6 +917,15 @@ impl TemporalCoherence {
     /// Updates the configuration.
     ///
     /// Can be called at any time to adjust parameters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let mut coherence = TemporalCoherence::new(TemporalConfig::disabled());
+    /// coherence.set_config(TemporalConfig::video());
+    /// assert!(coherence.config().hysteresis_enabled);
+    /// ```
     pub fn set_config(&mut self, config: TemporalConfig) {
         self.hysteresis.set_margin(config.hysteresis_margin);
         self.blender.set_alpha(config.frame_blend_alpha);
@@ -743,6 +936,14 @@ impl TemporalCoherence {
     }
 
     /// Returns the current configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let coherence = TemporalCoherence::new(TemporalConfig::animation());
+    /// let _ = coherence.config().hysteresis_margin;
+    /// ```
     #[must_use]
     pub const fn config(&self) -> &TemporalConfig {
         &self.config
@@ -751,6 +952,14 @@ impl TemporalCoherence {
     /// Resets all temporal state (clears history).
     ///
     /// Call this when seeking in a video or switching content.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::temporal::{TemporalCoherence, TemporalConfig};
+    /// let mut coherence = TemporalCoherence::new(TemporalConfig::video());
+    /// coherence.reset();
+    /// ```
     pub fn reset(&mut self) {
         self.hysteresis.reset();
         self.blender.reset();
@@ -806,6 +1015,14 @@ pub fn measure_flicker(frame1: &[bool], frame2: &[bool]) -> f64 {
 /// # Returns
 ///
 /// Average flicker percentage (0.0-1.0).
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::image::temporal::average_flicker;
+/// let flicker = average_flicker(&[vec![false, true], vec![true, true]]);
+/// assert!(flicker > 0.0);
+/// ```
 #[must_use]
 pub fn average_flicker(frames: &[Vec<bool>]) -> f64 {
     if frames.len() < 2 {

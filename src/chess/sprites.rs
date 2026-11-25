@@ -3,12 +3,29 @@
 use shakmaty::{Color, Role};
 
 /// An 8x8 dot mask for a chess piece.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::sprites::get_sprite;
+/// use shakmaty::{Color, Role};
+/// let sprite = get_sprite(Role::Pawn, Color::White);
+/// assert_eq!(sprite.mask.len(), 8);
+/// ```
 pub struct PieceSprite {
     /// The bitmask representing the piece dots.
     pub mask: [u8; 8],
 }
 
 /// Returns the braille sprite mask for a given chess piece role and color.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::chess::sprites::get_sprite;
+/// use shakmaty::{Color, Role};
+/// assert_eq!(get_sprite(Role::King, Color::Black).mask.len(), 8);
+/// ```
 pub fn get_sprite(role: Role, _color: Color) -> PieceSprite {
     match role {
         Role::Pawn => PieceSprite {

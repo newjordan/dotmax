@@ -6,62 +6,22 @@ on:
   pull_request:
     branches: ["*"]
 
+# Features that compile without a system FFmpeg. The `video` feature stays
+# out of this matrix because ffmpeg-next needs libav* headers.
+env:
+  DOTMAX_FEATURES: image,svg,raytracer,chess
+
 jobs:
-  test:
-    name: Test Suite
+  fmt:
+    name: Rustfmt (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --verbose
-
-      - name: Build examples
-        run: cargo build --examples --all-features
-
-      - name: Run tests
-        run: cargo test --verbose
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-
-      # Check all targets including library, binaries, tests, benches, and examples
-      - name: Run Clippy (all targets)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      # Explicit example check for visibility and certainty
-      # This ensures examples are always checked even if --all-targets behavior changes
-      - name: Run Clippy on examples
-        run: cargo clippy --examples --all-features -- -D warnings
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -71,12 +31,83 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  clippy:
+    name: Clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Clippy (all targets)
+        run: cargo clippy --all-targets --features "${{ env.DOTMAX_FEATURES }}" -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --features "${{ env.DOTMAX_FEATURES }}" --verbose
+
+      - name: Build examples
+        run: cargo build --examples --features "${{ env.DOTMAX_FEATURES }}"
+
+      - name: Run tests
+        run: cargo test --features "${{ env.DOTMAX_FEATURES }}" --verbose
+
+  doc:
+    name: Docs (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build rustdoc
+        run: cargo doc --no-deps --features "${{ env.DOTMAX_FEATURES }}"
+
+      - name: Run documentation tests
+        run: cargo test --doc --features "${{ env.DOTMAX_FEATURES }}"
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run security audit
         uses: rustsec/audit-check@v1.4.1
@@ -88,23 +119,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Rust 1.70 toolchain
-        uses: dtolnay/rust-toolchain@1.70
+      - name: Install Rust 1.97 toolchain
+        uses: dtolnay/rust-toolchain@1.97
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Check MSRV compatibility
-        run: cargo check --all-features
+        run: cargo check --features "${{ env.DOTMAX_FEATURES }}"
 
   deny:
     name: Cargo Deny
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v1
@@ -118,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -130,16 +161,16 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Run coverage
-        run: cargo tarpaulin --all-features --out Xml --output-dir coverage
+        run: cargo tarpaulin --features "${{ env.DOTMAX_FEATURES }}" --out Xml --output-dir coverage
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: coverage/cobertura.xml
           fail_ci_if_error: false
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage/

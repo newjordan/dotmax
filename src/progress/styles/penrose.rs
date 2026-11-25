@@ -17,9 +17,9 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
-use std::f32::consts::PI;
+use std::f32::consts::{GOLDEN_RATIO, PI};
 
-const PHI: f32 = 1.618_034;
+const PHI: f32 = GOLDEN_RATIO;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -816,7 +816,7 @@ impl ProgressStyle for QuasicrystalDiffraction {
         let r_max = (dh as f32 * 0.5 - 0.5).min(pw * 0.5 - 0.5).max(1.0);
         let cy = (dh as f32 - 1.0) * 0.5;
         // Ring radii in φ ratio, outermost touching the strip edge.
-        let phi = 1.618_034_f32;
+        let phi = PHI;
         let radii = [r_max / phi, r_max];
         let total = 0.3 + ctx.eased.clamp(0.0, 1.0) * (panels as f32 - 0.3);
         let blob = |grid: &mut BrailleGrid, x: f32, y: f32, big: bool| {

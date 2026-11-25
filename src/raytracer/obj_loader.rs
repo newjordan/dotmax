@@ -34,6 +34,14 @@ fn parse_index(tok: &str, len: usize) -> Option<usize> {
 ///
 /// Returns an error if the file cannot be opened, or if it contains no
 /// geometry (no vertex positions, or no faces referencing them).
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::raytracer::obj_loader::load_obj;
+/// let _mesh = load_obj("model.obj")?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn load_obj<P: AsRef<Path>>(path: P) -> Result<MeshData> {
     let file = File::open(&path)
         .with_context(|| format!("Failed to open OBJ file: {}", path.as_ref().display()))?;

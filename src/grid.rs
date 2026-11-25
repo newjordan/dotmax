@@ -48,6 +48,14 @@ const MAX_GRID_HEIGHT: usize = 10_000;
 /// RGB color representation for braille cells
 ///
 /// Extracted from crabmusic. Story 2.6 will implement full color rendering.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::Color;
+/// let c = Color::rgb(10, 20, 30);
+/// assert_eq!((c.r, c.g, c.b), (10, 20, 30));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Color {
     /// Red component (0-255)
@@ -62,18 +70,39 @@ impl Color {
     /// Create a new RGB color
     ///
     /// Extracted from `crabmusic::Color::new()`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::Color;
+    /// assert_eq!(Color::rgb(1, 2, 3).b, 3);
+    /// ```
     #[must_use]
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
     }
 
     /// Create black color (0, 0, 0)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::Color;
+    /// assert_eq!(Color::black().r, 0);
+    /// ```
     #[must_use]
     pub const fn black() -> Self {
         Self { r: 0, g: 0, b: 0 }
     }
 
     /// Create white color (255, 255, 255)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::Color;
+    /// assert_eq!(Color::white().g, 255);
+    /// ```
     #[must_use]
     pub const fn white() -> Self {
         Self {
@@ -97,6 +126,13 @@ impl Color {
 ///   2 5
 ///   3 6
 ///   7 8
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::grid::BrailleDot;
+/// assert_eq!(BrailleDot::Dot1 as u8, 0b0000_0001);
+/// ```
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrailleDot {
@@ -234,6 +270,14 @@ impl BrailleGrid {
     /// # Crabmusic Change
     /// Original crabmusic code never validated dimensions.
     /// Dotmax adds validation for security (NFR-S2).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let grid = BrailleGrid::new(4, 2).unwrap();
+    /// assert_eq!(grid.dimensions(), (4, 2));
+    /// ```
     #[instrument]
     pub fn new(width: usize, height: usize) -> Result<Self, DotmaxError> {
         // Validate dimensions (NEW - not in crabmusic)
@@ -277,6 +321,13 @@ impl BrailleGrid {
     /// Get width in terminal cells
     ///
     /// **Extracted from crabmusic** (lines 104-106)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// assert_eq!(BrailleGrid::new(6, 2).unwrap().width(), 6);
+    /// ```
     #[must_use]
     pub const fn width(&self) -> usize {
         self.width
@@ -285,6 +336,13 @@ impl BrailleGrid {
     /// Get height in terminal cells
     ///
     /// **Extracted from crabmusic** (lines 108-111)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// assert_eq!(BrailleGrid::new(6, 2).unwrap().height(), 2);
+    /// ```
     #[must_use]
     pub const fn height(&self) -> usize {
         self.height
@@ -293,6 +351,13 @@ impl BrailleGrid {
     /// Get width in dots (2× terminal width)
     ///
     /// **Extracted from crabmusic** (lines 113-116)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// assert_eq!(BrailleGrid::new(6, 2).unwrap().dot_width(), 12);
+    /// ```
     #[must_use]
     pub const fn dot_width(&self) -> usize {
         self.width * 2
@@ -301,6 +366,13 @@ impl BrailleGrid {
     /// Get height in dots (4× terminal height)
     ///
     /// **Extracted from crabmusic** (lines 118-121)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// assert_eq!(BrailleGrid::new(6, 2).unwrap().dot_height(), 8);
+    /// ```
     #[must_use]
     pub const fn dot_height(&self) -> usize {
         self.height * 4
@@ -312,6 +384,13 @@ impl BrailleGrid {
     ///
     /// # Returns
     /// A tuple of (width, height) in terminal cells
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// assert_eq!(BrailleGrid::new(6, 2).unwrap().dimensions(), (6, 2));
+    /// ```
     #[must_use]
     pub const fn dimensions(&self) -> (usize, usize) {
         (self.width, self.height)
@@ -320,6 +399,16 @@ impl BrailleGrid {
     /// Clear all dots
     ///
     /// **Extracted from crabmusic** (lines 124-127) with minor adaptation
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// grid.set_dot(0, 0).unwrap();
+    /// grid.clear();
+    /// assert_eq!(grid.get_char(0, 0), '⠀');
+    /// ```
     #[instrument(skip(self))]
     pub fn clear(&mut self) {
         debug!(
@@ -348,6 +437,15 @@ impl BrailleGrid {
     ///
     /// # Errors
     /// Returns `OutOfBounds` if dot coordinates exceed grid dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// grid.set_dot(0, 0).unwrap();
+    /// assert_ne!(grid.get_char(0, 0), '⠀');
+    /// ```
     pub fn set_dot(&mut self, dot_x: usize, dot_y: usize) -> Result<(), DotmaxError> {
         // Bounds check (MODIFIED from crabmusic - return error instead of silent ignore)
         if dot_x >= self.dot_width() || dot_y >= self.dot_height() {
@@ -413,6 +511,15 @@ impl BrailleGrid {
     ///
     /// # Errors
     /// Returns `OutOfBounds` if dot coordinates exceed grid dimensions, or `InvalidDotIndex` if dot index > 7.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// grid.set_dot(0, 0).unwrap();
+    /// assert!(grid.get_dot(0, 0, 0).unwrap());
+    /// ```
     pub fn get_dot(&self, x: usize, y: usize, dot_index: u8) -> Result<bool, DotmaxError> {
         // Validate cell bounds
         if x >= self.width || y >= self.height {
@@ -454,6 +561,16 @@ impl BrailleGrid {
     ///
     /// # Errors
     /// Returns `OutOfBounds` if the specified region extends beyond grid dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 2).unwrap();
+    /// grid.set_dot(0, 0).unwrap();
+    /// grid.clear_region(0, 0, 2, 2).unwrap();
+    /// assert_eq!(grid.get_char(0, 0), '⠀');
+    /// ```
     pub fn clear_region(
         &mut self,
         x: usize,
@@ -498,6 +615,15 @@ impl BrailleGrid {
     /// Character at the cell position:
     /// - If a text character is set (Story 4.4 density rendering), returns that character
     /// - Otherwise, returns braille character representing the dot pattern
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(4, 1).unwrap();
+    /// grid.set_char(0, 0, 'A').unwrap();
+    /// assert_eq!(grid.get_char(0, 0), 'A');
+    /// ```
     #[must_use]
     pub fn get_char(&self, cell_x: usize, cell_y: usize) -> char {
         if cell_x >= self.width || cell_y >= self.height {
@@ -518,6 +644,17 @@ impl BrailleGrid {
     /// Get the color at a cell position
     ///
     /// **Extracted from crabmusic** (lines 350-357)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::{BrailleGrid, Color};
+    /// let mut grid = BrailleGrid::new(2, 1).unwrap();
+    /// assert_eq!(grid.get_color(0, 0), None);
+    /// grid.enable_color_support();
+    /// grid.set_cell_color(0, 0, Color::rgb(1, 2, 3)).unwrap();
+    /// assert_eq!(grid.get_color(0, 0), Some(Color::rgb(1, 2, 3)));
+    /// ```
     #[must_use]
     pub fn get_color(&self, cell_x: usize, cell_y: usize) -> Option<Color> {
         if cell_x >= self.width || cell_y >= self.height {
@@ -531,6 +668,16 @@ impl BrailleGrid {
     /// Check if a cell has any dots set
     ///
     /// **Extracted from crabmusic** (lines 360-368)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::BrailleGrid;
+    /// let mut grid = BrailleGrid::new(2, 1).unwrap();
+    /// assert!(grid.is_empty(0, 0));
+    /// grid.set_dot(0, 0).unwrap();
+    /// assert!(!grid.is_empty(0, 0));
+    /// ```
     #[must_use]
     pub fn is_empty(&self, cell_x: usize, cell_y: usize) -> bool {
         if cell_x >= self.width || cell_y >= self.height {

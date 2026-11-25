@@ -757,6 +757,19 @@ pub fn render_image_with_color(
 /// - `brightness` or `contrast` is outside `0.0..=2.0`, or `gamma` is outside `0.1..=3.0`
 /// - The image is empty (zero width or height)
 /// - Grid allocation fails or a color write falls outside the grid
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::image::{render_image_with_color_jittered, ColorMode, DitheringMethod, JitterParams};
+/// use image::{DynamicImage, RgbImage};
+/// let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(4, 4, image::Rgb([20, 180, 40])));
+/// let grid = render_image_with_color_jittered(
+///     &img, ColorMode::Grayscale, 2, 1, DitheringMethod::None, Some(128),
+///     1.0, 1.0, 1.0, JitterParams::NONE,
+/// ).unwrap();
+/// assert!(grid.width() > 0);
+/// ```
 #[allow(clippy::too_many_arguments)]
 pub fn render_image_with_color_jittered(
     image: &DynamicImage,

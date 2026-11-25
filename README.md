@@ -61,7 +61,7 @@ println!("{}", render_string(styles[0].as_ref(), &ctx).unwrap());
 
 ## Install
 
-Requires Rust 1.88 or later (`rust-version` in `Cargo.toml`).
+Requires Rust 1.97 or later (`rust-version` in `Cargo.toml`). The chess feature follows shakmaty 0.30 and pgn-reader 0.29, which declare that floor. Public function signatures are unchanged.
 
 ```bash
 cargo add dotmax --features image
@@ -135,6 +135,61 @@ Generate your own examples:
 cargo run --example generate_readme_examples --features image
 ```
 
+## Rendering paths
+
+`cargo run --example showcase` prints the text, shape, and animation paths. With `--features image -- --gif` it also prints a thresholded picture and writes the GIF below.
+
+![Bouncing braille dot](docs/examples/bouncing_dot.gif)
+
+**Text.** A character line, then a density ramp (`DensitySet::simple`) from space to `@`:
+
+```
+HELLO BRAILLE
+  ..::--==++**##%%@@
+  ..::--==++**##%%@@
+  ..::--==++**##%%@@
+```
+
+**Shapes.** A line and a circle on one grid:
+
+```
+⠑⠢⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠈⠑⢄⡀⠀⡠⠒⠉⠉⠑⠢⡀⠀⠀
+⠀⠀⠀⠀⠀⠈⡾⢄⠀⠀⠀⠀⠀⠘⡄⠀
+⠀⠀⠀⠀⠀⠀⢇⠀⠑⠢⡀⠀⠀⢀⠇⠀
+⠀⠀⠀⠀⠀⠀⠈⠢⣀⠀⠈⢑⣤⡊⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⠀⠈⠢⢄
+```
+
+**Animation.** Six frames of a dot walking across a 16×4 cell grid (the snapshot test covers the same path):
+
+```
+-- frame 0 --
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+-- frame 4 --
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+```
+
+**Image.** A checker thresholded to braille, and the same idea after a Bayer dither resize (`image` feature):
+
+```
+⣤⠛⣤⠛⣤⠛⣤⠛
+⣤⠛⣤⠛⣤⠛⣤⠛
+```
+
+```
+⠿⠭⠍⠭⠽⠭⠍⠭
+⠍⠭⠽⠭⠍⠭⠽⠭
+```
+
+These captures are the files under `tests/snapshots/render_paths/`. `UPDATE_SNAPSHOTS=1 cargo test --test render_snapshots --features image,chess` rewrites them.
+
 ## Features
 
 | Feature | What it enables | Install |
@@ -204,9 +259,13 @@ AnimationLoop::new(80, 24)
 
 ```bash
 # Basic (no features needed)
+cargo run --example showcase
 cargo run --example hello_braille
 cargo run --example bouncing_ball
 cargo run --example shapes_demo
+
+# Text, shapes, animation, and a GIF of the bounce
+cargo run --example showcase --features image -- --gif
 
 # Images
 cargo run --example load_image --features image
@@ -274,6 +333,18 @@ cargo run --example render_tuner --features image -- your_image.png
 | Frame render (80×24) | ~2μs |
 | Image load + render | ~10ms |
 | 60fps animation budget | 16.6ms (we use 1.6μs) |
+
+`cargo bench --bench render_paths --features image` measures the three paths on synthetic input. A release run on this tree (Rust 1.100, 10 samples, 0.5s warmup, 1s measurement) reported:
+
+| Benchmark | Time |
+|-----------|------|
+| `image_pipeline_160x96` (resize, Floyd–Steinberg, braille) | 361 µs |
+| `image_threshold_80x48` | 6.41 µs |
+| `text_density_80x24` | 9.53 µs |
+| `text_set_char_line` | 76.4 ns |
+| `animation_prerender_build_16` | 2.05 µs |
+| `animation_buffer_swap_40x12` | 26.1 ns |
+| `animation_frame_12x4` | 13.6 ns |
 
 ## Built on
 

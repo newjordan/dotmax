@@ -2,6 +2,13 @@
 
 /// Map a block intensity `[0, 1]` to a Braille character U+2800..U+28FF.
 /// We approximate brightness by dot density; this is not a spatial 2x4 sampling.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::braille::intensity_to_braille_char;
+/// assert_ne!(intensity_to_braille_char(0.0), intensity_to_braille_char(1.0));
+/// ```
 pub fn intensity_to_braille_char(intensity: f32) -> char {
     let i = intensity.clamp(0.0, 1.0);
     // Choose from a small ramp of dot patterns from sparse to dense.
@@ -44,6 +51,14 @@ fn colorize_green(ch: char, intensity: f32) -> String {
 
 /// Convert intensity buffer (height x width) to green Braille text.
 /// Groups 2x4 pixels per Braille cell using the max intensity in the block.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::intensity_buffer_to_green_braille;
+/// let text = intensity_buffer_to_green_braille(&[vec![0.0, 1.0], vec![0.2, 0.8]]);
+/// assert!(!text.is_empty());
+/// ```
 pub fn intensity_buffer_to_green_braille(buffer: &[Vec<f32>]) -> String {
     if buffer.is_empty() || buffer[0].is_empty() {
         return String::new();

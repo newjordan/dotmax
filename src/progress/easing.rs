@@ -26,6 +26,13 @@ use std::f32::consts::PI;
 /// Variants are grouped as `In` (accelerate from zero), `Out` (decelerate to
 /// one), and `InOut` (accelerate then decelerate). Pass any variant to
 /// [`ease`] together with a normalized time.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::easing::{ease, Easing};
+/// assert_eq!(ease(Easing::Linear, 0.25), 0.25);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Easing {
     /// No easing; returns `t` unchanged.
@@ -95,12 +102,27 @@ pub enum Easing {
 /// Linear interpolation between `a` and `b` by fraction `t`.
 ///
 /// `t` is not clamped; pass an eased value from [`ease`] for curved motion.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::easing::lerp;
+/// assert_eq!(lerp(0.0, 10.0, 0.5), 5.0);
+/// ```
 #[must_use]
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     t.mul_add(b - a, a)
 }
 
 /// Clamp `t` into `[0.0, 1.0]`.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::easing::clamp01;
+/// assert_eq!(clamp01(1.5), 1.0);
+/// assert_eq!(clamp01(-1.0), 0.0);
+/// ```
 #[must_use]
 pub fn clamp01(t: f32) -> f32 {
     t.clamp(0.0, 1.0)
@@ -110,6 +132,14 @@ pub fn clamp01(t: f32) -> f32 {
 ///
 /// `t` is clamped to `[0.0, 1.0]` before evaluation. The result is generally
 /// in `[0.0, 1.0]` but `Back` and `Elastic` variants overshoot by design.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::easing::{ease, Easing};
+/// assert_eq!(ease(Easing::Linear, 0.0), 0.0);
+/// assert_eq!(ease(Easing::Linear, 1.0), 1.0);
+/// ```
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn ease(kind: Easing, t: f32) -> f32 {
@@ -293,6 +323,13 @@ fn bounce_out(t: f32) -> f32 {
 }
 
 /// Every easing variant, in catalogue order — handy for demos and pickers.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::progress::easing::ALL_EASINGS;
+/// assert!(ALL_EASINGS.len() > 10);
+/// ```
 pub const ALL_EASINGS: [Easing; 31] = [
     Easing::Linear,
     Easing::QuadIn,

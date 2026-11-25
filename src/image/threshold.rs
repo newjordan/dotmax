@@ -67,6 +67,14 @@ use tracing::debug;
 ///
 /// This representation is optimized for braille mapping where each pixel
 /// directly corresponds to a braille dot state.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::image::BinaryImage;
+/// let image = BinaryImage::new(2, 2);
+/// assert_eq!(image.pixel_count(), 4);
+/// ```
 #[derive(Debug, Clone)]
 pub struct BinaryImage {
     /// Image width in pixels
@@ -85,6 +93,13 @@ impl BinaryImage {
     /// # Panics
     ///
     /// Panics if width × height would overflow usize.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::BinaryImage;
+    /// assert!(BinaryImage::new(3, 1).get_pixel(0, 0) == Some(false));
+    /// ```
     pub fn new(width: u32, height: u32) -> Self {
         let pixel_count = (width as usize)
             .checked_mul(height as usize)
@@ -98,6 +113,13 @@ impl BinaryImage {
     }
 
     /// Get the total number of pixels in the image
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::BinaryImage;
+    /// assert_eq!(BinaryImage::new(3, 2).pixel_count(), 6);
+    /// ```
     pub fn pixel_count(&self) -> usize {
         self.pixels.len()
     }
@@ -105,6 +127,13 @@ impl BinaryImage {
     /// Get a pixel value at the given coordinates
     ///
     /// Returns `None` if coordinates are out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::BinaryImage;
+    /// assert_eq!(BinaryImage::new(2, 2).get_pixel(9, 0), None);
+    /// ```
     pub fn get_pixel(&self, x: u32, y: u32) -> Option<bool> {
         if x >= self.width || y >= self.height {
             return None;
@@ -117,6 +146,15 @@ impl BinaryImage {
     /// Set a pixel value at the given coordinates
     ///
     /// Returns `false` if coordinates are out of bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::BinaryImage;
+    /// let mut image = BinaryImage::new(2, 2);
+    /// assert!(image.set_pixel(1, 1, true));
+    /// assert_eq!(image.get_pixel(1, 1), Some(true));
+    /// ```
     pub fn set_pixel(&mut self, x: u32, y: u32, value: bool) -> bool {
         if x >= self.width || y >= self.height {
             return false;
@@ -140,6 +178,15 @@ impl BinaryImage {
     ///
     /// * `gray` - Grayscale image where 255 = white (off), 0 = black (on) or vice-versa
     ///   Convention: pixels > 0 are treated as "on" (black in braille)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::BinaryImage;
+    /// let gray = image::GrayImage::from_pixel(2, 1, image::Luma([200]));
+    /// let binary = BinaryImage::from_grayscale(&gray);
+    /// assert_eq!(binary.width, 2);
+    /// ```
     pub fn from_grayscale(gray: &image::GrayImage) -> Self {
         let width = gray.width();
         let height = gray.height();

@@ -64,6 +64,13 @@ use super::MediaPlayer;
 /// | 1 | DoNotDispose | Leave frame in place |
 /// | 2 | RestoreBackground | Clear frame area to background color |
 /// | 3 | RestorePrevious | Restore canvas to state before frame |
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::DisposalMethod;
+/// assert_eq!(DisposalMethod::default(), DisposalMethod::None);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisposalMethod {
     /// No disposal specified - leave frame in place (default).
@@ -100,6 +107,17 @@ impl From<gif::DisposalMethod> for DisposalMethod {
 /// A single frame from an animated GIF.
 ///
 /// Contains the decoded RGBA pixel data along with timing and disposal metadata.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::media::{DisposalMethod, GifFrame};
+/// let frame = GifFrame {
+///     pixels: vec![0, 0, 0, 255], width: 1, height: 1, delay_ms: 100,
+///     index: 0, disposal: DisposalMethod::None, left: 0, top: 0,
+/// };
+/// assert_eq!(frame.width, 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct GifFrame {
     /// RGBA pixel data for this frame.
@@ -308,12 +326,30 @@ impl GifPlayer {
     }
 
     /// Returns the canvas width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::GifPlayer;
+    /// let player = GifPlayer::new("animation.gif")?;
+    /// let _ = player.canvas_width();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn canvas_width(&self) -> u16 {
         self.canvas_width
     }
 
     /// Returns the canvas height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::GifPlayer;
+    /// let player = GifPlayer::new("animation.gif")?;
+    /// let _ = player.canvas_height();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn canvas_height(&self) -> u16 {
         self.canvas_height

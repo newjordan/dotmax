@@ -159,8 +159,20 @@ use tracing::{debug, info};
 ///
 /// This limit prevents memory exhaustion from malicious or extremely large SVGs.
 /// SVGs exceeding these dimensions will return `DotmaxError::InvalidImageDimensions`.
+///
+/// # Examples
+///
+/// ```
+/// assert!(dotmax::image::svg::MAX_SVG_WIDTH >= 1000);
+/// ```
 pub const MAX_SVG_WIDTH: u32 = 10_000;
 /// Maximum SVG height in pixels (prevents memory exhaustion)
+///
+/// # Examples
+///
+/// ```
+/// assert!(dotmax::image::svg::MAX_SVG_HEIGHT >= 1000);
+/// ```
 pub const MAX_SVG_HEIGHT: u32 = 10_000;
 
 /// Load an SVG from a file path and rasterize to specified dimensions

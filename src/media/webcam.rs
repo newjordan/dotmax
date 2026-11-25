@@ -123,6 +123,14 @@ pub struct WebcamDevice {
 
 impl WebcamDevice {
     /// Creates a new `WebcamDevice` with the given identifiers.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamDevice;
+    /// let device = WebcamDevice::new("0", "FaceTime", "built-in");
+    /// assert_eq!(device.name, "FaceTime");
+    /// ```
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -147,6 +155,14 @@ impl WebcamDevice {
 /// - Index (0, 1, 2, ...)
 /// - Path (Linux: `/dev/video0`)
 /// - Name (Windows/macOS: `"FaceTime HD Camera"`)
+///
+/// # Examples
+///
+/// ```no_run
+/// use dotmax::media::WebcamDeviceId;
+/// let id = WebcamDeviceId::from(0);
+/// assert!(!id.to_string().is_empty());
+/// ```
 #[derive(Debug, Clone, Default)]
 pub enum WebcamDeviceId {
     /// Default system webcam.
@@ -855,24 +871,60 @@ impl WebcamPlayer {
     }
 
     /// Returns the capture width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.width();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn width(&self) -> u32 {
         self.width
     }
 
     /// Returns the capture height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.height();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn height(&self) -> u32 {
         self.height
     }
 
     /// Returns the frame rate (frames per second).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.fps();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn fps(&self) -> f64 {
         self.fps
     }
 
     /// Returns the device identifier.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.device_id();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub fn device_id(&self) -> &str {
         &self.device_id
@@ -881,6 +933,14 @@ impl WebcamPlayer {
     // ========== Render Settings Builder Methods ==========
 
     /// Sets the dithering algorithm.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.dithering(dotmax::image::DitheringMethod::Bayer);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn dithering(mut self, method: DitheringMethod) -> Self {
         self.dithering = method;
@@ -888,6 +948,14 @@ impl WebcamPlayer {
     }
 
     /// Sets the manual threshold (0-255) or None for automatic Otsu.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.threshold(Some(120));
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn threshold(mut self, threshold: Option<u8>) -> Self {
         self.threshold = threshold;
@@ -895,6 +963,14 @@ impl WebcamPlayer {
     }
 
     /// Sets the brightness adjustment factor.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.brightness(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn brightness(mut self, brightness: f32) -> Self {
         self.brightness = brightness;
@@ -902,6 +978,14 @@ impl WebcamPlayer {
     }
 
     /// Sets the contrast adjustment factor.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.contrast(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn contrast(mut self, contrast: f32) -> Self {
         self.contrast = contrast;
@@ -909,6 +993,14 @@ impl WebcamPlayer {
     }
 
     /// Sets the gamma correction factor.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.gamma(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn gamma(mut self, gamma: f32) -> Self {
         self.gamma = gamma;
@@ -916,6 +1008,14 @@ impl WebcamPlayer {
     }
 
     /// Sets the color mode for rendering.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let player = WebcamPlayer::new()?.color_mode(dotmax::image::ColorMode::Monochrome);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn color_mode(mut self, mode: ColorMode) -> Self {
         self.color_mode = mode;
@@ -925,36 +1025,90 @@ impl WebcamPlayer {
     // ========== Getters ==========
 
     /// Returns the current dithering method.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_dithering();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_dithering(&self) -> DitheringMethod {
         self.dithering
     }
 
     /// Returns the current threshold setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_threshold();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_threshold(&self) -> Option<u8> {
         self.threshold
     }
 
     /// Returns the current brightness setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_brightness();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_brightness(&self) -> f32 {
         self.brightness
     }
 
     /// Returns the current contrast setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_contrast();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_contrast(&self) -> f32 {
         self.contrast
     }
 
     /// Returns the current gamma setting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_gamma();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_gamma(&self) -> f32 {
         self.gamma
     }
 
     /// Returns the current color mode.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.get_color_mode();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub const fn get_color_mode(&self) -> ColorMode {
         self.color_mode
@@ -963,31 +1117,85 @@ impl WebcamPlayer {
     // ========== Mutable setters ==========
 
     /// Updates the dithering method at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_dithering(dotmax::image::DitheringMethod::None);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_dithering(&mut self, method: DitheringMethod) {
         self.dithering = method;
     }
 
     /// Updates the threshold at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_threshold(None);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_threshold(&mut self, threshold: Option<u8>) {
         self.threshold = threshold;
     }
 
     /// Updates the brightness at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_brightness(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_brightness(&mut self, brightness: f32) {
         self.brightness = brightness;
     }
 
     /// Updates the contrast at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_contrast(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_contrast(&mut self, contrast: f32) {
         self.contrast = contrast;
     }
 
     /// Updates the gamma at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_gamma(1.0);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_gamma(&mut self, gamma: f32) {
         self.gamma = gamma;
     }
 
     /// Updates the color mode at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.set_color_mode(dotmax::image::ColorMode::Monochrome);
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn set_color_mode(&mut self, mode: ColorMode) {
         self.color_mode = mode;
     }
@@ -995,6 +1203,15 @@ impl WebcamPlayer {
     // ========== Temporal Coherence Settings ==========
 
     /// Returns a reference to the temporal coherence configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// let _ = player.temporal_config();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub fn temporal_config(&self) -> &TemporalConfig {
         self.temporal_coherence.config()
@@ -1026,6 +1243,15 @@ impl WebcamPlayer {
     }
 
     /// Resets temporal coherence state (clears history).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::media::WebcamPlayer;
+    /// let mut player = WebcamPlayer::new()?;
+    /// player.reset_temporal_state();
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn reset_temporal_state(&mut self) {
         self.temporal_coherence.reset();
     }
@@ -1404,6 +1630,13 @@ pub struct WebcamPlayerBuilder {
 
 impl WebcamPlayerBuilder {
     /// Creates a new builder with default settings.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new();
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -1412,6 +1645,13 @@ impl WebcamPlayerBuilder {
     /// Sets the device to capture from.
     ///
     /// Accepts device index, path, or name.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().device(0);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub fn device(mut self, device: impl Into<WebcamDeviceId>) -> Self {
         self.device = device.into();
@@ -1422,6 +1662,13 @@ impl WebcamPlayerBuilder {
     ///
     /// Note: The actual resolution may differ if the camera doesn't support
     /// the requested size.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().resolution(640, 480);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn resolution(mut self, width: u32, height: u32) -> Self {
         self.resolution = Some((width, height));
@@ -1432,6 +1679,13 @@ impl WebcamPlayerBuilder {
     ///
     /// Note: The actual frame rate may differ if the camera doesn't support
     /// the requested rate.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().fps(30);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn fps(mut self, fps: u32) -> Self {
         self.fps = Some(fps);
@@ -1439,6 +1693,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the dithering algorithm.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().dithering(dotmax::image::DitheringMethod::Bayer);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn dithering(mut self, method: DitheringMethod) -> Self {
         self.render_settings.dithering = method;
@@ -1446,6 +1707,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the manual threshold (0-255) or None for Otsu.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().threshold(Some(128));
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn threshold(mut self, threshold: Option<u8>) -> Self {
         self.render_settings.threshold = threshold;
@@ -1453,6 +1721,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the brightness adjustment.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().brightness(1.0);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn brightness(mut self, brightness: f32) -> Self {
         self.render_settings.brightness = brightness;
@@ -1460,6 +1735,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the contrast adjustment.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().contrast(1.0);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn contrast(mut self, contrast: f32) -> Self {
         self.render_settings.contrast = contrast;
@@ -1467,6 +1749,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the gamma correction.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().gamma(1.0);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn gamma(mut self, gamma: f32) -> Self {
         self.render_settings.gamma = gamma;
@@ -1474,6 +1763,13 @@ impl WebcamPlayerBuilder {
     }
 
     /// Sets the color mode.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let builder = dotmax::media::WebcamPlayerBuilder::new().color_mode(dotmax::image::ColorMode::Monochrome);
+    /// let _ = builder;
+    /// ```
     #[must_use]
     pub const fn color_mode(mut self, mode: ColorMode) -> Self {
         self.render_settings.color_mode = mode;
@@ -1485,6 +1781,14 @@ impl WebcamPlayerBuilder {
     /// # Errors
     ///
     /// Returns camera-specific errors if the device cannot be opened.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let _player = dotmax::media::WebcamPlayerBuilder::new().build()?;
+    /// let _ = 0;
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn build(self) -> Result<WebcamPlayer> {
         WebcamPlayer::open_device(
             self.device,

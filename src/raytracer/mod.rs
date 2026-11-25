@@ -19,7 +19,15 @@ pub mod scene;
 pub mod sphere;
 pub mod triangle;
 pub mod wireframe;
-
+/// RenderMode.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::RenderMode;
+/// assert_eq!(RenderMode::default(), RenderMode::default());
+/// let _ = RenderMode::Solid;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderMode {
     /// Wireframe grid with configurable spacing and thickness (radians)

@@ -60,6 +60,14 @@ use tracing::{debug, error, info, instrument};
 /// - Others report the buffer size (which can be larger, enabling scrollback)
 ///
 /// This enum categorizes terminals based on their reporting behavior.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::TerminalType;
+/// let kind = TerminalType::detect();
+/// assert!(!kind.name().is_empty());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalType {
     /// Windows Terminal - reports viewport size correctly
@@ -84,6 +92,13 @@ impl TerminalType {
     /// - `WSL_DISTRO_NAME`: WSL environment
     /// - `TERM_PROGRAM`: macOS Terminal.app or other
     /// - Platform detection for fallback
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::TerminalType;
+    /// let _kind = TerminalType::detect();
+    /// ```
     #[must_use]
     pub fn detect() -> Self {
         // Check for WSL first (highest priority)
@@ -147,6 +162,13 @@ impl TerminalType {
     ///
     /// # Returns
     /// The number of rows to subtract to get the visible viewport height
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::TerminalType;
+    /// assert_eq!(TerminalType::LinuxNative.viewport_height_offset(40), 0);
+    /// ```
     #[must_use]
     pub const fn viewport_height_offset(self, reported_height: u16) -> u16 {
         match self {
@@ -166,6 +188,13 @@ impl TerminalType {
     }
 
     /// Get a human-readable name for this terminal type
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::TerminalType;
+    /// assert_eq!(TerminalType::MacOsTerminal.name(), "macOS Terminal.app");
+    /// ```
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -182,6 +211,14 @@ impl TerminalType {
 /// Terminal capabilities information
 ///
 /// Provides information about what features the terminal supports.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::TerminalCapabilities;
+/// let caps = TerminalCapabilities::default();
+/// assert!(caps.supports_unicode);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalCapabilities {
     /// Whether the terminal supports basic ANSI colors (16 colors)
@@ -217,6 +254,21 @@ impl Default for TerminalCapabilities {
 /// backends and reduce lock-in to specific terminal libraries.
 ///
 /// Implements ADR 0004: Terminal Backend Abstraction via Trait
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::{DotmaxError, TerminalBackend, TerminalCapabilities};
+/// struct Mock;
+/// impl TerminalBackend for Mock {
+///     fn size(&self) -> Result<(u16, u16), DotmaxError> { Ok((80, 24)) }
+///     fn render(&mut self, _content: &str) -> Result<(), DotmaxError> { Ok(()) }
+///     fn clear(&mut self) -> Result<(), DotmaxError> { Ok(()) }
+///     fn capabilities(&self) -> TerminalCapabilities { TerminalCapabilities::default() }
+/// }
+/// let mut backend = Mock;
+/// assert_eq!(backend.size().unwrap(), (80, 24));
+/// ```
 pub trait TerminalBackend {
     /// Get the current terminal size in character cells
     ///
@@ -488,6 +540,16 @@ impl TerminalRenderer {
     ///
     /// # Errors
     /// Returns `DotmaxError::Terminal` if clearing fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::TerminalRenderer;
+    /// let mut renderer = TerminalRenderer::new()?;
+    /// renderer.clear()?;
+    /// renderer.cleanup()?;
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn clear(&mut self) -> Result<(), DotmaxError> {
         self.terminal.clear()?;
         Ok(())
@@ -545,6 +607,15 @@ impl TerminalRenderer {
     ///
     /// # Errors
     /// Returns `DotmaxError::Terminal` if cleanup fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::TerminalRenderer;
+    /// let mut renderer = TerminalRenderer::new()?;
+    /// renderer.cleanup()?;
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     pub fn cleanup(&mut self) -> Result<(), DotmaxError> {
         Self::restore_terminal()
     }
@@ -570,6 +641,17 @@ impl TerminalRenderer {
     ///
     /// # Returns
     /// Terminal capabilities information
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use dotmax::TerminalRenderer;
+    /// let mut renderer = TerminalRenderer::new()?;
+    /// let caps = renderer.capabilities();
+    /// let _ = caps.supports_unicode;
+    /// renderer.cleanup()?;
+    /// # Ok::<(), dotmax::DotmaxError>(())
+    /// ```
     #[must_use]
     pub fn capabilities(&self) -> TerminalCapabilities {
         TerminalCapabilities {

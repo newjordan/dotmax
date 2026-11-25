@@ -122,6 +122,16 @@ pub use progress::{all_styles, styles_for_theme, BarContext, Easing, Palette, Pr
 ///
 /// This allows writing `dotmax::Result<T>` instead of `Result<T, DotmaxError>`
 /// in applications using this library.
+///
+/// # Examples
+///
+/// ```
+/// fn demo() -> dotmax::Result<()> {
+///     let _grid = dotmax::BrailleGrid::new(2, 2)?;
+///     Ok(())
+/// }
+/// demo().unwrap();
+/// ```
 pub type Result<T> = std::result::Result<T, DotmaxError>;
 
 // Feature modules (Epic 3+): image, primitives, density, color, animation

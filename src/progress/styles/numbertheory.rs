@@ -9,7 +9,7 @@
 use super::super::draw;
 use super::super::{BarContext, ProgressStyle};
 use crate::{BrailleGrid, Color, DotmaxError};
-use std::f32::consts::PI;
+use std::f32::consts::{GOLDEN_RATIO, PI};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -700,7 +700,7 @@ impl ProgressStyle for SternBrocot {
                     }
                 }
                 // φ > p/q ⇔ go right (towards larger values).
-                let phi = 1.618_034f32;
+                let phi = GOLDEN_RATIO;
                 if (p as f32) < phi * q as f32 {
                     a = p;
                     b = q;

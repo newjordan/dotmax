@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Minimum supported Rust version is 1.97, matching shakmaty 0.30 and pgn-reader 0.29. Public function signatures are unchanged.
+- Updated ratatui to 0.30, image to 0.25.10, imageproc to 0.27, shakmaty to 0.30, pgn-reader to 0.29, tempfile to 3.27, and proptest to 1.12. The chess PGN visitor follows pgn-reader 0.29 (`ControlFlow` plus `Reader`).
+- Progress styles that hardcoded φ now use `f32::consts::GOLDEN_RATIO`. The previous literals differed only past the seventh digit, which does not move a braille cell.
+- CI runs fmt, clippy, tests, and rustdoc on Linux and macOS. The `video` feature stays out of that matrix because it needs system FFmpeg. Checkout actions are v4. The MSRV job uses Rust 1.97.
+
+### Added
+
+- `progress::THEMES`, a public re-export of the bundled theme names. `themes()` still returns the same list.
+- Unit and golden-file tests for the image, animation, and text paths (`tests/render_snapshots.rs`).
+- Criterion benches in `benches/render_paths.rs` (image pipeline, animation frames, text density) and the previously unregistered `benches/density.rs`.
+- Rustdoc examples on public items, and `examples/showcase.rs` which prints those paths and can write `docs/examples/bouncing_dot.gif`.
+
 ## [0.1.11] - 2026-10-07
 
 ### Changed

@@ -122,6 +122,13 @@ use crate::image::threshold::{apply_threshold, auto_threshold, otsu_threshold, B
 /// - `intensity`: 0.0 disables jitter (algorithms behave identically to the
 ///   non-jittered variants). 1.0 is full ambient noise. Sensible defaults are
 ///   in the 0.25–0.75 range.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::image::JitterParams;
+/// assert!(!JitterParams::NONE.enabled());
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct JitterParams {
     /// 64-bit seed driving the noise pattern. Different seeds → different
@@ -133,12 +140,26 @@ pub struct JitterParams {
 
 impl JitterParams {
     /// Disabled jitter — equivalent to deterministic dithering.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::JitterParams;
+    /// assert_eq!(JitterParams::NONE.intensity, 0.0);
+    /// ```
     pub const NONE: Self = Self {
         seed: 0,
         intensity: 0.0,
     };
 
     /// New jitter with a seed and intensity in 0.0..=1.0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::JitterParams;
+    /// assert!(JitterParams::new(1, 0.5).enabled());
+    /// ```
     #[must_use]
     pub fn new(seed: u64, intensity: f32) -> Self {
         Self {
@@ -148,6 +169,13 @@ impl JitterParams {
     }
 
     /// True iff jitter is active (intensity > 0).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::image::JitterParams;
+    /// assert!(JitterParams::new(1, 0.25).enabled());
+    /// ```
     #[inline]
     #[must_use]
     pub fn enabled(self) -> bool {
@@ -380,6 +408,16 @@ pub fn apply_dithering_with_custom_threshold(
 /// # Errors
 ///
 /// Returns [`DotmaxError::InvalidParameter`] if image dimensions are 0.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::image::{apply_dithering_jittered, to_grayscale, DitheringMethod, JitterParams};
+/// use image::{DynamicImage, RgbImage};
+/// let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(4, 4, image::Rgb([40, 40, 40])));
+/// let binary = apply_dithering_jittered(&to_grayscale(&img), DitheringMethod::Bayer, Some(128), JitterParams::NONE).unwrap();
+/// assert_eq!(binary.pixel_count(), 16);
+/// ```
 pub fn apply_dithering_jittered(
     gray: &GrayImage,
     method: DitheringMethod,

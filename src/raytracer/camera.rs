@@ -1,7 +1,15 @@
 //! Simple pinhole camera (VIZ-010)
 
 use super::math::{Ray, Vector3};
-
+/// Camera.
+///
+/// # Examples
+///
+/// ```
+/// use dotmax::raytracer::{Camera, Vector3};
+/// let camera = Camera::new(Vector3::zero(), 2.0, 1.0);
+/// let _ray = camera.get_ray(0.5, 0.5);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     pub origin: Vector3,
@@ -11,6 +19,15 @@ pub struct Camera {
 }
 
 impl Camera {
+    /// new.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Camera, Vector3};
+    /// let camera = Camera::new(Vector3::zero(), 2.0, 1.0);
+    /// let _ray = camera.get_ray(0.5, 0.5);
+    /// ```
     pub fn new(origin: Vector3, viewport_width: f32, viewport_height: f32) -> Self {
         Self {
             origin,
@@ -21,6 +38,14 @@ impl Camera {
     }
 
     /// Generate ray for pixel coordinates (u, v) in [0.0, 1.0]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dotmax::raytracer::{Camera, Vector3};
+    /// let ray = Camera::new(Vector3::zero(), 2.0, 2.0).get_ray(0.0, 0.0);
+    /// let _ = ray.origin;
+    /// ```
     pub fn get_ray(&self, u: f32, v: f32) -> Ray {
         // Lower-left corner of the viewport (centered around origin, in front at -f)
         let half_w = self.viewport_width * 0.5;
